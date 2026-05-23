@@ -1,7 +1,8 @@
 //! View abstraction layer for chat REPL
 //!
-//! This module provides the `ChatView` trait for abstracting output rendering,
-//! enabling future migration from terminal output to alternative rendering (e.g., TUI).
+//! This module provides the `ChatView` trait and shared rendering infrastructure
+//! for the chat REPL. The TUI implementation (`RatatuiView`) is the primary view,
+//! while the standalone renderer provides pipe-safe output for non-chat subcommands.
 //!
 //! # Architecture
 //!
@@ -10,19 +11,20 @@
 //!     ↓ uses
 //! ChatView (trait)
 //!     ↓ implemented by
-//! TerminalView (current) ─── TuiView (future)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
-//! NOTE: The `ChatView` trait is intentionally kept for future TUI implementation.
-//! See AGENTS.md "TUI Preparation Code Policy" for details.
+//! ANSI color codes and banner art in this module are used by non-chat subcommands
+//! (query, translate, summarize, OCR) that output directly to stdout/pipe.
+//! The TUI chat mode uses `RatatuiView` which renders via ratatui widgets.
 
 #![expect(dead_code)]
 
 /// Number of lines in the status bar (divisor, content, divisor)
-/// Used by ANSI clear codes in repl.rs to remove status bar before user input
+/// Used by the standalone renderer for pre-TUI status display.
 pub const STATUS_BAR_LINES: usize = 3;
 
-// ANSI color codes for banner styling
+// ANSI color codes for banner and status bar styling (pipe-safe non-chat output)
 pub mod colors {
     pub const CYAN: &str = "\x1B[36m";
     pub const YELLOW: &str = "\x1B[33m";
@@ -62,18 +64,9 @@ pub(crate) const EXTENDED_MIND_ART: [&str; 14] = [
     "⠀\x1B[38;2;255;246;131m⠈\x1B[38;2;237;216;107m⠛\x1B[38;2;250;223;60m⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;232;195;38m⠉\x1B[38;2;193;136;0m⠁⠀\x1B[0m",
 ];
 
-// TUI Migration
-// When implementing ratatui.rs TUI:
-// - Add methods to trait for new rendering needs
-// - Implement `TuiView` struct in `src/chat/view/tui.rs`
-// - Update `repl.rs` to use the new implementation
-// IMPORTANT: Review and remove any dead code after TUI is implemented.
-
 mod ratatui_view;
-mod terminal;
 
 pub use ratatui_view::RatatuiView;
-pub use terminal::TerminalView;
 
 // Re-export TokenMetrics from core for consumers of this module
 pub use crate::chat::core::TokenMetrics;
@@ -163,6 +156,51 @@ impl ViewEventReceiver {
             }
         }
     }
+
+    /// Drain pending events into an LLM event channel as `ViewAction`s.
+    ///
+    /// This is used in the streaming TUI path to guarantee that ViewEvents
+    /// (PreToolContent, ContextNeedsCompaction) arrive as `LlmEvent::ViewAction`
+    /// BEFORE `StreamDone`, ensuring correct message ordering. By draining
+    /// directly to `llm_tx` instead of through the async ChannelView forwarding
+    /// task, we eliminate the ordering race.
+    ///
+    /// Note: PreToolContent is emitted as separate ShowThinking + ShowMarkdown
+    /// (not ShowAssistantResponse) to avoid transitioning LlmState to Idle.
+    pub fn drain_into_llm_channel(
+        &self,
+        llm_tx: &tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
+    ) {
+        use super::llm_event::ViewAction;
+
+        while let Ok(event) = self.receiver.try_recv() {
+            match event {
+                ViewEvent::PreToolContent { content, thinking } => {
+                    // Emit thinking and content as separate ViewActions,
+                    // matching the behavior of drain_into().
+                    if let Some(thinking_text) = thinking {
+                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            ViewAction::ShowThinking(thinking_text),
+                        ));
+                    }
+                    if !content.trim().is_empty() {
+                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            ViewAction::ShowMarkdown(content),
+                        ));
+                    }
+                }
+                ViewEvent::ContextNeedsCompaction { percent } => {
+                    let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                        ViewAction::ShowContextWarning {
+                            percent: percent as u8,
+                            message: "Context window filling up. Compaction may be needed."
+                                .to_string(),
+                        },
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// Create a view event channel for coordinator callbacks.
@@ -180,24 +218,23 @@ pub fn create_view_event_channel() -> (ViewEventSender, ViewEventReceiver) {
 /// Abstraction for output rendering in the chat REPL
 ///
 /// This trait enables the REPL to work with different output backends:
-/// - `TerminalView`: Current implementation using println!/eprintln!
-/// - `TuiView`: Future implementation for ratatui.rs TUI
+/// - `RatatuiView`: TUI implementation using ratatui widgets
+/// - Standalone renderer: For non-chat subcommands (query, translate, etc.)
 ///
 /// **Note:** This trait is part of the TUI migration architecture (see AGENTS.md).
-/// It provides the abstraction layer for switching between terminal output and
-/// future TUI rendering. Currently used via TerminalView in repl.rs.
+/// It provides the abstraction layer for the TUI chat view.
 ///
 /// # Example
 ///
 /// ```ignore
 /// use chat::view::ChatView;
 ///
-/// let mut view = TerminalView::new();
+/// let mut view = RatatuiView::new();
 /// view.show_welcome(&session, &model_config, &capabilities);
 /// view.show_assistant_response(&content, thinking, &metrics);
 /// view.show_error("Something went wrong");
 /// ```
-pub trait ChatView {
+pub trait ChatView: Send {
     /// Display a system message (info, status, welcome)
     ///
     /// Used for:
@@ -266,7 +303,7 @@ pub trait ChatView {
     /// Display markdown content
     ///
     /// Renders markdown text using the appropriate renderer for the view.
-    /// TerminalView uses termimad; RatatuiView will use tui-markdown.
+    /// RatatuiView uses tui-markdown via ratatui widgets.
     ///
     /// Used for:
     /// - Compact summary display
@@ -274,10 +311,10 @@ pub trait ChatView {
     /// - Any command output that contains markdown
     fn show_markdown(&mut self, content: &str);
 
-    /// Display thinking content (dimmed, with [Thinking] header)
+    /// Display thinking content (dimmed, with 🧠 Thinking header and │ border)
     ///
     /// Renders the model's internal reasoning before the main response.
-    /// TerminalView renders this in dim/light gray with optional markdown.
+    /// RatatuiView renders this with dim styling and optional markdown.
     ///
     /// # Arguments
     ///
@@ -287,16 +324,14 @@ pub trait ChatView {
     /// Display the help line hint after startup messages
     ///
     /// Shows "Type /help for commands, /quit to exit" centered.
-    /// TerminalView renders with DIM formatting; RatatuiView will
-    /// render as a centered text paragraph in the chat area.
+    /// RatatuiView renders as a centered text paragraph in the chat area.
     fn show_help_line(&mut self);
 
     /// Clear the continuation prompt line
     ///
     /// Clears the current line (used when continuation tag is detected
     /// to remove the old response before showing the new one).
-    /// TerminalView uses ANSI escape `\x1B[2K\r`; RatatuiView will
-    /// simply trigger a full widget redraw.
+    /// RatatuiView triggers a full widget redraw.
     fn clear_continuation_line(&mut self);
 
     /// Display a command output result
@@ -328,8 +363,7 @@ pub trait ChatView {
     /// Whether progress spinners should be suppressed.
     ///
     /// Returns `true` for TUI views that manage their own progress indication
-    /// (e.g., a built-in spinner in the status bar). TerminalView returns
-    /// `false` because it relies on indicatif spinners for visual feedback.
+    /// (e.g., a built-in spinner in the status bar).
     ///
     /// When `true`, `create_spinner()` returns a hidden (no-op) spinner and
     /// `finish_spinner` is a no-op, preventing ANSI escape sequence corruption
@@ -429,15 +463,7 @@ impl WelcomeInfo {
         let d = colors::DIM;
         let r = colors::RESET;
 
-        // Core identity
-        lines.push(format!(
-            "{}Model:{} {}{}{}",
-            bc,
-            r,
-            d,
-            truncate_str(&self.model_id, 30),
-            r
-        ));
+        // Model is shown in the status bar/modeline — no need to duplicate in banner
 
         lines.push(format!(
             "{}Server:{} {}{}{}",
@@ -529,8 +555,7 @@ impl WelcomeInfo {
     pub fn format_session_lines_plain(&self) -> Vec<String> {
         let mut lines = Vec::new();
 
-        // Core identity
-        lines.push(format!("Model: {}", truncate_str(&self.model_id, 30)));
+        // Model is shown in the status bar/modeline — no need to duplicate in banner
         lines.push(format!("Server: {}", truncate_str(&self.server_url, 30)));
 
         // Capabilities
@@ -913,7 +938,6 @@ mod tests {
         };
 
         let output = info.to_boxed_string();
-        assert!(output.contains("qwen3.5:4b"));
         assert!(output.contains("Project:"));
         assert!(output.contains("Session:"));
     }
@@ -1082,16 +1106,16 @@ mod tests {
 
     #[test]
     fn test_recent_context_info_newlines_collapsed() {
-        // Verify that when newlines are replaced with spaces before creating
-        // RecentMessage (as done in show_recent_context), each message
+        // Verify that when newlines are truncated at the first newline (as done
+        // by truncate_at_first_newline in show_recent_context), each message
         // displays on a single line in the context summary.
         let info = RecentContextInfo {
             total_messages: 4,
             exchanges: vec![(
                 RecentMessage {
                     role_label: "👤 User".to_string(),
-                    // Content already has newlines replaced with spaces
-                    // (this happens in show_recent_context before truncate_str)
+                    // Content already has newlines truncated at the first one
+                    // (this happens in show_recent_context via truncate_at_first_newline)
                     content: "Hello world how are you?".to_string(),
                 },
                 Some(RecentMessage {
@@ -1106,7 +1130,7 @@ mod tests {
         // Each message should be on a single line after its role label
         for line in output.lines() {
             // Lines with role labels should not contain embedded \n
-            // (they are already single lines since \n was replaced before)
+            // (they are already single lines since \n was truncated before)
             // We just verify the output contains the content as expected
             if line.contains("👤") {
                 assert!(line.contains("Hello world how are you?"));
@@ -1117,5 +1141,181 @@ mod tests {
                 assert!(!line.contains("\n"));
             }
         }
+    }
+
+    #[test]
+    fn test_truncate_at_first_newline_basic() {
+        use crate::utils::truncate_at_first_newline;
+
+        // No newline — return as-is
+        assert_eq!(truncate_at_first_newline("Hello world"), "Hello world");
+
+        // Single newline — truncate with ellipsis
+        assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+
+        // Multiple newlines — truncate at first
+        assert_eq!(
+            truncate_at_first_newline("Line 1\nLine 2\nLine 3"),
+            "Line 1…"
+        );
+
+        // Starts with newline — just ellipsis
+        assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+
+        // Empty string
+        assert_eq!(truncate_at_first_newline(""), "");
+
+        // Only newline
+        assert_eq!(truncate_at_first_newline("\n"), "…");
+    }
+
+    // ── ViewEventReceiver::drain_into_llm_channel tests ────────────
+
+    #[test]
+    fn test_drain_into_llm_channel_pre_tool_content() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send PreToolContent
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "Let me search for that.".to_string(),
+            thinking: Some("I should use the weather tool.".to_string()),
+        });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should receive two ViewActions: ShowThinking + ShowMarkdown
+        let event1 = llm_rx.try_recv().unwrap();
+        match event1 {
+            LlmEvent::ViewAction(ViewAction::ShowThinking(thinking)) => {
+                assert_eq!(thinking, "I should use the weather tool.");
+            }
+            _ => panic!("Expected ShowThinking ViewAction, got {:?}", event1),
+        }
+
+        let event2 = llm_rx.try_recv().unwrap();
+        match event2 {
+            LlmEvent::ViewAction(ViewAction::ShowMarkdown(content)) => {
+                assert_eq!(content, "Let me search for that.");
+            }
+            _ => panic!("Expected ShowMarkdown ViewAction, got {:?}", event2),
+        }
+
+        // No more events
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_context_needs_compaction() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send ContextNeedsCompaction
+        view_event_sender.send(ViewEvent::ContextNeedsCompaction { percent: 85 });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        let event = llm_rx.try_recv().unwrap();
+        match event {
+            LlmEvent::ViewAction(ViewAction::ShowContextWarning { percent, message }) => {
+                assert_eq!(percent, 85);
+                assert!(message.contains("filling up"));
+            }
+            _ => panic!("Expected ShowContextWarning ViewAction, got {:?}", event),
+        }
+
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_multiple_events() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send multiple events
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "Content".to_string(),
+            thinking: None,
+        });
+        view_event_sender.send(ViewEvent::ContextNeedsCompaction { percent: 90 });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should receive two events (no thinking = only ShowMarkdown)
+        let event1 = llm_rx.try_recv().unwrap();
+        match event1 {
+            LlmEvent::ViewAction(ViewAction::ShowMarkdown(content)) => {
+                assert_eq!(content, "Content");
+            }
+            _ => panic!("Expected ShowMarkdown, got {:?}", event1),
+        }
+
+        let event2 = llm_rx.try_recv().unwrap();
+        match event2 {
+            LlmEvent::ViewAction(ViewAction::ShowContextWarning { percent, .. }) => {
+                assert_eq!(percent, 90);
+            }
+            _ => panic!("Expected ShowContextWarning, got {:?}", event2),
+        }
+
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_empty_content_skipped() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send PreToolContent with empty content (should be skipped)
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "   ".to_string(),
+            thinking: Some("Thinking here".to_string()),
+        });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should only receive ShowThinking (empty content is skipped)
+        let event = llm_rx.try_recv().unwrap();
+        match event {
+            LlmEvent::ViewAction(ViewAction::ShowThinking(thinking)) => {
+                assert_eq!(thinking, "Thinking here");
+            }
+            _ => panic!("Expected ShowThinking, got {:?}", event),
+        }
+
+        // Empty content should NOT generate a ShowMarkdown event
+        assert!(llm_rx.try_recv().is_err());
     }
 }

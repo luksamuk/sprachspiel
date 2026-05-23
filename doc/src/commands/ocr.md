@@ -6,7 +6,6 @@ The `ocr` command extracts text from images using the GLM-OCR model. It supports
 
 ```bash
 sprach [GLOBAL OPTIONS] ocr <FILE>...
-sprach [GLOBAL OPTIONS] o <FILE>...
 ```
 
 ## Description
@@ -24,6 +23,8 @@ OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a mult
 |----------|-------------|
 | `FILE` | One or more image files to process |
 
+| Option | Description |
+|--------|-------------|
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -65,8 +66,6 @@ sprach ocr document.png
 # Extract from multiple files
 sprach ocr page1.png page2.png page3.png
 
-# Using alias
-sprach o letter.jpg
 ```
 
 ### Table Extraction

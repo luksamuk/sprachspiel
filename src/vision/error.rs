@@ -23,6 +23,10 @@ pub enum VisionError {
         message: String,
     },
     NoImages,
+    /// The selected model does not support vision capabilities.
+    NoVisionCapability {
+        model: String,
+    },
 }
 
 impl fmt::Display for VisionError {
@@ -68,6 +72,22 @@ impl fmt::Display for VisionError {
                     "Usage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information."
                 )
             }
+            VisionError::NoVisionCapability { model } => {
+                writeln!(
+                    f,
+                    "Error: Model '{}' does not support vision capabilities.",
+                    model
+                )?;
+                writeln!(f)?;
+                writeln!(f, "Vision-capable models you can use:")?;
+                writeln!(f, "  - qwen3.5:4b    (recommended, local, multimodal)")?;
+                writeln!(f, "  - qwen3.5:cloud  (cloud, multimodal)")?;
+                writeln!(f, "  - moondream:1.8b (lightweight, local)")?;
+                writeln!(f, "  - minicpm-v:8b   (best for multi-image)")?;
+                writeln!(f)?;
+                writeln!(f, "Set a vision model in config.toml:")?;
+                write!(f, "  [model.vision]\n  model = \"qwen3.5:4b\"")
+            }
         }
     }
 }
@@ -101,5 +121,13 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("Connection refused"));
         assert!(msg.contains("ollama serve"));
+
+        let err = VisionError::NoVisionCapability {
+            model: "llama3.2:3b".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("llama3.2:3b"));
+        assert!(msg.contains("vision"));
+        assert!(msg.contains("qwen3.5:4b"));
     }
 }

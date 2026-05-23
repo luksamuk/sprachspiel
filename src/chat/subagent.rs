@@ -15,7 +15,6 @@ use ollama_rs::models::ModelOptions;
 
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 
-use crate::utils::truncate_to_budget;
 use std::path::PathBuf;
 
 use crate::vision::{VisionArgs, VisionProcessor};
@@ -24,9 +23,6 @@ use std::path::Path;
 use crate::ocr::error::OcrError;
 use crate::ocr::mode::{OcrMode, is_glm_ocr_model};
 use crate::ocr::processor::OcrProcessor;
-
-/// Default maximum output length in tokens for subagent results.
-const DEFAULT_MAX_OUTPUT_TOKENS: usize = 10_000;
 
 /// Specialized subagent types, each targeting a distinct capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,13 +39,13 @@ pub enum SubagentType {
 
 impl SubagentType {
     /// Returns `true` for variants that use `/api/generate` (image-based).
-    #[allow(dead_code)] // Public API method used in tests
+    #[cfg(test)]
     pub fn uses_generate_api(&self) -> bool {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
     /// Human-readable label for this subagent type.
-    #[allow(dead_code)] // Public API method used in tests
+    #[cfg(test)]
     pub fn label(&self) -> &'static str {
         match self {
             SubagentType::Ocr => "OCR",
@@ -78,14 +74,12 @@ impl std::str::FromStr for SubagentType {
     }
 }
 
+#[cfg(test)]
 impl SubagentType {
     /// Parse a string into a SubagentType (convenience wrapper).
     ///
     /// Returns None if the string doesn't match any known type.
     /// Case-insensitive matching.
-    ///
-    /// This is a convenience method that wraps the `FromStr` implementation.
-    #[allow(dead_code)] // Public API method used in tests
     pub fn parse(s: &str) -> Option<Self> {
         s.parse().ok()
     }
@@ -97,14 +91,16 @@ impl SubagentType {
 /// Model options are resolved from the built-in/user model config at
 /// construction time, ensuring per-model temperature, num_ctx, etc.
 /// are respected instead of falling back to a hardcoded temperature 0.0.
+///
+/// Note: Sub-agent results are NOT truncated. The coordinator's emergency
+/// context overflow protection in `custom_coordinator.rs` handles any
+/// results that would exceed the context window.
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
     /// Resolved model_id to use for this subagent (e.g. "glm-ocr:bf16", "translategemma:4b").
     pub model: String,
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
-    /// Maximum output tokens; results are truncated beyond this.
-    pub max_output_chars: usize,
     /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
     pub model_options: ModelOptions,
     /// OCR extraction mode (Text, Table, Figure, Formula).
@@ -125,7 +121,6 @@ impl SubagentConfig {
         Self {
             model: resolved_model,
             system_prompt: system_prompt.into(),
-            max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
             ocr_mode: OcrMode::Text,
             model_options,
         }
@@ -160,8 +155,9 @@ impl SubagentRunner {
     /// - `Ocr` / `Vision` → `/api/generate` (with image from `file_path`)
     /// - `Translate` / `Summarize` → `/api/chat`
     ///
-    /// Results are truncated at `config.max_output_chars` tokens via
-    /// `truncate_to_budget()`.
+    /// Results are returned in full — truncation is handled by the
+    /// coordinator's emergency context overflow protection in
+    /// `custom_coordinator.rs` if needed.
     ///
     /// # Arguments
     /// * `subagent_type` - Which specialization to invoke.
@@ -173,18 +169,16 @@ impl SubagentRunner {
         prompt: String,
         file_paths: Vec<PathBuf>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let raw = match subagent_type {
+        match subagent_type {
             SubagentType::Ocr => {
                 if file_paths.is_empty() {
                     return Err("file_path is required for OCR subagent".into());
                 }
-                self.run_ocr(&file_paths[0], self.config.ocr_mode).await?
+                self.run_ocr(&file_paths[0], self.config.ocr_mode).await
             }
-            SubagentType::Vision => self.run_vision(&file_paths, &prompt).await?,
-            SubagentType::Translate | SubagentType::Summarize => self.run_chat(prompt).await?,
-        };
-
-        Ok(truncate_to_budget(&raw, self.config.max_output_chars))
+            SubagentType::Vision => self.run_vision(&file_paths, &prompt).await,
+            SubagentType::Translate | SubagentType::Summarize => self.run_chat(prompt).await,
+        }
     }
 
     /// Execute via `/api/chat` — used for text-based subagents (Translate, Summarize).
@@ -236,8 +230,7 @@ impl SubagentRunner {
 
         let prompt = build_translation_prompt(source.as_ref(), &target, text, None);
 
-        let raw = self.run_chat(prompt).await?;
-        Ok(truncate_to_budget(&raw, self.config.max_output_chars))
+        self.run_chat(prompt).await
     }
 
     /// Execute a summarization task via `/api/chat`.
@@ -282,7 +275,7 @@ impl SubagentRunner {
         })?;
 
         let raw = response.message.content.trim().to_string();
-        Ok(truncate_to_budget(&raw, self.config.max_output_chars))
+        Ok(raw)
     }
 
     /// Execute a vision task using VisionProcessor.
@@ -296,7 +289,9 @@ impl SubagentRunner {
     /// * `prompt` - Custom prompt describing what to look for in the images.
     ///
     /// # Returns
-    /// The description/analysis text from the vision model.
+    /// The full description/analysis text from the vision model.
+    /// Results are NOT truncated — the coordinator's emergency context
+    /// overflow protection handles results that exceed the context window.
     pub async fn run_vision(
         &self,
         paths: &[PathBuf],
@@ -314,7 +309,7 @@ impl SubagentRunner {
             detailed: false,
             json: false,
             model: None,
-            max_tokens: 2048,
+            max_tokens: 8192,
         };
 
         let processor = VisionProcessor::new();
@@ -329,10 +324,7 @@ impl SubagentRunner {
             .await
             .map_err(|e| format!("Vision processing failed: {}", e))?;
 
-        Ok(truncate_to_budget(
-            &output.content,
-            self.config.max_output_chars,
-        ))
+        Ok(output.content)
     }
 
     /// Execute an OCR task using the dedicated `OcrProcessor`.
@@ -378,10 +370,7 @@ impl SubagentRunner {
             )
             .await
         {
-            Ok(output) => Ok(truncate_to_budget(
-                &output.content,
-                self.config.max_output_chars,
-            )),
+            Ok(output) => Ok(output.content),
             Err(OcrError::FileNotFound(msg)) => Ok(format!("Error: Image file not found: {}", msg)),
             Err(e) => Ok(format!("Error: OCR processing failed: {}", e)),
         }
@@ -413,15 +402,15 @@ mod tests {
         let config = SubagentConfig::new("glm-ocr:bf16", "Extract text from images");
         assert_eq!(config.model, "glm-ocr:bf16");
         assert_eq!(config.system_prompt, "Extract text from images");
-        assert_eq!(config.max_output_chars, DEFAULT_MAX_OUTPUT_TOKENS);
+        assert_eq!(config.ocr_mode, OcrMode::Text);
         let _opts = config.model_options.clone();
     }
 
     #[test]
     fn subagent_config_builder() {
-        // Verify max_output_chars default
+        // Verify ocr_mode default
         let config = SubagentConfig::new("test-model", "test prompt");
-        assert_eq!(config.max_output_chars, DEFAULT_MAX_OUTPUT_TOKENS);
+        assert_eq!(config.ocr_mode, OcrMode::Text);
         let _opts = config.model_options.clone();
     }
 
@@ -459,20 +448,6 @@ mod tests {
         assert_eq!(SubagentType::parse("ocr"), Some(SubagentType::Ocr));
         assert_eq!(SubagentType::parse("invalid"), None);
         assert_eq!(SubagentType::parse(""), None);
-    }
-
-    #[test]
-    fn result_truncation() {
-        // Under budget: returned as-is
-        let short = "Hello world";
-        assert_eq!(truncate_to_budget(short, 10_000), short);
-
-        // Over budget: truncated with notice
-        // Token estimation uses word count, so use many words
-        let long = "word ".repeat(20_000); // 20K words = ~26.7K tokens
-        let result = truncate_to_budget(&long, 100);
-        assert!(result.contains("[Result truncated"));
-        assert!(result.len() < long.len());
     }
 
     #[test]

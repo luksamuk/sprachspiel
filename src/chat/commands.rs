@@ -67,10 +67,12 @@ pub enum ChatCommand {
     Info,
     /// Show context metrics and token usage
     Context,
-    /// Toggle think mode
-    Think,
+    /// Toggle or set think mode (None = toggle, Some(true) = on, Some(false) = off)
+    Think { enabled: Option<bool> },
     /// Toggle tools
     Tools,
+    /// Toggle style rendering (mermaid diagrams, syntax highlighting, table format)
+    ToggleStyle,
     /// Compact conversation history
     Compact,
     /// Set tool output level
@@ -85,8 +87,8 @@ pub enum ChatCommand {
     Undo,
     /// Search conversation history
     Search { query: String, limit: usize },
-    /// Reindex embeddings for all content
-    Reindex,
+    /// Reindex embeddings for all content (requires --yes to confirm)
+    Reindex { confirmed: bool },
     /// Toggle retrieval mode
     Retrieval,
     /// Prune old facts using decay cycle
@@ -383,7 +385,7 @@ fn parse_task_id_str(input: &str) -> Result<usize, String> {
 /// Extracted from the main parse_command to reduce complexity.
 fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "add" | "a" => {
+        "add" => {
             if subargs.is_empty() {
                 return Err(
                     "Usage: /todo add <description> [--priority <p>] [--tags <t1,t2>]".to_string(),
@@ -396,7 +398,7 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 tags,
             })
         }
-        "list" | "l" => {
+        "list" => {
             let filter = if subargs.is_empty() {
                 None
             } else {
@@ -404,14 +406,14 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             };
             Ok(ChatCommand::TodoList { filter })
         }
-        "get" | "g" => {
+        "get" => {
             if subargs.is_empty() {
                 return Err("Usage: /todo get <id>".to_string());
             }
             let id = parse_task_id_str(subargs)?;
             Ok(ChatCommand::TodoGet { id })
         }
-        "update" | "u" => {
+        "update" => {
             let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
             if update_parts.len() < 2 {
                 return Err("Usage: /todo update <id> <status>".to_string());
@@ -420,7 +422,7 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             let status = update_parts[1].trim().to_string();
             Ok(ChatCommand::TodoUpdate { id, status })
         }
-        "edit" | "e" => {
+        "edit" => {
             let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
             if edit_parts.is_empty() || edit_parts[0].is_empty() {
                 return Err(
@@ -439,15 +441,15 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 tags,
             })
         }
-        "delete" | "d" | "del" => {
+        "delete" => {
             if subargs.is_empty() {
                 return Err("Usage: /todo delete <id>".to_string());
             }
             let id = parse_task_id_str(subargs)?;
             Ok(ChatCommand::TodoDelete { id })
         }
-        "clear-done" | "cd" => Ok(ChatCommand::TodoClearDone),
-        "clear-all" | "ca" => Ok(ChatCommand::TodoClearAll),
+        "clear-done" => Ok(ChatCommand::TodoClearDone),
+        "clear-all" => Ok(ChatCommand::TodoClearAll),
         _ => Err("Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>".to_string()),
     }
 }
@@ -458,8 +460,8 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
 /// Handles: prune, add, list, remove, search.
 fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "prune" | "p" => Ok(ChatCommand::FactPrune),
-        "add" | "a" => {
+        "prune" => Ok(ChatCommand::FactPrune),
+        "add" => {
             if subargs.is_empty() {
                 return Err("Usage: /fact add <content> [--global]".to_string());
             }
@@ -479,7 +481,7 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             }
             Ok(ChatCommand::FactAdd { content, global })
         }
-        "list" | "l" => {
+        "list" => {
             let trimmed = subargs.trim();
             if trimmed == "--global" {
                 Ok(ChatCommand::FactList {
@@ -496,7 +498,7 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 })
             }
         }
-        "remove" | "r" => {
+        "remove" => {
             if subargs.is_empty() {
                 return Err("Usage: /fact remove <id>".to_string());
             }
@@ -505,7 +507,7 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 Err(_) => Err("Invalid fact ID. Must be a number.".to_string()),
             }
         }
-        "search" | "s" => {
+        "search" => {
             if subargs.is_empty() {
                 return Err("Usage: /fact search <query> [--global] [limit]".to_string());
             }
@@ -537,7 +539,7 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
 /// Handles: prune.
 fn parse_content_subcommand(subcmd: &str, _subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "prune" | "p" => Ok(ChatCommand::ContentPrune),
+        "prune" => Ok(ChatCommand::ContentPrune),
         _ => Err("Usage: /content prune".to_string()),
     }
 }
@@ -549,7 +551,7 @@ fn parse_content_subcommand(subcmd: &str, _subargs: &str) -> Result<ChatCommand,
 #[allow(clippy::too_many_lines)] // Command dispatch table: each arm is linear input parsing.
 fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "add" | "a" => {
+        "add" => {
             if subargs.is_empty() {
                 return Err("Usage: /note add <content> [--title <title>] [--global]".to_string());
             }
@@ -571,7 +573,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 Err(e) => Err(e),
             }
         }
-        "list" | "l" => {
+        "list" => {
             let mut global = false;
             let mut page: Option<usize> = None;
 
@@ -590,7 +592,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             }
             Ok(ChatCommand::NoteList { global, page })
         }
-        "show" | "s" => {
+        "show" | "get" => {
             if subargs.is_empty() {
                 return Err("Usage: /note show <id>".to_string());
             }
@@ -599,7 +601,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 Err(_) => Err("Invalid note ID. Must be a number.".to_string()),
             }
         }
-        "edit" | "e" => {
+        "edit" => {
             let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
             if edit_parts.len() < 2 {
                 return Err(
@@ -659,7 +661,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             }
             Ok(ChatCommand::NoteEdit { id, title, content })
         }
-        "delete" | "d" => {
+        "delete" | "rm" => {
             if subargs.is_empty() {
                 return Err("Usage: /note delete <id>".to_string());
             }
@@ -668,7 +670,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                 Err(_) => Err("Invalid note ID. Must be a number.".to_string()),
             }
         }
-        "search" | "f" => {
+        "search" => {
             if subargs.is_empty() {
                 return Err("Usage: /note search <query> [--global] [limit]".to_string());
             }
@@ -700,7 +702,7 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
 /// Handles: import, list, show, delete.
 fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "import" | "i" => {
+        "import" => {
             if subargs.is_empty() {
                 return Err("Usage: /doc import <path> [--global] [--nowait]".to_string());
             }
@@ -720,11 +722,11 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
                 nowait,
             })
         }
-        "list" | "l" => {
+        "list" => {
             let global = subargs.contains("--global");
             Ok(ChatCommand::DocumentList { global })
         }
-        "show" | "s" => {
+        "show" | "get" => {
             if subargs.is_empty() {
                 return Err("Usage: /doc show <id>".to_string());
             }
@@ -733,7 +735,7 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
                 Err(e) => Err(e),
             }
         }
-        "delete" | "d" | "remove" | "rm" => {
+        "delete" | "rm" => {
             if subargs.is_empty() {
                 return Err("Usage: /doc delete <id>".to_string());
             }
@@ -885,55 +887,6 @@ fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, 
     }
 }
 
-/// Map 2-letter fact shortcuts to their (subcommand, subargs) equivalent.
-fn map_fact_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
-    match cmd {
-        "fp" => ("prune", ""),
-        "fa" => ("add", args),
-        "fl" => ("list", args),
-        "fr" => ("remove", args),
-        "fs" => ("search", args),
-        _ => unreachable!(),
-    }
-}
-
-/// Map 2-letter note shortcuts to their (subcommand, subargs) equivalent.
-fn map_note_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
-    match cmd {
-        "na" => ("add", args),
-        "nl" => ("list", args),
-        "ns" => ("show", args),
-        "nd" => ("delete", args),
-        _ => unreachable!(),
-    }
-}
-
-/// Map 2-letter doc shortcuts to their (subcommand, subargs) equivalent.
-fn map_doc_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
-    match cmd {
-        "di" => ("import", args),
-        "dl" => ("list", args),
-        "ds" => ("show", args),
-        "dd" => ("delete", args),
-        _ => unreachable!(),
-    }
-}
-
-/// Map 2-letter todo shortcuts to their (subcommand, subargs) equivalent.
-fn map_todo_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
-    match cmd {
-        "ta" => ("add", args),
-        "tl" => ("list", ""),
-        "tu" => ("update", args),
-        "tg" => ("get", args),
-        "te" => ("edit", args),
-        "td" => ("delete", args),
-        "tcd" => ("clear-done", ""),
-        "tca" => ("clear-all", ""),
-        _ => unreachable!(),
-    }
-}
-
 /// Parse a command string
 /// Parse a command from user input.
 ///
@@ -954,8 +907,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let args = parts.get(1).copied().unwrap_or("");
 
     let command = match *cmd {
-        "quit" | "exit" | "q" => ChatCommand::Quit,
-        "new" | "n" => ChatCommand::New,
+        "quit" | "exit" => ChatCommand::Quit,
+        "new" => ChatCommand::New,
         "forget" => {
             let confirmed = args.trim() == "--yes";
             if !confirmed && !args.trim().is_empty() && args.trim() != "--yes" {
@@ -963,8 +916,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             ChatCommand::Forget { confirmed }
         }
-        "help" | "h" | "?" => ChatCommand::Help,
-        "model" | "m" => {
+        "help" => ChatCommand::Help,
+        "model" => {
             if args.is_empty() {
                 return Some(Err("Usage: /model <name>".to_string()));
             }
@@ -972,7 +925,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 name: args.trim().to_string(),
             }
         }
-        "system" | "sys" | "s" => {
+        "system" => {
             if args.is_empty() {
                 return Some(Err("Usage: /system <prompt>".to_string()));
             }
@@ -988,7 +941,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             };
             ChatCommand::Save { name }
         }
-        "load" | "l" => {
+        "load" => {
             if args.is_empty() {
                 return Some(Err("Usage: /load <session-name>".to_string()));
             }
@@ -996,7 +949,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 name: args.trim().to_string(),
             }
         }
-        "export" | "e" => {
+        "export" => {
             let args_trimmed = args.trim();
             if args_trimmed.is_empty() {
                 return Some(Err("Usage: /export <format> [file]".to_string()));
@@ -1018,14 +971,22 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 
             ChatCommand::Export { format, file }
         }
-        "list" | "ls" => ChatCommand::List,
-        "info" | "i" => ChatCommand::Info,
-        "context" | "ctx" => ChatCommand::Context,
-        "think" | "t" => ChatCommand::Think,
-        "debug" | "d" => ChatCommand::Debug,
+        "list" => ChatCommand::List,
+        "info" => ChatCommand::Info,
+        "context" => ChatCommand::Context,
+        "think" => {
+            let enabled = match args.trim() {
+                "on" | "true" | "1" => Some(true),
+                "off" | "false" | "0" => Some(false),
+                _ => None, // toggle
+            };
+            ChatCommand::Think { enabled }
+        }
+        "debug" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
+        "toggle-style" => ChatCommand::ToggleStyle,
         "compact" => ChatCommand::Compact,
-        "tools-output" | "to" => {
+        "tools-output" => {
             if args.is_empty() {
                 return Some(Err("Usage: /tools-output <compact|full|hidden>".to_string()));
             }
@@ -1034,9 +995,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "retry" | "r" => ChatCommand::Retry,
-        "undo" | "u" => ChatCommand::Undo,
-        "search" | "find" | "f" => {
+        "retry" => ChatCommand::Retry,
+        "undo" => ChatCommand::Undo,
+        "search" => {
             if args.is_empty() {
                 return Some(Err("Usage: /search <query> [limit]".to_string()));
             }
@@ -1045,19 +1006,18 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             ChatCommand::Search { query, limit }
         }
-        "reindex" => ChatCommand::Reindex,
+        "reindex" => {
+            let confirmed = args.trim() == "--yes";
+            if !confirmed && !args.trim().is_empty() && args.trim() != "--yes" {
+                return Some(Err("Usage: /reindex [--yes]".to_string()));
+            }
+            ChatCommand::Reindex { confirmed }
+        }
         "retrieval" => ChatCommand::Retrieval,
         "fact" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-            match parse_fact_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        "fp" | "fa" | "fl" | "fr" | "fs" => {
-            let (subcmd, subargs) = map_fact_shortcut(cmd, args);
             match parse_fact_subcommand(subcmd, subargs) {
                 Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
@@ -1072,24 +1032,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "ta" | "tl" | "tu" | "tg" | "te" | "td" | "tcd" | "tca" => {
-            let (subcmd, subargs) = map_todo_shortcut(cmd, args);
-            match parse_todo_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        "note" | "no" => {
+        "note" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-            match parse_note_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        "na" | "nl" | "ns" | "nd" => {
-            let (subcmd, subargs) = map_note_shortcut(cmd, args);
             match parse_note_subcommand(subcmd, subargs) {
                 Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
@@ -1104,13 +1050,6 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "di" | "dl" | "ds" | "dd" => {
-            let (subcmd, subargs) = map_doc_shortcut(cmd, args);
-            match parse_doc_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
-            }
-        }
         "session" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -1120,7 +1059,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "skill" | "sk" => {
+        "skill" => {
             if args.trim().is_empty() {
                 // /skill (no args) → list available skills
                 ChatCommand::SkillList
@@ -1166,7 +1105,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 prompt,
             }
         }
-        "translate" | "tr" => {
+        "translate" => {
             if args.is_empty() {
                 return Some(Err("Usage: /translate <source:target> <text>".to_string()));
             }
@@ -1181,7 +1120,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             ChatCommand::Translate { lang_pair, text }
         }
-        "summarize" | "sum" => {
+        "summarize" => {
             if args.is_empty() {
                 return Some(Err("Usage: /summarize <text>".to_string()));
             }
@@ -1189,37 +1128,23 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 text: args.trim().to_string(),
             }
         }
-        "feedback" | "fb" | "fg" => {
-            if *cmd == "fg" {
-                // Shortcut for /feedback good
-                ChatCommand::Feedback {
-                    signal_type: crate::feedback::types::FeedbackSignalType::Good,
-                    item_id: None,
-                    correction_text: None,
-                }
-            } else {
-                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
-                let subcmd = subcmd_parts.first().unwrap_or(&"");
-                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-                match parse_feedback_subcommand(subcmd, subargs) {
-                    Ok(cmd) => cmd,
-                    Err(e) => return Some(Err(e)),
-                }
+        "feedback" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            match parse_feedback_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
 
-        "content" | "cp" => {
-            if *cmd == "cp" {
-                // Shortcut for /content prune
-                ChatCommand::ContentPrune
-            } else {
-                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
-                let subcmd = subcmd_parts.first().unwrap_or(&"");
-                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-                match parse_content_subcommand(subcmd, subargs) {
-                    Ok(cmd) => cmd,
-                    Err(e) => return Some(Err(e)),
-                }
+        "content" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            match parse_content_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         _ => {
@@ -1237,14 +1162,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 /// Format help text as a string (for CommandOutput::HelpText).
 pub fn format_help() -> String {
     r#"Available commands:
-  /quit, /exit     Exit the chat session
-  /new, /n         Start a new conversation (previous messages remain searchable)
+  /quit / exit     Exit the chat session
+  /new             Start a new conversation (previous messages remain searchable)
   /forget [--yes]  Delete conversation completely and start fresh (requires --yes)
   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
-  /think           Toggle think mode
+  /think [on|off]  Toggle or set think mode
   /tools           Toggle tools
+  /toggle-style     Toggle style rendering (mermaid/source, syntax highlighting, table format)
   /tools-output    Set tool output level (compact|full|hidden)
   /compact         Compact conversation history (summarize)
   /retry           Retry last message (regenerate response)
@@ -1262,7 +1188,7 @@ pub fn format_help() -> String {
   /info            Show current session information
   /context         Show context metrics and token usage
   /search <query>  Search current conversation (keyword + semantic)
-  /reindex         Regenerate embeddings for all content
+  /reindex [--yes]  Regenerate embeddings for all content (requires --yes)
   /retrieval       Toggle semantic retrieval from conversation history
 
 Factual Memory:
@@ -1272,20 +1198,14 @@ Factual Memory:
   /fact search <query> [--global] [limit]   Search facts
   /fact prune      Prune old facts using decay cycle
 
-  Subcommand shortcuts: /fact a, /fact l, /fact r, /fact s, /fact p
-
 Feedback:
   /feedback good                    Positive signal on last assistant message
   /feedback bad                     Negative signal on last assistant message
   /feedback correction:fix text      Correction on last assistant message
   /feedback msg:<id> good|bad        Signal on a specific message
-  /fb                               Shortcut for /feedback
-  /fg                               Shortcut for /feedback good
 
 Content Management:
   /content prune   Prune low-retention content using decay cycle
-  /cp              Shortcut for /content prune
-
 
 Notes:
   /note add <content> [--title <title>] [--global]   Add a note
@@ -1295,17 +1215,11 @@ Notes:
   /note delete <id>                                  Delete a note
   /note search <query> [--global] [limit]            Search notes
 
-  Subcommand shortcuts: /no = /note, /na = /note add
-  /nl = /note list, /ns = /note show, /nd = /note delete
-
 Documents:
   /doc import <path> [--global]   Import a document (TXT, MD, ORG, PDF, EPUB)
   /doc list [--global]            List documents
   /doc show <id>                  Show a document
   /doc delete <id>                Delete a document
-
-  Subcommand shortcuts: /di = /doc import, /dl = /doc list
-   /ds = /doc show, /dd = /doc delete
 
 Todo List:
   /todo add <description> [--priority <p>] [--tags <t1,t2>]    Add a new task
@@ -1317,10 +1231,6 @@ Todo List:
   /todo clear-done                                               Clear completed tasks
   /todo clear-all                                                Clear all tasks
 
-   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
-   /tg = /todo get, /te = /todo edit, /td = /todo delete
-   /tcd = /todo clear-done, /tca = /todo clear-all
-
 Skills:
   /skill           List available skills
   /skill <name>    Activate a skill for this session
@@ -1330,19 +1240,6 @@ Subagents:
   /vision <path> [prompt]     Analyze image with vision model
   /translate <src:dst> <text>  Translate text between languages
   /summarize <text>           Summarize text
-
-  Shortcuts: /tr = /translate, /sum = /summarize
-
-Shortcuts:
-  /q = /quit, /n = /new, /h = /help
-  /m = /model, /s = /system, /l = /load
-  /t = /think, /e = /export, /ls = /list, /i = /info
-  /r = /retry, /to = /tools-output, /u = /undo
-  /ctx = /context, /f = /search (find)
-  /sk = /skill
-  /fb = /feedback, /fg = /feedback good, /fp = /fact prune, /fa = /fact add
-  /fl = /fact list, /fr = /fact remove, /fs = /fact search
-   /cp = /content prune
 "#.to_string()
 }
 
@@ -1506,22 +1403,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fact_subcommand_prune_shortcut() {
-        let cmd = parse_fact_subcommand("p", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::FactPrune));
-    }
-
-    #[test]
     fn test_parse_fact_subcommand_add() {
         let cmd = parse_fact_subcommand("add", "some fact").unwrap();
-        assert!(
-            matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
-        );
-    }
-
-    #[test]
-    fn test_parse_fact_subcommand_add_shortcut() {
-        let cmd = parse_fact_subcommand("a", "some fact").unwrap();
         assert!(
             matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
         );
@@ -1608,12 +1491,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_content_prune_shortcut() {
-        let cmd = parse_content_subcommand("p", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::ContentPrune));
-    }
-
-    #[test]
     fn test_parse_content_error() {
         assert!(parse_content_subcommand("list", "").is_err());
         assert!(parse_content_subcommand("unknown", "").is_err());
@@ -1624,14 +1501,6 @@ mod tests {
     #[test]
     fn test_parse_doc_subcommand_import() {
         let cmd = parse_doc_subcommand("import", "/path/to/file.pdf").unwrap();
-        assert!(
-            matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
-        );
-    }
-
-    #[test]
-    fn test_parse_doc_subcommand_import_shortcut() {
-        let cmd = parse_doc_subcommand("i", "/path/to/file.pdf").unwrap();
         assert!(
             matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
         );
@@ -1686,11 +1555,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_doc_subcommand_delete_shortcuts() {
-        let cmd = parse_doc_subcommand("d", "3").unwrap();
+    fn test_parse_doc_subcommand_delete_rm() {
+        let cmd = parse_doc_subcommand("rm", "3").unwrap();
         assert!(matches!(cmd, ChatCommand::DocumentDelete { id: 3 }));
-        let cmd2 = parse_doc_subcommand("rm", "3").unwrap();
-        assert!(matches!(cmd2, ChatCommand::DocumentDelete { id: 3 }));
     }
 
     #[test]
@@ -1706,12 +1573,6 @@ mod tests {
         assert!(
             matches!(cmd, ChatCommand::NoteAdd { ref content, ref title, global: false } if content == "some note content" && title.is_none())
         );
-    }
-
-    #[test]
-    fn test_parse_note_subcommand_add_shortcut() {
-        let cmd = parse_note_subcommand("a", "note text").unwrap();
-        assert!(matches!(cmd, ChatCommand::NoteAdd { ref content, .. } if content == "note text"));
     }
 
     #[test]
@@ -1783,25 +1644,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_note_subcommand_delete_shortcut() {
-        let cmd = parse_note_subcommand("d", "7").unwrap();
-        assert!(matches!(cmd, ChatCommand::NoteDelete { id: 7 }));
-    }
-
-    #[test]
     fn test_parse_note_subcommand_search() {
         // Note: search parser uses splitn(2, ' '), so single word -> query="query", limit=10
         let cmd = parse_note_subcommand("search", "query").unwrap();
         assert!(
             matches!(cmd, ChatCommand::NoteSearch { ref query, global: false, limit: 10 } if query == "query")
         );
-    }
-
-    #[test]
-    fn test_parse_note_subcommand_search_shortcut() {
-        // Shortcut "f" maps to search
-        let cmd = parse_note_subcommand("f", "query").unwrap();
-        assert!(matches!(cmd, ChatCommand::NoteSearch { ref query, .. } if query == "query"));
     }
 
     #[test]
@@ -1819,14 +1667,6 @@ mod tests {
     #[test]
     fn test_parse_todo_subcommand_add() {
         let cmd = parse_todo_subcommand("add", "Buy groceries").unwrap();
-        assert!(
-            matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
-        );
-    }
-
-    #[test]
-    fn test_parse_todo_subcommand_add_shortcut() {
-        let cmd = parse_todo_subcommand("a", "Buy groceries").unwrap();
         assert!(
             matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
         );
@@ -1888,34 +1728,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_todo_subcommand_delete_shortcuts() {
-        let cmd = parse_todo_subcommand("d", "5").unwrap();
-        assert!(matches!(cmd, ChatCommand::TodoDelete { id: 5 }));
-        let cmd2 = parse_todo_subcommand("del", "5").unwrap();
-        assert!(matches!(cmd2, ChatCommand::TodoDelete { id: 5 }));
-    }
-
-    #[test]
     fn test_parse_todo_subcommand_clear_done() {
         let cmd = parse_todo_subcommand("clear-done", "").unwrap();
         assert!(matches!(cmd, ChatCommand::TodoClearDone));
     }
 
     #[test]
-    fn test_parse_todo_subcommand_clear_done_shortcut() {
-        let cmd = parse_todo_subcommand("cd", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::TodoClearDone));
-    }
-
-    #[test]
     fn test_parse_todo_subcommand_clear_all() {
         let cmd = parse_todo_subcommand("clear-all", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::TodoClearAll));
-    }
-
-    #[test]
-    fn test_parse_todo_subcommand_clear_all_shortcut() {
-        let cmd = parse_todo_subcommand("ca", "").unwrap();
         assert!(matches!(cmd, ChatCommand::TodoClearAll));
     }
 
@@ -1928,12 +1748,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_todo_subcommand_edit_shortcut() {
-        let cmd = parse_todo_subcommand("e", "3 updated text").unwrap();
-        assert!(matches!(cmd, ChatCommand::TodoEdit { id: 3, .. }));
-    }
-
-    #[test]
     fn test_parse_todo_subcommand_edit_missing_id() {
         assert!(parse_todo_subcommand("edit", "").is_err());
     }
@@ -1941,40 +1755,6 @@ mod tests {
     #[test]
     fn test_parse_todo_subcommand_invalid() {
         assert!(parse_todo_subcommand("unknown", "").is_err());
-    }
-
-    // --- Shortcut mapping functions ---
-
-    #[test]
-    fn test_map_fact_shortcut() {
-        assert_eq!(map_fact_shortcut("fp", "x"), ("prune", ""));
-        assert_eq!(map_fact_shortcut("fa", "my content"), ("add", "my content"));
-        assert_eq!(map_fact_shortcut("fl", ""), ("list", ""));
-        assert_eq!(map_fact_shortcut("fr", "5"), ("remove", "5"));
-        assert_eq!(map_fact_shortcut("fs", "query"), ("search", "query"));
-    }
-
-    #[test]
-    fn test_map_note_shortcut() {
-        assert_eq!(map_note_shortcut("na", "content"), ("add", "content"));
-        assert_eq!(map_note_shortcut("nl", ""), ("list", ""));
-        assert_eq!(map_note_shortcut("ns", "5"), ("show", "5"));
-        assert_eq!(map_note_shortcut("nd", "5"), ("delete", "5"));
-    }
-
-    #[test]
-    fn test_map_todo_shortcut() {
-        assert_eq!(map_todo_shortcut("ta", "task"), ("add", "task"));
-        assert_eq!(map_todo_shortcut("tl", ""), ("list", ""));
-        assert_eq!(map_todo_shortcut("tu", "1 done"), ("update", "1 done"));
-        assert_eq!(map_todo_shortcut("tg", "5"), ("get", "5"));
-        assert_eq!(
-            map_todo_shortcut("te", "3 --priority low"),
-            ("edit", "3 --priority low")
-        );
-        assert_eq!(map_todo_shortcut("td", "5"), ("delete", "5"));
-        assert_eq!(map_todo_shortcut("tcd", ""), ("clear-done", ""));
-        assert_eq!(map_todo_shortcut("tca", ""), ("clear-all", ""));
     }
 
     // --- Top-level parse_command tests ---
@@ -2033,18 +1813,6 @@ mod tests {
         let result = parse_command("/skill nonexistent-skill-xyz");
         assert!(result.is_some());
         assert!(result.unwrap().is_err());
-    }
-
-    #[test]
-    fn test_parse_sk_shortcut_no_args() {
-        let cmd = parse_command("/sk").unwrap().unwrap();
-        assert!(matches!(cmd, ChatCommand::SkillList));
-    }
-
-    #[test]
-    fn test_parse_sk_shortcut_activate() {
-        let cmd = parse_command("/sk document-processing").unwrap().unwrap();
-        assert!(matches!(cmd, ChatCommand::Skill { ref name } if name == "document-processing"));
     }
 
     #[test]
@@ -2130,17 +1898,90 @@ mod tests {
         assert!(matches!(result, Some(Err(_))));
     }
 
+    // --- /reindex tests ---
+
     #[test]
-    fn test_parse_fg_shortcut() {
-        use crate::feedback::types::FeedbackSignalType;
-        let result = parse_command("/fg");
+    fn test_parse_reindex_no_args() {
+        let cmd = parse_command("/reindex").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: false }));
+    }
+
+    #[test]
+    fn test_parse_reindex_with_yes() {
+        let cmd = parse_command("/reindex --yes").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: true }));
+    }
+
+    #[test]
+    fn test_parse_reindex_invalid_flag() {
+        let result = parse_command("/reindex --no");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
+    }
+
+    #[test]
+    fn test_parse_reindex_trailing_space() {
+        let cmd = parse_command("/reindex ").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: false }));
+    }
+
+    // --- /think tests ---
+
+    #[test]
+    fn test_parse_think_toggle() {
+        // /think with no args toggles
+        let cmd = parse_command("/think").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Think { enabled: None }));
+    }
+
+    #[test]
+    fn test_parse_think_on() {
+        let cmd = parse_command("/think on").unwrap().unwrap();
         assert!(matches!(
-            result,
-            Some(Ok(ChatCommand::Feedback {
-                signal_type: FeedbackSignalType::Good,
-                item_id: None,
-                correction_text: None,
-            }))
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(true)
+            }
         ));
+    }
+
+    #[test]
+    fn test_parse_think_off() {
+        let cmd = parse_command("/think off").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(false)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_true() {
+        let cmd = parse_command("/think true").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(true)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_false() {
+        let cmd = parse_command("/think false").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(false)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_with_garbage_toggles() {
+        // Unknown arg like "maybe" falls back to toggle
+        let cmd = parse_command("/think maybe").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Think { enabled: None }));
     }
 }

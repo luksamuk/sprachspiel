@@ -9,22 +9,40 @@
 //! ```text
 //! App (event loop via tokio + crossterm)
 //!     ├─ CrosstermInput (history, InputBackend trait)
-//!     ├─ InputState (buffer, cursor, disabled state)
+//!     ├─ TextArea (input buffer, cursor, selection, kill-ring)
+//!     ├─ CompletionMenuState (floating completion overlay)
 //!     ├─ ChatMessage[] (chat area content)
 //!     ├─ StatusBarState (model, tokens, spinner)
 //!     ├─ ScrollState (auto-scroll and manual offset)
 //!     └─ LlmState (idle, thinking, streaming, tool_call)
 //! ```
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
+use ratatui_textarea::{CursorMove, TextArea};
+use tokio::sync::mpsc;
 
+use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
-use super::tui::components::input_line::InputState;
+use super::tui::components::chat_area::MessageType;
+use super::tui::components::chat_selection::ChatSelection;
+use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
+
+/// Type alias for embedding progress channel sender.
+///
+/// Sends `(current, total)` tuples to update the TUI status bar progress
+/// indicator (⚙ current/total) during embedding generation.
+pub type EmbeddingProgressTx = mpsc::UnboundedSender<(usize, usize)>;
+
+/// Type alias for async system message channel sender.
+///
+/// Background tasks (e.g., /reindex) send system message strings to be
+/// displayed in the TUI chat area when the operation completes.
+pub type AsyncMessageTx = mpsc::UnboundedSender<String>;
 
 /// Processing state of the LLM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,13 +53,18 @@ pub enum LlmState {
     Thinking,
     /// Streaming — response coming in, input disabled
     Streaming,
+    /// Compacting — conversation compaction in progress
+    Compacting,
     /// Running a tool call
-    #[allow(dead_code)] // PR3: Will be used when tool call UI shows spinner
     ToolCall,
 }
 
-/// Spinner frames for animation (braille dots pattern)
-const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// How often the spinner frame advances (milliseconds).
+///
+/// 120ms gives a brisk, lively pace for braille dot animations —
+/// fast enough to feel responsive, not so fast it becomes a blur.
+/// This is independent of streaming token arrival rate.
+pub const SPINNER_TICK_MS: u64 = 120;
 
 /// Scroll state for the chat area.
 ///
@@ -87,6 +110,27 @@ impl ScrollState {
         self.manual_offset = self.manual_offset.saturating_sub(lines);
         if self.manual_offset == 0 {
             self.auto_scroll = true;
+        }
+    }
+
+    /// Clamp `manual_offset` to the valid range `[0, max_scroll]`.
+    ///
+    /// Called during rendering when `total_lines` and `visible_height` are
+    /// known. Prevents "overscroll" accumulation from rapid mouse wheel
+    /// scrolling — without this, `scroll_up()` can grow `manual_offset`
+    /// well beyond `max_scroll`, causing sluggish response when scrolling
+    /// back down because every `scroll_down(MOUSE_SCROLL_LINES)` only
+    /// subtracts 3 from a huge offset.
+    pub fn clamp_offset(&mut self, total_lines: usize, visible_height: usize) {
+        if total_lines <= visible_height {
+            // Content fits in the viewport — no scroll needed
+            self.manual_offset = 0;
+            self.auto_scroll = true;
+            return;
+        }
+        let max_scroll = total_lines.saturating_sub(visible_height) as u16;
+        if self.manual_offset > max_scroll {
+            self.manual_offset = max_scroll;
         }
     }
 
@@ -142,35 +186,178 @@ impl ScrollState {
 pub struct App {
     /// Chat messages displayed in the chat area
     messages: Vec<ChatMessage>,
-    /// Current input buffer and cursor state
-    input_state: InputState,
+    /// Text editor widget for input (replaces InputState)
+    textarea: TextArea<'static>,
+    /// Whether input is disabled (e.g., during LLM processing)
+    input_disabled: bool,
+    /// Disabled reason (shown when input is disabled)
+    disabled_reason: Option<String>,
     /// CrosstermInput for history management
     history_input: CrosstermInput,
+    /// Tab completion engine (slash commands + model names)
+    completer: ChatCompleter,
+    /// Floating completion menu state
+    completion_menu: CompletionMenuState,
+    /// Chat text selection state (mouse-based)
+    chat_selection: ChatSelection,
+    /// Cache of visual lines (after word-wrap) for chat text selection.
+    /// Updated during each render cycle by `chat_area::render()`.
+    /// Used for selection text extraction and mouse position mapping.
+    visual_lines_cache: Vec<String>,
+    /// Maps each display row in visual_lines_cache to its source line index.
+    /// Used by selection highlight to map display-row coordinates to source lines.
+    source_line_map_cache: Vec<usize>,
+    /// Cache of scroll offset from top (updated during each render cycle).
+    /// Used for mapping mouse positions to visual line coordinates.
+    scroll_from_top_cache: u16,
+    /// Cache of the chat area Rect (updated during each render cycle).
+    /// Used for mouse position mapping in click/drag selection.
+    chat_area_rect_cache: ratatui::layout::Rect,
     /// Status bar state
     status_bar: StatusBarState,
     /// LLM processing state
     llm_state: LlmState,
     /// Markdown rendering theme
     theme: MarkdownTheme,
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables). When false, Mermaid blocks
+    /// show as source code blocks, code blocks have fg colors stripped,
+    /// and tables are rendered as pipe-delimited text.
+    style_enabled: bool,
     /// Scroll state for the chat area
     scroll: ScrollState,
+    /// Spinner animation frames (random rattles preset)
+    spinner_frames: Vec<&'static str>,
     /// Current spinner frame index
     spinner_frame: usize,
+    /// Whether the first streamed block of a multi-block turn was finalized.
+    ///
+    /// Set to `true` when `StreamBlockDone` is received (tool call interrupt).
+    /// Cleared back to `false` on `Complete`. Used by the event loop to
+    /// decide whether content is "already shown" or needs adding.
+    pub block_finalized: bool,
+    /// Channel receiver for embedding progress updates from background tasks.
+    /// Each message is (current, total) — current embeddings generated out of total.
+    embedding_progress_rx: mpsc::UnboundedReceiver<(usize, usize)>,
+    /// Channel receiver for asynchronous system messages from background tasks
+    /// (e.g., reindex completion notification).
+    async_message_rx: mpsc::UnboundedReceiver<String>,
+    /// Cached count of visual (wrapped) lines in the textarea input.
+    /// Updated after each render cycle; used to calculate input height before
+    /// the textarea has been rendered with the correct viewport width.
+    /// Value 0 means "not yet calculated" — fall back to logical line count.
+    cached_input_screen_lines: usize,
+}
+
+/// Pick a random spinner preset from rattles (same logic as `spinner.rs`).
+fn random_tui_spinner_frames() -> Vec<&'static str> {
+    use rattles::Rattle;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn extract_frames<T: Rattle>(rattler: rattles::Rattler<T>) -> Vec<&'static str> {
+        let len = rattler.len();
+        let mut ticked = rattler.into_ticked();
+        let mut frames = Vec::with_capacity(len);
+        for _ in 0..len {
+            frames.push(ticked.tick()[0]);
+        }
+        frames
+    }
+
+    let presets: Vec<fn() -> Vec<&'static str>> = vec![
+        || extract_frames(rattles::presets::braille::dots()),
+        || extract_frames(rattles::presets::braille::dots2()),
+        || extract_frames(rattles::presets::braille::dots3()),
+        || extract_frames(rattles::presets::braille::dots4()),
+        || extract_frames(rattles::presets::braille::dots5()),
+        || extract_frames(rattles::presets::braille::dots6()),
+        || extract_frames(rattles::presets::braille::dots7()),
+        || extract_frames(rattles::presets::braille::dots8()),
+        || extract_frames(rattles::presets::braille::dots9()),
+        || extract_frames(rattles::presets::braille::dots10()),
+        || extract_frames(rattles::presets::braille::dots11()),
+        || extract_frames(rattles::presets::braille::dots12()),
+        || extract_frames(rattles::presets::braille::bounce()),
+        || extract_frames(rattles::presets::braille::breathe()),
+        || extract_frames(rattles::presets::braille::snake()),
+        || extract_frames(rattles::presets::braille::wave()),
+        || extract_frames(rattles::presets::braille::orbit()),
+        || extract_frames(rattles::presets::braille::pulse()),
+        || extract_frames(rattles::presets::braille::sparkle()),
+        || extract_frames(rattles::presets::braille::scan()),
+        || extract_frames(rattles::presets::braille::helix()),
+        || extract_frames(rattles::presets::ascii::arc()),
+        || extract_frames(rattles::presets::ascii::balloon()),
+        || extract_frames(rattles::presets::ascii::circle_halves()),
+        || extract_frames(rattles::presets::ascii::circle_quarters()),
+        || extract_frames(rattles::presets::ascii::triangle()),
+        || extract_frames(rattles::presets::ascii::grow_horizontal()),
+        || extract_frames(rattles::presets::arrows::arrow()),
+    ];
+
+    let idx = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        % (presets.len() as u128)) as usize;
+
+    presets[idx]()
 }
 
 impl App {
-    /// Create a new App with default state
-    pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
-        Self {
+    /// Create a new App with an embedding progress sender for background tasks.
+    ///
+    /// Returns the App, an `EmbeddingProgressTx` for progress updates, and an
+    /// `AsyncMessageTx` for async system messages from background tasks.
+    pub fn with_embedding_channel(
+        theme: MarkdownTheme,
+        model_names: Vec<String>,
+    ) -> (Self, EmbeddingProgressTx, AsyncMessageTx) {
+        let completer = ChatCompleter::new(model_names.clone());
+
+        // Create textarea with custom styling: no line numbers, no cursor line highlight
+        let mut textarea = TextArea::default();
+        textarea.set_line_number_style(ratatui::style::Style::default());
+        textarea.set_cursor_line_style(ratatui::style::Style::default());
+        textarea.set_tab_length(4);
+        // Enable word-wrap so long lines fold at word boundaries (with glyph
+        // fallback for words wider than the viewport). This makes the input
+        // area purely vertical-scroll, eliminating horizontal scroll.
+        textarea.set_wrap_mode(ratatui_textarea::WrapMode::WordOrGlyph);
+
+        // Channel for embedding progress updates
+        let (embedding_tx, embedding_progress_rx) = mpsc::unbounded_channel();
+
+        // Channel for async system messages (e.g., reindex completion)
+        let (async_message_tx, async_message_rx) = mpsc::unbounded_channel();
+
+        let app = Self {
             messages: Vec::new(),
-            input_state: InputState::new(),
+            textarea,
+            input_disabled: false,
+            disabled_reason: None,
             history_input: CrosstermInput::new(model_names),
+            completer,
+            completion_menu: CompletionMenuState::new(),
+            chat_selection: ChatSelection::new(),
+            visual_lines_cache: Vec::new(),
+            source_line_map_cache: Vec::new(),
+            scroll_from_top_cache: 0,
+            chat_area_rect_cache: ratatui::layout::Rect::default(),
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
+            style_enabled: true,
             scroll: ScrollState::new(),
+            spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
-        }
+            block_finalized: false,
+            embedding_progress_rx,
+            async_message_rx,
+            cached_input_screen_lines: 0,
+        };
+
+        (app, embedding_tx, async_message_tx)
     }
 
     /// Add a message to the chat area and auto-scroll to bottom
@@ -179,34 +366,283 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
-    /// Get the messages in the chat area
-    #[allow(dead_code)] // PR3: Will be used for scroll/pagination features
-    pub fn messages(&self) -> &[ChatMessage] {
-        &self.messages
+    /// Append a streaming token to the last `AssistantStreaming` message.
+    ///
+    /// If the last message is not `AssistantStreaming`, searches backward
+    /// within the streaming zone (contiguous tail of Thinking/AssistantStreaming
+    /// messages) for an existing `AssistantStreaming` block. If found, appends
+    /// to it. Otherwise creates a new one.
+    ///
+    /// This handles the case where content and thinking tokens arrive
+    /// interleaved from the LLM: content tokens should append to the
+    /// existing `AssistantStreaming` block even when the last message
+    /// is a `Thinking` block.
+    pub fn append_stream_token(&mut self, token: &str) {
+        // Happy path: last message is AssistantStreaming — append directly
+        if let Some(last) = self.messages.last_mut()
+            && last.msg_type == MessageType::AssistantStreaming
+        {
+            last.content.push_str(token);
+            return;
+        }
+
+        // Find the streaming zone boundary and search within it
+        let streaming_start = self.streaming_zone_start();
+        let zone_len = self.messages.len().saturating_sub(streaming_start);
+
+        // Interleaved tokens: search backward within the streaming zone
+        // for an existing AssistantStreaming block to append to.
+        if let Some(prev_streaming) = self
+            .messages
+            .iter_mut()
+            .rev()
+            .take(zone_len)
+            .find(|m| m.msg_type == MessageType::AssistantStreaming)
+        {
+            prev_streaming.content.push_str(token);
+            return;
+        }
+
+        // No streaming message yet — create one
+        self.messages
+            .push(ChatMessage::assistant_streaming(token.to_string()));
+        self.scroll.reset_to_bottom();
     }
 
-    /// Get the current input state
-    #[allow(dead_code)] // PR3: Will be used for tab completion
-    pub fn input_state(&self) -> &InputState {
-        &self.input_state
+    /// Append a streaming thinking token to the last `Thinking` message.
+    ///
+    /// If the last message is not `Thinking`, searches backward within the
+    /// streaming zone (contiguous tail of Thinking/AssistantStreaming messages)
+    /// for an existing `Thinking` block. If found, appends to it. Otherwise
+    /// creates a new one.
+    ///
+    /// This handles the case where content and thinking tokens arrive
+    /// interleaved from the LLM: thinking tokens should append to the
+    /// existing `Thinking` block even when the last message is an
+    /// `AssistantStreaming` block.
+    pub fn append_stream_thinking(&mut self, token: &str) {
+        // Happy path: last message is Thinking — append directly
+        if let Some(last) = self.messages.last_mut()
+            && last.msg_type == MessageType::Thinking
+        {
+            last.content.push_str(token);
+            return;
+        }
+
+        // Find the streaming zone boundary and search within it
+        let streaming_start = self.streaming_zone_start();
+        let zone_len = self.messages.len().saturating_sub(streaming_start);
+
+        // Interleaved tokens: search backward within the streaming zone
+        // for an existing Thinking block to append to.
+        if let Some(prev_thinking) = self
+            .messages
+            .iter_mut()
+            .rev()
+            .take(zone_len)
+            .find(|m| m.msg_type == MessageType::Thinking)
+        {
+            prev_thinking.content.push_str(token);
+            return;
+        }
+
+        // No thinking message yet — create one
+        self.messages.push(ChatMessage::thinking(token.to_string()));
+        self.scroll.reset_to_bottom();
     }
 
-    /// Get a mutable reference to the input state
-    #[allow(dead_code)] // PR3: Will be used for tab completion
-    pub fn input_state_mut(&mut self) -> &mut InputState {
-        &mut self.input_state
+    /// Returns the start index of the streaming zone.
+    ///
+    /// The streaming zone is the contiguous tail of `Thinking` and
+    /// `AssistantStreaming` messages. Everything before this index is
+    /// stable (User, Assistant, Tool, System, Error, Banner) and must
+    /// not be modified by streaming operations.
+    fn streaming_zone_start(&self) -> usize {
+        self.messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, m)| {
+                !matches!(
+                    m.msg_type,
+                    MessageType::Thinking | MessageType::AssistantStreaming
+                )
+            })
+            .map(|(i, _)| i + 1)
+            .unwrap_or(0)
+    }
+
+    /// Insert a message before the streaming zone.
+    ///
+    /// When the LLM is in `ToolCall` or `Streaming` state, tool messages
+    /// and view actions should appear BEFORE any streaming content
+    /// (Thinking/AssistantStreaming messages). This method finds the
+    /// streaming zone start and inserts the message there, pushing
+    /// streaming content down.
+    ///
+    /// If there is no streaming zone (all messages are stable), this
+    /// finds the boundary before any trailing Tool messages and inserts
+    /// before them. This ensures inter-tool text (from `InterToolText`
+    /// events) appears in the correct position — after pre-tool content
+    /// and before subsequent tool calls — rather than appended after
+    /// all existing tool messages.
+    ///
+    /// Fallback: if there are no trailing tool messages either, appends
+    /// at the end via `add_message()`.
+    pub fn insert_before_streaming_zone(&mut self, message: ChatMessage) {
+        let zone_start = self.streaming_zone_start();
+        if zone_start < self.messages.len() {
+            // There's a streaming zone — insert before it
+            self.messages.insert(zone_start, message);
+        } else {
+            // No streaming zone — find the boundary before trailing
+            // Tool messages. Inter-tool text (from InterToolText events)
+            // must appear BEFORE tool messages, not after them.
+            let tool_boundary = self
+                .messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.msg_type != MessageType::Tool)
+                .map(|(i, _)| i + 1)
+                .unwrap_or(0);
+            if tool_boundary < self.messages.len() {
+                // There are trailing tool messages — insert before them
+                self.messages.insert(tool_boundary, message);
+            } else {
+                // No trailing tool messages — just append
+                self.messages.push(message);
+            }
+        }
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Finalize the current streaming zone by converting all
+    /// `AssistantStreaming` messages to stable `Assistant`.
+    ///
+    /// Called when streaming is interrupted by tool calls before
+    /// `StreamBlockDone`/`StreamDone` arrive (e.g., on `ToolCallStarted`).
+    /// Preserves the streamed content as-is without authoritative final data.
+    /// Thinking blocks remain unchanged (already stream-accumulated).
+    pub fn finalize_streaming_zone_as_is(&mut self) {
+        let streaming_start = self.streaming_zone_start();
+        for i in streaming_start..self.messages.len() {
+            if self.messages[i].msg_type == MessageType::AssistantStreaming {
+                let content = self.messages[i].content.clone();
+                self.messages[i] = ChatMessage::assistant_markdown(content);
+            }
+        }
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Check whether the streaming zone is non-empty.
+    ///
+    /// Returns `true` if there are Thinking or AssistantStreaming
+    /// messages at the tail of the message list, indicating that
+    /// content is currently being displayed via streaming events.
+    /// Used to avoid duplicating content that's already being shown.
+    pub fn has_streaming_zone(&self) -> bool {
+        self.streaming_zone_start() < self.messages.len()
+    }
+
+    /// Replace the last `AssistantStreaming` message with the final
+    /// markdown-rendered `Assistant` message, and consolidate any
+    /// fragmented `Thinking` blocks from the streaming session.
+    ///
+    /// During streaming with interleaved thinking/content tokens, multiple
+    /// `Thinking` blocks may have been created (see `append_stream_thinking`).
+    /// This method consolidates them into a single `Thinking` block using the
+    /// final thinking content from the complete LLM response, then replaces
+    /// `AssistantStreaming` with the final markdown-rendered `Assistant`.
+    ///
+    /// Only `Thinking` blocks in the **streaming zone** (the contiguous tail
+    /// of `Thinking`/`AssistantStreaming` messages) are consolidated or removed.
+    /// `Thinking` blocks from earlier tool-call rounds (preceded by `Tool`,
+    /// `Assistant`, `User`, etc.) are preserved intact.
+    pub fn finalize_stream(&mut self, content: &str, thinking: Option<&str>) {
+        // Determine the streaming zone boundary using shared helper
+        let streaming_start = self.streaming_zone_start();
+
+        // Collect Thinking positions within the streaming zone only
+        let thinking_positions: Vec<usize> = (streaming_start..self.messages.len())
+            .filter(|&i| self.messages[i].msg_type == MessageType::Thinking)
+            .collect();
+
+        if !thinking_positions.is_empty() {
+            if let Some(thinking_content) = thinking {
+                if thinking_positions.len() > 1 {
+                    // Consolidate fragmented Thinking blocks: replace first
+                    // with authoritative content, remove the rest.
+                    self.messages[thinking_positions[0]] =
+                        ChatMessage::thinking(thinking_content.to_string());
+                    // Remove in reverse order to preserve indices
+                    for &pos in thinking_positions.iter().rev().skip(1) {
+                        self.messages.remove(pos);
+                    }
+                } else {
+                    // Single Thinking block — update with authoritative content
+                    self.messages[thinking_positions[0]] =
+                        ChatMessage::thinking(thinking_content.to_string());
+                }
+            } else {
+                // No thinking in final response — remove Thinking blocks
+                // in the streaming zone only. Tool-call Thinking blocks
+                // before the streaming zone are preserved.
+                for &pos in thinking_positions.iter().rev() {
+                    self.messages.remove(pos);
+                }
+            }
+        }
+
+        // Find and replace the last AssistantStreaming message.
+        // Note: positions may have shifted after removing Thinking blocks above.
+        if let Some(pos) = self
+            .messages
+            .iter()
+            .rposition(|m| m.msg_type == MessageType::AssistantStreaming)
+        {
+            self.messages[pos] = ChatMessage::assistant_markdown(content.to_string());
+        } else {
+            // No streaming message found — just add the final one
+            self.messages
+                .push(ChatMessage::assistant_markdown(content.to_string()));
+        }
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Get a mutable reference to the textarea
+    pub fn textarea_mut(&mut self) -> &mut TextArea<'static> {
+        &mut self.textarea
     }
 
     /// Get the current LLM state
-    #[allow(dead_code)] // PR3: Will be used for state-dependent UI rendering
     pub fn llm_state(&self) -> LlmState {
         self.llm_state
     }
 
-    /// Get the current scroll state
-    #[allow(dead_code)] // Public API for external scroll queries
-    pub fn scroll_state(&self) -> &ScrollState {
-        &self.scroll
+    /// Get a mutable reference to the scroll state
+    pub fn scroll_state_mut(&mut self) -> &mut ScrollState {
+        &mut self.scroll
+    }
+
+    /// Get a reference to the chat selection state
+    pub fn chat_selection(&self) -> &ChatSelection {
+        &self.chat_selection
+    }
+
+    /// Get a mutable reference to the chat selection state
+    pub fn chat_selection_mut(&mut self) -> &mut ChatSelection {
+        &mut self.chat_selection
+    }
+
+    /// Get the cached scroll offset from top (for mouse mapping)
+    pub fn scroll_from_top_cache(&self) -> u16 {
+        self.scroll_from_top_cache
+    }
+
+    /// Get the cached chat area rect (for mouse mapping)
+    pub fn chat_area_rect_cache(&self) -> ratatui::layout::Rect {
+        self.chat_area_rect_cache
     }
 
     /// Get a reference to the status bar state.
@@ -218,6 +654,18 @@ impl App {
         &self.status_bar
     }
 
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables).
+    pub fn style_enabled(&self) -> bool {
+        self.style_enabled
+    }
+
+    /// Toggle style rendering on/off and update the status bar indicator.
+    pub fn toggle_style(&mut self) {
+        self.style_enabled = !self.style_enabled;
+        self.status_bar.style_enabled = self.style_enabled;
+    }
+
     /// Scroll to the bottom of the chat (newest messages).
     ///
     /// Called on terminal resize to ensure newest content stays visible.
@@ -225,32 +673,59 @@ impl App {
         self.scroll.scroll_to_bottom();
     }
 
-    /// Set the LLM state and update input/status accordingly
+    /// Set the LLM state and update input/status accordingly.
+    /// Clears `block_finalized` when transitioning to Idle.
     pub fn set_llm_state(&mut self, state: LlmState) {
         self.llm_state = state;
+        if state == LlmState::Idle {
+            self.block_finalized = false;
+        }
         match state {
             LlmState::Idle => {
-                self.input_state.set_disabled(false, None);
+                self.input_disabled = false;
+                self.disabled_reason = None;
                 self.status_bar.spinner = None;
                 self.status_bar.status_label = None;
+                self.spinner_frame = 0;
             }
             LlmState::Thinking => {
-                self.input_state
-                    .set_disabled(true, Some("Thinking...".to_string()));
-                self.status_bar.spinner = Some("⠋".to_string());
+                self.input_disabled = true;
+                self.disabled_reason = Some("Thinking...".to_string());
+                // Pick a new random spinner preset for this LLM cycle
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Thinking...".to_string());
             }
             LlmState::Streaming => {
-                self.input_state
-                    .set_disabled(true, Some("Streaming...".to_string()));
-                // During streaming, show model name (no spinner)
-                self.status_bar.spinner = None;
-                self.status_bar.status_label = None;
+                self.input_disabled = true;
+                self.disabled_reason = Some("Streaming...".to_string());
+                // Pick a new random spinner preset for the streaming phase
+                // (distinct from the one used during thinking)
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
+                self.status_bar.status_label = Some("Streaming...".to_string());
+            }
+            LlmState::Compacting => {
+                self.input_disabled = true;
+                self.disabled_reason = Some("Compacting...".to_string());
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
+                self.status_bar.status_label = Some("Compacting...".to_string());
             }
             LlmState::ToolCall => {
-                self.input_state
-                    .set_disabled(true, Some("Running tool...".to_string()));
-                self.status_bar.spinner = Some("⠋".to_string());
+                self.input_disabled = true;
+                self.disabled_reason = Some("Running tool...".to_string());
+                // Pick a new random spinner preset for this tool call cycle
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Running tool...".to_string());
             }
         }
@@ -275,12 +750,68 @@ impl App {
         self.status_bar.percent = percent;
     }
 
-    /// Advance the spinner frame
-    pub fn tick_spinner(&mut self) {
-        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
-        if self.llm_state != LlmState::Idle && self.llm_state != LlmState::Streaming {
-            self.status_bar.spinner = Some(SPINNER_FRAMES[self.spinner_frame].to_string());
+    /// Poll the embedding progress channel and update the status bar.
+    ///
+    /// Drains all messages from the channel, keeping only the latest
+    /// progress update. Sets `embedding_progress` to `Some((current, total))`
+    /// while embeddings are being generated, and `None` when complete.
+    pub fn poll_embedding_progress(&mut self) {
+        // Drain the channel, keeping only the latest progress
+        let mut latest: Option<(usize, usize)> = None;
+        while let Ok(progress) = self.embedding_progress_rx.try_recv() {
+            latest = Some(progress);
         }
+
+        if let Some((current, total)) = latest {
+            self.status_bar.embedding_progress = if current >= total {
+                // Embedding complete — clear the indicator
+                None
+            } else {
+                Some((current, total))
+            };
+        }
+        // If no messages received, keep the existing state (embedding might still be in progress)
+    }
+
+    /// Set the embedding progress indicator directly (for synchronous embedding operations).
+    pub fn set_embedding_progress(&mut self, current: usize, total: usize) {
+        self.status_bar.embedding_progress = if current >= total {
+            None
+        } else {
+            Some((current, total))
+        };
+    }
+
+    /// Clear the embedding progress indicator.
+    pub fn clear_embedding_progress(&mut self) {
+        self.status_bar.embedding_progress = None;
+    }
+
+    /// Poll for async system messages from background tasks.
+    ///
+    /// Background tasks (e.g., /reindex) send system message strings through
+    /// the `async_message_rx` channel. This method drains the channel and
+    /// adds each message to the chat area as a system message.
+    pub fn poll_async_messages(&mut self) {
+        while let Ok(msg) = self.async_message_rx.try_recv() {
+            self.add_message(ChatMessage::system(msg));
+        }
+    }
+
+    /// Advance the spinner frame.
+    ///
+    /// The spinner animates independently of streaming token arrival —
+    /// it ticks via the spinner interval in the event loop,
+    /// regardless of whether tokens are arriving or not.
+    /// A fresh random rattles preset is picked each time the LLM enters
+    /// a new phase (Thinking, Streaming, ToolCall), so the animation
+    /// varies not just between sessions but between cycles.
+    pub fn tick_spinner(&mut self) {
+        if self.llm_state == LlmState::Idle || self.spinner_frames.is_empty() {
+            return;
+        }
+        self.spinner_frame = (self.spinner_frame + 1) % self.spinner_frames.len();
+        self.status_bar.spinner = Some(self.spinner_frames[self.spinner_frame].to_string());
     }
 
     /// Process a crossterm key event
@@ -288,12 +819,72 @@ impl App {
     /// Returns `Some(InputResult::Line(line))` when Enter is pressed,
     /// `Some(InputResult::Interrupted)` for Ctrl+C,
     /// `Some(InputResult::Eof)` for Ctrl+D on empty line,
-    /// and `None` for other key events (buffer updated internally).
+    /// and `None` for other key events.
+    ///
+    /// # Design
+    ///
+    /// We use `textarea.input_without_shortcuts()` for the default handler,
+    /// which only handles char input, Tab, Backspace, Delete, and Enter (newline).
+    /// All other shortcuts are bound explicitly here:
+    ///
+    /// **Submission & control:**
+    /// - Enter: submit line (textarea default is newline)
+    /// - Shift+Enter: newline
+    /// - Ctrl+C: context-dependent copy/cancel:
+    ///   - Chat selection active → copy selected chat text to clipboard
+    ///   - Textarea selection active → copy selection, deselect (text preserved)
+    ///   - Textarea has text (no selection) → select all, copy, clear input (cancel)
+    ///   - Empty textarea → cancel LLM or exit
+    /// - Ctrl+V: paste from system clipboard
+    /// - Ctrl+D: EOF on empty, forward delete otherwise
+    /// - Ctrl+Y: yank (paste from textarea kill-ring)
+    /// - Tab: completion
+    ///
+    /// **Cursor movement (no selection):**
+    /// - Ctrl+A/Home: move to start of line
+    /// - Ctrl+E/End: move to end of line
+    /// - Left/Right: character movement
+    /// - Ctrl+Left/Ctrl+Right: word movement
+    /// - Up/Down (single-line): history navigation
+    /// - Up/Down (multi-line): textarea cursor movement
+    ///
+    /// **Selection (Shift modifier starts selection):**
+    /// - Shift+Left/Right: select characters
+    /// - Shift+Home/End: select to line start/end
+    /// - Ctrl+Shift+Left/Right: select word
+    ///
+    /// **Editing:**
+    /// - Ctrl+W: delete word backward (cut to system clipboard)
+    /// - Ctrl+K: delete to end of line
+    /// - Ctrl+U: undo
+    /// - Ctrl+R: redo
+    /// - Ctrl+X: cut selection to system clipboard
     ///
     /// When input is disabled (during LLM processing), only Ctrl+C
-    /// is processed — all other keys are ignored.
+    /// and scroll keys are processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
-        // Ctrl+C always works, even when input is disabled
+        // Filter Release events — crossterm 0.29 sends both Press and Release
+        // for each key event. We only handle Press to avoid double-processing.
+        if key.kind != KeyEventKind::Press {
+            return None;
+        }
+
+        // Diagnose key events in the log file (safe because TUI mode routes
+        // all log output to the file, not stderr, so this won't corrupt the display).
+        log::debug!(
+            "handle_key: code={:?} modifiers={:?} kind={:?}",
+            key.code,
+            key.modifiers,
+            key.kind
+        );
+
+        // ── Ctrl+C handling (always works) ───────────────────────────
+        // Context-dependent: copy selection or cancel, with 4 priority levels:
+        // 1. Chat selection active → copy chat text to clipboard
+        // 2. Textarea selection active → copy selection, deselect (text preserved)
+        // 3. Textarea has text (no selection) → select all, copy, clear (cancel input)
+        // 4. Empty textarea → cancel LLM or exit
+
         if matches!(
             key,
             crossterm::event::KeyEvent {
@@ -302,181 +893,640 @@ impl App {
                 ..
             }
         ) {
+            self.completion_menu.hide();
+
+            // Priority 1: Chat selection active → copy selected chat text to clipboard
+            if self.chat_selection.is_active() {
+                let text = self.chat_selection.extract_text(&self.visual_lines_cache);
+                if !text.is_empty() {
+                    let _ = cli_clipboard::set_contents(text);
+                }
+                self.chat_selection.clear();
+                return None;
+            }
+
+            // Priority 2 & 3: Textarea has content
+            if !self.textarea_is_empty() {
+                if self.textarea.is_selecting() {
+                    // Priority 2: Selection in textarea → copy selection, deselect
+                    // Text is preserved — only the selection is canceled
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                    self.textarea.cancel_selection();
+                } else {
+                    // Priority 3: No selection → select all, copy, then clear (cancel input)
+                    self.textarea.select_all();
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                    self.textarea_clear();
+                }
+                return None;
+            }
+
+            // Priority 4: Empty textarea → cancel LLM or no-op
             return Some(InputResult::Interrupted);
         }
 
-        // When input is disabled (LLM processing), still allow scroll keys
-        if self.input_state.disabled {
-            // Allow scroll keys even when input is disabled
+        // ── Ctrl+V — paste from system clipboard (always works) ──────
+        // Terminal emulators like kitty intercept Ctrl+Shift+C/V, so we
+        // use Ctrl+V for paste instead. This works reliably across all
+        // terminals because it's a standard key event that crossterm receives.
+
+        if matches!(
+            key,
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('v'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+        ) {
+            self.completion_menu.hide();
+            if let Ok(text) = cli_clipboard::get_contents()
+                && !text.is_empty()
+            {
+                self.textarea.insert_str(&text);
+                self.chat_selection.clear();
+            }
+            return None;
+        }
+
+        // ── Input disabled (LLM processing) ─────────────────────────
+
+        if self.input_disabled {
             match key.code {
                 KeyCode::PageUp => {
                     self.scroll.scroll_up(10);
-                    return None;
                 }
                 KeyCode::PageDown => {
                     self.scroll.scroll_down(10);
-                    return None;
                 }
                 KeyCode::Home => {
                     self.scroll.scroll_to_top();
-                    return None;
                 }
                 KeyCode::End => {
                     self.scroll.scroll_to_bottom();
-                    return None;
                 }
+                _ => {}
+            }
+            return None;
+        }
+
+        // ── Mutual exclusion: typing clears chat selection ───────────
+
+        if self.chat_selection.is_active() {
+            // Scroll and navigation keys don't clear chat selection
+            match key.code {
+                KeyCode::PageUp | KeyCode::PageDown | KeyCode::Tab => {}
                 _ => {
-                    // Ignore all other keys when input is disabled
-                    return None;
+                    self.chat_selection.clear();
                 }
             }
         }
 
+        // ── Completion menu (when visible) ───────────────────────────
+
+        if self.completion_menu.is_visible() {
+            match key {
+                // Tab — confirm selection, hide menu, try sub-completion
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Tab,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    if let Some(item) = self.completion_menu.confirm() {
+                        let replacement = format!("{} ", item);
+                        self.set_textarea_content(&replacement);
+                        // Try sub-completion (e.g., /model → model names)
+                        self.try_completion_after_confirm();
+                    }
+                    return None;
+                }
+
+                // Enter — confirm selection, hide menu, submit input
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Enter,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    // Confirm the menu selection (if any) into the textarea
+                    if let Some(item) = self.completion_menu.confirm() {
+                        let replacement = format!("{} ", item);
+                        self.set_textarea_content(&replacement);
+                    }
+                    // Menu is now hidden (confirm() hides it).
+                    // Fall through to the Enter handler below to submit the line.
+                    // We do NOT return None here — we want Enter to submit.
+                }
+
+                // Escape — dismiss menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Esc, ..
+                } => {
+                    self.completion_menu.hide();
+                    return None;
+                }
+
+                // Up — navigate menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Up,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.completion_menu.select_up();
+                    return None;
+                }
+
+                // Down — navigate menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Down,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.completion_menu.select_down();
+                    return None;
+                }
+
+                // Any other key — dismiss menu and fall through
+                _ => {
+                    self.completion_menu.hide();
+                    // Don't return — fall through to normal handling below
+                }
+            }
+        }
+
+        // ── Key-specific handling ────────────────────────────────────
+
         match key {
+            // ============================================================
+            // Submission & control
+            // ============================================================
+
             // Enter — submit the line
             crossterm::event::KeyEvent {
                 code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                let line = self.input_state.buffer.clone();
-                self.input_state.clear();
+                let line = self.textarea_lines();
+                self.textarea_clear();
+                self.history_input.history_pos = None; // Reset history navigation on submit
+                self.chat_selection.clear();
                 if !line.is_empty() {
                     self.history_input.add_history(&line);
                 }
-                // Auto-scroll to bottom when submitting
                 self.scroll.reset_to_bottom();
                 Some(InputResult::Line(line))
             }
 
-            // Ctrl+D — EOF on empty line, forward delete on non-empty
+            // Shift+Enter — newline
+            crossterm::event::KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                self.textarea.insert_newline();
+                None
+            }
+
+            // Alt+Enter — newline (fallback for terminals that don't
+            // distinguish Shift+Enter from Enter, e.g. most Linux terminals)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.textarea.insert_newline();
+                None
+            }
+
+            // Ctrl+Y — yank (paste from textarea kill-ring)
+            // Kill-ring is populated by Ctrl+W (delete word), Ctrl+K (delete
+            // to EOL), and Ctrl+X (cut selection). This is standard Emacs
+            // behavior and the default in ratatui-textarea.
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.paste();
+                None
+            }
+
+            // Ctrl+W — delete word backward (cut to system clipboard)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('w'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.delete_word();
+                if let Some(text) = self.yank_text()
+                    && !text.is_empty()
+                {
+                    let _ = cli_clipboard::set_contents(text);
+                }
+                None
+            }
+
+            // Ctrl+K — delete from cursor to end of line
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.delete_line_by_end();
+                None
+            }
+
+            // Ctrl+X — cut selection to system clipboard
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if self.textarea.is_selecting() {
+                    self.textarea.cut();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                }
+                None
+            }
+
+            // Ctrl+U — undo
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('u'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.undo();
+                None
+            }
+
+            // Ctrl+R — redo
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.redo();
+                None
+            }
+
+            // Ctrl+D — EOF on empty line, forward delete otherwise
+            #[allow(clippy::collapsible_match)]
             crossterm::event::KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.input_state.buffer.is_empty() {
+                if self.textarea_is_empty() {
                     Some(InputResult::Eof)
                 } else {
-                    // Forward delete: remove character at cursor
-                    self.input_state.delete_char_right();
+                    self.textarea.delete_next_char();
                     None
                 }
             }
 
-            // Backspace — delete char before cursor
+            // Ctrl+A — move to start of line (no selection)
+            // (with Shift: select to start of line — handled in shift+home below)
             crossterm::event::KeyEvent {
-                code: KeyCode::Backspace,
+                code: KeyCode::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.input_state.backspace();
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Head);
                 None
             }
 
-            // Left arrow — move cursor left
+            // Ctrl+E — move to end of line (no selection)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('e'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+
+            // ============================================================
+            // Cursor movement (no Shift = move, Shift = select)
+            // ============================================================
+
+            // Left — character back (or select if Shift)
             crossterm::event::KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.input_state.cursor_left();
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Back);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Back);
                 None
             }
 
-            // Right arrow — move cursor right
+            // Right — character forward (or select if Shift)
             crossterm::event::KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.input_state.cursor_right();
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Forward);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Forward);
                 None
             }
 
-            // Up arrow — history previous
+            // Ctrl+Left / Ctrl+Shift+Left — word back (select if Shift held)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                } else {
+                    self.textarea.cancel_selection();
+                }
+                self.textarea.move_cursor(CursorMove::WordBack);
+                None
+            }
+
+            // Ctrl+Right / Ctrl+Shift+Right — word forward (select if Shift held)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                } else {
+                    self.textarea.cancel_selection();
+                }
+                self.textarea.move_cursor(CursorMove::WordForward);
+                None
+            }
+
+            // Up (no shift) — history nav or textarea cursor up
             crossterm::event::KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.history_prev();
+                if self.textarea_is_multiline() {
+                    self.textarea.cancel_selection();
+                    self.textarea.move_cursor(CursorMove::Up);
+                } else {
+                    self.history_prev();
+                }
+                None
+            }
+            // Shift+Up — select up (multiline only) or history prev (single-line)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if self.textarea_is_multiline() {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                    self.textarea.move_cursor(CursorMove::Up);
+                } else {
+                    self.history_prev();
+                }
                 None
             }
 
-            // Down arrow — history next
+            // Down (no shift) — history nav or textarea cursor down
             crossterm::event::KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.history_next();
+                if self.textarea_is_multiline() {
+                    self.textarea.cancel_selection();
+                    self.textarea.move_cursor(CursorMove::Down);
+                } else {
+                    self.history_next();
+                }
+                None
+            }
+            // Shift+Down — select down (multiline only) or history next (single-line)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if self.textarea_is_multiline() {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                    self.textarea.move_cursor(CursorMove::Down);
+                } else {
+                    self.history_next();
+                }
                 None
             }
 
-            // PageUp — scroll chat up (older messages)
+            // Home — move to start of line (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Head);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Head);
+                None
+            }
+
+            // End — move to end of line (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+
+            // ============================================================
+            // Scroll & navigation
+            // ============================================================
+
+            // PageUp — scroll chat up
             crossterm::event::KeyEvent {
                 code: KeyCode::PageUp,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 self.scroll.scroll_up(10);
                 None
             }
 
-            // PageDown — scroll chat down (newer messages)
+            // PageDown — scroll chat down
             crossterm::event::KeyEvent {
                 code: KeyCode::PageDown,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 self.scroll.scroll_down(10);
                 None
             }
 
-            // Home — scroll to top (oldest messages)
+            // Tab — attempt completion
             crossterm::event::KeyEvent {
-                code: KeyCode::Home,
+                code: KeyCode::Tab,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.scroll.scroll_to_top();
+                self.try_tab_complete();
                 None
             }
 
-            // End — scroll to bottom (newest messages)
-            crossterm::event::KeyEvent {
-                code: KeyCode::End, ..
-            } => {
-                self.scroll.scroll_to_bottom();
-                None
-            }
-
-            // Regular character — insert at cursor
+            // ============================================================
+            // Shift+Char — insert uppercase character
+            // ============================================================
+            // Crossterm terminals may send Char('v') with SHIFT or
+            // Char('V') with SHIFT depending on the platform. The
+            // textarea's input_without_shortcuts() matches Char(c) with
+            // ctrl:false + alt:false (ignoring shift), which inserts the
+            // character as-is. When the terminal sends lowercase 'v' with
+            // SHIFT, the textarea inserts 'v' — losing the Shift. This
+            // handler normalizes Shift+letter to always produce the
+            // uppercase character, regardless of what the terminal sends.
             crossterm::event::KeyEvent {
                 code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                modifiers: KeyModifiers::SHIFT,
                 ..
-            } => {
-                self.input_state.insert_char(c);
+            } if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.textarea.insert_char(c.to_ascii_uppercase());
+                self.auto_complete_on_type();
                 None
             }
 
-            // Ignore other key events
-            _ => None,
+            // ============================================================
+            // All other keys: pass to textarea (basic editing only)
+            // ============================================================
+            // input_without_shortcuts() handles: char input, Backspace,
+            // Delete, and Enter (which inserts newline in textarea).
+            // We intercept Enter above, so only basic editing falls through.
+            _ => {
+                self.textarea.input_without_shortcuts(key);
+                // Auto-trigger completion when typing slash commands
+                self.auto_complete_on_type();
+                None
+            }
+        }
+    }
+
+    /// Check if textarea is empty (no user content)
+    fn textarea_is_empty(&self) -> bool {
+        self.textarea.lines().iter().all(|line| line.is_empty())
+    }
+
+    /// Check if textarea has multiple lines of content
+    fn textarea_is_multiline(&self) -> bool {
+        self.textarea.lines().len() > 1
+    }
+
+    /// Get the textarea content as a single String (lines joined by \n)
+    fn textarea_lines(&self) -> String {
+        self.textarea.lines().join("\n")
+    }
+
+    /// Clear the textarea content
+    fn textarea_clear(&mut self) {
+        // TextArea::clear() returns bool but we don't need it here
+        let _ = self.textarea.clear();
+    }
+
+    /// Get the last yanked/cut text (for clipboard copy)
+    fn yank_text(&self) -> Option<String> {
+        let text = self.textarea.yank_text();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
         }
     }
 
     /// Navigate to previous history entry
     ///
-    /// This duplicates the logic in `CrosstermInput::history_prev()` because
-    /// `CrosstermInput` maintains its own buffer/cursor state (used by the
-    /// `InputBackend` trait) while `App` uses `InputState` for TUI rendering.
-    /// PR3 should unify these into a single input state owner.
+    /// Loads the previous command from history into the textarea.
+    /// On transition into history mode, saves the current textarea content.
     fn history_prev(&mut self) {
-        // Save current buffer before starting navigation
         if self.history_input.history.is_empty() {
             return;
         }
 
         // If not navigating, save current buffer
         if self.history_input.history_pos.is_none() {
-            self.history_input.saved_buffer = self.input_state.buffer.clone();
+            self.history_input.saved_buffer = self.textarea_lines();
             self.history_input.history_pos =
                 Some(self.history_input.history.len().saturating_sub(1));
         } else if let Some(pos) = self.history_input.history_pos {
@@ -488,14 +1538,13 @@ impl App {
         }
 
         if let Some(pos) = self.history_input.history_pos {
-            self.input_state.buffer = self.history_input.history[pos].clone();
-            self.input_state.cursor_pos = self.input_state.buffer.len();
+            self.set_textarea_content(&self.history_input.history[pos].clone());
         }
     }
 
     /// Navigate to next history entry
     ///
-    /// See `history_prev()` for the dual-state documentation.
+    /// When navigating past the newest entry, restores the saved buffer.
     fn history_next(&mut self) {
         match self.history_input.history_pos {
             None => {}
@@ -503,15 +1552,208 @@ impl App {
                 if pos + 1 >= self.history_input.history.len() {
                     // Past the newest entry: restore saved buffer
                     self.history_input.history_pos = None;
-                    self.input_state.buffer = self.history_input.saved_buffer.clone();
-                    self.input_state.cursor_pos = self.input_state.buffer.len();
+                    self.set_textarea_content(&self.history_input.saved_buffer.clone());
                 } else {
                     self.history_input.history_pos = Some(pos + 1);
-                    self.input_state.buffer = self.history_input.history[pos + 1].clone();
-                    self.input_state.cursor_pos = self.input_state.buffer.len();
+                    self.set_textarea_content(&self.history_input.history[pos + 1].clone());
                 }
             }
         }
+    }
+
+    /// Set textarea content from a string (replaces all lines).
+    ///
+    /// Splits on newlines, clears the textarea, and inserts the new content
+    /// with cursor at end.
+    fn set_textarea_content(&mut self, text: &str) {
+        let _ = self.textarea.clear();
+        if !text.is_empty() {
+            // Insert string handles both \n and \r\n
+            self.textarea.insert_str(text);
+        }
+    }
+
+    /// Attempt tab completion based on current textarea content.
+    ///
+    /// Uses `ChatCompleter` to find slash command or model name completions.
+    /// On single match: replaces the content with the completed text.
+    /// On multiple matches: shows the completion menu overlay.
+    /// When no matches: does nothing (bell could be added later).
+    fn try_tab_complete(&mut self) {
+        use super::completer::CompletionResult;
+
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
+
+        let result = self.completer.complete(&buffer, cursor_pos);
+
+        match result {
+            CompletionResult::None => {
+                // No completion — hide menu if visible
+                self.completion_menu.hide();
+            }
+            CompletionResult::Single {
+                replacement,
+                cursor_pos,
+            } => {
+                self.completion_menu.hide();
+                self.set_textarea_content(&replacement);
+                // Move cursor to the specified position
+                self.set_cursor_to_byte_offset(cursor_pos);
+            }
+            CompletionResult::Multiple {
+                matches,
+                descriptions,
+            } => {
+                // Compute common prefix for highlighting
+                let common = common_prefix_str(&matches);
+                self.completion_menu.show(matches, descriptions, common);
+            }
+        }
+    }
+
+    /// Try sub-completion after confirming a completion menu selection.
+    ///
+    /// After confirming a slash command (e.g., `/model`), checks if the
+    /// command takes arguments and if so, shows the completion menu for
+    /// those arguments. This enables recursive completion:
+    /// `/mo` → Tab → `/model ` → model name list appears.
+    ///
+    /// Note: We always SHOW the menu, never auto-replace text. The user
+    /// explicitly selects with Tab/Enter or dismisses with Esc.
+    fn try_completion_after_confirm(&mut self) {
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
+
+        if cursor_pos == buffer.len() && buffer.starts_with('/') {
+            let result = self.completer.complete(&buffer, cursor_pos);
+            match result {
+                super::completer::CompletionResult::None => {
+                    self.completion_menu.hide();
+                }
+                super::completer::CompletionResult::Single { replacement, .. } => {
+                    // Single sub-completion match: show as a one-item menu
+                    // so the user can Tab/Enter to confirm, or Esc to dismiss.
+                    // Don't auto-replace — the user decides.
+                    self.completion_menu.show(
+                        vec![replacement.clone()],
+                        vec![String::new()],
+                        replacement.clone(),
+                    );
+                }
+                super::completer::CompletionResult::Multiple {
+                    matches,
+                    descriptions,
+                } => {
+                    let common = common_prefix_str(&matches);
+                    self.completion_menu.show(matches, descriptions, common);
+                }
+            }
+        }
+    }
+
+    /// Auto-trigger completion menu when typing slash commands.
+    ///
+    /// After each character is typed, checks if the current input starts
+    /// with `/` and has completions available. Shows the menu to display
+    /// options, but NEVER replaces the text — the user must explicitly
+    /// press Tab or Enter to confirm a selection.
+    ///
+    /// This avoids the "stuck input" problem where auto-completion would
+    /// replace the text while the user is still typing.
+    fn auto_complete_on_type(&mut self) {
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
+
+        // Only auto-complete at end of buffer for slash commands
+        if cursor_pos != buffer.len() || !buffer.starts_with('/') {
+            // Hide menu if we're no longer in slash command context
+            if self.completion_menu.is_visible() && !buffer.starts_with('/') {
+                self.completion_menu.hide();
+            }
+            return;
+        }
+
+        let result = self.completer.complete(&buffer, cursor_pos);
+        match result {
+            super::completer::CompletionResult::None => {
+                self.completion_menu.hide();
+            }
+            super::completer::CompletionResult::Single { replacement, .. } => {
+                // Single match: don't auto-replace, just hide the menu.
+                // The user typed enough to be unique — they can press Tab
+                // if they want to complete, or keep typing.
+                // Show as one-item menu so they know what's available.
+                self.completion_menu.show(
+                    vec![replacement.clone()],
+                    vec![String::new()],
+                    replacement.clone(),
+                );
+            }
+            super::completer::CompletionResult::Multiple {
+                matches,
+                descriptions,
+            } => {
+                let common = common_prefix_str(&matches);
+                self.completion_menu.show(matches, descriptions, common);
+            }
+        }
+    }
+
+    /// Get the byte offset of the cursor in the textarea.
+    ///
+    /// Calculates the byte position by summing line lengths + newlines
+    /// for all lines before the cursor's line, plus the cursor column.
+    fn cursor_byte_offset(&self) -> usize {
+        let cursor = self.textarea.cursor();
+        let row = cursor.0;
+        let col = cursor.1;
+        let lines = self.textarea.lines();
+        let mut offset = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if i == row {
+                // Count characters (not bytes) in the line up to col,
+                // then get byte offset of that character boundary
+                let char_offset = col.min(line.chars().count());
+                return offset + line.chars().take(char_offset).collect::<String>().len();
+            }
+            offset += line.len() + 1; // +1 for newline
+        }
+        offset
+    }
+
+    /// Set the cursor to a specific byte offset in the textarea.
+    ///
+    /// Navigates through lines to find the row and column that
+    /// corresponds to the given byte offset.
+    fn set_cursor_to_byte_offset(&mut self, byte_offset: usize) {
+        let lines = self.textarea.lines();
+        let mut remaining = byte_offset;
+        for (row, line) in lines.iter().enumerate() {
+            if remaining <= line.len() {
+                // Find the character column that corresponds to this byte offset
+                let mut byte_pos = 0;
+                let mut col: u16 = 0;
+                for ch in line.chars() {
+                    byte_pos += ch.len_utf8();
+                    if byte_pos > remaining {
+                        break;
+                    }
+                    col += 1;
+                }
+                // If remaining is past all chars, cursor goes to end of line
+                if remaining > line.len() {
+                    col = line.chars().count() as u16;
+                }
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::Jump(row as u16, col));
+                return;
+            }
+            remaining = remaining.saturating_sub(line.len() + 1);
+        }
+        // If byte_offset is past the end, move to bottom
+        self.textarea
+            .move_cursor(ratatui_textarea::CursorMove::Bottom);
     }
 
     /// Save history to file
@@ -521,36 +1763,1064 @@ impl App {
 
     /// Render the TUI
     pub fn render(
-        &self,
+        &mut self,
         terminal: &mut TuiTerminal,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         terminal.draw(|f| {
             let size = f.area();
 
-            // Layout: chat area (flexible) | status bar (2 lines) | input line (1 line)
+            // Input line height adapts to multi-line content with word-wrap.
+            // Use cached screen lines (populated after the first render) or
+            // fall back to logical line count for the initial frame.
+            let screen_lines = if self.cached_input_screen_lines > 0 {
+                self.cached_input_screen_lines
+            } else {
+                self.textarea.lines().len().max(1)
+            };
+            // Cap input at 1/3 of total height, minimum 3 lines.
+            let max_input_lines = (size.height as usize / 3).max(3);
+            let input_height = (screen_lines.min(max_input_lines) as u16).max(1);
+
+            // Layout: chat area (flexible) | status bar (2 lines) | input line (dynamic)
             let chunks = Layout::vertical([
-                Constraint::Min(3),    // Chat area gets all remaining space
-                Constraint::Length(2), // Status bar (separator + content)
-                Constraint::Length(1), // Input line
+                Constraint::Min(3),               // Chat area gets all remaining space
+                Constraint::Length(2),            // Status bar (separator + content)
+                Constraint::Length(input_height), // Input line (grows with multi-line)
             ])
             .split(size);
 
             // Render chat area
-            super::tui::components::chat_area::render(
+            let meta = super::tui::components::chat_area::render(
                 f,
                 chunks[0],
                 &self.messages,
-                &self.scroll,
+                &mut self.scroll,
                 self.theme,
+                self.style_enabled,
+                &self.chat_selection,
             );
+
+            // Cache visual lines, scroll offset, source line map, and chat area rect for
+            // mouse/selection integration (updated every render cycle)
+            self.visual_lines_cache = meta.visual_lines;
+            self.source_line_map_cache = meta.source_line_map;
+            self.scroll_from_top_cache = meta.scroll_from_top;
+            self.chat_area_rect_cache = chunks[0];
 
             // Render status bar
             super::tui::components::status_bar::render(f, chunks[1], &self.status_bar);
 
-            // Render input line
-            super::tui::components::input_line::render(f, chunks[2], &self.input_state);
+            // Render input line and get the number of wrapped visual lines
+            let rendered_lines = super::tui::components::input_line::render(
+                f,
+                chunks[2],
+                &self.textarea,
+                self.input_disabled,
+                self.disabled_reason.as_deref(),
+            );
+            self.cached_input_screen_lines = rendered_lines.max(1);
+
+            // Render completion menu overlay (above the status bar)
+            // This is drawn LAST so it floats on top of other widgets
+            if self.completion_menu.is_visible() {
+                super::tui::components::completion_menu::render_overlay(
+                    f,
+                    chunks[1],
+                    &self.completion_menu,
+                );
+            }
         })?;
 
         Ok(())
+    }
+}
+
+/// Find the common prefix among a list of strings.
+///
+/// Used to highlight the shared portion of completion items in the menu.
+fn common_prefix_str(strings: &[String]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+
+    let first = strings[0].as_bytes();
+    let mut prefix_len = first.len();
+
+    for s in &strings[1..] {
+        let bytes = s.as_bytes();
+        let mut j = 0;
+        while j < prefix_len && j < bytes.len() && first[j] == bytes[j] {
+            j += 1;
+        }
+        prefix_len = j;
+        if prefix_len == 0 {
+            return String::new();
+        }
+    }
+
+    String::from_utf8_lossy(&first[..prefix_len]).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a minimal App for testing streaming message operations.
+    fn test_app() -> App {
+        let (app, _embedding_tx, _async_message_tx) =
+            App::with_embedding_channel(MarkdownTheme::Dark, vec!["test-model".to_string()]);
+        app
+    }
+
+    // ── append_stream_thinking tests ─────────────────────────────
+
+    #[test]
+    fn test_append_stream_thinking_happy_path() {
+        // Consecutive thinking tokens append to the same block
+        let mut app = test_app();
+        app.append_stream_thinking("Hello");
+        app.append_stream_thinking(" world");
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Hello world");
+    }
+
+    #[test]
+    fn test_append_stream_thinking_interleaved_after_streaming() {
+        // Thinking token arrives when last message is AssistantStreaming
+        // → should find and append to the existing Thinking block
+        let mut app = test_app();
+        app.append_stream_thinking("Let me think"); // Thinking created
+        app.append_stream_token("Here is"); // AssistantStreaming created
+        app.append_stream_thinking(" more"); // Should append to Thinking, not create new
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Let me think more");
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[1].content, "Here is");
+    }
+
+    // ── append_stream_token tests ────────────────────────────────
+
+    #[test]
+    fn test_append_stream_token_happy_path() {
+        // Consecutive content tokens append to the same block
+        let mut app = test_app();
+        app.append_stream_token("Hello");
+        app.append_stream_token(" world");
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[0].content, "Hello world");
+    }
+
+    #[test]
+    fn test_append_stream_token_interleaved_after_thinking() {
+        // Content token arrives when last message is Thinking
+        // → should find and append to the existing AssistantStreaming block
+        let mut app = test_app();
+        app.append_stream_thinking("Hmm"); // Thinking created
+        app.append_stream_token("Answer:"); // AssistantStreaming created
+        app.append_stream_thinking(" wait"); // Thinking updated
+        app.append_stream_token(" 42"); // Should append to AssistantStreaming, not create new
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Hmm wait");
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[1].content, "Answer: 42");
+    }
+
+    // ── full interleaving simulation ─────────────────────────────
+
+    #[test]
+    fn test_thinking_content_interleaving_no_fragmentation() {
+        // Simulates the bug scenario: thinking and content tokens arriving
+        // interleaved should NOT create fragmented message blocks.
+        // Before the fix, this would create:
+        //   [Thinking("The user wants..."), AssistantStreaming("B"), Thinking(".")]
+        // After the fix, this should create:
+        //   [Thinking("The user wants another test table..."), AssistantStreaming("Bora!")]
+        let mut app = test_app();
+
+        // Phase 1: thinking tokens start arriving
+        app.append_stream_thinking("The user wants another test table.");
+        // Phase 2: content token arrives before thinking finishes
+        app.append_stream_token("B");
+        // Phase 3: more thinking tokens arrive (interleaved)
+        app.append_stream_thinking(" Let me render it.");
+        // Phase 4: more content tokens
+        app.append_stream_token("ora! Mais uma:");
+
+        assert_eq!(
+            app.messages.len(),
+            2,
+            "Should have exactly 2 messages (Thinking + AssistantStreaming)"
+        );
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(
+            app.messages[0].content,
+            "The user wants another test table. Let me render it."
+        );
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[1].content, "Bora! Mais uma:");
+    }
+
+    // ── finalize_stream tests ─────────────────────────────────────
+
+    #[test]
+    fn test_finalize_stream_consolidates_thinking_blocks() {
+        // Multiple fragmented Thinking blocks should be consolidated into one
+        let mut app = test_app();
+        app.append_stream_thinking("First part");
+        app.append_stream_token("Response");
+        app.append_stream_thinking(" second part");
+
+        // Before finalize, we should have 2 messages (no fragmentation)
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "First part second part");
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+
+        // Finalize with consolidated thinking content
+        app.finalize_stream("Response", Some("First part second part"));
+
+        // After finalize: Thinking consolidated, AssistantStreaming → Assistant
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "First part second part");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+    }
+
+    #[test]
+    fn test_finalize_stream_removes_thinking_when_none() {
+        // When finalize is called with no thinking content, all Thinking
+        // blocks should be removed
+        let mut app = test_app();
+        app.append_stream_thinking("hmm");
+        app.append_stream_token("Answer");
+
+        app.finalize_stream("Answer", None);
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[0].content, "Answer");
+    }
+
+    #[test]
+    fn test_finalize_stream_no_thinking_at_all() {
+        // Response with no thinking at all
+        let mut app = test_app();
+        app.append_stream_token("Hello");
+        app.append_stream_token(" world");
+
+        app.finalize_stream("Hello world", None);
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[0].content, "Hello world");
+    }
+
+    #[test]
+    fn test_finalize_stream_preserves_tool_thinking_blocks() {
+        // Tool-call Thinking blocks created BEFORE the streaming zone
+        // (preceded by Tool, Assistant, User messages) must NOT be
+        // removed or consolidated by finalize_stream.
+        let mut app = test_app();
+
+        // Simulate a prior tool call round:
+        // Tool thinking → Tool result → (tool output already displayed)
+        app.add_message(ChatMessage::thinking("Tool thinking".to_string()));
+        app.add_message(ChatMessage::tool("🔧 weather: Sunny, 22°C".to_string()));
+
+        // Now the streaming session begins:
+        app.append_stream_thinking("Response thinking");
+        app.append_stream_token("Response content");
+
+        // Finalize — only the streaming-zone Thinking block should be touched
+        app.finalize_stream("Response content", Some("Response thinking"));
+
+        // Tool thinking block is preserved (before the streaming zone)
+        // Streaming thinking is consolidated
+        // AssistantStreaming → Assistant
+        assert_eq!(
+            app.messages.len(),
+            4,
+            "Should have 4 messages: ToolThinking, Tool, Thinking, Assistant"
+        );
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].content, "Response thinking");
+        assert_eq!(app.messages[3].msg_type, MessageType::Assistant);
+    }
+
+    #[test]
+    fn test_finalize_stream_removes_streaming_thinking_when_none() {
+        // When thinking is None, only Thinking blocks in the streaming zone
+        // should be removed. Tool-call Thinking blocks before the zone
+        // must be preserved.
+        let mut app = test_app();
+
+        // Prior tool-call thinking (before streaming zone)
+        app.add_message(ChatMessage::thinking("Tool thinking".to_string()));
+        app.add_message(ChatMessage::tool("Tool result".to_string()));
+
+        // Streaming zone: Thinking + AssistantStreaming
+        app.append_stream_thinking("Stream thinking");
+        app.append_stream_token("Stream content");
+
+        // Finalize with thinking: None — streaming Thinking should be removed
+        app.finalize_stream("Stream content", None);
+
+        // Tool thinking preserved, streaming thinking removed
+        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Stream content");
+    }
+
+    #[test]
+    fn test_finalize_stream_multiple_tool_thinking_preserved() {
+        // Multiple rounds of tool calls with thinking, followed by streaming.
+        // Tool-call Thinking blocks are outside the streaming zone (separated
+        // by Tool messages) and must be preserved intact.
+        let mut app = test_app();
+
+        // First tool call round
+        app.add_message(ChatMessage::thinking("Tool call 1 thinking".to_string()));
+        app.add_message(ChatMessage::tool("🔧 weather".to_string()));
+
+        // Second tool call round
+        app.add_message(ChatMessage::thinking("Tool call 2 thinking".to_string()));
+        app.add_message(ChatMessage::tool("🔧 calc: 42".to_string()));
+
+        // Final streaming response
+        app.append_stream_thinking("Final thinking");
+        app.append_stream_token("Final answer");
+
+        app.finalize_stream("Final answer", Some("Final thinking"));
+
+        // All tool thinking blocks preserved, streaming thinking consolidated,
+        // AssistantStreaming replaced by Assistant
+        // Messages: [ToolThink, Tool, ToolThink, Tool, Think, Assistant]
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool call 1 thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].content, "Tool call 2 thinking");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[4].content, "Final thinking");
+        assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
+    }
+
+    #[test]
+    fn test_finalize_stream_thinking_only_response() {
+        // Response that only has thinking, no content tokens
+        let mut app = test_app();
+        app.append_stream_thinking("Deep thoughts");
+
+        // No content was ever streamed — finalize should add Assistant message
+        app.finalize_stream("", Some("Deep thoughts"));
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Deep thoughts");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+    }
+
+    #[test]
+    fn test_full_interleaving_scenario_then_finalize() {
+        // Full simulation: interleaved thinking/content tokens → finalize
+        // This is the exact bug scenario from the user report
+        let mut app = test_app();
+
+        // Simulate the exact problematic sequence
+        app.append_stream_thinking(
+            "The user wants another test table. Let me render another one with different content",
+        );
+        app.append_stream_token("B");
+        app.append_stream_thinking(".");
+        app.append_stream_token("ora! Mais uma:");
+
+        // Verify no fragmentation during streaming
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(
+            app.messages[0].content,
+            "The user wants another test table. Let me render another one with different content."
+        );
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[1].content, "Bora! Mais uma:");
+
+        // Finalize with complete content
+        app.finalize_stream(
+            "Bora! Mais uma:\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+            Some("The user wants another test table. Let me render another one with different content."),
+        );
+
+        // Verify final state: one Thinking block + one Assistant block
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(
+            app.messages[0].content,
+            "The user wants another test table. Let me render another one with different content."
+        );
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(
+            app.messages[1].content,
+            "Bora! Mais uma:\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        );
+    }
+
+    // ── insert_before_streaming_zone tests ──────────────────────────
+
+    #[test]
+    fn test_insert_before_streaming_zone_with_zone() {
+        // Tool message should be inserted before the streaming zone
+        let mut app = test_app();
+
+        // Simulate: User, then streaming zone (Thinking + AssistantStreaming)
+        app.add_message(ChatMessage::user("Search for weather".to_string()));
+        app.append_stream_thinking("Let me search");
+        app.append_stream_token("The weather is");
+
+        // Insert a Tool message before the streaming zone
+        app.insert_before_streaming_zone(ChatMessage::tool("🔧 weather: Sunny".to_string()));
+
+        // Tool message should appear between User and Thinking
+        assert_eq!(app.messages.len(), 4);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].content, "🔧 weather: Sunny");
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[3].msg_type, MessageType::AssistantStreaming);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_no_zone() {
+        // When there's no streaming zone and no trailing tools, append
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Hello".to_string()));
+
+        // No streaming zone, no trailing tools — append
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool msg".to_string()));
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].content, "Tool msg");
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_no_zone_trailing_tools() {
+        // When there's no streaming zone but there ARE trailing tool messages,
+        // insert BEFORE them. This is the InterToolText ordering fix:
+        // inter-tool text must appear BETWEEN tool rounds, not after them.
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("What's the weather?".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("Let me check".to_string()));
+        // Trailing tool messages from round 1 (already drained)
+        app.add_message(ChatMessage::tool("🔧 weather()".to_string()));
+        app.add_message(ChatMessage::tool("Sunny, 22°C".to_string()));
+
+        // InterToolText arrives — should insert BEFORE tool messages
+        app.insert_before_streaming_zone(ChatMessage::assistant_markdown(
+            "Now let me calculate:".to_string(),
+        ));
+
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Let me check");
+        // Inter-tool text inserted BEFORE tool messages
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Now let me calculate:");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_mixed_trailing() {
+        // Trailing messages: Assistant, Tool, Tool, Tool
+        // Insert should go BEFORE the Tool messages, after the Assistant
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("Pre-tool text".to_string()));
+        app.add_message(ChatMessage::tool("🔧 tool1()".to_string()));
+        app.add_message(ChatMessage::tool("result1".to_string()));
+        app.add_message(ChatMessage::tool("🔧 tool2()".to_string()));
+        app.add_message(ChatMessage::tool("result2".to_string()));
+
+        // InterToolText arrives — insert before first trailing tool
+        app.insert_before_streaming_zone(ChatMessage::assistant_markdown(
+            "Between tools:".to_string(),
+        ));
+
+        assert_eq!(app.messages.len(), 7);
+        // Order: User, Assistant "Pre-tool", Assistant "Between tools", Tool, Tool, Tool, Tool
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Pre-tool text");
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Between tools:");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_mid_conversation() {
+        // Multiple tool call rounds, then streaming response
+        let mut app = test_app();
+
+        // First tool round
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(ChatMessage::thinking("Thinking 1".to_string()));
+        app.add_message(ChatMessage::tool("Tool result 1".to_string()));
+
+        // Second streaming zone starts
+        app.append_stream_thinking("More thinking");
+        app.append_stream_token("Response");
+
+        // Insert tool message before the second streaming zone
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool result 2".to_string()));
+
+        // Tool result 2 should be between Tool result 1 and Thinking
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].content, "Tool result 1");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].content, "Tool result 2");
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].msg_type, MessageType::AssistantStreaming);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_only_streaming() {
+        // Only streaming messages, no stable messages before
+        let mut app = test_app();
+
+        app.append_stream_token("Streaming response");
+
+        // Insert before the single streaming message
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool msg".to_string()));
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+    }
+
+    // ── has_streaming_zone tests ────────────────────────────────────
+
+    #[test]
+    fn test_has_streaming_zone_true_thinking() {
+        let mut app = test_app();
+        app.append_stream_thinking("Thinking");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_true_streaming() {
+        let mut app = test_app();
+        app.append_stream_token("Content");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_true_interleaved() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.append_stream_thinking("Thinking");
+        app.append_stream_token("Content");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("A".to_string()));
+        assert!(!app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_content_block_lifecycle_pre_and_post_tool() {
+        // Realistic simulation of the ToolCallStarted -> StreamDone
+        // flow that preserves pre-tool content across tool execution.
+        // ToolCallStarted calls finalize_streaming_zone_as_is() which
+        // converts AssistantStreaming to stable Assistant_markdown.
+        // StreamDone then finalizes the post-tool block only.
+        let mut app = test_app();
+
+        // Pre-tool streaming
+        app.append_stream_thinking("I should calculate");
+        app.append_stream_token("Let me compute ");
+
+        // ToolCallStarted arrives: finalize_streaming_zone_as_is
+        // converts the zone into stable messages.
+        app.finalize_streaming_zone_as_is();
+        app.block_finalized = true;
+        app.set_llm_state(LlmState::ToolCall);
+
+        // With no streaming zone, tool messages append normally
+        app.add_message(ChatMessage::tool("🔧 calc".to_string()));
+        app.add_message(ChatMessage::tool("42".to_string()));
+
+        // Post-tool streaming: new tokens create a fresh AssistantStreaming
+        // at the tail (a new content block).
+        app.append_stream_token("22 + 20 = 42");
+
+        // StreamDone arrives: finalize only the new zone (post-tool block).
+        app.finalize_stream("22 + 20 = 42", None);
+
+        // Result: pre-tool preserved, tools inserted between, post-tool finalized
+        assert_eq!(app.messages.len(), 5);
+        // Thinking was appended first, then AssistantStreaming:
+        // after finalize_streaming_zone_as_is, Thinking remains first
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "I should calculate");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Let me compute ");
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[4].content, "22 + 20 = 42");
+    }
+
+    #[test]
+    fn test_content_block_lifecycle_multiple_tool_calls() {
+        // Full flow with two tool calls.
+        // ToolCallStarted finalizes pre-tool block (finalize_streaming_zone_as_is).
+        // Inter-tool text arrives via InterToolText (no streaming zone).
+        // StreamDone finalizes the final (post-tool) block.
+        let mut app = test_app();
+
+        // -- Block 0: pre-tool streaming --
+        app.append_stream_thinking("Vou buscar info");
+        app.append_stream_token("Vou buscar ");
+
+        // ToolCallStarted: finalize pre-tool block (converts AssistantStreaming)
+        app.finalize_streaming_zone_as_is();
+        app.block_finalized = true;
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool 1 messages appended normally (no streaming zone)
+        app.add_message(ChatMessage::tool("🔧 weather()".to_string()));
+        app.add_message(ChatMessage::tool("Sunny, 22°C".to_string()));
+
+        // -- Block 1: between-tools text arrives via InterToolText --
+        // InterToolText adds assistant_markdown directly (no streaming)
+        app.add_message(ChatMessage::assistant_markdown(
+            "Agora calcular: ".to_string(),
+        ));
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool 2 messages
+        app.add_message(ChatMessage::tool("🔧 calc".to_string()));
+        app.add_message(ChatMessage::tool("42".to_string()));
+
+        // -- Block 2: post-tool final content (StreamDone) --
+        // StreamDone calls finalize_stream which, finding no AssistantStreaming,
+        // adds a new Assistant message.
+        app.finalize_stream("Pronto!", None);
+
+        // Result: three preserved blocks separated by tools
+        assert_eq!(app.messages.len(), 8);
+        // Thinking first (was appended first during streaming), then Assistant
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Vou buscar info");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Vou buscar ");
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[4].content, "Agora calcular: ");
+        assert_eq!(app.messages[5].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[6].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[7].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[7].content, "Pronto!");
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false_tool_calls() {
+        // Tool messages are not part of the streaming zone
+        let mut app = test_app();
+        app.add_message(ChatMessage::tool("Tool result".to_string()));
+        assert!(!app.has_streaming_zone());
+    }
+
+    // ── Content Block Stateful Streaming lifecycle tests ────────────
+
+    #[test]
+    fn test_content_block_lifecycle_single_block() {
+        // A simple turn with no tool calls — standard streaming path
+        let mut app = test_app();
+        assert!(!app.block_finalized);
+
+        app.append_stream_token("Hello");
+        app.append_stream_token(" world");
+
+        app.finalize_stream("Hello world", None);
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[0].content, "Hello world");
+        // block_finalized not touched by finalize_stream
+        assert!(!app.block_finalized);
+    }
+
+    #[test]
+    fn test_content_block_set_llm_state_clears_block_finalized() {
+        let mut app = test_app();
+
+        app.set_llm_state(LlmState::ToolCall);
+        assert!(!app.block_finalized);
+
+        app.block_finalized = true;
+
+        app.set_llm_state(LlmState::Idle);
+        assert!(!app.block_finalized);
+    }
+
+    #[test]
+    fn test_finalize_zone_as_is_preserves_streamed_content() {
+        // When ToolCallStarted arrives before StreamBlockDone/StreamDone,
+        // finalize_streaming_zone_as_is() should convert AssistantStreaming
+        // to stable Assistant WITHOUT replacing content.
+        let mut app = test_app();
+
+        app.append_stream_thinking("Analyzing");
+        app.append_stream_token("Result: 42");
+
+        // Tool calls interrupt: finalize as-is before tool messages
+        app.finalize_streaming_zone_as_is();
+
+        // Content is preserved as-is, no authoritative replacement
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Analyzing");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Result: 42");
+        // No streaming zone after finalization
+        assert!(!app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_tool_messages_after_finalize_zone_inserted_correctly() {
+        // The real fix: tool messages must appear AFTER pre-tool content,
+        // never before. finalize_streaming_zone_as_is() ensures this.
+        let mut app = test_app();
+
+        // User message + pre-tool streaming
+        app.add_message(ChatMessage::user("Ola".to_string()));
+        app.append_stream_thinking("Hmm");
+        app.append_stream_token("Boa noite");
+
+        // Tool calls interrupt — MUST finalize before inserting tools
+        app.finalize_streaming_zone_as_is();
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool messages now append normally (no zone = append at end)
+        app.add_message(ChatMessage::tool("file_read".to_string()));
+        app.add_message(ChatMessage::tool("content".to_string()));
+
+        // Visual order: User → Thinking → Assistant → Tool
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[1].content, "Hmm");
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Boa noite");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+    }
+
+    // ── ScrollState tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_scroll_state_default() {
+        let state = ScrollState::default();
+        assert!(state.auto_scroll, "Default should be auto-scroll");
+        assert_eq!(state.manual_offset, 0, "Default offset should be 0");
+    }
+
+    #[test]
+    fn test_scroll_up_increments_offset() {
+        let mut state = ScrollState::new();
+        state.scroll_up(5);
+        assert!(!state.auto_scroll, "Scrolling up disables auto-scroll");
+        assert_eq!(state.manual_offset, 5);
+        state.scroll_up(3);
+        assert_eq!(state.manual_offset, 8, "Scroll up accumulates offset");
+    }
+
+    #[test]
+    fn test_scroll_down_decrements_offset() {
+        let mut state = ScrollState::new();
+        state.scroll_up(10);
+        assert_eq!(state.manual_offset, 10);
+        state.scroll_down(3);
+        assert_eq!(state.manual_offset, 7);
+        state.scroll_down(7);
+        assert_eq!(state.manual_offset, 0, "Scroll down clamps at 0");
+        assert!(
+            state.auto_scroll,
+            "Reaching offset 0 re-enables auto-scroll"
+        );
+    }
+
+    #[test]
+    fn test_scroll_down_does_not_re_enable_auto_scroll_before_bottom() {
+        let mut state = ScrollState::new();
+        state.scroll_up(10);
+        state.scroll_down(3);
+        assert_eq!(
+            state.manual_offset, 7,
+            "Offset decreases but doesn't reach 0"
+        );
+        assert!(
+            !state.auto_scroll,
+            "Auto-scroll should NOT re-enable until offset reaches 0"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_reduces_overscroll() {
+        let mut state = ScrollState::new();
+        // Simulate rapid mouse wheel scrolling: 100 lines of offset
+        // but content only allows 50 lines of scrolling
+        state.scroll_up(100);
+        assert_eq!(state.manual_offset, 100);
+
+        // Content: 200 lines total, viewport: 150 lines → max_scroll = 50
+        state.clamp_offset(200, 150);
+        assert_eq!(
+            state.manual_offset, 50,
+            "Clamp should reduce overscroll to max_scroll"
+        );
+        assert!(
+            !state.auto_scroll,
+            "Auto-scroll should remain disabled after clamping"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_no_change_when_in_range() {
+        let mut state = ScrollState::new();
+        state.scroll_up(30);
+        // Content: 200 lines, viewport: 150 → max_scroll = 50
+        state.clamp_offset(200, 150);
+        assert_eq!(
+            state.manual_offset, 30,
+            "Clamp should not change offset when within range"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_resets_when_content_fits_viewport() {
+        let mut state = ScrollState::new();
+        state.scroll_up(50);
+        assert!(!state.auto_scroll);
+
+        // Content: 100 lines, viewport: 120 → content fits, no scroll needed
+        state.clamp_offset(100, 120);
+        assert_eq!(state.manual_offset, 0, "Offset should reset to 0");
+        assert!(
+            state.auto_scroll,
+            "Auto-scroll should re-enable when content fits viewport"
+        );
+    }
+
+    #[test]
+    fn test_effective_scroll_from_top_auto_scroll() {
+        let state = ScrollState::new();
+        // 200 lines, 150 visible → max_scroll = 50
+        let result = state.effective_scroll_from_top(200, 150);
+        assert_eq!(result, 50, "Auto-scroll should show bottom of content");
+    }
+
+    #[test]
+    fn test_effective_scroll_from_top_manual_scroll() {
+        let mut state = ScrollState::new();
+        state.scroll_up(30);
+        // 200 lines, 150 visible → max_scroll = 50
+        // from_top = max_scroll - manual_offset = 50 - 30 = 20
+        let result = state.effective_scroll_from_top(200, 150);
+        assert_eq!(result, 20, "Manual scroll should offset from bottom");
+    }
+
+    #[test]
+    fn test_scroll_overscroll_bug_scenario() {
+        // Reproduces the bug: rapid scroll up causes manual_offset to
+        // accumulate beyond max_scroll, making scroll_down feel sluggish.
+        // With clamp_offset called during render, the offset is clamped.
+        let mut state = ScrollState::new();
+
+        // User scrolls up rapidly (e.g., 30 mouse wheel events × 3 = 90)
+        state.scroll_up(90);
+        assert_eq!(state.manual_offset, 90);
+
+        // Content: 200 lines, viewport: 150 → max_scroll = 50
+        // clamp_offset reduces 90 → 50
+        state.clamp_offset(200, 150);
+        assert_eq!(state.manual_offset, 50, "Overscroll clamped to max_scroll");
+
+        // Now scroll_down works immediately (3 lines at a time)
+        state.scroll_down(3);
+        assert_eq!(state.manual_offset, 47, "Scroll down responds immediately");
+    }
+
+    // ── poll_embedding_progress tests ──────────────────────────────────
+
+    #[test]
+    fn test_poll_embedding_progress_receives_progress() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send progress update (3 of 10 items processed)
+        let _ = tx.send((3, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some((3, 10)),
+            "Should show progress 3/10"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_completion_clears_indicator() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send completion (10 of 10 items processed)
+        let _ = tx.send((10, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress, None,
+            "Completion (current >= total) should clear indicator"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_drains_multiple() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send multiple progress updates — poll keeps only the latest
+        let _ = tx.send((1, 10));
+        let _ = tx.send((5, 10));
+        let _ = tx.send((8, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some((8, 10)),
+            "Should keep latest progress update"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_no_messages_keeps_state() {
+        let (mut app, _tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // No messages sent — state should remain default (None)
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress, None,
+            "No messages should keep embedding_progress as None"
+        );
+    }
+
+    #[test]
+    fn test_toggle_style_flips_state() {
+        let (mut app, _tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Default: style enabled
+        assert!(app.style_enabled(), "Style should be enabled by default");
+        assert!(
+            app.status_bar().style_enabled,
+            "Status bar should reflect style enabled"
+        );
+
+        // Toggle off
+        app.toggle_style();
+        assert!(
+            !app.style_enabled(),
+            "Style should be disabled after toggle"
+        );
+        assert!(
+            !app.status_bar().style_enabled,
+            "Status bar should reflect style disabled"
+        );
+
+        // Toggle back on
+        app.toggle_style();
+        assert!(
+            app.style_enabled(),
+            "Style should be enabled after second toggle"
+        );
+        assert!(
+            app.status_bar().style_enabled,
+            "Status bar should reflect style enabled again"
+        );
+    }
+
+    // ── LlmState::Compacting tests ─────────────────────────────
+
+    #[test]
+    fn test_llm_state_compacting_disables_input() {
+        let mut app = test_app();
+        app.set_llm_state(LlmState::Compacting);
+        assert_eq!(app.llm_state(), LlmState::Compacting);
+        // Input should be disabled during compaction
+        assert!(
+            app.disabled_reason.is_some(),
+            "Input should be disabled during compaction"
+        );
+        assert!(
+            app.disabled_reason.as_ref().unwrap().contains("Compacting"),
+            "Disabled reason should mention 'Compacting', got: {:?}",
+            app.disabled_reason
+        );
+    }
+
+    #[test]
+    fn test_llm_state_compacting_spinner_label() {
+        let mut app = test_app();
+        app.set_llm_state(LlmState::Compacting);
+        // Status bar should show "Compacting..."
+        assert_eq!(
+            app.status_bar.status_label,
+            Some("Compacting...".to_string()),
+            "Status label should be 'Compacting...'"
+        );
+    }
+
+    #[test]
+    fn test_random_tui_spinner_frames_returns_non_empty() {
+        // The spinner seed is time-based, so we can't assert determinism
+        // without refactoring. This test verifies the function returns
+        // a valid (non-empty) spinner frame list and doesn't panic.
+        let frames = super::random_tui_spinner_frames();
+        assert!(!frames.is_empty(), "Spinner frames must not be empty");
+        assert!(
+            frames.iter().all(|f| !f.is_empty()),
+            "Each frame must be a non-empty string"
+        );
     }
 }

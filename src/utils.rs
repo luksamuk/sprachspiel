@@ -284,6 +284,79 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Truncate a string to a maximum visual width, using real Unicode column widths.
+///
+/// This is the most accurate truncation for terminal display: each character
+/// is measured by its display width (CJK = 2 columns, most others = 1).
+/// If truncation is needed, appends "…" (U+2026) which itself occupies 1 column.
+///
+/// # Arguments
+/// * `s` - The string to potentially truncate
+/// * `max_width` - Maximum visual columns (terminal width)
+///
+/// # Returns
+/// * Original string if it fits within `max_width`
+/// * Truncated string with "…" appended if it exceeds `max_width`
+pub fn truncate_visual_width(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthStr;
+
+    let ellipsis = "…";
+    let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+
+    if max_width <= ellipsis_width {
+        // Not enough space for ellipsis + at least 1 char
+        return String::new();
+    }
+
+    let visual_width = UnicodeWidthStr::width(s);
+    if visual_width <= max_width {
+        return s.to_string();
+    }
+
+    // Need to truncate: reserve space for ellipsis
+    let target_width = max_width - ellipsis_width;
+    let mut result = String::new();
+    let mut current_width = 0;
+
+    for ch in s.chars() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
+        if current_width + ch_width > target_width {
+            break;
+        }
+        result.push(ch);
+        current_width += ch_width;
+    }
+
+    result.push_str(ellipsis);
+    result
+}
+
+/// Truncate a string at the first newline, appending ellipsis if truncated.
+///
+/// Used for recent context display where multi-line messages should collapse
+/// to a single line with "…" at the newline position, rather than merging
+/// lines with spaces.
+///
+/// # Examples
+/// ```
+/// use sprachspiel::utils::truncate_at_first_newline;
+/// assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+/// assert_eq!(truncate_at_first_newline("No newline"), "No newline");
+/// assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+/// ```
+pub fn truncate_at_first_newline(s: &str) -> String {
+    if let Some(pos) = s.find('\n') {
+        let before = &s[..pos];
+        if before.is_empty() {
+            "…".to_string()
+        } else {
+            format!("{before}…")
+        }
+    } else {
+        s.to_string()
+    }
+}
+
 /// Truncate a string to fit within a token budget.
 ///
 /// Used for emergency truncation of tool results when context is near overflow.
@@ -515,6 +588,71 @@ mod tests {
 
         // Mixed ASCII and Unicode
         assert_eq!(truncate_chars("Hello中国", 6), "Hello中...");
+    }
+
+    #[test]
+    fn test_truncate_visual_width_ascii() {
+        // Short string - no truncation
+        assert_eq!(truncate_visual_width("hello", 10), "hello");
+
+        // Exact length - no truncation
+        assert_eq!(truncate_visual_width("hello", 5), "hello");
+
+        // Needs truncation
+        assert_eq!(truncate_visual_width("hello world", 10), "hello wor…");
+
+        // Very small width
+        assert_eq!(truncate_visual_width("hello", 3), "he…");
+    }
+
+    #[test]
+    fn test_truncate_visual_width_unicode() {
+        // CJK chars take 2 columns each
+        // "中国" = 4 columns, "中…" = 2+1 = 3 columns
+        assert_eq!(truncate_visual_width("中国对巴西", 5), "中国…");
+
+        // Mixed ASCII and CJK
+        // "He中国" = 2+2+2 = 6 columns, truncate to 5 → "He中…" (2+2+1 = 5)
+        assert_eq!(truncate_visual_width("He中国对", 5), "He中…");
+    }
+
+    #[test]
+    fn test_truncate_visual_width_edge_cases() {
+        // Zero width returns empty
+        assert_eq!(truncate_visual_width("hello", 0), "");
+
+        // Width 1 (only space for part of ellipsis)
+        assert_eq!(truncate_visual_width("hello", 1), "");
+
+        // Width 2 (ellipsis takes 1, only 1 char fits)
+        assert_eq!(truncate_visual_width("hello", 2), "h…");
+
+        // Empty string
+        assert_eq!(truncate_visual_width("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_at_first_newline_basic() {
+        // No newline — return as-is
+        assert_eq!(truncate_at_first_newline("Hello world"), "Hello world");
+
+        // Single newline — truncate with ellipsis
+        assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+
+        // Multiple newlines — truncate at first
+        assert_eq!(
+            truncate_at_first_newline("Line 1\nLine 2\nLine 3"),
+            "Line 1…"
+        );
+
+        // Starts with newline — just ellipsis
+        assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+
+        // Empty string
+        assert_eq!(truncate_at_first_newline(""), "");
+
+        // Only newline
+        assert_eq!(truncate_at_first_newline("\n"), "…");
     }
 
     #[test]

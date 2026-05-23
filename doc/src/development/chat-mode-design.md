@@ -11,7 +11,7 @@ Implement an interactive `chat` subcommand with REPL, persistent conversation hi
 - Interactive REPL with command history
 - Persistent conversation storage by project
 - Anonymous sessions (in-memory only)
-- Rich commands: /quit, /clear, /model, /help, /system, /save, /load, /export, /list, /info
+  - Rich commands: /quit, /new, /model, /help, /system, /save, /load, /export, /list, /info
 - Rich UI with indicatif spinner and termimad markdown rendering
 
 ## File Structure
@@ -24,7 +24,7 @@ src/
 │   ├── cli.rs           # ChatArgs (subcommand)
 │   ├── session.rs       # ChatSession, ConversationStorage
 │   ├── history.rs       # Legacy JSON storage (for /restore)
-│   ├── commands.rs      # Internal commands (/quit, /clear, etc.)
+  │   ├── commands.rs      # Internal commands (/quit, /new, etc.)
 │   ├── core.rs          # Core business logic (send_message, compact)
 │   ├── repl_state.rs    # ReplState - consolidated state management
 │   ├── model_switch.rs  # Centralized model switching
@@ -151,7 +151,7 @@ pub async fn run_chat_repl(settings: &Settings, args: &ChatArgs) -> AppResult<()
 | Command | Description |
 |---------|-------------|
 | `/quit` `/exit` | Exit chat |
-| `/clear` | Clear current session history |
+| `/new` | Clear current session history |
 | `/help` | Show available commands |
 | `/model <name>` | Switch model mid-session |
 | `/system <prompt>` | Change system prompt |

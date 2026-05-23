@@ -1,4 +1,4 @@
-.TH SPRACH 1 "2026-05-11" "sprachspiel 0.43.0" "User Commands"
+.TH SPRACH 1 "2026-05-18" "sprachspiel 0.43.0" "User Commands"
 .SH NAME
 sprach \- A powerful CLI for interacting with LLM models via Ollama and compatible backends
 .SH SYNOPSIS
@@ -134,7 +134,9 @@ Interactive commands available inside chat:
 .in +4
 /quit, /exit \- Exit chat session
 .br
-/clear \- Clear conversation history
+/new \- Start a new conversation (previous messages remain searchable)
+.br
+/forget [--yes] \- Delete conversation completely and start fresh (requires --yes)
 .br
 /help \- Show available commands
 .br
@@ -142,19 +144,19 @@ Interactive commands available inside chat:
 .br
 /system <prompt> \- Change system prompt
 .br
-/think \- Toggle think mode
+/think [on|off] \- Toggle, enable, or disable think mode
 .br
 /tools \- Toggle tools
 .br
-/tools-output \- Set tool output level
+/toggle-style \- Toggle style rendering (Mermaid diagrams, syntax highlighting, table format)
+.br
+/tools-output <level> \- Set tool output level (compact|full|hidden)
 .br
 /compact \- Compact conversation history
 .br
-/retry, /r \- Regenerate last response
+/retry \- Regenerate last response
 .br
-/undo, /u \- Undo last message (remove response, show last input)
-.br
-/forget [--yes] \- Delete conversation completely and start fresh (requires --yes)
+/undo \- Undo last message (remove response, show last input)
 .br
 /save [name] \- Save current session
 .br
@@ -166,49 +168,51 @@ Interactive commands available inside chat:
 .br
 /info \- Show current session information
 .br
-/context, /ctx \- Show context metrics, token usage, and decay statistics
+/context \- Show context metrics, token usage, and decay statistics
 .br
-/search, /find, /f \- Search conversation history (semantic search)
+/search <query> \- Search conversation history (semantic search)
 .br
-/fact add <text> [--global], /fa \- Add a fact (project scope by default)
+/reindex [--yes] \- Regenerate embeddings for all content (requires --yes)
 .br
-/fact list [--global], /fl \- List stored facts
+/retrieval \- Toggle semantic retrieval from conversation history
 .br
-/fact search <query>, /fs \- Search stored facts
+/fact add <text> [--global] \- Add a fact (project scope by default)
 .br
-/fact remove <id>, /fr \- Remove a fact by ID
+/fact list [--global] \- List stored facts
 .br
-/fact prune, /fp \- Prune old facts using decay cycle
+/fact search <query> \- Search stored facts
 .br
-/note add <content> [--title <title>] [--global], /na \- Add a note
+/fact remove <id> \- Remove a fact by ID
 .br
-/note list [--global], /nl \- List stored notes
+/fact prune \- Prune old facts using decay cycle
 .br
-/note show <id>, /ns \- Show a note by ID
+/note add <content> [--title <title>] [--global] \- Add a note
+.br
+/note list [--global] \- List stored notes
+.br
+/note show <id> \- Show a note by ID
 .br
 /note edit <id> [--title <title>] [--content <content>] \- Edit a note
 .br
-/note delete <id>, /nd \- Delete a note by ID
+/note delete <id> \- Delete a note by ID
 .br
 /note search <query> [--global] [limit] \- Search stored notes
 .br
-/doc import <path> [--global], /di \- Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB)
+/doc import <path> [--global] \- Import a document (TXT, MD, ORG only)
 .br
-/doc list [--global], /dl \- List imported documents
+/doc list [--global] \- List imported documents
 .br
-/doc show <id>, /ds \- Show document content (rendered as markdown)
+/doc show <id> \- Show document content (rendered as markdown)
 .br
-/doc delete <id>, /dd \- Delete a document by ID
+/doc delete <id> \- Delete a document by ID
 .br
-/feedback good|bad|correction:<text> [msg:id], /fg|/fb \- Submit feedback on assistant response
+/feedback good|bad|correction:<text> [msg:id] \- Submit feedback on assistant response
 .br
-/feedback good \- Shortcut: /fg
+/content prune \- Manually trigger content decay cycle
 .br
-/content prune, /cp \- Manually trigger content decay cycle
+/skill \- List available skills
 .br
-/skill, /sk \- List available skills
-.br
-/skill <name>, /sk <name> \- Activate a skill for this session
+/skill <name> \- Activate a skill for this session
 .br
 /ocr <file> [mode] \- Extract text from image (modes: text, table, figure, formula)
 .br
@@ -218,19 +222,19 @@ Interactive commands available inside chat:
 .br
 /summarize <text> \- Summarize text
 .br
-/todo add <desc>, /ta \- Add a todo
+/todo add <desc> \- Add a todo
 .br
-/todo list, /tl \- List todos
+/todo list \- List todos
 .br
-/todo done <id>, /td \- Mark todo as done
+/todo done <id> \- Mark todo as done
 .br
-/todo get <id>, /tg \- Get a todo by ID
+/todo get <id> \- Get a todo by ID
 .br
-/todo edit <id> [options], /te \- Edit a todo (title, description, priority)
+/todo edit <id> [options] \- Edit a todo (title, description, priority)
 .br
-/todo update <id> [options], /tu \- Update a todo (status, priority)
+/todo update <id> [options] \- Update a todo (status, priority)
 .br
-/todo delete <id>, /tr \- Delete a todo
+/todo delete <id> \- Delete a todo
 .br
 /todo clear-done \- Clear completed todos
 .br
@@ -239,7 +243,7 @@ Interactive commands available inside chat:
 .PP
 Tab completion available for commands and model names.
 .br
-Prompt shows active modes in the status bar: 🧠 for think, 🔧 for tools. User input is displayed in cyan with a bold >>> prompt marker.
+Prompt shows active modes in the status bar: 🧠 for think, 🔧 for tools, 🎨 for style enabled (📄 for style disabled).
 .br
 Visual indicators show tool activity in DIM gray (hidden in quiet mode):
 .br

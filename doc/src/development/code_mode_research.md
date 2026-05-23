@@ -364,8 +364,8 @@ curl http://localhost:11434/api/chat -d '{
 ### To compare with devstral-small-2:
 ```bash
 # Test via sprachspiel
-ask query -c -m devstral-small-2 "Your query"
-ask query -c -m deepseek-coder-v2 "Your query"
+sprach query -c -m devstral-small-2 "Your query"
+sprach query -c -m deepseek-coder-v2 "Your query"
 ```
 
 ---

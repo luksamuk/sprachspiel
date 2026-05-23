@@ -13,7 +13,7 @@
 //!     ↓ consumed by
 //! ChatView::show_command_outputs()
 //!     ↓ implemented by
-//! TerminalView (current) ─── RatatuiView (future, #146)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
 //! # Handler Pattern
@@ -51,9 +51,11 @@ pub use super::session::ChatSession;
 ///
 /// This ensures that any embeddings that were being generated
 /// asynchronously are completed before the application exits.
-async fn flush_pending_embeddings(
+pub(crate) async fn flush_pending_embeddings(
     db: Arc<crate::db::Database>,
     client: Arc<crate::embeddings::EmbeddingClient>,
+    quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) {
     // Check for pending items
     let pending_items = match db.get_content_items_for_reindex() {
@@ -70,8 +72,8 @@ async fn flush_pending_embeddings(
         return;
     }
 
-    // Complete pending embeddings with progress bar
-    let _ = recover_missing_embeddings_with_progress(&db, &client).await;
+    // Complete pending embeddings
+    let _ = recover_missing_embeddings_with_progress(&db, &client, quiet, progress_tx).await;
 }
 
 /// Handle a chat command in the REPL loop.
@@ -87,9 +89,10 @@ pub async fn handle_command(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
     view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
 ) -> Vec<CommandOutput> {
     match cmd {
-        ChatCommand::Quit => handle_quit(state, input).await,
+        ChatCommand::Quit => handle_quit(state, input, view.suppress_progress_spinner()).await,
         ChatCommand::Forget { confirmed } => handle_forget_cmd(state, confirmed),
         ChatCommand::New => handle_new(state),
         ChatCommand::Help => {
@@ -122,24 +125,30 @@ pub async fn handle_command(
             );
             vec![CommandOutput::ContextInfo(ContextData { formatted: info })]
         }
-        ChatCommand::Think => {
-            state.session.think = !state.session.think;
-            vec![handle_think_toggled(state, state.session.think)]
-        }
+        ChatCommand::Think { enabled } => match enabled {
+            Some(on) => {
+                state.session.think = on;
+                vec![handle_think_toggled(state, on)]
+            }
+            None => {
+                state.session.think = !state.session.think;
+                vec![handle_think_toggled(state, state.session.think)]
+            }
+        },
         ChatCommand::Tools => {
             state.session.tools = !state.session.tools;
             vec![handle_tools_toggled(state, state.session.tools)]
         }
-        ChatCommand::Compact => handle_compact(state).await,
+        ChatCommand::Compact => handle_compact(state, view, llm_tx).await,
         ChatCommand::ToolsOutput { level } => {
             state.session.tool_output_level = level;
             vec![handle_tool_output_changed(level)]
         }
         ChatCommand::Debug => handle_debug_toggle(),
-        ChatCommand::Retry => handle_retry(state, view).await,
+        ChatCommand::Retry => handle_retry(state, view, llm_tx).await,
         ChatCommand::Undo => handle_undo(state),
         ChatCommand::Search { query, limit } => handle_search(state, query, limit).await,
-        ChatCommand::Reindex => handle_reindex(state).await,
+        ChatCommand::Reindex { confirmed } => handle_reindex_cmd(state, confirmed).await,
         ChatCommand::Retrieval => {
             state.session.retrieval_enabled = !state.session.retrieval_enabled;
             handle_retrieval_toggled(state, state.session.retrieval_enabled)
@@ -208,6 +217,14 @@ pub async fn handle_command(
             correction_text,
         } => handle_feedback(state, signal_type, item_id, correction_text),
         ChatCommand::ContentPrune => handle_content_prune(state),
+        // ToggleStyle is handled directly in repl_tui.rs (needs App access).
+        // This arm exists for match exhaustiveness; it is never reached
+        // from the TUI because the command is intercepted before dispatch.
+        ChatCommand::ToggleStyle => {
+            vec![CommandOutput::Info(
+                "Style rendering: (no change)".to_string(),
+            )]
+        }
     }
 }
 
@@ -215,14 +232,23 @@ pub async fn handle_command(
 async fn handle_quit(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
+    suppress_spinner: bool,
 ) -> Vec<CommandOutput> {
     let _ = input.save_history();
     if !state.session.anonymous {
         let _ = state.session.save_sqlite();
 
-        // Flush pending embeddings before exit
+        // Flush pending embeddings before exit.
+        // In TUI mode, suppress output to avoid corrupting the alternate screen buffer.
         if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-            flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+            let progress_tx = state.session.embedding_tx.clone();
+            flush_pending_embeddings(
+                Arc::clone(db),
+                Arc::clone(client),
+                suppress_spinner,
+                progress_tx,
+            )
+            .await;
             // Flush pending fact embeddings
             crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
         }
@@ -739,10 +765,35 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
     }
 }
 
-/// Handle reindex command (async)
+/// Handle `/reindex` command — requires `--yes` confirmation flag.
 ///
-/// Regenerates embeddings for ALL content in the database.
-pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
+/// Without `--yes`, shows a warning explaining that `/reindex` regenerates
+/// ALL embeddings from scratch. With `--yes`, resets all `has_embedding`
+/// flags, deletes all vec0 embeddings, and spawns a background task to
+/// regenerate them (the TUI stays responsive during regeneration).
+///
+/// Prevents concurrent execution: if a `/reindex --yes` is already running,
+/// returns a warning instead of starting a second one.
+pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<CommandOutput> {
+    if !confirmed {
+        return vec![
+            CommandOutput::warning("/reindex will regenerate ALL embeddings from scratch."),
+            CommandOutput::warning("   This may take time depending on the amount of content."),
+            CommandOutput::warning("   Use /reindex --yes to confirm."),
+        ];
+    }
+
+    // Prevent concurrent reindex — another /reindex may be running
+    if state
+        .session
+        .is_reindexing
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return vec![CommandOutput::warning(
+            "Embedding reindex is already in progress. Please wait for it to finish.",
+        )];
+    }
+
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
@@ -752,23 +803,107 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
         }
     };
 
+    // Reset all embedding flags and delete vec0 embeddings so that
+    // regenerate_all_embeddings() will re-process every item from scratch.
+    // This is done synchronously because it's fast (just SQL statements).
+    let reset_stats = match db.reset_all_embedding_flags() {
+        Ok(stats) => stats,
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Failed to reset embedding flags: {e}"
+            ))];
+        }
+    };
+
+    // If there's nothing to re-index, report immediately
+    if reset_stats.items == 0 && reset_stats.facts == 0 {
+        return vec![CommandOutput::info("No content to re-index.")];
+    }
+
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
+    let progress_tx = state.session.embedding_tx.clone();
 
-    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client).await;
+    // TUI mode: spawn in background so the UI stays responsive.
+    // The completion message arrives via the async_message channel
+    // and is displayed by poll_async_messages() in the event loop.
+    // Terminal mode: run synchronously and return the result directly.
+    let async_message_tx = state.session.async_message_tx.clone();
+    if async_message_tx.is_some() {
+        // --- TUI mode: background execution ---
+        state
+            .session
+            .is_reindexing
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
-    vec![CommandOutput::ReindexResult(ReindexData {
-        regenerated: stats.total_processed(),
-        total: stats.items_processed,
-        success: true,
-        error: None,
-    })]
+        let is_reindexing = state.session.is_reindexing.clone();
+        tokio::spawn(async move {
+            let result = crate::embeddings::regenerate_all_embeddings(
+                &db,
+                &embedding_client,
+                true,
+                progress_tx,
+            )
+            .await;
+
+            // Build completion message
+            let msg = if result.has_errors() {
+                format!(
+                    "✓ Reindexed {} of {} embeddings. {} failed — will be retried on next startup.",
+                    result.total_processed(),
+                    result.items_processed + result.chunks_processed,
+                    result.total_failed()
+                )
+            } else {
+                format!(
+                    "✓ Reindexed {} of {} embeddings.",
+                    result.total_processed(),
+                    result.items_processed + result.chunks_processed
+                )
+            };
+
+            // Send completion message to the TUI chat area
+            if let Some(tx) = async_message_tx.as_ref() {
+                let _ = tx.send(msg);
+            }
+
+            // Clear reindexing flag
+            is_reindexing.store(false, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        vec![CommandOutput::info(
+            "Reindexing started in the background. Progress shown in status bar (⚙).",
+        )]
+    } else {
+        // --- Terminal mode: synchronous execution ---
+        let stats = crate::embeddings::regenerate_all_embeddings(
+            &db,
+            &embedding_client,
+            false,
+            progress_tx,
+        )
+        .await;
+
+        vec![CommandOutput::ReindexResult(ReindexData {
+            regenerated: stats.total_processed(),
+            total: stats.items_processed + stats.chunks_processed,
+            success: true,
+            error: None,
+        })]
+    }
 }
 
 /// Handle compact command (async)
 ///
 /// Compacts conversation history by summarizing old messages.
-pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
+///
+/// Uses `view.suppress_progress_spinner()` to determine whether indicatif
+/// spinners should be suppressed (TUI mode) or shown (terminal mode).
+pub async fn handle_compact(
+    state: &mut ReplState,
+    _view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
+) -> Vec<CommandOutput> {
     if state.session.messages.is_empty() {
         return vec![CommandOutput::info("No messages to compact.")];
     }
@@ -786,7 +921,7 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
         &state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        false, // TerminalView always shows indicatif spinners
+        llm_tx,
     )
     .await
     {
@@ -844,6 +979,7 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
 pub async fn handle_retry(
     state: &mut ReplState,
     view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
 ) -> Vec<CommandOutput> {
     use crate::tool_robustness::format_tool_error;
 
@@ -907,6 +1043,7 @@ pub async fn handle_retry(
                     state.agents_md.as_deref(),
                     result.context_window,
                     view,
+                    llm_tx.clone(),
                 )
                 .await;
 
@@ -2395,7 +2532,7 @@ pub fn handle_note_search(
                 ))];
             }
 
-            // TODO: Phase 3.5 — migrate to structured NoteSearchData
+            // TODO(issue: memory-architecture): Phase 3.5 — migrate to structured NoteSearchData
             // For now, format as text output
             let mut output = format!("Search results for \"{}\" ({}):\n", query, scope_str);
             for result in &results {

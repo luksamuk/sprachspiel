@@ -223,19 +223,6 @@ Via chat with a model that supports tools:
 - [ ] `/todo clear-done` removes completed tasks
 - [ ] `/todo clear-all` removes all tasks
 
-### 6.5.6 Todo Shortcut Aliases (PR #84)
-
-**Verify 2-letter shortcut commands for todo subcommands work correctly.**
-
-- [ ] `/ta Buy shortcut test` → creates task (same as `/todo add`)
-- [ ] `/tl` → lists tasks (same as `/todo list`)
-- [ ] `/tu 1 done` → updates task status (same as `/todo update`)
-- [ ] `/tg 1` → shows task details (same as `/todo get`)
-- [ ] `/te 1 Updated via shortcut` → edits task (same as `/todo edit`)
-- [ ] `/td 1` → deletes task (same as `/todo delete`)
-- [ ] `/tcd` → clears completed tasks (same as `/todo clear-done`)
-- [ ] `/tca` → clears all tasks (same as `/todo clear-all`)
-
 ### 6.5.5 Todo Tools via LLM (requires model with tools)
 
 Via chat with a model that supports tools:
@@ -256,9 +243,10 @@ Via chat with a model that supports tools:
 
 **Verify shortcut behavior and destructive command safety.**
 
-### 6.6.1 /f Maps to /search (not /forget)
+### 6.6.1 /search and /forget Confirmation
 
-- [ ] `/f test query` → executes search (NOT forget) ← **Bug fix: /f was mapped to /forget**
+- [ ] `/f test query` → "Unknown command" (shortcut `/f` removed in PR #154)
+- [ ] `/search test query` → executes search
 - [ ] `/forget` → shows warning (requires --yes) ← **Issue #85: /forget confirmation**
 - [ ] `/forget --yes` → executes forget, no `FOREIGN KEY constraint` warning ← **Bug fix: save_sqlite FK**
 
@@ -594,12 +582,11 @@ Test the feedback command infrastructure for recording user feedback on assistan
 - [ ] Type `/feedback good` in anonymous mode → `Error: Cannot give feedback in anonymous mode.`
 - [ ] Type `/feedback good` before any assistant message → `No assistant message to give feedback on.`
 
-### 15.4 Shortcut Tests
+### 15.4 Feedback Command Tests
 
-- [ ] Type `/fb good` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
-- [ ] Type `/fb bad` → `↓↓ bad feedback recorded for msg:N` + excerpt (dim) + `Importance: -0.10`
-- [ ] Type `/fb correction:typo fix` → `✎ correction feedback recorded for msg:N` + excerpt (dim) + `Correction: typo fix`
-- [ ] Type `/fg` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
+- [ ] Type `/feedback good` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
+- [ ] Type `/feedback bad` → `↓↓ bad feedback recorded for msg:N` + excerpt (dim) + `Importance: -0.10`
+- [ ] Type `/feedback correction:typo fix` → `✎ correction feedback recorded for msg:N` + excerpt (dim) + `Correction: typo fix`
 
 ---
 
@@ -614,7 +601,6 @@ Test the content decay and pruning infrastructure.
 - [ ] Type `/content prune` → shows `⏳ Running content decay cycle...` then result
 - [ ] After prune with items removed: `✓ Pruned N content item(s), N remaining (avg retention: X.XX).`
 - [ ] After prune with no items removed: `✓ No content to prune. N item(s) remaining (avg retention: X.XX).`
-- [ ] Type `/cp` → same behavior as `/content prune` (shortcut works)
 
 ### 16.2 Context Decay Stats
 
@@ -629,7 +615,6 @@ Test the content decay and pruning infrastructure.
 
 - [ ] Start anonymous chat: `sprach chat --anonymous`
 - [ ] Type `/content prune` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
-- [ ] Type `/cp` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
 - [ ] Start chat without database (if possible): `/content prune` without DB → `Error: Database not initialized. Run chat without --anonymous.`
 
 ---
@@ -751,14 +736,14 @@ Verify the `num_days()` truncation fix produces accurate values at non-boundary 
 
 Verify consolidated command routing works after the refactoring.
 
-### 19.1 /fact Shortcuts
+### 19.1 /fact Canonical Commands
 
-- [ ] `/fp` → same as `/fact prune` (shortcut)
-- [ ] `/fa "I prefer dark mode"` → same as `/fact add` (shortcut)
+- [ ] `/fact prune` → prunes facts using decay cycle
+- [ ] `/fact add "I prefer dark mode"` → adds a fact
 
-### 19.2 /content Shortcut
+### 19.2 /content Canonical Command
 
-- [ ] `/cp` → same as `/content prune` (shortcut verified in 16.1, repeated for completeness)
+- [ ] `/content prune` → runs content decay cycle
 
 ---
 
@@ -1373,8 +1358,6 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 - [ ] `/todo get 1` → renders task details (via MarkdownContent)
 - [ ] `/todo update 1 done` → renders ✓ success
 - [ ] `/todo delete 1` → renders ✓ or ✗ result
-- [ ] `/ta "Shortcut test"` → shortcut renders same as `/todo add`
-- [ ] `/tl` → shortcut renders same as `/todo list`
 
 ### 22.4 Document Commands
 
@@ -1423,7 +1406,6 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 ### 22.11 Content Prune
 
 - [ ] `/content prune` → renders Progress (⏳) then ContentPruneResult
-- [ ] `/cp` → same behavior as `/content prune` (shortcut)
 
 ### 22.12 Dead Code Verification (W6-PR1 Cleanup)
 
@@ -1518,7 +1500,7 @@ The script above runs automated tests. The following tests must be run manually:
 3. **Section 5**: Memory (interactive tests with model >= 4b)
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
-6. **Section 6.6**: Command Shortcuts and Safety (/f, /forget, skills)
+6. **Section 6.6**: Command Safety (/forget, /search, skills)
 7. **Section 10**: File Tools (via LLM)
 8. **Section 10.5**: run_command Error Messages
 9. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)

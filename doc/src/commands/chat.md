@@ -63,14 +63,14 @@ Once inside the chat, these commands are available:
 
 | Command | Description |
 |---------|-------------|
-| `/quit`, `/exit`, `/q` | Exit the chat session |
-| `/new`, `/n` | Start a new conversation (previous messages remain searchable) |
+| `/quit / exit` | Exit the chat session |
+| `/new` | Start a new conversation (previous messages remain searchable) |
 | `/forget [--yes]` | Delete conversation completely and start fresh (requires `--yes`) |
-| `/help`, `/h`, `/?` | Show available commands |
+| `/help` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
-| `/load <name>`, `/l <name>` | Load a saved session |
-| `/list`, `/ls` | List saved sessions for this project |
-| `/info`, `/i` | Show current session information |
+| `/load <name>` | Load a saved session |
+| `/list` | List saved sessions for this project |
+| `/info` | Show current session information |
 | `/restore <file>` | Restore session from JSON backup |
 | `/export <format> [file]` | Export conversation (md, json) |
 
@@ -90,35 +90,38 @@ The `/session` command provides an alternative syntax for session management:
 
 | Command | Description |
 |---------|-------------|
-| `/model <name>`, `/m <name>` | Switch to a different model |
-| `/think`, `/t` | Toggle think mode on/off |
+| `/model <name>` | Switch to a different model |
+| `/think` | Toggle think mode on/off |
 | `/tools` | Toggle tools on/off |
 | `/tools-output <level>` | Set tool output verbosity: compact, full, hidden |
+| `/toggle-style` | Toggle style rendering (Mermaid diagrams, syntax highlighting, table format) |
+| `/debug` | Toggle debug verbosity (Normal ↔ Trace) |
 
 ### Conversation
 
 | Command | Description |
 |---------|-------------|
-| `/system <prompt>`, `/s <prompt>` | Change the system prompt |
+| `/system <prompt>` | Change the system prompt |
 | `/compact` | Compact conversation history (summarize old messages) |
-| `/retry`, `/r` | Regenerate the last response |
-| `/undo`, `/u` | Undo last message (remove response, show last input) |
+| `/retry` | Regenerate the last response |
+| `/undo` | Undo last message (remove response, show last input) |
 | `/export <format> [file]` | Export conversation (md, json) |
 
 ### Context & Search
 
 | Command | Description |
 |---------|-------------|
-| `/context`, `/ctx` | Show context metrics, token usage, and memory stats |
-| `/search <query>`, `/find <query>`, `/f <query>` | Search conversation history (semantic search) |
+| `/context` | Show context metrics, token usage, and memory stats |
+| `/search <query>` | Search conversation history (semantic search) |
+| `/reindex [--yes]` | Regenerate all embeddings from scratch (requires `--yes`) |
+| `/retrieval <query>` | Test retrieval pipeline (debugging) |
 
 ### Feedback
 
 | Command | Description |
 |---------|-------------|
-| `/feedback <good|bad|correction:text> [msg:id]`, `/fb` | Record feedback on assistant messages |
-| `/fg` | Shortcut: /feedback good |
-| `/content prune`, `/cp` | Run content decay cycle (prune low-retention items) |
+| `/feedback <good|bad|correction:text> [msg:id]` | Record feedback on assistant messages |
+| `/content prune` | Run content decay cycle (prune low-retention items) |
 
 See [Feedback Commands](./feedback.md) for detailed documentation.
 
@@ -126,38 +129,34 @@ See [Feedback Commands](./feedback.md) for detailed documentation.
 
 | Command | Description |
 |---------|-------------|
-| `/fact add <text> [--global]`, `/fa` | Add a fact (project scope by default) |
-| `/fact list [--global]`, `/fl` | List stored facts |
-| `/fact remove <id>`, `/fr` | Remove a fact by ID |
-| `/fact search <query>`, `/fs` | Search stored facts |
-| `/fact prune`, `/fp` | Prune old facts using decay |
-
-Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
+| `/fact add <text> [--global]` | Add a fact (project scope by default) |
+| `/fact list [--global]` | List stored facts |
+| `/fact remove <id>` | Remove a fact by ID |
+| `/fact search <query>` | Search stored facts |
+| `/fact prune` | Prune old facts using decay |
 
 ### Todos
 
 | Command | Description |
 |---------|-------------|
-| `/todo get`, `/tg` | Get current session todo list |
-| `/todo add <text>`, `/ta` | Add a todo item |
-| `/todo delete <id>`, `/td` | Delete a todo by ID |
-| `/todo edit <id> [--text <text>]`, `/te` | Edit a todo |
-| `/todo priority <id> <level>`, `/tp` | Set priority (high, medium, low) |
-| `/todo tags <id> <tags>`, `/tt` | Add/update tags |
-| `/todo list`, `/tl` | Alias for `/todo get` |
+| `/todo get` | Get current session todo list |
+| `/todo add <text>` | Add a todo item |
+| `/todo delete <id>` | Delete a todo by ID |
+| `/todo edit <id> [--text <text>]` | Edit a todo |
+| `/todo priority <id> <level>` | Set priority (high, medium, low) |
+| `/todo tags <id> <tags>` | Add/update tags |
+| `/todo list` | List tasks (filter: status/priority/#tag) |
 
 ### Notes
 
 | Command | Description |
 |---------|-------------|
-| `/note add <content> [--title <title>] [--global]`, `/na` | Add a note (project scope by default) |
-| `/note list [--global] [page]`, `/nl` | List stored notes (8 per page) |
-| `/note show <id>`, `/ns` | Show a note by ID |
+| `/note add <content> [--title <title>] [--global]` | Add a note (project scope by default) |
+| `/note list [--global] [page]` | List stored notes (8 per page) |
+| `/note show <id>` | Show a note by ID |
 | `/note edit <id> [--title <title>] [--content <content>]` | Edit a note |
-| `/note delete <id>`, `/nd` | Delete a note by ID |
+| `/note delete <id>` | Delete a note by ID |
 | `/note search <query> [--global] [limit]` | Search stored notes |
-
-Subcommand shortcuts: `/no` (note), `/na` (add), `/nl` (list), `/ns` (show), `/nd` (delete)
 
 Notes support project-level (default) and global scope. Global notes are visible across all projects on the same machine.
 
@@ -167,12 +166,10 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 | Command | Description |
 |---------|-------------|
-| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB) |
-| `/doc list [--global]`, `/dl` | List imported documents |
-| `/doc show <id>`, `/ds` | Show document content as rendered markdown (accepts `#N`, `doc:N`, or `N`) |
-| `/doc delete <id>`, `/dd` | Delete a document by ID (accepts `#N`, `doc:N`, or `N`) |
-
-Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
+| `/doc import <path> [--global] [--nowait]` | Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB) |
+| `/doc list [--global]` | List imported documents |
+| `/doc show <id>` | Show document content as rendered markdown (accepts `#N`, `doc:N`, or `N`) |
+| `/doc delete <id>` | Delete a document by ID (accepts `#N`, `doc:N`, or `N`) |
 
 **Supported Formats:**
 
@@ -227,8 +224,8 @@ The LLM can import documents autonomously using the `import_document(path, scope
 
 | Command | Description |
 |---------|-------------|
-| `/skill`, `/sk` | List available skills |
-| `/skill <name>`, `/sk <name>` | Activate a skill for the current session |
+| `/skill` | List available skills |
+| `/skill <name>` | Activate a skill for the current session |
 
 Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt. The LLM also loads skills **proactively** via `skill_view()` when it detects a task matching a skill's description.
 
@@ -343,8 +340,6 @@ Record feedback on assistant messages to influence future search ranking:
 /feedback good msg:42             # Target specific message
 ```
 
-Shortcuts: `/fb good`, `/fb bad`, `/fb correction:text`, `/fg` (= `/feedback good`)
-
 See [Feedback Commands](./feedback.md) for full documentation including search ranking effects.
 
 #### /content prune
@@ -353,7 +348,6 @@ Run the content decay cycle to prune low-retention items:
 
 ```
 /content prune                    # Run decay cycle
-/cp                               # Shortcut
 ```
 
 Content items lose retention over time following the Ebbinghaus forgetting curve. Items with retention below the threshold (default 5%) and importance below 0.8 are pruned. High-importance items are never pruned.
@@ -398,7 +392,6 @@ Search conversation history using hybrid search (keyword + semantic):
 ```bash
 /search authentication           # Basic search
 /search "error handling" 5      # Limit to 5 results
-/f database design               # Alias
 ```
 
 ### How It Works
@@ -467,7 +460,6 @@ Add facts that the AI should remember:
 ```bash
 /fact add I prefer concise responses
 /fact add Project uses SQLite for storage --global
-/fa The API rate limit is 100 req/min    # Shortcut
 ```
 
 **Options:**
@@ -499,7 +491,6 @@ View all stored facts:
 ```bash
 /fact list           # Project facts
 /fact list --global  # Global facts
-/fl                  # Shortcut
 ```
 
 **Output:**
@@ -524,7 +515,6 @@ Search stored facts using keyword search:
 ```bash
 /fact search database
 /fact search API --global 5    # Global scope, limit 5
-/fs prefer                      # Shortcut
 ```
 
 ### Removing Facts
@@ -533,7 +523,6 @@ Remove a fact by its ID:
 
 ```bash
 /fact remove 3
-/fr 5                          # Shortcut
 ```
 
 ### Pruning Old Facts
@@ -548,7 +537,6 @@ Run manual cleanup:
 
 ```bash
 /fact prune
-/fp                            # Shortcut
 ```
 
 ### How It Works
@@ -602,6 +590,11 @@ The prompt shows active modes with emojis:
 - `lfm🧠>` - Think mode enabled
 - `lfm🔧>` - Tools enabled
 - `lfm🧠🔧>` - Both think and tools enabled
+
+The status bar shows additional indicators:
+
+- 🎨 - Style rendering enabled (Mermaid diagrams, syntax highlighting, box-drawing tables)
+- 📄 - Style rendering disabled (raw source view, plain text code blocks, pipe-delimited tables)
 
 ## Tab Completion
 
@@ -709,26 +702,6 @@ Export sessions for backup or transfer:
 ```
 
 **Note**: JSON export is for backup purposes. Sessions are stored in SQLite and don't need manual export.
-~/.local/share/sprachspiel/
-├── chat_history.txt           # Readline history
-└── conversations/
-    └── github.com/
-        └── user/
-            └── repo/
-                ├── default.json        # Default session for project
-                ├── bugfix-auth.json    # Named sessions
-                └── feature-x.json
-```
-
-### Project Identification
-
-1. **Git repository with remote**: Uses normalized git remote URL
-   - `git@github.com:user/repo.git` → `github.com/user/repo`
-   - `https://github.com/user/repo.git` → `github.com/user/repo`
-
-2. **Git repository without remote**: Uses folder name
-
-3. **Not a git repository**: Uses current folder name
 
 ### Session File Format
 

@@ -14,13 +14,13 @@
 //!     ↓ consumed by
 //! ChatView::show_command_outputs()
 //!     ↓ implemented by
-//! TerminalView (current) ─── RatatuiView (future, #146)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
 //! # Design Principles
 //!
 //! - **Data carries semantics, not styling.** No ANSI codes in CommandOutput data.
-//!   The view layer applies styling (TerminalView uses ANSI, RatatuiView uses ratatui Styles).
+//!   The view layer applies styling (RatatuiView uses ratatui Styles, standalone renderer uses ANSI for pipe-safe output).
 //! - **Compound results use Vec, not nesting.** `handle_command()` returns
 //!   `Vec<CommandOutput>` — no `Compound` variant that creates arbitrary nesting.
 //! - **Structured data for complex displays.** List commands return typed structs
@@ -144,6 +144,9 @@ pub enum CommandOutput {
     /// Reindex result.
     ///
     /// Contains statistics from `/reindex`.
+    /// Note: In TUI mode, reindex runs in the background and results are sent
+    /// as async system messages via `AsyncMessageTx`, not as `CommandOutput`.
+    /// This variant is used only in the terminal (non-TUI) mode path.
     ReindexResult(ReindexData),
 
     /// Help text display.
@@ -394,12 +397,12 @@ pub struct SearchData {
     pub formatted: String,
 }
 
-/// Data for reindex result (`/reindex`).
+/// Data for reindex result (`/reindex --yes`).
 #[derive(Debug, Clone)]
 pub struct ReindexData {
-    /// Number of embeddings regenerated
+    /// Number of embeddings successfully regenerated
     pub regenerated: usize,
-    /// Total items processed
+    /// Total items + chunks to re-index (includes both content_items and content_chunks)
     pub total: usize,
     /// Whether reindexing succeeded
     pub success: bool,

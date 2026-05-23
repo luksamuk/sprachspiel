@@ -128,43 +128,46 @@ continue naturally from the checkpoint without repeating completed work.
 ///
 /// Used when summarizing old messages during context overflow.
 /// Produces structured markdown summaries with explicit token limit.
+/// Compaction prompt for summarizing conversation history.
 ///
-/// Design inspiration: OpenCode's compaction template for context preservation.
-/// Key differences from previous template:
-/// - Explicit token limit (3,000 tokens max)
-/// - Structured sections for better context continuation
-/// - Negative constraints to prevent verbose output
-/// - Maximum item counts per section for brevity
-pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation CONCISELY in MARKDOWN format.
-
-CRITICAL: The output MUST NOT exceed 3000 tokens. Be extremely concise.
+/// **No token or character limits are imposed on the summary.** The LLM
+/// controls summary length based on context complexity — short conversations
+/// yield short summaries, long conversations yield detailed ones. Do NOT
+/// re-introduce `MAX_SUMMARY_TOKENS`, `MAX_SUMMARY_CHARS`, or any other
+/// limit constant; the compaction streaming architecture relies on the LLM
+/// producing an unbounded summary that streams token-by-token via
+/// `LlmEvent::CompactStreamToken`.
+///
+/// Previous versions truncated summaries at 3000 tokens, but this caused
+/// context loss in long conversations. The current prompt explicitly
+/// instructs "Preserve ALL relevant context".
+pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation in MARKDOWN format.
+Preserve ALL relevant context needed to continue the conversation effectively.
 
 Use this structure:
 
 ## Goal
-[1-2 sentences: What is the user trying to accomplish?]
+[What is the user trying to accomplish?]
 
 ## Instructions
-- [Important user constraints and preferences, max 3 items]
+[Important user constraints and preferences]
 
 ## Progress
-**Completed:** [Work done, max 5 items]
-**Pending:** [Work remaining, max 3 items]
+**Completed:** [Work done so far]
+**Pending:** [Work remaining]
 
 ## Discoveries
-[Key insights learned, max 3 items]
+[Key insights, decisions, and important context learned during the conversation]
 
 ## Relevant Files
-- [Files read/edited/concerned, max 5 items]
-- Root path: [Project root if relevant]
+- [Files read, edited, or concerned — include root path if relevant]
 
 DO NOT include:
 - Full message transcripts
 - Repeated information
 - Conversational filler
-- Technical implementation details (unless critical)
 
-Focus on ESSENTIAL context for continuing the conversation."#;
+Preserve enough detail so another assistant could seamlessly continue this work."#;
 
 /// Template for continuation prompts
 ///
@@ -179,6 +182,32 @@ Next step: {next_step}
 Continue naturally from where you left off. Do not repeat completed work.
 </continuation_prompt>"#;
 
+/// Mermaid diagram rendering instruction
+///
+/// Injected into system prompts when the `mermaid` feature is compiled.
+///
+/// Instructs the LLM to use ```mermaid code blocks for diagrams,
+/// which will be rendered as Unicode box-drawing art in the terminal.
+///
+/// Includes specific guidance to avoid emojis and wide Unicode characters
+/// in labels, because the terminal renderer calculates column widths
+/// incorrectly for multi-byte characters (causing misaligned boxes)
+/// and some characters (e.g., ✅, 👨‍💻) trigger a byte-slicing bug in the
+/// rendering library that causes the diagram to fall back to raw source.
+#[cfg(feature = "mermaid")]
+pub const MERMAID_INSTRUCTION: &str = r#"### MERMAID DIAGRAMS
+
+When describing diagrams, flows, or relationships, use ```mermaid code blocks:
+- Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram, gantt, pie
+- Use Mermaid syntax inside the code block (e.g., ```mermaid\ngraph LR; A --> B\n```)
+- Keep diagrams simple — prefer clarity over complexity
+- Use plain text labels: write "Success" not "✅ Success", "User" not "👤 User"
+- Avoid emojis, flag symbols, and ZWJ sequences in labels — they misalign columns and cause rendering failures
+- Accented Latin characters (á, ü, ç) and Greek letters are fine; avoid CJK, emoji, and symbols in labels
+- Keep labels concise to fit within 80–120 column terminals
+- You may also use regular markdown tables and lists for structured data
+"#;
+
 /// Inter-tool compaction continuation prompt
 ///
 /// Used when context compaction interrupts multi-tool execution.
@@ -191,3 +220,50 @@ Remember:
 - Previous tool results are preserved in the conversation summary
 - You can reference results from tools executed before compaction
 - Continue from where you left off, or summarize results if complete"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compaction_prompt_no_token_limit() {
+        // After the Fase 1 refactor, COMPACTION_PROMPT must NOT contain
+        // any token or character limits on the summary.
+        let lower = COMPACTION_PROMPT.to_lowercase();
+        assert!(
+            !lower.contains("3000 tokens"),
+            "COMPACTION_PROMPT still contains old '3000 tokens' limit"
+        );
+        assert!(
+            !lower.contains("max") || lower.contains("maximum compaction"),
+            "COMPACTION_PROMPT should not contain arbitrary 'max' limits"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_preserves_all_context() {
+        // The prompt must instruct the LLM to preserve ALL relevant context
+        assert!(
+            COMPACTION_PROMPT.contains("Preserve ALL"),
+            "COMPACTION_PROMPT must instruct to preserve ALL relevant context"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_has_structure() {
+        // The prompt must have a clear structure for the LLM to follow
+        assert!(COMPACTION_PROMPT.contains("## Goal"));
+        assert!(COMPACTION_PROMPT.contains("## Instructions"));
+        assert!(COMPACTION_PROMPT.contains("## Progress"));
+        assert!(COMPACTION_PROMPT.contains("## Discoveries"));
+        assert!(COMPACTION_PROMPT.contains("## Relevant Files"));
+    }
+
+    #[test]
+    fn test_compaction_prompt_uses_markdown() {
+        assert!(
+            COMPACTION_PROMPT.contains("MARKDOWN") || COMPACTION_PROMPT.contains("Markdown"),
+            "COMPACTION_PROMPT must specify Markdown format"
+        );
+    }
+}

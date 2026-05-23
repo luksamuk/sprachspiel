@@ -28,10 +28,16 @@ pub struct StatusBarState {
     pub think_enabled: bool,
     /// Whether tools are active
     pub tools_enabled: bool,
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables). Shown as 🎨 (on) or 📄 (off)
+    /// in the status bar indicator row.
+    pub style_enabled: bool,
     /// Spinner character (if animating, e.g., "⠋")
     pub spinner: Option<String>,
     /// Status label (e.g., "Thinking...", "Running tool...")
     pub status_label: Option<String>,
+    /// Embedding progress: (current, total) when embeddings are being generated
+    pub embedding_progress: Option<(usize, usize)>,
 }
 
 impl StatusBarState {
@@ -51,17 +57,11 @@ impl StatusBarState {
             percent,
             think_enabled,
             tools_enabled,
+            style_enabled: true,
             spinner: None,
             status_label: None,
+            embedding_progress: None,
         }
-    }
-
-    /// Set the spinner for animation during LLM processing
-    #[allow(dead_code)] // PR3: Will be used for TUI spinner animation
-    pub fn with_spinner(mut self, frame: &str, label: &str) -> Self {
-        self.spinner = Some(frame.to_string());
-        self.status_label = Some(label.to_string());
-        self
     }
 
     /// Format token count as human-readable (e.g., "47.2K")
@@ -89,8 +89,16 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
 
     // Left section: model name or spinner+label
     if let (Some(spinner), Some(label)) = (&state.spinner, &state.status_label) {
+        // Spinner character (green bold), space, label text (yellow bold)
+        spans.push(Span::raw(" "));
         spans.push(Span::styled(
-            format!("{} {}", spinner, label),
+            spinner.clone(),
+            Style::default()
+                .fg(styles::GREEN)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {}", label),
             Style::default()
                 .fg(styles::YELLOW)
                 .add_modifier(Modifier::BOLD),
@@ -148,6 +156,29 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
     }
     if state.tools_enabled {
         spans.push(Span::raw("🔧"));
+    }
+    // Style rendering indicator — always visible (option B) so users
+    // discover the /toggle-style command. 🎨 means styled (diagrams,
+    // syntax highlighting, box-drawing tables), 📄 means source/raw.
+    if state.style_enabled {
+        spans.push(Span::raw("🎨"));
+    } else {
+        spans.push(Span::raw("📄"));
+    }
+
+    // Embedding progress — shown after indicators with separator
+    if let Some((current, total)) = state.embedding_progress {
+        spans.push(Span::raw(" │ "));
+        spans.push(Span::styled(
+            "⚙ ",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!("{}/{}", current, total),
+            Style::default()
+                .fg(styles::CYAN)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
 
     // Build the line

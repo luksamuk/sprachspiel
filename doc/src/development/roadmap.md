@@ -40,10 +40,10 @@ This document outlines planned features and the current state of Sprachspiel.
 - `/think` and `/tools` toggle commands
 - `/tools-output` for controlling tool verbosity
 - `/compact` for conversation summarization
-- `/retry` (alias `/r`) for regenerating last response
-- `/undo` for removing last response (with database cleanup)
-- `/search` (alias `/find`, `/f`) for semantic search
-- `/context` (alias `/ctx`) for token metrics
+  - `/retry` for regenerating last response
+  - `/undo` for removing last response (with database cleanup)
+  - `/search` for semantic search
+  - `/context` for token metrics
 - Tab completion for commands and models
 - Mode indicators in prompt (`[t]`, `[T]`)
 - Token metrics display

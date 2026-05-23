@@ -4,14 +4,14 @@ Sprachspiel provides six main commands for different tasks. Each command is desi
 
 ## Command Overview
 
-| Command | Alias | Purpose | Default Model |
-|---------|-------|---------|---------------|
-| `query` | `q` | General LLM queries | lfm |
-| `chat` | `c` | Interactive chat with history | lfm |
-| `translate` | `t` | Language translation | translate |
-| `ocr` | `o` | Image text extraction | glm-ocr |
-| `vision` | `v` | Image description and analysis | moondream |
-| `summarize` | `sum` | Text summarization | qwen3.5:4b |
+| Command | Purpose | Default Model |
+|---------|---------|---------------|
+| `query` | General LLM queries | lfm |
+| `chat` | Interactive chat with history | lfm |
+| `translate` | Language translation | translate |
+| `ocr` | Image text extraction | glm-ocr |
+| `vision` | Image description and analysis | moondream |
+| `summarize` | Text summarization | qwen3.5:4b |
 
 ## Default Mode
 
@@ -21,7 +21,6 @@ When no subcommand is specified, Sprachspiel defaults to `query` mode:
 # These are equivalent:
 sprach "What is Rust?"
 sprach query "What is Rust?"
-sprach q "What is Rust?"
 ```
 
 ## Common Patterns
@@ -45,8 +44,10 @@ cat file.txt | sprach summarize
 
 Most commands support these options:
 
-| `-v, -vv` | Verbosity: verbose / trace level
-| `-h, --help` | Show command help
+| Option | Description |
+|--------|-------------|
+| `-v, -vv` | Verbosity: verbose / trace level |
+| `-h, --help` | Show command help |
 
 ### Output Redirection
 

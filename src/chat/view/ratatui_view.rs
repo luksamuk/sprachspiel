@@ -19,8 +19,8 @@
 //! App::render(&mut terminal)
 //! ```
 //!
-//! Non-chat subcommands (query, translate, OCR, summarize) continue using
-//! `TerminalView` with termimad + println. Only the interactive REPL uses
+//! Non-chat subcommands (query, translate, OCR, summarize) use the
+//! standalone monochrome markdown renderer. Only the interactive REPL uses
 //! `RatatuiView`.
 
 use crate::chat::command_output::{
@@ -34,7 +34,8 @@ use crate::consts::roles::format_role_label;
 use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
 
-use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
+use super::super::tui::markdown::collapse_tables;
+use super::{ChatView, TokenMetrics, WelcomeInfo};
 use crate::chat::app::{App, LlmState};
 use crate::chat::tui::components::chat_area::ChatMessage;
 use crate::chat::tui::markdown::MarkdownTheme;
@@ -50,16 +51,15 @@ use crate::chat::tui::{TuiTerminal, enter_tui, exit_tui, restore_terminal_on_pan
 /// `debug_tools::log_tool_call` output appears in the chat area
 /// instead of corrupting the alternate screen with raw stderr.
 pub struct RatatuiView {
-    /// Application state (messages, input, status bar, theme)
     app: App,
-    /// Ratatui terminal for rendering
     terminal: TuiTerminal,
-    /// Whether we've shown the welcome banner yet
     welcome_shown: bool,
-    /// Receiver for tool call messages from the global TUI callback
     tool_call_rx: std::sync::mpsc::Receiver<String>,
-    /// Whether `restore()` has been called (prevents double-restore in Drop)
     restored: bool,
+    /// Sender for embedding progress updates (cloned by background tasks)
+    embedding_tx: crate::chat::app::EmbeddingProgressTx,
+    /// Sender for async system messages from background tasks (cloned by /reindex etc.)
+    async_message_tx: crate::chat::app::AsyncMessageTx,
 }
 
 impl RatatuiView {
@@ -82,7 +82,7 @@ impl RatatuiView {
             default_panic_hook(info);
         }));
 
-        let app = App::new(theme, model_names);
+        let (app, embedding_tx, async_message_tx) = App::with_embedding_channel(theme, model_names);
 
         // Set up tool call callback: route debug_tools output to the chat area
         // instead of raw stderr (which would corrupt the TUI alternate screen).
@@ -92,12 +92,18 @@ impl RatatuiView {
         }) as std::sync::Arc<dyn Fn(&str) + Sync + Send>;
         debug_tools::set_tui_callback(Some(callback));
 
+        // Suppress stderr logging in TUI mode — all log output goes to the file.
+        // This prevents ANSI escape codes from corrupting the alternate screen.
+        crate::logging::set_tui_mode(true);
+
         Self {
             app,
             terminal,
             welcome_shown: false,
             tool_call_rx,
             restored: false,
+            embedding_tx,
+            async_message_tx,
         }
     }
 
@@ -113,6 +119,22 @@ impl RatatuiView {
         &self.app
     }
 
+    /// Get a clone of the embedding progress sender.
+    ///
+    /// Background embedding tasks can use this to report progress
+    /// as `(current, total)` tuples that appear in the status bar.
+    pub fn embedding_tx(&self) -> crate::chat::app::EmbeddingProgressTx {
+        self.embedding_tx.clone()
+    }
+
+    /// Get a clone of the async message sender.
+    ///
+    /// Background tasks (e.g., /reindex) can use this to send system
+    /// messages that appear in the chat area when the operation completes.
+    pub fn async_message_tx(&self) -> crate::chat::app::AsyncMessageTx {
+        self.async_message_tx.clone()
+    }
+
     /// Get a mutable reference to the terminal.
     ///
     /// Used by the REPL loop for crossterm event polling.
@@ -124,9 +146,11 @@ impl RatatuiView {
     ///
     /// Must be called before exiting to prevent broken terminal state.
     /// Sets the `restored` flag so that `Drop` does not double-restore.
-    /// Also clears the global TUI callback so tool calls go back to stderr.
+    /// Also clears the global TUI callback and restores stderr logging.
     pub fn restore(mut self) {
         self.restored = true;
+        // Restore stderr logging — TUI mode is ending
+        crate::logging::set_tui_mode(false);
         // Clear the TUI callback so tool calls go back to stderr
         debug_tools::set_tui_callback(None);
         let _ = exit_tui(&mut self.terminal);
@@ -140,16 +164,25 @@ impl RatatuiView {
     /// though the main event loop is blocked on `handle_user_message_tui`,
     /// each `show_*` method calls `render()`, which ticks the spinner.
     ///
-    /// Drains tool call messages from the global callback channel into the
-    /// chat area as tool messages (rendered dim, no `[System]` prefix).
+    /// Note: tool call messages from `tool_call_rx` are NOT drained here.
+    /// They are drained in the event loop via `drain_tool_messages()` so
+    /// that ordering relative to LLM events can be controlled.
     pub fn render(&mut self) {
-        // Drain tool call messages from the global callback into the chat area
-        while let Ok(line) = self.tool_call_rx.try_recv() {
-            self.app.add_message(ChatMessage::tool(line));
-        }
-
-        self.app.tick_spinner();
         let _ = self.app.render(&mut self.terminal);
+    }
+
+    /// Drain pending tool call messages from the global callback channel.
+    ///
+    /// Returns a Vec of tool call log lines that should be inserted into
+    /// the chat area. Called from the event loop (not from render) so that
+    /// tool messages can be inserted in the correct position relative to
+    /// LLM events (before the streaming zone when LLM is active).
+    pub fn drain_tool_messages(&mut self) -> Vec<String> {
+        let mut messages = Vec::new();
+        while let Ok(line) = self.tool_call_rx.try_recv() {
+            messages.push(line);
+        }
+        messages
     }
 }
 
@@ -408,6 +441,8 @@ impl RatatuiView {
     /// Display recent context summary for a resumed session.
     ///
     /// Shows the last few exchanges (user+assistant pairs) from the session.
+    /// Each exchange occupies exactly one visual line, truncated to the
+    /// current terminal width using Unicode-aware visual column measurement.
     pub fn show_recent_context(&mut self, session: &ChatSession) {
         const MAX_EXCHANGES: usize = 3;
         let exchanges = session.get_recent_exchanges(MAX_EXCHANGES);
@@ -418,31 +453,48 @@ impl RatatuiView {
 
         let total_messages = session.messages.len();
 
-        let recent_exchanges: Vec<(RecentMessage, Option<RecentMessage>)> = exchanges
-            .into_iter()
-            .map(|(user_msg, asst_msg)| {
-                let user = RecentMessage {
-                    role_label: format_role_label("user"),
-                    content: strip_thinking_tags(&user_msg.content).replace('\n', " "),
-                };
-                let assistant = asst_msg.map(|a| RecentMessage {
-                    role_label: format_role_label("assistant"),
-                    content: strip_thinking_tags(&a.content).replace('\n', " "),
-                });
-                (user, assistant)
-            })
-            .collect();
+        // Get terminal width from crossterm for responsive truncation
+        let terminal_width = crossterm::terminal::size()
+            .map(|(cols, _)| cols as usize)
+            .unwrap_or(80);
 
-        let info = RecentContextInfo {
-            total_messages,
-            exchanges: recent_exchanges,
-        };
+        // Header line: "  Recent context (N messages):"
+        let header = format!("  Recent context ({} messages):", total_messages);
 
-        let summary = info.format_context_summary();
-        if !summary.is_empty() {
-            self.add_system_message(&summary);
-            self.render();
+        let user_label = format_role_label("user");
+        let assistant_label = format_role_label("assistant");
+
+        // Measure visual widths of role labels
+        let user_label_width = unicode_width::UnicodeWidthStr::width(user_label.as_str());
+        let assistant_label_width = unicode_width::UnicodeWidthStr::width(assistant_label.as_str());
+
+        // Each line: "  {label}: {content}"
+        // Available content width = terminal_width - 2 (indent) - label_width - 2 (": ")
+        let user_content_width = terminal_width.saturating_sub(2 + user_label_width + 2);
+        let assistant_content_width = terminal_width.saturating_sub(2 + assistant_label_width + 2);
+
+        let mut lines = vec![header];
+
+        for (user_msg, asst_msg) in exchanges {
+            let user_content =
+                crate::utils::truncate_at_first_newline(&strip_thinking_tags(&user_msg.content));
+            let truncated_user =
+                crate::utils::truncate_visual_width(&user_content, user_content_width);
+            lines.push(format!("  {}: {}", user_label, truncated_user));
+
+            if let Some(asst) = asst_msg {
+                let asst_content = crate::utils::truncate_at_first_newline(&collapse_tables(
+                    &strip_thinking_tags(&asst.content),
+                ));
+                let truncated_asst =
+                    crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
+                lines.push(format!("  {}: {}", assistant_label, truncated_asst));
+            }
         }
+
+        let summary = lines.join("\n");
+        self.add_system_message(&summary);
+        self.render();
     }
 
     /// Update the status bar with model information.
@@ -469,6 +521,71 @@ impl RatatuiView {
     /// Set the LLM processing state (affects spinner and input enabled).
     pub fn set_llm_state(&mut self, state: LlmState) {
         self.app.set_llm_state(state);
+        self.render();
+    }
+
+    /// Append a streaming token to the chat area.
+    ///
+    /// Creates or appends to an `AssistantStreaming` message.
+    /// Called for each token chunk from the LLM during streaming.
+    pub fn stream_token(&mut self, token: &str) {
+        // If we're in Thinking or ToolCall state, transition to Streaming
+        if self.app.llm_state() == LlmState::Thinking || self.app.llm_state() == LlmState::ToolCall
+        {
+            self.app.set_llm_state(LlmState::Streaming);
+        }
+        self.app.append_stream_token(token);
+        self.render();
+    }
+
+    /// Append a streaming thinking token to the chat area.
+    ///
+    /// Creates or appends to a `Thinking` message.
+    /// Called for each thinking chunk from the LLM during streaming.
+    pub fn stream_thinking(&mut self, token: &str) {
+        // If we're in Idle or ToolCall state, transition to Thinking
+        if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall {
+            self.app.set_llm_state(LlmState::Thinking);
+        }
+        self.app.append_stream_thinking(token);
+        self.render();
+    }
+
+    /// Finalize the streaming response.
+    ///
+    /// Replaces the `AssistantStreaming` message with the final
+    /// markdown-rendered `Assistant` message. Shows token metrics
+    /// if available. Transitions LLM state to Idle.
+    pub fn stream_done(
+        &mut self,
+        content: &str,
+        thinking: Option<&str>,
+        metrics: Option<&TokenMetrics>,
+    ) {
+        self.app.finalize_stream(content, thinking);
+
+        // Show token metrics if available
+        if let Some(m) = metrics
+            && m.total_tokens > 0
+        {
+            let msg = format!(
+                "[Tokens: {} prompt + {} response = {} total]",
+                m.prompt_tokens, m.response_tokens, m.total_tokens
+            );
+            self.add_system_message(&msg);
+
+            // Update status bar progress
+            let max_tokens = self.app.status_bar().max_tokens;
+            let percent = if max_tokens > 0 {
+                ((m.total_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            self.app
+                .update_status_tokens(m.total_tokens as usize, max_tokens, percent);
+        }
+
+        self.app.set_llm_state(LlmState::Idle);
         self.render();
     }
 }
@@ -708,6 +825,7 @@ impl Drop for RatatuiView {
         // Drop run (restore() is consuming, so Drop only runs if restore()
         // was never called, e.g., on early return or panic).
         if !self.restored {
+            crate::logging::set_tui_mode(false);
             let _ = exit_tui(&mut self.terminal);
             let _ = self.app.save_history();
         }

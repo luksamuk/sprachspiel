@@ -646,9 +646,6 @@ todo_clear_all()             // Clear all tasks
 /todo update <id> <status>          // Update task status (pending|in_progress|done)
 /todo clear-done                    // Clear completed tasks
 /todo clear-all                      // Clear all tasks
-/ta <description>                   // Shortcut: add task
-/tl                                   // Shortcut: list tasks
-/tu <id> <status>                    // Shortcut: update task
 ```
 
 **Architecture:**
@@ -977,6 +974,8 @@ todo_clear_all()             // Clear all tasks
 - fix: remove /f shortcut from /forget, move to /search (collision causing data loss)
 - fix: add missing /todo shortcuts (/tg, /te, /td, /tcd, /tca)
 
+> **Note:** These shortcuts were later removed in PR #154 alias cleanup. Only canonical commands (`/todo add`, `/todo list`, etc.) remain.
+
 **Bugs found during manual testing (fixed):**
 - `/f` was mapped to `/forget` instead of `/search` — collision causing accidental data loss
 - Missing `/todo` shortcuts for get, edit, delete, clear-done, clear-all
@@ -1099,7 +1098,7 @@ todo_clear_all()             // Clear all tasks
 
 **Files Modified:**
 - `Cargo.toml` — Updated dependencies
-- `src/main.rs` — Removed `-d/--debug` flag,简化 `-v`/`-vv` flags
+- `src/main.rs` — Removed `-d/--debug` flag, simplified `-v`/`-vv` flags
 - `src/lib.rs` — Added `pub mod logging`
 - `src/chat/cli.rs` — Updated verbosity flags
 - `src/chat/repl.rs` — Quiet mode handling, removed debug banners
@@ -3725,8 +3724,6 @@ Modified truncation handling across three files:
 
 **Related:** Issue #40 (canonical), Issue #39 (duplicate, closed), PR #102, Issue #103 (future: exact token counts via reqwest)
 
-**Related:** Issue #39
-
 ---
 
 ## 🔵 LOW PRIORITY: Extended Features
@@ -3825,8 +3822,6 @@ Features planned for future releases:
 
 **Related:** Issue #14
 
-**Related:** Issue #14
-
 ---
 
 ### Skills Management Tool — #52 [M1]
@@ -3922,7 +3917,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** ✅ COMPLETED (W6-PR2: Ratatui Infrastructure + Responsive Rendering)
+**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion + Intelligent Table Reflow + Textarea Integration + Chat Selection)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4182,9 +4177,11 @@ All content paths in `RatatuiView` that pass through `ChatMessage::system()` are
 
 **Bug 2: Tool Call Output Corrupts TUI Alternate Screen**
 
-`display_tool_call()` and `log_tool_result()` in `debug_tools.rs` write to `eprintln!()`. In TUI mode, the terminal uses ratatui's alternate screen buffer, so raw stderr output corrupts the display — tool call text appears as garbage over the TUI.
+`display_tool_call()` and `log_tool_result()` in `debug_tools.rs` write to `eprintln!()`. In TUI mode, the terminal uses ratatui's alternate screen buffer, so raw stderr output corrupts the display — tool call text appears as garbage over the TUI. Additionally, tool visual indicators (📝, 💾, ⚡, 📄, 👍, 📖) in `src/tools/` used `suspend_for_print(|| { eprintln!(...) })` which also bypasses the TUI callback.
 
-**Fix:** Global `TUI_CALLBACK` pattern in `debug_tools.rs`. When the TUI starts, `RatatuiView::new()` creates an `mpsc::channel` and registers a callback (`Arc<dyn Fn(&str) + Sync + Send>`). `display_tool_call()` and `log_tool_result()` check `TUI_CALLBACK` and route through it when set, sending formatted lines as `ChatMessage::system()` via the channel. `RatatuiView::render()` drains the channel each frame. On exit, `RatatuiView::restore()` clears the callback.
+**Fix (Phase 1 — `TUI_CALLBACK` for debug_tools):** Global `TUI_CALLBACK` pattern in `debug_tools.rs`. When the TUI starts, `RatatuiView::new()` creates an `mpsc::channel` and registers a callback (`Arc<dyn Fn(&str) + Sync + Send>`). `display_tool_call()` and `log_tool_result()` check `TUI_CALLBACK` and route through it when set, sending formatted lines as `ChatMessage::system()` via the channel. `RatatuiView::render()` drains the channel each frame. On exit, `RatatuiView::restore()` clears the callback.
+
+**Fix (Phase 2 — `tui_aware_print` for all tool indicators):** Added `tui_aware_print()` to `debug_tools.rs` — a single function that checks `TUI_CALLBACK` and routes through it (TUI mode) or falls back to `suspend_for_print` with `TOOL_DIM` styling (terminal mode). Replaced all 17 `suspend_for_print(|| { eprintln!("{TOOL_DIM}...{RESET}", ...) })` calls in tools (notes, facts, documents, run_cmd, feedback, skills) and 6 raw `eprintln!` calls (sandbox warnings + importance adjustment) with `tui_aware_print()`. Removed `#![expect(clippy::print_stderr)]` from all tool files since they no longer use `eprintln!` directly.
 
 **Native Ratatui Banner: Braille Art with ANSI Parsing**
 
@@ -4290,45 +4287,484 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 ---
 
-#### PR 3: Streaming Refinement + Tab Completion (~4-5 days) — #147
+#### PR 3: Streaming Refinement + Tab Completion + Intelligent Table Reflow (~12.5 days) — #147
 
-**Goal:** Add tab completion, refine streaming token display, migrate tool call/result and error display to chat area, and integrate fully with `handle_user_message()`.
+**Goal:** Make the TUI chat fully functional with async streaming, tab completion, Ctrl+C cancellation, multi-line input, intelligent table rendering with rigid/elastic columns, cell word-wrapping, and row separators. Resolve all PR2 deferred limitations.
 
-**Why smaller (originally ~5-6 days):** CrosstermInput and the event loop moved to PR2. PR3 focuses on polish and completion features.
+**Why longer than originally estimated (4-5 → 12.5 days):** The original estimate assumed the async event loop was partially in place. In reality, `handle_user_message_tui().await` blocks the entire event loop, requiring a full architectural migration from synchronous polling to async mpsc channels. Additionally, Ctrl+C cancellation requires `tokio::select!` integration with the LLM call, multi-line input requires input state refactoring, and intelligent table reflow with rigid/elastic column sizing and cell word-wrapping added 1.75 days.
 
 **Deferred from PR2 (known limitations to be resolved in PR3):**
 
 | Limitation | Impact | PR3 Phase |
 |-----------|--------|-----------|
 | Spinner freezes during LLM thinking | Status bar spinner only animates during `show_*` calls; main loop blocked on `handle_user_message_tui().await` | 3.2 (mpsc async channel) |
-| Status bar not updated during streaming | Progress bar only updates after response completes (`update_status_tokens` in `handle_user_message_tui`) and in `show_token_metrics`/`show_context_warning`; no mid-response updates | 3.2 (mpsc async channel) |
-| InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.6 (input unification) |
+| Status bar not updated during streaming | Progress bar only updates after response completes (`update_status_tokens` in `handle_user_message_tui`); no mid-response updates | 3.2 (mpsc async channel) |
+| InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.1 (tab completion + input unification) |
 | `LlmState::ToolCall` unused | Tool call UI shows spinner label but `App::set_llm_state(ToolCall)` not wired to actual tool calls | 3.4 (tool display) |
 | `assistant_streaming` rendering | `ChatMessage::assistant_streaming` exists but plain text rendering only; no incremental markdown | 3.3 (streaming refinement) |
-| `/compact` indicatif spinner artifact | `handle_compact()` at `command_handlers.rs:789` passes `false` hardcoded to `suppress_spinner`, ignoring `RatatuiView::suppress_progress_spinner()` (which returns `true`). Indicatif `ProgressBar` writes ANSI to stderr, corrupting ratatui alternate screen. Fix requires threading `view.suppress_progress_spinner()` through `handle_command()` → `handle_compact()` → `compact_conversation()` | 3.6 (command dispatch refactor) |
+| `/compact` indicatif spinner artifact | `handle_compact()` at `command_handlers.rs:789` passes `false` hardcoded to `suppress_spinner`, ignoring `RatatuiView::suppress_progress_spinner()` (which returns `true`). Indicatif `ProgressBar` writes ANSI to stderr, corrupting ratatui alternate screen. | 3.0 (quick win) |
+| No Ctrl+C cancellation during LLM processing | `InputResult::Interrupted` is returned by `handle_key()` but ignored during `handle_user_message_tui().await` — user cannot cancel long LLM responses | 3.3 (Ctrl+C cancellation) |
+| No multi-line input | Enter always submits; no Shift+Enter for newlines in input | 3.5 (multi-line) |
+
+**Indicatif Spinner Audit (all call sites in chat path):**
+
+| File | Line | Call | Suppress? | Risk |
+|------|------|------|-----------|------|
+| `core.rs:494` | `create_spinner_suppressed("Thinking...", suppress)` | Suppress from `ChatView` | ✅ Safe — `suppress=true` in TUI → `ProgressBar::hidden()` |
+| `core.rs:544` | `finish_spinner(spinner.clone())` | Retry success | ✅ Safe — hidden spinner finish is no-op |
+| `core.rs:557` | `finish_spinner(spinner)` | Normal finish | ✅ Safe — hidden spinner finish is no-op |
+| `core.rs:719` | `create_spinner_suppressed("Compacting...", suppress)` | `/compact` | ❌ **BUG** — `suppress` comes from `compact_conversation()` which uses `view.suppress_progress_spinner()` from `handle_compact()` at `command_handlers.rs:789` which passes `false` hardcoded instead of `view.suppress_progress_spinner()` |
+| `continuation.rs:249` | `view.show_progress("Paused...")` | Post-compaction | ✅ Safe — uses ChatView, not indicatif |
+| `continuation.rs:302` | `view.show_progress(format!(...))` | Pre-continuation | ✅ Safe — uses ChatView |
+| `continuation.rs:420` | `view.show_progress("Auto-compacting...")` | Overflow compaction | ✅ Safe — uses ChatView |
+| `continuation.rs:464` | `view.show_progress(format!(...))` | Inter-tool compaction | ✅ Safe — uses ChatView |
+
+**Only 1 bug found:** `handle_compact()` passes `false` instead of `view.suppress_progress_spinner()`. Fix: thread the `suppress` flag through `handle_compact()` → `compact_conversation()` → `create_spinner_suppressed()`.
 
 **Implementation Phases:**
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 3.1 | Tab completion in CrosstermInput (reuse `ChatCompleter`) | 📋 |
-| 3.2 | mpsc channel for LLM streaming (background task → event loop) | 📋 |
-| 3.3 | Streaming token display refinement (incremental append, markdown re-render on completion) | 📋 |
-| 3.4 | Tool call/result display in chat area (CommandOutput variants rendered as ratatui widgets) | 📋 |
-| 3.5 | Error display and recovery in TUI | 📋 |
-| 3.6 | Full integration with `handle_user_message()` and command dispatch | 📋 |
-| 3.7 | Multi-line input support (Shift+Enter or \ continuation) | 📋 |
+| Phase | Description | Effort | Status |
+|-------|-------------|-------|--------|
+| 3.0 | Quick wins: fix `/compact` suppress_spinner bug, audit all indicatif call sites | 0.75d | ✅ COMPLETED |
+| 3.1 | Tab completion: `ChatCompleter` struct with `/commands` + `model_names`; unify `InputState`/`CrosstermInput` dual state | 2.5d | ✅ COMPLETED |
+| 3.2 | MPSC streaming channel: async event loop with `tokio::sync::mpsc`, `AppEvent::LlmToken`/`LlmComplete`/`LlmError`, background LLM task | 2d | ✅ COMPLETED |
+| 3.3 | Streaming token display + Ctrl+C cancellation: incremental `ChatMessage::assistant_streaming` updates, markdown re-render on completion, `tokio::select!` for cancellation | 2.5d | ✅ COMPLETED |
+| 3.4 | Tool call/result display + error recovery: activate `LlmState::ToolCall`, wire `TUI_CALLBACK` during streaming, error display in TUI | 1d | ✅ COMPLETED (3.4a: table detection, 3.4b: embedding output suppression) |
+| 3.5 | Multi-line input: Shift+Enter for newline, dynamic input line height, cursor navigation across lines | 1d | ✅ COMPLETED |
+| 3.6 | Integration, testing, polish | 1d | ✅ COMPLETED |
+| 3.7 | Intelligent table reflow: rigid/elastic column classification, cell word-wrapping, markdown alignment (`:---`/`---:`/`:---:`), row separators (`├─┼─┤`), shared `wrap_line` extraction to `src/chat/tui/wrap.rs` | 1.5d | ✅ COMPLETED |
+| 3.8 | Table collapsing in recent context: collapse table blocks to `(...)` before flattening, preventing pipe chars in single-line summary | 0.25d | ✅ COMPLETED |
+| 3.9 | ratatui-textarea integration: replace InputState with TextArea<'static>, custom key mappings (Enter/Shift+Enter, Ctrl+C clear/cancel, Ctrl+W cut-word, Ctrl+Y yank, Ctrl+A/E navigation), history nav (↑/↓ single-line vs multi-line) | 2d | ✅ COMPLETED |
+| 3.10 | Rewritten input_line.rs (669→165 lines) + simplified CrosstermInput (583→115 lines, history-only), removed InputState | 1d | ✅ COMPLETED |
+| 3.11 | Floating completion menu: CompletionMenuState + render_overlay(), common prefix highlighting, navigation (arrows/Tab/Enter/Esc), 80% width overlay above status bar | 1.5d | ✅ COMPLETED |
+| 3.12 | ArgCompletion enum for extensible sub-completions: `/model` and `/m` both trigger model name completion via try_model_arg_fragment(), complete_model() takes cmd_trigger for correct prefix | 0.5d | ✅ COMPLETED |
+| 3.13 | Chat text selection: ChatSelection component (click/drag in chat area, visual highlight white-on-blue), mouse_to_visual_pos() for coordinate mapping, visual_lines_cache for text extraction, 10 unit tests | 1.5d | ✅ COMPLETED |
+| 3.14 | Copy from chat selection: Ctrl+Shift+C copies selected text to system clipboard via cli-clipboard (best-effort on Termux) | 0.25d | ✅ COMPLETED |
+| 3.15 | Input vs chat selection mutual exclusion: typing in textarea clears chat selection, Enter also clears, click outside chat clears selection, scroll/Tab don't conflict | 0.25d | ✅ COMPLETED |
+| 3.16 | Explicit key bindings: switch textarea.input() to input_without_shortcuts(), rebind all needed keys (movement, selection, editing, clipboard). Ctrl+Y → system clipboard paste, Ctrl+C → copy selection before clearing. Visual text selection rendering in input_line via textarea.selection_range(). | 1d | ✅ COMPLETED |
+| 3.17 | Completion menu fixes: Enter confirms and submits line (not stuck), Ctrl+C/Ctrl+Shift+C/V dismiss menu, auto-complete never replaces text (only shows/hides). | 0.25d | ✅ COMPLETED |
+| 3.18 | Embedding progress indicator: StatusBarState.embedding_progress field shows ⚙ current/total in status bar. mpsc::UnboundedChannel wired through App::with_embedding_channel() and RatatuiView::embedding_tx(). Startup indexing shows indicator during regeneration/recovery. | 0.5d | ✅ COMPLETED |
+| 3.19 | StaticSubcommands ArgCompletion: `/think on|off` and `/tools-output compact|full|hidden` show subcommand completions. `ArgCompletion::StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()` in ChatCompleter. Embedding progress channel wired from RatatuiView through session. | 0.25d | ✅ COMPLETED |
+| 3.20 | Busy-wait fix in TUI event loop: `poll(0ms)` → `poll(SPINNER_TICK_MS)` reduces idle CPU from ~4300 iters/sec (5% CPU) to ~8 iters/sec (near-zero). Revised for conditional exception: `poll(0ms)` during streaming (avoids token delay), `poll(120ms)` during idle (saves CPU). | 0.1d | ✅ COMPLETED |
+| 3.21 | Flaky spinner tests fix: `serial_test` + `#[serial]` in the 4 tests of `spinner.rs`; retry assertion with `yield_now` (1000x) tolerates scheduling delays. Resolves race condition in `ACTIVE_SPINNER` global (`RwLock`) when tests run in parallel. Zero failures in 20/20 stress runs. | 0.1d | ✅ COMPLETED |
+| 3.22 | Per-message embedding progress: `tokio::spawn` in `session.rs` sends `(0,1)` before spawn and `(1,1)` on completion via `EmbeddingProgressTx`. Startup regeneration sends `(0,total)` initially then `(current,total)` per item. `poll_embedding_progress()` drains channel, keeps latest. 4 unit tests in `app.rs`. | 0.5d | ✅ COMPLETED |
+| 3.23 | `/reindex --yes` confirmation gate + embedding reset bug: `ChatCommand::Reindex { confirmed: bool }` requires `--yes` to prevent accidental regeneration. `Database::reset_all_embedding_flags()` deletes vec0 embeddings (`content_embeddings`, `chunk_embeddings_v2`, `fact_embeddings`) AND all `content_chunks` rows (which are derived data that would otherwise be duplicated), then resets `has_embedding=0` so `regenerate_all_embeddings()` re-processes everything. Previously `/reindex` returned "0 of 0" because `get_content_items_for_reindex()` only queries `WHERE has_embedding=0`. Also fixed duplicate chunk bug where count grew on repeated `/reindex --yes` (131→156→181) because `insert_content_chunk()` doesn't check for duplicates. Also fixed `ReindexData.total` to show `items_processed + chunks_processed`. `ResetStats` struct reports items/chunks_deleted/facts. Concurrent reindex guard: `ChatSession.is_reindexing: Arc<AtomicBool>`. Background execution: TUI mode uses `tokio::spawn` so the event loop stays responsive. `App::async_message_rx: mpsc::UnboundedReceiver<String>` and `poll_async_messages()` deliver the completion message to the chat area. Terminal mode runs synchronously with `quiet=false` progress bar. | 0.75d | ✅ COMPLETED |
+| **Total** | | **~24.45d** | |
+
+**Deferred items (usability feature creep):**
+
+These items emerged during usability fine-tuning — direct response to human feedback.
+TUI usability requires iterative adjustment based on real usage patterns, so this scope
+extension is expected and purposeful. Items are deferred for dedicated design discussion,
+not abandoned.
+
+| Item | Description | Rationale |
+|------|-------------|-----------|
+| Shift+Enter multiline rendering | Shift+Enter inserts newline (works), but terminal compatibility varies. Some terminals don't distinguish Shift+Enter from Enter. May need Ctrl+Enter for newline or Enter=submit/Ctrl+Enter=newline. Needs careful UX planning. | Terminal compatibility concern; may need alternative keybinding |
+| Background embedding progress per-message | ~~Channel infrastructure exists~~ → **Implemented in 3.22**: `tokio::spawn` sends `(0,1)` before and `(1,1)` after. Per-message progress visible in modeline ⚙ during async embedding. Startup and `/reindex` progress also wired (3.23). | ~~Low priority~~ → ✅ COMPLETED |
+
+
+**Key architectural change: async event loop**
+
+The event loop migrates from synchronous polling to async dual-source:
+
+```
+BEFORE (PR2):
+  loop { poll(100ms) → key? → handle_key() → render() }
+  On Enter: handle_user_message_tui().await (BLOCKS event loop)
+
+AFTER (PR3):
+  loop { tokio::select! {
+    crossterm_event? → handle_key() → render()
+    llm_event?       → update_streaming() → render()
+    llm_done?        → re_render_markdown() → set_idle() → render()
+    llm_error?       → show_error() → set_idle() → render()
+    ctrl_c?          → cancel_llm() → set_idle() → render()
+  }}
+  On Enter: tokio::spawn(handle_user_message()) → sends tokens via mpsc
+  Ctrl+C: send cancellation signal → drop LLM result → set idle
+```
+
+**Tab completion architecture:**
+
+```rust
+pub struct ChatCompleter {
+    slash_commands: Vec<&'static str>,  // ["/help", "/model", "/new", ...]
+    model_names: Vec<String>,           // from user_models::list_all_model_names()
+}
+
+impl ChatCompleter {
+    pub fn complete(&self, input: &str) -> Option<String> {
+        // If input starts with '/', complete against slash_commands
+        // If input starts with '/model ', complete against model_names
+        // Otherwise, no completion
+    }
+}
+```
+
+**Ctrl+C cancellation architecture:**
+
+```rust
+// In repl_tui.rs:
+let cancel_token = tokio_util::sync::CancellationToken::new();
+let cancel_clone = cancel_token.clone();
+
+tokio::spawn(async move {
+    let result = handle_user_message(..., cancel_clone).await;
+    llm_sender.send(LlmEvent::Complete(result)).ok();
+});
+
+loop {
+    tokio::select! {
+        key = crossterm_event() => { ... }
+        event = llm_receiver.recv() => { ... }
+        _ = cancel_token.cancelled() => { ... }
+    }
+}
+```
 
 **Files to Create:**
-- (None new — modifications to existing PR2 files)
+- `src/chat/completer.rs` — `ChatCompleter` struct with slash commands + model names + `ArgCompletion` enum
+- `src/chat/tui/wrap.rs` — Shared `wrap_line` + `hard_break_word` (extracted from chat_area)
+- `src/chat/tui/components/completion_menu.rs` — `CompletionMenuState` + `render_overlay()` floating menu
+- `src/chat/tui/components/chat_selection.rs` — `ChatSelection` + `mouse_to_visual_pos()` + `selection_style()`
 
 **Files to Modify:**
-- `src/chat/app.rs` — Add streaming channel, tab completion, tool display
-- `src/chat/input/crossterm_input.rs` — Add tab completion, multi-line
-- `src/chat/view/ratatui_view.rs` — Add tool call/result rendering
-- `src/chat/repl.rs` — Wire App::run() fully
+- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets, `TextArea<'static>` replacing InputState, `CompletionMenuState`, `ChatSelection`, visual_lines/scroll/rect caches, `&mut self` render, Ctrl+Shift+C copy, explicit key bindings with `input_without_shortcuts()`, `CursorMove` for movement/selection, Ctrl+Y system clipboard paste, Ctrl+C copy selection, Ctrl+W/K/X edit operations, embedding progress channel (`mpsc::UnboundedReceiver<(usize, usize)>`), `with_embedding_channel()`, `poll_embedding_progress()`, `set/clear_embedding_progress()`
+- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates + ArgCompletion enum, `StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()`
+- `src/chat/input/crossterm_input.rs` — Simplified to history-only (removed buffer/cursor/editing)
+- `src/chat/input/mod.rs` — Export ChatCompleter
+- `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display, `collapse_tables` in recent context
+- `src/chat/view/terminal.rs` — `collapse_tables` in recent context
+- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation, mouse click/drag/scroll handling, embedding progress indicator during startup recovery, wires `embedding_tx` to session
+- `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`, `on_tool_call` callback
+- `src/chat/llm_event.rs` — `LlmEvent::ToolCallStarted` variant
+- `src/chat/command_handlers.rs` — Thread `suppress_progress_spinner()` through `handle_compact()`
+- `src/chat/tui/mod.rs` — Add `pub mod wrap;`
+- `src/chat/tui/markdown.rs` — `ColumnAlign` enum, `parse_separator_line`, rigid/elastic `calculate_col_widths`, cell wrapping (`wrap_cell_content`, `align_cell_text`, `build_row_expanded`), row separators, `collapse_tables`
+- `src/chat/tui/components/input_line.rs` — Rewritten for TextArea rendering with selection highlight (669→316 lines), `build_display_lines()` + `apply_selection_to_line()`
+- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append, selection highlight (`apply_selection_highlight`), `build_lines()` extraction, `RenderMetadata` return, `Line<'_>` lifetime
+- `src/chat/tui/components/mod.rs` — Add `pub mod completion_menu;`, `pub mod chat_selection;`
+- `src/chat/tui/components/status_bar.rs` — Green spinner, leading space, remove dead `with_spinner()`, `embedding_progress` field with `⚙ current/total` indicator
+- `src/chat/view/ratatui_view.rs` — `embedding_tx` field, `embedding_tx()` getter for background tasks
+- `src/chat/session.rs` — `embedding_tx: Option<mpsc::UnboundedSender<(usize, usize)>>` field for progress reporting
+- `Cargo.toml` — Add `ratatui-textarea = "0.9.1"`, `cli-clipboard = "0.4.0"`
 
-**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery. Non-chat subcommands unchanged.
+**Checkpoint:** Chat mode fully functional with tab completion, floating completion menu, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input (textarea), chat text selection (mouse), copy to clipboard (Ctrl+Shift+C), intelligent table reflow, table collapsing in recent context, explicit key bindings (input_without_shortcuts), visual text selection, embedding progress indicator, completion menu fixes, static subcommand completion. Non-chat subcommands unchanged.
+
+---
+
+#### PR 3 Post-Merge: Streaming Display Bug Fixes — `feat/tui-streaming-refinement`
+
+**Goal:** Fix two streaming display bugs (thinking block fragmentation, tool call ordering) AND resolve the fundamental architectural limitation where streaming content is **lost during tool calls**.
+
+**Historical Bugs Fixed (Phases 1-7):**
+
+- Phase 1 (`41b0708`): Thinking block fragmentation fix — `append_stream_thinking/token()` now find existing blocks via reverse search within the streaming zone, and `finalize_stream()` only consolidates Thinking blocks within the zone (not globally)
+- Phase 2 (`eaeb5d2`): Streaming zone awareness — same methods restrict reverse search to the streaming zone; tool-call Thinking blocks from earlier rounds are preserved
+- Phase 3: `insert_before_streaming_zone()` — tool messages and ViewActions now inserted before the streaming zone when LLM is active, not appended after
+- Phase 4: ViewAction ordering — `apply_view_action()` uses `insert_before_streaming_zone()` for content ViewActions during tool calls
+- Phase 5: Deduplication — `has_streaming_zone()` prevents `ShowAssistantResponse`/`ShowMarkdown` from duplicating content already shown via streaming tokens
+- Phase 6: Synchronous ViewEvent drain — `ViewEventReceiver::drain_into_llm_channel()` sends ViewEvents directly to `llm_tx` before `StreamDone`
+- Phase 7: Tests — 10 new tests (23 app tests, 4 view tests), 1122 total pass, clippy clean
+- Phase 8: End-of-conversation inter-tool text duplication fix — `pre_tool_content` accumulator now gates on `already_streamed`; only first-round (streamed) content accumulates, preventing `StreamBlockDone` from re-displaying inter-tool text from `process_next()` rounds that was already shown via `LlmEvent::InterToolText`
+- Phase 9: First-round pre-tool duplication fix — `StreamBlockDone` handler no longer calls `stream_done()`/`finalize_stream()`; the streaming zone is already finalized by `ToolCallStarted` (which calls `finalize_streaming_zone_as_is()`). Calling `finalize_stream()` on an already-converted zone caused a DUPLICATE `Assistant_markdown` to be appended (the "no AssistantStreaming found → push new message" fallback). `StreamBlockDone` is now a unit variant (no content/thinking/metrics fields) since the handler only sets `block_finalized = true` and transitions to `ToolCall` state. Tests updated to use `finalize_streaming_zone_as_is()` matching real-world flow.
+- Phase 10: Thinking block visual refinement — `[Thinking]` label replaced with `🧠 Thinking` header (dim cyan) + `│` left border (dim cyan, same as table `BD_VLINE`). Content is rendered as full Markdown via `render_markdown()` (supports headers, bold, code blocks, tables). Each content line (including wrapped sub-lines) is prefixed with `│ `. New `wrap_styled_line()` in `wrap.rs` provides width-aware word-wrap of `Line<Span>` with style preservation, ensuring resize responsiveness. Terminal (non-TUI) `show_thinking()` and `display_thinking()` synchronized to `🧠 Thinking` + `│ ` border. Removed `thinking_content_style()` (unused — styles come from `render_markdown()`). 10 new `wrap_styled_line` tests.
+
+**Root Cause of Content Loss During Tool Calls (NEW — Architectural):**
+
+The content loss during tool calls is **not fixable by local adjustments** — it is a fundamental architectural limitation. The streaming system was designed for a SINGLE monolithic streaming response per turn. When tool calls interrupt the stream, the pre-tool streamed content cannot be preserved because:
+
+1. `chat_stream()` accumulates streaming content via `StreamToken` events → displayed as `AssistantStreaming` in the TUI
+2. When tool calls are detected, `chat_stream()` stops streaming and enters `process_response()` (synchronous mode)
+3. `process_response()` saves pre-tool content to `pre_tool_content` (for session history), then executes tools
+4. `process_next()` (called by `process_response()`) makes a **new** non-streaming LLM call and returns the **post-tool** response
+5. `send_message_stream()` sends the **post-tool** content in `StreamDone`
+6. `finalize_stream()` replaces the `AssistantStreaming` message (which held pre-tool text) with the post-tool `Assistant` message
+
+**Result: the pre-tool streamed text disappears from the display.**
+
+The thinking blocks also disappear because `finalize_stream()` receives the post-tool `thinking` from `process_next()`, not the pre-tool thinking that was streamed. It therefore removes the pre-tool `Thinking` block and replaces it with nothing (or the wrong thinking).
+
+For the complete architectural analysis, state-of-the-art research, and the proposed solution, see **`doc/CONTENT_BLOCK_ARCHITECTURE.md`**.
+
+**Proposed Fix: Content Block Stateful Streaming**
+
+The state-of-the-art solution (used by assistant-ui, TUUI, Claude SDK) is **content block index tracking**: each assistant response consists of multiple numbered content blocks (Block 0 = pre-tool text, Block 1 = tool call, Block 2 = tool result, Block 3 = post-tool text, etc.). Each block is finalized independently and **can never be overwritten**. When `StreamBlockDone` arrives for Block 0, `finalize_stream()` converts its `AssistantStreaming` to a stable `Assistant` message. Block 0 is now permanent. When post-tool streaming begins, new `StreamToken` events create a fresh `AssistantStreaming` (the new active block). When `StreamDone` arrives, only the LAST block (post-tool) is finalized — Block 0 is untouched because it's outside the streaming zone.
+
+**Architecture Insight:** No `StreamBlockStart` event is needed because `finalize_stream()` already creates the boundary implicitly. After `finalize_stream` removes `AssistantStreaming` from the zone, any new streaming naturally starts a new block. The "fronteira" is the absence of streaming messages, not an explicit state flag.
+
+**Implemented Changes:**
+
+| Change | File | Status |
+|--------|------|--------|
+| Add `StreamBlockDone` variant to `LlmEvent` | `llm_event.rs` | ✅ DONE |
+| Emit `StreamBlockDone` from `send_message_stream()` | `core.rs` | ✅ DONE |
+| Update event loop: handle `StreamBlockDone` | `repl_tui.rs` | ✅ DONE |
+| Add `block_finalized` flag to `App` | `app.rs` | ✅ DONE |
+| `finalize_stream()` preserves stable blocks automatically | `app.rs` | ✅ VERIFIED |
+| Tests: single block, pre/post tool, multiple tools, state clearing | `app.rs` | ✅ 4 tests |
+
+**What Was NOT Needed:**
+
+| Change | Reason |
+|--------|--------|
+| `StreamBlockStart` event | `finalize_stream()` removes `AssistantStreaming`, so new streaming naturally creates a new block |
+| `block_id` in `ChatMessage` | Blocks are distinguished by position (stable vs streaming zone). Not needed. |
+| `start_new_stream_block()` | Not needed — `append_stream_token()` creates new `AssistantStreaming` when none exists in zone |
+| Replace `finalize_stream()` with multi-block variant | Existing logic already works: only touches LAST `AssistantStreaming` in zone |
+
+**Architecture Principle:** The streaming zone (contiguous tail of `Thinking`/`AssistantStreaming`) IS the active block. Finalizing converts it to stable messages (outside the zone). New streaming creates a new zone = new block. No explicit block tracking needed.
+
+**Estimativa**: ~10 horas (~2 dias de trabalho efetivo).
+
+For the full implementation plan, test cases, ADRs, and checklist, see **`doc/CONTENT_BLOCK_ARCHITECTURE.md`**.
+
+---
+
+Problems:
+- `tool_call_rx` is drained in `render()`, which runs AFTER `finalize_stream()` processes `StreamDone` — tool messages appear after the final response
+- `ViewAction`s (PreToolContent) race with `StreamDone` through the async forwarding task — no ordering guarantee
+- Pre-tool content is duplicated: shown via `StreamToken` during streaming, then again via `ViewAction::ShowAssistantResponse` after tool execution
+- `show_assistant_response()` always adds a new `Assistant` message, even during streaming when one is already being displayed
+
+**Phase 1 — Completed: Streaming thinking block fragmentation fix** (`41b0708`)
+
+- `append_stream_thinking()` and `append_stream_token()` now find existing blocks via reverse search within the streaming zone instead of creating fragmented duplicates
+- New `streaming_zone_start()` helper method on `App` returns the start index of the contiguous tail of `Thinking`/`AssistantStreaming` messages
+- Streaming zone definition: contiguous tail of `Thinking`/`AssistantStreaming` messages at the end of the message list. Everything before this zone (`User`, `Assistant`, `Tool`, `System`, `Error`, `Banner`) is stable and must not be modified by streaming operations
+- 11 unit tests added
+
+**Phase 2 — Completed: Streaming zone awareness for Thinking blocks** (`eaeb5d2`)
+
+- `append_stream_thinking()` and `append_stream_token()` restrict reverse search to the streaming zone (contiguous tail of Thinking/AssistantStreaming messages)
+- `finalize_stream()` only consolidates/removes Thinking blocks within the streaming zone, preserving tool-call Thinking blocks from earlier rounds
+- 13 unit tests pass (2 new: streaming zone preservation tests)
+
+**Phase 3 — Implemented: Move tool message drain from `render()` to event loop with `insert_before_streaming_zone()`**
+
+Instead of adding a new `LlmEvent::ToolMessage` variant (which would require routing `TUI_CALLBACK` through the per-task `llm_tx` channel), this phase keeps the existing `tool_call_rx` channel but moves the drain from `RatatuiView::render()` to the event loop. Tool messages are now inserted before the streaming zone when the LLM is active, ensuring correct visual ordering.
+
+Changes:
+- `App::insert_before_streaming_zone(message)` — new method that finds the streaming zone start and inserts before it, pushing streaming content down
+- `App::has_streaming_zone()` — new method that returns `true` when there are Thinking/AssistantStreaming messages in the streaming zone (used for deduplication)
+- `RatatuiView::render()` — removed the `tool_call_rx` drain loop (tool messages no longer drained during render)
+- `RatatuiView::drain_tool_messages()` — new method that returns `Vec<String>` of pending tool messages (drained from `tool_call_rx`)
+- Event loop in `repl_tui.rs` — after each `tokio::select!` iteration, drains tool messages via `view.drain_tool_messages()` and inserts them before the streaming zone (or appends when LLM is idle)
+
+**Phase 4 — Implemented: ViewAction ordering with `insert_before_streaming_zone()`**
+
+When the LLM is in `ToolCall` or `Streaming` state, ViewActions (PreToolContent, ShowMarkdown, ShowAssistantResponse) are now inserted before the streaming zone. `apply_view_action()` checks `llm_state` and `has_streaming_zone()` to determine the correct placement strategy.
+
+Changes:
+- `apply_view_action()` in `repl_tui.rs` — checks `llm_state` and `has_streaming_zone()` before routing ViewActions
+- `ShowAssistantResponse` — when streaming zone exists, skips the assistant message (deduplication: content is already streaming via StreamToken); thinking is still inserted before the zone when LLM is active
+- `ShowMarkdown` — when streaming zone exists, skips content (deduplication); otherwise inserts before zone when LLM is active
+- `ShowThinking` — always inserted before streaming zone when LLM is active (not a duplicate)
+- `ShowSystem`, `ShowError`, etc. — continue to append normally
+
+**Phase 5 — Implemented: Deduplication — avoid double-display of content during streaming**
+
+Pre-tool content is no longer shown twice (once via StreamToken and again via ViewAction). When `has_streaming_zone()` returns true, `ShowAssistantResponse` and `ShowMarkdown` skip adding the content message since it's already being displayed via streaming tokens. `ShowThinking` content from pre-tool rounds is still inserted before the zone since it's not a duplicate.
+
+Changes:
+- `apply_view_action()` — `ShowAssistantResponse` checks `has_streaming_zone()` and skips the assistant message when content is already streaming; only thinking (from pre-tool rounds) is inserted
+- `ShowMarkdown` — checks `has_streaming_zone()` and skips when streaming zone exists
+
+**Phase 6 — Implemented: Synchronous ViewEvent drain in `send_message_stream()`**
+
+The async forwarding task (`tokio::spawn` in `spawn_llm_task`) that forwarded `ViewAction`s from `view_rx` to `llm_tx` introduced ordering uncertainty. ViewActions could arrive before or after `StreamDone` because the forwarding task is async. Fixed by draining `ViewEventReceiver` directly into `llm_tx` as `LlmEvent::ViewAction` in `send_message_stream()`, AFTER the coordinator call completes but BEFORE sending `StreamDone`. This guarantees: tool calls execute → ViewEvents are queued → drain sends them to `llm_tx` → THEN `StreamDone`.
+
+Changes:
+- `ViewEventReceiver::drain_into_llm_channel()` — new method that drains `ViewEvent`s directly into `llm_tx` as `LlmEvent::ViewAction` (separate ShowThinking + ShowMarkdown for PreToolContent, ShowContextWarning for compaction)
+- `send_message_stream()` in `core.rs` — uses `drain_into_llm_channel(&llm_tx)` instead of `drain_into(view)` for the streaming path
+- The non-streaming `send_message()` continues to use `drain_into(view)` (correct for TerminalView)
+- The async forwarding task in `spawn_llm_task()` is still needed for ViewActions from `ChannelView` direct calls (like `show_system("Retrying...")`)
+
+**Phase 7 — Implemented: Tests**
+
+- Unit tests for `App::insert_before_streaming_zone()`:
+  - Insert tool message before streaming zone (user → tool → thinking → streaming)
+  - Insert when no streaming zone (falls back to append)
+  - Insert in mid-conversation with existing tool rounds
+  - Insert when only streaming messages exist (no stable messages before)
+- Unit tests for `App::has_streaming_zone()`:
+  - Returns true for Thinking-only zone
+  - Returns true for AssistantStreaming-only zone
+  - Returns true for interleaved zone
+  - Returns false for empty messages
+  - Returns false for stable-only messages (User, Assistant, Tool)
+- Unit tests for `ViewEventReceiver::drain_into_llm_channel()`:
+  - PreToolContent (with thinking) → ShowThinking + ShowMarkdown
+  - ContextNeedsCompaction → ShowContextWarning
+  - Multiple events drained in order
+  - Empty content skipped (only thinking emitted)
+- All 1122 existing tests pass + 10 new tests
+
+**Completed Work:**
+
+| Commit | Description | Status |
+|--------|-------------|--------|
+| `5b27134` | Merge duplicate `### Added` section in CHANGELOG | ✅ COMPLETED |
+| `41b0708` | Fix streaming thinking block fragmentation (11 tests) | ✅ COMPLETED |
+| `eaeb5d2` | Fix streaming zone awareness for Thinking blocks (13 tests) | ✅ COMPLETED |
+
+**Remaining Work:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 3 | Move tool messages from `render()` to event loop with `insert_before_streaming_zone()` | ✅ COMPLETED |
+| 4 | ViewAction ordering with `insert_before_streaming_zone()` | ✅ COMPLETED |
+| 5 | Deduplication — streaming-zone-aware `show_assistant_response()`/`show_thinking()` | ✅ COMPLETED |
+| 6 | Synchronous ViewEvent drain in `send_message_stream()` | ✅ COMPLETED |
+| 7 | Tests (23 app tests + 4 view tests, clippy, fmt) | ✅ COMPLETED |
+| 8 | End-of-conversation inter-tool text duplication — `pre_tool_content` accumulation gate on `already_streamed` | ✅ COMPLETED |
+| 9 | First-round pre-tool duplication — `StreamBlockDone` handler no-op (zone finalized by `ToolCallStarted`) | ✅ COMPLETED |
+| 10 | Thinking block visual refinement — `🧠 Thinking` header + `│` left border + Markdown rendering + `wrap_styled_line()` | ✅ COMPLETED |
+
+**Post-PR3 Completions (on `feat/tui-streaming-refinement` branch):**
+
+| Commit | Description | Status |
+|--------|-------------|--------|
+| `b0311f0` | `/reindex --yes` confirmation gate, duplicate chunk deletion, async message channel | ✅ COMPLETED |
+| `da7ca2e` | Word-wrap input, dynamic height, Alt+Enter newline fallback | ✅ COMPLETED |
+| `02ea1ed` | Fix duplicate sections in CHANGELOG (6 versions); tool detail lines to log::debug only | ✅ COMPLETED |
+| `48411ab` | InterToolText thinking field; cancel_token for Ctrl+C tool-loop interruption | ✅ COMPLETED |
+| `6b2cf90` | Drain tool messages after state transitions — fixes tool-before-thinking ordering | ✅ COMPLETED |
+| `bcf1cdd` | `/toggle-style` rename; `↳` indent on compact tool results | ✅ COMPLETED |
+| *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
+| *(uncommitted)* | Mermaid width truncation (`…` ellipsis for lines exceeding terminal width) | ✅ COMPLETED |
+| *(uncommitted)* | `/toggle-style` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
+| *(uncommitted)* | Status bar style indicator (🎨 on / 📄 off) | ✅ COMPLETED |
+| *(uncommitted)* | `tui_aware_print()` — route tool indicators through TUI callback | ✅ COMPLETED |
+| *(uncommitted)* | Remove sub-agent output truncation, increase vision max_tokens to 8192 | ✅ COMPLETED |
+| *(uncommitted)* | Remove `prompt` param from `spawn_ocr_agent`, update system prompt | ✅ COMPLETED |
+| *(uncommitted)* | Fix tool message ordering regression (append during ToolCall state) | ✅ COMPLETED |
+| *(uncommitted)* | Tool call indicators rendered bright (not dim), tool results stay dim | ✅ COMPLETED |
+| *(uncommitted)* | P0: Fix mouse selection offset with wrapped lines (`wrap_visual_lines` + `source_line_map`) | ✅ COMPLETED |
+| *(uncommitted)* | P1: Filter empty tool parameter values from display (`display_tool_call`, `log_tool_call`) | ✅ COMPLETED |
+
+**Known Bugs (on `feat/tui-streaming-refinement` branch):**
+
+| Bug | Severity | Status |
+|-----|----------|--------|
+| ~~Scroll viewport discrepancy — lines disappear at TUI bottom~~ | ~~Medium~~ | ✅ Fixed (`18030f0` grapheme-level width) |
+| ~~Mouse selection offset with wrapped lines~~ | ~~High~~ | ✅ Fixed (`wrap_visual_lines` + `source_line_map`) |
+| ~~Tool output verbosity (empty params like `head=`)~~ | ~~Low~~ | ✅ Fixed (`display_tool_call` empty-value filter) |
+| mermaid-text `sequenceDiagram` byte-slicing panic on emoji | Low | 🛡️ Mitigated (`call_mermaid_safely` + width truncation) |
+| mermaid-text column misalignment with wide Unicode | Low | 🛡️ Mitigated (`MERMAID_INSTRUCTION` emoji avoidance) |
+
+**Bug 1: Scroll Viewport Discrepancy — Lines Disappear at TUI Bottom**
+
+`count_wrapped_lines()` (our `wrap_line()` using `chars().map(|c| c.width())`) and `ratatui::Paragraph::wrap()` (using `StyledGrapheme.symbol.width()` = `UnicodeWidthStr::width()`) diverge on line count for wide/ambiguous-width characters. When our wrap-undercount produces fewer visual lines than ratatui's actual wrap, the scroll offset (`effective_scroll_from_top`) is too small, and the bottom lines of the chat are pushed below the viewport.
+
+Root causes:
+1. **Emoji with ZWJ sequences** (🇧🇷, 👨‍💻): `UnicodeWidthChar::width()` (char-level) treats regional indicators as width 0 each, giving total 0. `UnicodeWidthStr::width()` (grapheme-level) correctly gives width 2. Result: our wrap undercounts, scroll offset too small, bottom lines vanish.
+2. **Flag emojis** (🇧🇷 = 2 regional indicators): Same as above — each `🇧` and `🇷` is width 0 individually, but the grapheme pair is width 2.
+3. **Trim difference**: Our `wrap_line()` collapses whitespace via `split_whitespace()`. Ratatui's `WordWrapper` with `trim: false` preserves leading/trailing spaces. Result: our wrap produces fewer lines when content has multiple consecutive spaces.
+4. **Oversized grapheme handling**: Ratatui's `WordWrapper` **drops** graphemes wider than `max_line_width`. Our `hard_break_word()` **preserves** them. For emoji (width=2) in narrow terminals (<3 cols), ratatui drops them, we keep them.
+
+Proposed fix: Replace `count_wrapped_lines()` with `count_ratatui_wrapped_lines()` that uses ratatui's own `WordWrapper` to count wrapped lines exactly as `Paragraph::wrap()` would render them. Also update `wrap_line()` and `measure_spans_width()` to use `UnicodeWidthStr::width()` for string-level width instead of `chars().map(|c| c.width()).sum()`.
+
+**Bug 2: mermaid-text `sequenceDiagram` Byte-Slicing Panic on Emoji**
+
+The `mermaid-text` crate v0.56 panics when rendering `sequenceDiagram` labels containing multi-byte emoji like ✅. The error: `end byte index 10 is not a char boundary; it is inside '✅' (bytes 8..11) of 'G-->>R: ✅ Accepted'`. The gantt renderer was fixed in v0.56, but `sequenceDiagram` still uses byte-slicing instead of char-slicing for arrow label parsing.
+
+Mitigation: `call_mermaid_safely()` in `src/markdown/mermaid.rs` catches the panic via `catch_unwind` and suppresses the Rust panic hook (which would call `restore_terminal_on_panic()` and destroy the TUI alternate screen). The `MERMAID_INSTRUCTION` prompt tells the LLM to avoid emojis and wide Unicode in Mermaid labels. Affects only rendering — fallback to raw code block is graceful. Upstream bug report needed.
+
+**Bug 3: Mouse Selection Offset with Wrapped Lines (P0)**
+
+When lines in the chat area wrap (long lines spanning multiple display rows), mouse click/drag selection was misaligned from the actual content position. Root cause: `visual_lines_cache` had one entry per source `Line`, but `scroll_from_top` was in display-row space. When a line wraps, one source `Line` produces N display rows, causing indices to diverge. Selection coordinates from `mouse_to_visual_pos()` are in display-row space (matching `scroll_from_top`), but the old `apply_selection_highlight()` indexed into `lines[]` using display-row indices, which were off by the accumulated wrap offset.
+
+Fix: `wrap_visual_lines()` expands each source `Line` into one or more display-row strings (matching ratatui's `Wrap { trim: false }`), producing a `source_line_map: Vec<usize>` that maps each display row back to its source line. `apply_selection_highlight()` now takes `source_line_map` and converts display-row selection coordinates to source-line indices before highlighting. `App.source_line_map_cache` stored alongside `visual_lines_cache` for potential future use in text extraction. `count_ratatui_wrapped_lines()` and `count_word_wrapped_graphemes()` gated with `#[cfg(test)]` (superseded by `wrap_visual_lines()` in production). 13 new tests.
+
+**Bug 4: Tool Output Verbosity — Empty Parameter Values (P1)**
+
+Tool call indicators like `⚡ run_cmd(head=, tail=, command="ls")` showed empty parameter values as `key=` which was visually noisy and confusing. Fix: `display_tool_call()` compact format now omits parameters where the value is empty string (`head=` → entire `head=, ` suppressed). `log_tool_call()` verbose/trace mode skips detail lines for empty values. Added `test_display_tool_call_filters_empty_values` test.
+
+Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines that overflow the terminal. These are now truncated with `…` ellipsis via `truncate_visual_width()` in both `render_mermaid_tui()` (TUI) and `render_mermaid_rich()` (standalone).
+
+**Bug 3: mermaid-text Column Misalignment with Wide Unicode**
+
+`mermaid-text` uses `chars().count()` instead of `UnicodeWidthChar::width()` in `draw_tag()` (line 1276) and `box_table::put_str()` advances by 1 per char. This causes column misalignment in rendered diagrams when labels contain emojis or CJK characters. Not fixable on our side — requires upstream fix. Mitigated by `MERMAID_INSTRUCTION` telling the LLM to avoid emojis and wide Unicode in Mermaid labels.
+
+---
+
+#### Mermaid Width Truncation + `/toggle-style` Command
+
+**Status:** ✅ COMPLETED (on `feat/tui-streaming-refinement` branch)
+
+**Goal:** Two UX features for the TUI chat:
+1. **Mermaid width truncation**: Lines exceeding `max_width` (especially `sequenceDiagram` which ignores `max_width`) are truncated with `…` ellipsis at the end. Uses `truncate_visual_width()` (already in `src/utils.rs`) for grapheme-level accuracy.
+2. **`/toggle-style` command** (previously `/togglestyle`): Single boolean toggle — "want to see the code underneath". When style rendering is off:
+   - Mermaid blocks show as source code blocks (no diagram rendering)
+   - Code block syntax highlighting (syntect fg colors) is stripped — plain text with Catppuccin background preserved
+   - Tables use pipe-delimited plain format (`| col1 | col2 |`) instead of box-drawing borders (┌─┐)
+   - Status bar shows 📄 indicator (🎨 when style is on)
+   - Old `/togglestyle` still accepted for backward compatibility
+
+**Files changed:**
+- `src/chat/tui/markdown.rs` — `render_mermaid_tui()` truncation, `apply_code_block_background()` style_enabled gate, `render_table_plain_lines()` pipe-delimited tables, `render_markdown_impl()` mermaid/table/code branches
+- `src/markdown/mermaid.rs` — `render_mermaid_rich()` standalone truncation
+- `src/chat/app.rs` — `style_enabled` field, `toggle_style()` method
+- `src/chat/tui/components/chat_area.rs` — `render()` and `build_lines()` accept `style_enabled`
+- `src/chat/tui/components/status_bar.rs` — `style_enabled` field + 🎨/📄 indicator
+- `src/chat/commands.rs` — `ChatCommand::ToggleStyle` variant
+- `src/chat/command_handlers.rs` — ToggleStyle match arm (placeholder for exhaustiveness)
+- `src/chat/repl_tui.rs` — ToggleStyle handled directly (needs App access for `toggle_style()`)
+- `src/chat/completer.rs` — `/toggle-style` tab completion entry
+
+**Tests added:**
+- `test_render_table_plain_lines_basic` — simple 2-column table → 3 lines
+- `test_render_table_plain_lines_alignment_indicators` — `:---`, `:---:`, `---:` colons
+- `test_render_table_plain_lines_empty_table` — invalid table → empty
+- `test_style_disabled_strips_code_highlight` — fg colors stripped when off
+- `test_style_disabled_uses_plain_tables` — no box-drawing when off
+- `test_mermaid_lines_truncated_to_width` — no line exceeds max_width
+- `test_style_disabled_mermaid_shows_source` — raw source block when off
+- `test_toggle_style_flips_state` — App.toggle_style() + status bar sync
+
+---
+
+#### Command Alias/Shortcut Removal + Autocomplete Descriptions + Word-Wrap Input
+
+**Status:** ✅ COMPLETED (on `feat/tui-streaming-refinement` branch)
+
+**Goal:** Three UX improvements for the TUI chat:
+1. Remove ~40 command shortcuts/aliases (only `/quit` and `/exit` remain as synonyms)
+2. Show descriptions in autocomplete for single prefix matches (e.g., `/he` → `/help — Show available commands`)
+3. Word-wrap input with dynamic height (33% max, 3-line minimum)
+
+**Implementation:**
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Shortcut removal | Removed ~40 single/two-letter shortcuts from `SLASH_COMMANDS` in `completer.rs` | ✅ Done |
+| `/quit` + `/exit` synonym pair | Only synonym pair kept; parser maps `/exit` → `/quit` | ✅ Done |
+| Subcommand letter aliases | Removed letter aliases from `parse_note_add()`, `parse_note_subcommand()` | ✅ Done |
+| `format_help()` update | Removed shortcuts section from `/help` output | ✅ Done |
+| Prefix description | `complete_slash_command()` returns `CompletionResult::Multiple` with 1 item+description for prefix matches | ✅ Done |
+| Word-wrap input | `wrap_line()` from `wrap.rs` shared with chat_area; dynamic height max 33%, min 3 lines | ✅ Done |
+| Alt+Enter fallback | `Alt+Enter` inserts newline when Shift+Enter isn't supported by terminal | ✅ Done |
+| Tests updated | Rewrote `test_complete_slash_command_exact_shortcut` → `test_complete_slash_command_prefix_shows_description` | ✅ Done |
+| Documentation | `doc/src/commands/chat.md` alias tables updated, CHANGELOG entries added | ✅ Done |
+
+**Key Files Modified:**
+- `src/chat/completer.rs` — `SLASH_COMMANDS` shortcuts removed; `complete_slash_command()` descriptions on prefix match; `ArgCompletion::StaticSubcommands`, `get_static_subcommands()`, `complete_static_subcommand()`
+- `src/chat/commands.rs` — Simplified `parse_command()`; removed `map_*_shortcut()` functions; removed subcommand letter aliases; `format_help()` shortcuts section removed; `get_static_subcommands()` shortcuts `/t`, `/to` removed
+- `src/chat/app.rs` — `cached_input_screen_lines`, `WrapMode::WordOrGlyph`, Alt+Enter handler
+- `src/chat/tui/components/input_line.rs` — Rewritten with `wrap_line()`, `SelectionRange`, `cursor_visual_position()`
+- `src/chat/tui/wrap.rs` — Shared `wrap_line()` function
+- `doc/src/commands/chat.md` — All aliases removed from tables
+- `doc/src/CHANGELOG.md` — Entries for all three features
+
+**Design Decisions:**
+- `/quit` and `/exit` are the ONLY synonymous pair kept (user preference)
+- All other aliases removed: single-letter shortcuts, two-letter shortcuts, subcommand letter aliases
+- Autocomplete shows descriptions even for single prefix matches via `CompletionResult::Multiple`
+- Input word-wrap uses `wrap_line()` from `wrap.rs` (shared with chat_area)
+- Input max height: 33% of terminal, minimum 3 lines
+- `Alt+Enter` added as newline fallback for terminals that don't support `Shift+Enter`
 
 ---
 
@@ -4340,39 +4776,64 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 4.1 | Remove `TerminalView` (println-based implementation) | 📋 |
-| 4.2 | Remove all hardcoded `\x1B[` ANSI escape codes from chat modules | 📋 |
-| 4.3 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | 📋 |
-| 4.4 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | 📋 |
-| 4.5 | Simplify `run_chat_repl()` → direct `App::run()` call | 📋 |
-| 4.6 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 |
-| 4.7 | Clean up `src/chat/view/mod.rs` — remove ANSI-only helpers, update `ChatView` trait | 📋 |
-| 4.8 | Update `src/markdown.rs` — ratatui path for chat, termimad path for non-chat | 📋 |
-| 4.9 | Documentation: CHANGELOG, architecture, roadmap | 📋 |
-| 4.10 | Test on Linux, macOS, Termux at various terminal widths | 📋 |
+| 4.1 | Remove `TerminalView` (println-based implementation) | ✅ COMPLETED (PR2) |
+| 4.2 | Remove `RustylineInput` and `rustyline` dependency | ✅ COMPLETED (PR2) |
+| 4.3 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | 🔨 PARTIAL — `repl.rs` still has `eprintln!` with ANSI for pre-TUI init errors; `view/mod.rs` ANSI codes serve non-chat pipe-safe output |
+| 4.4 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | ✅ COMPLETED (PR3) |
+| 4.5 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | ✅ COMPLETED (PR3) |
+| 4.6 | Simplify `run_chat_repl()` → direct `App::run()` call | 🔨 PARTIAL — `repl.rs` handles pre-TUI setup then delegates to `repl_tui` |
+| 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
+| 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
+| 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
+| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | 📋 NOT STARTED |
+| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
+| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract `handle_crossterm_event()`, `handle_llm_event()`, `handle_key_line()` from `tokio::select!` branches (reduce ~629-line function to ~200 lines) | 📋 NOT STARTED |
+| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "embedding service" or backend-agnostic phrasing | 📋 NOT STARTED |
+| 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
+| 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
-- `rustyline = "14"` — already removed in PR2
+- `rustyline = "14"` — removed in PR2
+- `termimad = "0.34"` — removed in PR3, replaced by standalone renderer (`src/markdown/standalone.rs`)
 
 **Dependencies Kept:**
-- `termimad = "0.34"` — query/translate/summarize/ocr (non-chat)
-- `indicatif = "0.17"` — subcommand spinners (non-chat)
-- `rattles = "0.2"` — animation frames (chat status bar widget + non-chat spinners)
+- `indicatif = "0.17"` — non-chat subcommand spinners (query, translate, summarize, OCR)
+- `rattles = "0.2"` — animation frames (chat status bar widget)
 
-**Files to Remove:**
-- `src/chat/view/terminal.rs` — Replaced by RatatuiView (already in PR2)
+**Files Removed (in PR2/PR3):**
+- `src/chat/view/terminal.rs` — replaced by RatatuiView
+- `src/chat/input/rustyline.rs` — replaced by CrosstermInput
 
-**Files to Modify:**
-- `Cargo.toml` — Verify rustyline removed, deps correct
-- `src/chat/mod.rs` — Remove terminal view module
-- `src/chat/input/mod.rs` — Remove rustyline module
-- `src/chat/view/mod.rs` — Remove TerminalView, remove ANSI-only helpers
-- `src/chat/repl.rs` — Simplify to App::run() directly
-- `src/spinner.rs` — Chat = rattatui widget, non-chat = indicatif (conditional)
-- `src/markdown.rs` — Dual path: ratatui for chat, termimad for non-chat
-- `CHANGELOG.md` — Document change
+**Remaining Work (PR4):**
+- Clean up `repl.rs` pre-TUI error ANSI codes (minor — errors are pre-alternate-screen)
+- Simplify `run_chat_repl()` setup flow
+- Update `src/spinner.rs` for clean chat/non-chat split
+- Documentation update
 
-**Checkpoint:** Only ratatui rendering mode exists for chat. Non-chat subcommands (query, translate, OCR, summarize) still use termimad and indicatif. Clean codebase with no hardcoded widths or ANSI escapes in chat modules.
+**Significant Issues from PR3 Testing (deferred to PR4):**
+
+| # | Issue | Severity | Source | Fix |
+|---|-------|----------|--------|-----|
+| 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
+| 12 | `/togglestyle` alias should not exist | ✅ **FIXED** | Test #23/#36 | Removed `"togglestyle"` alias from `commands.rs` in PR3 YAGNI sweep |
+| 5 | `/think on` toggles instead of explicitly enabling | ✅ **FIXED** | Test #2 | `ChatCommand::Think { enabled: Option<bool> }` parser now supports `/think on`/`/think off` explicitly |
+| 7 | `/compact` freezes TUI — no async progress | ✅ **FIXED** | Test #31 | `spawn_compact_task()` runs compaction in background tokio task; `LlmState::Compacting` state; Ctrl+C ignored during compaction |
+| 8 | `/compact` output not streamed | ✅ **FIXED** | Test #31 | `LlmEvent::CompactStreamToken/Done` events stream summary tokens in real time |
+| 9 | `/compact` output appears truncated/sparse | ✅ **FIXED** | Test #31 | `MAX_SUMMARY_TOKENS` removed; `COMPACTION_PROMPT` rewritten to preserve ALL context |
+| 13 | Embedding hang on exit (several seconds, no visual cue) | 🟡 Low | Test #1 | Show "Saving embeddings..." message or async flush |
+| 14 | Home/End keys don't work in Kitty terminal | 🟡 Low | Test #3 | Add Kitty key mappings (`^[OH`/`^[OF`) or document limitation |
+| 17 | Multi-line input loses newlines on submit | 🟡 Medium | Test #8 | Fix textarea `submit()` to preserve `\n` characters |
+| 18 | Bracketed paste loses newlines (Ctrl+V from external clipboard) | 🟡 Low | Test #12 | Investigate crossterm/Kitty clipboard protocol |
+| 20 | Diagram rendering CPU creep (5-7% with multiple mermaid in scrollback) | 🟡 Low | Test #29 | Cache rendered diagrams, skip re-rendering off-screen content |
+| 23 | Mono theme preserves colors in prompt/thinking | 🟡 Low | Test #4 | Strip all colors except bold/underline in mono theme |
+
+**Blockers found in PR3 testing (must fix before merge — tracked in PR3 branch):**
+
+| # | Issue | Severity | Source | Fix |
+|---|-------|----------|--------|-----|
+| 1 | Plain mode (`--plain`) outputs ANSI codes (not pipe-safe) | 🔴 High | Test #18/#30 | Add `use_plain` parameter to `display_thinking()`, strip all ANSI when plain |
+| 2 | Vision proceeds despite no-capability warning | 🔴 High | Test #24 | Abort vision/OCR when model lacks capability, add `--force` for override |
+| 3 | Multi-tool inter-tool text appears after all tools instead of interleaved | 🔴 High | Test #26 | Investigate `InterToolText` event timing in `custom_coordinator.rs` vs tool message drain |
 
 ---
 

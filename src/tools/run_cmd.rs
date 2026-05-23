@@ -1,9 +1,7 @@
 //! Tool to execute external CLI commands.
 
-#![expect(clippy::print_stderr)] // Tool error/status output
-use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
+use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
-use crate::spinner::suspend_for_print;
 use ollama_rs::function;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -183,9 +181,7 @@ pub async fn run_command(
 
     // Visual indicator: show which command is about to execute
     let display_cmd = crate::utils::truncate_chars(&command_line, 60);
-    suspend_for_print(|| {
-        eprintln!("{TOOL_DIM}⚡ {display_cmd}{RESET}");
-    });
+    tui_aware_print(&format!("⚡ {display_cmd}"));
 
     // Determine timeout
     let timeout_duration = timeout_val
@@ -433,11 +429,11 @@ fn apply_sandbox_if_enabled(
             rs
         }
         Err(e) => {
-            eprintln!(
+            tui_aware_print(&format!(
                 "Warning: Landlock sandbox not supported (kernel may be too old): {}",
                 e
-            );
-            eprintln!("Running without filesystem isolation.");
+            ));
+            tui_aware_print("Running without filesystem isolation.");
             return Ok(());
         }
     };
@@ -512,8 +508,8 @@ fn apply_sandbox_if_enabled(
     debug_log!("Sandbox status: {:?}", status.ruleset);
 
     if status.ruleset != RulesetStatus::FullyEnforced {
-        eprintln!(
-            "Warning: Landlock sandbox not fully enforced (kernel may not support all features)"
+        tui_aware_print(
+            "Warning: Landlock sandbox not fully enforced (kernel may not support all features)",
         );
     }
 
@@ -578,14 +574,18 @@ fn apply_sandbox_if_enabled(
 ) -> Result<(), String> {
     // Sandbox is always enabled but not available on this platform
     #[cfg(target_os = "android")]
-    eprintln!("Warning: Sandbox not available on Termux. Running without filesystem isolation.");
+    tui_aware_print(
+        "Warning: Sandbox not available on Termux. Running without filesystem isolation.",
+    );
 
     #[cfg(target_os = "macos")]
-    eprintln!("Warning: Sandbox not yet supported on macOS. Running without filesystem isolation.");
+    tui_aware_print(
+        "Warning: Sandbox not yet supported on macOS. Running without filesystem isolation.",
+    );
 
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-    eprintln!(
-        "Warning: Sandbox not supported on this platform. Running without filesystem isolation."
+    tui_aware_print(
+        "Warning: Sandbox not supported on this platform. Running without filesystem isolation.",
     );
 
     Ok(())

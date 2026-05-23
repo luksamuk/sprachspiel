@@ -6,7 +6,6 @@ The `translate` command translates text between 50+ languages using the Translat
 
 ```bash
 sprach [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
-sprach [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
 ```
 
 ## Description
@@ -20,6 +19,8 @@ Translate text between languages with automatic source language detection. The c
 | `LANGUAGE` | Language pair in format `[source:]target` or just `target` for auto-detect |
 | `TEXT` | Text to translate. Reads from stdin if not provided. |
 
+| Option | Description |
+|--------|-------------|
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |

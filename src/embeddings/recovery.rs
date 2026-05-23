@@ -17,10 +17,19 @@
 //!
 //! On app restart, recovery manager finds any saved content_items/chunks without
 //! embeddings and generates them in the background.
+//!
+//! # Output modes
+//!
+//! - `quiet = false` (terminal mode): prints progress and errors to stdout/stderr,
+//!   shows an indicatif progress bar (in `_with_progress` variant)
+//! - `quiet = true` (TUI mode): suppresses all direct terminal output, logs
+//!   warnings via `log::warn!`, uses a hidden progress bar. The caller (TUI)
+//!   shows status messages through the `ChatView` instead.
 
-#![expect(clippy::print_stdout)] // CLI subcommand output
-#![expect(clippy::print_stderr)] // CLI subcommand output
+#![expect(clippy::print_stdout)] // Terminal-mode output (guarded by `quiet` flag)
+#![expect(clippy::print_stderr)] // Terminal-mode output (guarded by `quiet` flag)
 use chrono::Utc;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 
 use crate::db::Database;
@@ -39,12 +48,17 @@ use crate::embeddings::{
 /// # Arguments
 /// * `db` - Database connection
 /// * `embedding_client` - Embedding client for generating embeddings
+/// * `quiet` - When `true`, suppresses terminal output and progress bars (TUI mode).
+///   Warnings are logged via `log::warn!` instead of `eprintln!`.
+///   When `false`, prints status to stdout/stderr.
 ///
 /// # Returns
 /// Number of embeddings successfully recovered
 pub async fn recover_missing_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
+    quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) -> usize {
     // Clean up V2 orphan chunks (those with wrong item_id mapping)
     let orphan_deleted = match db.with_connection(|conn| {
@@ -56,12 +70,16 @@ pub async fn recover_missing_embeddings(
     }) {
         Ok(count) => count,
         Err(e) => {
-            eprintln!("Warning: Failed to clean orphan chunks in recovery: {}", e);
+            if quiet {
+                log::warn!("Failed to clean orphan chunks in recovery: {}", e);
+            } else {
+                eprintln!("Warning: Failed to clean orphan chunks in recovery: {}", e);
+            }
             0
         }
     };
 
-    if orphan_deleted > 0 {
+    if orphan_deleted > 0 && !quiet {
         println!("Cleaned {} orphan chunk(s).", orphan_deleted);
     }
 
@@ -69,11 +87,15 @@ pub async fn recover_missing_embeddings(
     let context_length = match embedding_client.get_context_length().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!(
-                "Warning: Could not get embedding model context length: {}",
-                e
-            );
-            eprintln!("Using conservative default of 512 tokens.");
+            if quiet {
+                log::warn!("Could not get embedding model context length: {}", e);
+            } else {
+                eprintln!(
+                    "Warning: Could not get embedding model context length: {}",
+                    e
+                );
+                eprintln!("Using conservative default of 512 tokens.");
+            }
             512
         }
     };
@@ -94,9 +116,17 @@ pub async fn recover_missing_embeddings(
         return 0;
     }
 
-    println!("Recovering {} missing embedding(s)...", total_missing);
+    if !quiet {
+        println!("Recovering {} missing embedding(s)...", total_missing);
+    }
+
+    // Report initial progress so the status bar shows total count
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((0, total_missing));
+    }
 
     let mut recovered = 0;
+    let mut processed = 0usize;
     let now = Utc::now();
 
     // Generate embeddings for content items (and their chunks)
@@ -137,7 +167,11 @@ pub async fn recover_missing_embeddings(
                 ) {
                     Ok(id) => id,
                     Err(e) => {
-                        eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        if quiet {
+                            log::warn!("Failed to insert chunk {}: {}", chunk.index, e);
+                        } else {
+                            eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        }
                         continue;
                     }
                 };
@@ -166,10 +200,14 @@ pub async fn recover_missing_embeddings(
                         recovered += result.chunks_created;
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to recover embedding for chunk {}: {}",
-                            chunk_id, e
-                        );
+                        if quiet {
+                            log::warn!("Failed to recover embedding for chunk {}: {}", chunk_id, e);
+                        } else {
+                            eprintln!(
+                                "Warning: Failed to recover embedding for chunk {}: {}",
+                                chunk_id, e
+                            );
+                        }
                     }
                 }
             }
@@ -197,12 +235,20 @@ pub async fn recover_missing_embeddings(
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to recover embedding for item {}: {}",
-                        item_id, e
-                    );
+                    if quiet {
+                        log::warn!("Failed to recover embedding for item {}: {}", item_id, e);
+                    } else {
+                        eprintln!(
+                            "Warning: Failed to recover embedding for item {}: {}",
+                            item_id, e
+                        );
+                    }
                 }
             }
+        }
+        processed += 1;
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((processed, total_missing));
         }
     }
 
@@ -236,11 +282,14 @@ pub async fn recover_missing_embeddings(
             let (parent_item_id, content_type, conv_id, proj_id) = match item_info {
                 Some((pid, ct, c, p)) => (pid, ct, c, p),
                 None => {
-                    // Chunk was just created but item doesn't exist - shouldn't happen
-                    eprintln!(
-                        "Warning: Newly created chunk {} has no parent item",
-                        chunk_id
-                    );
+                    if quiet {
+                        log::warn!("Newly created chunk {} has no parent item", chunk_id);
+                    } else {
+                        eprintln!(
+                            "Warning: Newly created chunk {} has no parent item",
+                            chunk_id
+                        );
+                    }
                     continue;
                 }
             };
@@ -271,17 +320,29 @@ pub async fn recover_missing_embeddings(
                     recovered += result.chunks_created;
                 }
                 Err(e) => {
-                    // Chunk may exceed context length - fallback didn't work
-                    eprintln!(
-                        "Warning: Failed to generate embedding for chunk {}: {}",
-                        chunk_id, e
-                    );
+                    if quiet {
+                        log::warn!("Failed to generate embedding for chunk {}: {}", chunk_id, e);
+                    } else {
+                        eprintln!(
+                            "Warning: Failed to generate embedding for chunk {}: {}",
+                            chunk_id, e
+                        );
+                    }
                 }
+            }
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total_missing));
             }
         }
     }
 
-    if recovered > 0 {
+    // Signal completion to the TUI status bar
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((total_missing, total_missing));
+    }
+
+    if recovered > 0 && !quiet {
         println!("Successfully recovered {} embedding(s).", recovered);
     }
 
@@ -292,12 +353,18 @@ pub async fn recover_missing_embeddings(
 ///
 /// Same as `recover_missing_embeddings` but shows a progress bar.
 /// Called on /exit to complete pending embeddings before shutting down.
+///
+/// # Arguments
+/// * `db` - Database connection
+/// * `embedding_client` - Embedding client for generating embeddings
+/// * `quiet` - When `true`, suppresses terminal output and uses hidden progress bar (TUI mode)
+/// * `progress_tx` - Optional channel sender for TUI progress updates
 pub async fn recover_missing_embeddings_with_progress(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
+    quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) -> usize {
-    use indicatif::{ProgressBar, ProgressStyle};
-
     // Get counts first
     let items = match db.get_content_items_for_reindex() {
         Ok(items) if !items.is_empty() => items,
@@ -317,17 +384,25 @@ pub async fn recover_missing_embeddings_with_progress(
         return 0;
     }
 
-    println!("Completing {} pending embedding(s)...", total);
+    if !quiet {
+        println!("Completing {} pending embedding(s)...", total);
+    }
 
-    let progress = ProgressBar::new(total as u64);
-    #[expect(clippy::expect_used)] // hardcoded template string is always valid
-    let style = ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
-        .expect("Invalid progress template")
-        .progress_chars("█▓░");
-    progress.set_style(style);
+    // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
+    let progress = if quiet {
+        ProgressBar::hidden()
+    } else {
+        let pb = ProgressBar::new(total as u64);
+        #[expect(clippy::expect_used)] // hardcoded template string is always valid
+        let style = ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
+            .expect("Invalid progress template")
+            .progress_chars("█▓░");
+        pb.set_style(style);
+        pb
+    };
 
     // Call the main recovery function but with progress tracking
-    let result = recover_missing_embeddings(db, embedding_client).await;
+    let result = recover_missing_embeddings(db, embedding_client, quiet, progress_tx).await;
 
     progress.finish_and_clear();
 

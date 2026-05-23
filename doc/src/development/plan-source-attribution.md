@@ -240,7 +240,7 @@ This ensures consistency and prevents confusion.
 ## Testing
 
 ```bash
-ask chat
+sprach chat
 
 # Test prefixed ID
 > Remember that my favorite programming language is Rust.

@@ -4,26 +4,93 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plain mode ANSI leak** — `display_thinking()`, tool error formatting, and retry messages now respect plain mode (`--plain`). Plain mode uses `[Thinking]` header with `|` border, no ANSI/emoji. `debug_tools::PLAIN_MODE` atomic flag is set from subcommands and checked by `tui_aware_print()`, `display_tool_call()`, `log_tool_result()`, and `tool_robustness::format_error_with_status()`. Subcommand output is pipe-safe (zero ANSI codes on stdout and stderr).
+- **Vision/OCR abort without capability** — `sprach vision` and `sprach ocr` now abort with `VisionError::NoVisionCapability` unless `--force` flag is passed. Previously, vision proceeded silently on models without vision capability, producing garbage output. `--force` replaces the old behavior where vision proceeded when the model was explicitly chosen via `-m`.
+- **Inter-tool message ordering** — `insert_before_streaming_zone()` now detects trailing `Tool` messages and inserts before them instead of appending at end, preventing tool results from appearing after subsequent assistant content in edge cases.
+- **Compaction summary truncation** — `MAX_SUMMARY_TOKENS` constant and all truncation logic removed from compaction. The LLM now produces whatever-length summary is needed to preserve ALL relevant context. `COMPACTION_PROMPT` rewritten without "MUST NOT exceed 3000 tokens" or "max N items" constraints.
+
 ### Added
 
-- **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events (100ms poll for spinner). RatatuiView implements all 18 ChatView methods + all CommandOutput variants. TUI components: ChatMessage enum, StatusBarState with braille spinner, InputState with unicode cursor. MarkdownTheme (Dark/Light/Mono) from DisplaySettings.skin. WelcomeInfo and RecentContextInfo rendered as chat messages. Status bar with model name, token progress bar, and emoji indicators. Session save/restore on Ctrl+D and /quit. run_chat_repl() delegates all interactive display to run_chat_repl_tui() via RatatuiView. Non-chat subcommands continue using TerminalView (termimad+indicatif). Streaming: plain text during LLM response (ChatMessage::assistant_streaming), full markdown render on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop).
+- **Streaming compaction** — `/compact` now streams the compaction summary in real time instead of showing a spinner and blocking the TUI. Implementation: `LlmEvent::CompactStreamToken(String)` and `LlmEvent::CompactStreamDone { summary, range }` variants carry compaction streaming events through the same `llm_tx` channel as regular LLM streaming. `spawn_compact_task()` (analogous to `spawn_llm_task`) runs compaction in a background tokio task with its own channel pair. `LlmState::Compacting` disables input and shows "Compacting..." spinner label. Compaction is NOT cancellable — Ctrl+C shows "Compaction in progress, please wait..." instead of cancelling. `compact_conversation()` rewritten with `coordinator.chat_stream()` and `on_token` callback; no spinner, `llm_tx: Sender<LlmEvent>` parameter replaces `suppress_spinner`. `auto_compact_if_needed()` and all callers propagated through the `llm_tx` channel.
+
+- **Tool messages appear before thinking blocks during streaming round** — `drain_and_add_tool_messages()` now runs immediately after key transition events (`ToolCallStarted`, `StreamBlockDone`, `InterToolText`, `Complete`, `Error`, `Cancelled`), ensuring tool messages are appended only after the LLM state has fully transitioned. Previously, `drain_tool_messages()` at the end of the event loop could execute on a spinner tick while the state was still `Streaming`/`Thinking`, inserting tool messages before the streaming zone content via `insert_before_streaming_zone()`. This caused tool call indicators like `🔧 check_tool_availability()` to appear above `🧠 Thinking` blocks instead of below them. The new `drain_and_add_tool_messages()` helper is called inline after each state-transition event to guarantee correct ordering.
+- **Inter-tool thinking appears before tool call indicators in non-streaming rounds** — `LlmEvent::InterToolText` now carries a `thinking: Option<String>` field. In non-streaming tool rounds (`process_next()` after the first streaming round), pre-tool reasoning is inserted before tool call indicators via `insert_before_streaming_zone()`, preventing the thinking block from appearing after tool calls. The `on_event` callback in `setup_coordinator()` forwards both `content` and `thinking` directly to the LLM event channel (not the ViewEvent batch path), bypassing `ViewEventReceiver::drain_into_llm_channel()` which would otherwise delay thinking until after `chat_stream()` returns.
+- **Ctrl+C interrupts multi-tool execution loop** — `CancellationToken` is now threaded through `CustomCoordinator` via the `cancel_token` builder method. The coordinator checks `self.cancel_token.is_cancelled()` at the start of each tool call in the execution loop and also in `process_next()` before making the next Ollama request. When cancelled, returns `CANCELLED_BY_USER` error. `handle_user_message_stream` intercepts this error and silently breaks the loop (the event loop already shows "Cancelled."), instead of displaying it as an error message. The `CANCELLED_BY_USER` string is centralized as a `pub const` in `custom_coordinator.rs` to avoid duplicates.
+
+### Added
+
+- **Vision capability check for `sprach vision` and `sprach ocr`** — Both subcommands now validate that the selected model supports vision before processing images. If the model lacks vision capability: (1) `vision`: when the model was auto-selected (no `-m` flag), prints an error with suggested vision-capable models and exits; when the user explicitly chose the model via `-m`, prints a warning and proceeds anyway. (2) `ocr`: prints a warning and proceeds (cloud models may not report capabilities correctly). Uses `ModelCapabilities::detect_or_default()` (async, queries Ollama `/api/show`) which is already used in the chat REPL. `VisionError::NoVisionCapability` variant with actionable error message listing `qwen3.5:4b`, `moondream:1.8b`, `minicpm-v:8b`, and `qwen3.5:cloud`.
+
+- **Debug logging for vision image loading** — `VisionProcessor::load_images()` now logs each image file path and base64 size at debug level, making it easy to verify that images are being sent to the model in diagnostic logs.
+
+- **Mermaid diagram rendering (feature flag `mermaid`)** — ` ```mermaid ` code blocks in LLM output are rendered as Unicode box-drawing diagrams in the terminal. Rich mode uses `mermaid-text::render_with_width()` for responsive terminal-width diagrams (flowcharts, sequences, class diagrams, etc.). Plain mode (`--plain`) emits raw ` ```mermaid ` blocks for downstream consumers. TUI mode renders Mermaid with theme-aware styling (border lines and text labels). Feature-gated behind `mermaid = ["dep:mermaid-text"]`, included in default and all-tools builds. System prompt injects `MERMAID_INSTRUCTION` (cfg-gated) when compiled with the feature, instructing the LLM to use Mermaid syntax for diagrams. Parse errors fall back to code block rendering. `ContentSegment::Mermaid(String)` variant in both `markdown/table.rs` and `chat/tui/markdown.rs`. `extract_table_segments` renamed to `extract_content_segments` (deprecated alias preserved). 9 new tests.
+
+- **Deferred Mermaid rendering during streaming** — During LLM streaming (`AssistantStreaming`, `Thinking`), Mermaid blocks are displayed as regular code blocks instead of being rendered as diagrams on every frame. This eliminates CPU waste from re-rendering Mermaid on each token, visual noise from fallback code blocks flickering during streaming, and risk of `mermaid-text` crate panicking on incomplete/non-ASCII source. Architecture: `render_markdown()` → `render_markdown_impl(_, _, _, render_mermaid=true)` for final messages, `render_markdown_streaming()` → `render_markdown_impl(_, _, _, render_mermaid=false)` for streaming. In streaming mode, `ContentSegment::Mermaid` is formatted as ` ```mermaid ` code block and passed through `tui-markdown` for syntax highlighting. In standalone mode: `render_markdown_streaming()` (deferred) and `render_markdown()` (rendered) share `render_segments(content, width, render_mermaid)`. `catch_unwind` guards against mermaid-text panics on non-ASCII labels (byte-slicing bug in gantt/task parsers). 12 new tests total.
+
+- **Catppuccin palette for TUI code blocks** — Code blocks (fenced) and inline code in the TUI now use colors from the [Catppuccin](https://catppuccin.com) palette (MIT License). Dark theme uses Mocha Surface0 background (`#313244`) with syntect syntax highlighting preserved. Light theme uses Latte Surface0 background (`#ccd0da`) with Latte Text foreground (`#4c4f69`), overriding syntect's `base16-ocean.dark` token colors (designed for dark backgrounds) that are unreadable on light surfaces. Monochrome theme uses `Modifier::REVERSED` (inverted fg/bg by terminal) with `Modifier::BOLD` for visual distinction, stripping all RGB colors from code blocks and headings for true monochrome rendering. The `apply_code_block_background()` post-processor handles theme-specific processing: Dark preserves syntect colors, Light replaces all Span fg with `LATTE_TEXT`, Mono strips all Span fg/bg colors and applies `REVERSED` modifier. Trailing padding extends the background to the right edge for Dark/Light themes (Mono uses `REVERSED` which inverts the full line). Clipboard copies are protected via `trim_end()` on `visual_lines`. Credit: Catppuccin palette licensed under MIT.
+
+- **TUI logging: suppress stderr, route all output to file** — When the TUI alternate screen is active, stderr output from the logger is completely suppressed (no more corrupted display). All log output goes to the `.log` file instead. File logging levels are boosted in TUI mode: Normal → Info, Verbose → Debug, Trace → Trace. The `/debug` command and `--verbose`/`--debug` flags now properly boost file logging so the log file captures useful diagnostic information. New public API: `logging::set_tui_mode(bool)`, `logging::is_tui_mode()`, `logging::set_file_level()`, `logging::clear_file_level()`. `StderrLogger::log()` checks the `TUI_MODE` atomic and returns early when TUI is active. `FileLogger::log()` uses a dynamic `FILE_LEVEL_OVERRIDE` atomic for runtime level changes. `RatatuiView::new()` calls `set_tui_mode(true)`, `RatatuiView::restore()` and `Drop` call `set_tui_mode(false)`. `restore_terminal_on_panic()` also clears TUI mode so panic messages are visible.
+- **File logging levels increased** — File logger now captures more useful information: Quiet → Warn (unchanged), Normal → Info (was Warn), Verbose → Debug (was Warn), Trace → Trace (was Info). This makes the `.log` file actually useful for debugging without needing to manually raise verbosity.
+- **KeyEventKind::Press filter** — `handle_key()` now filters `KeyEventKind::Release` events at the top of the function, returning `None` immediately. Crossterm 0.29 sends both `Press` and `Release` events for each key, and without this filter the textarea receives double keystrokes for explicit handlers (Shift+Char, Ctrl+Y, etc.).
+- **Key event diagnostic logging** — `handle_key()` logs each key event at Debug level (`code`, `modifiers`, `kind`) so that keyboard issues can be diagnosed from the `.log` file without corrupting the TUI display.
+- **TUI Input: ratatui-textarea integration** — Replace custom InputState with `ratatui-textarea` for full-featured text editing: multi-line input (Shift+Enter), selection, kill-ring (Ctrl+W/Ctrl+Y), undo/redo, word movement (Ctrl+Left/Right), Emacs-style navigation (Ctrl+A/E). Ctrl+C with text clears input (cuts to clipboard); Ctrl+C empty cancels LLM. Eliminated ~950 lines of duplicated buffer/cursor code.
+- **Floating completion menu** — Tab completion overlay appears above the status bar when multiple matches are available. Left-aligned, 80% width (100% for terminals <60 cols). Common prefix highlighted in green. Navigate with arrows, confirm with Tab/Enter, dismiss with Esc. 6 unit tests in `completion_menu.rs`.
+- **ArgCompletion enum for extensible sub-completions** — `ArgCompletion` enum (None, ModelName, StaticSubcommands) on `SlashCommand` struct enables generic argument completion. `/model` and `/m` both trigger model name completion via `try_model_arg_fragment()`. `complete_model()` accepts `cmd_trigger` parameter for correct prefix in replacement text.
+- **Chat text selection with mouse** — Left-click+drag in the chat area selects text with visual highlight (white on blue). `ChatSelection` component tracks anchor/cursor positions in visual-line coordinates, supports text extraction for clipboard. `mouse_to_visual_pos()` maps terminal coordinates to content positions accounting for scroll offset. 10 unit tests in `chat_selection.rs`.
+- **Input vs chat selection mutual exclusion** — Typing in the textarea clears chat selection; clicking in chat area clears any prior text selection. Scroll keys and Tab don't conflict with selection state.
+- **Mouse wheel scroll** — ScrollUp/ScrollDown in chat area scrolls 3 lines per tick.
+- **Intelligent table reflow** — Tables in the TUI now adapt intelligently to terminal width. Rigid columns (short content like IDs, ≤6 chars) keep their natural width; elastic columns (long descriptions) get remaining space and word-wrap cell content across multiple sub-lines. Markdown alignment hints (`:---`, `---:`, `:---:`) parsed and applied as Left/Right/Center text alignment within cells. Box lines (`├─┼─┤`) between every data row for legibility. Responsive: re-rendered per frame with current terminal width. Shared `wrap_line`/`hard_break_word` extracted to `src/chat/tui/wrap.rs` for reuse by both chat_area (thinking blocks) and markdown (table cell wrapping).
+- **Table collapsing in recent context** — Markdown table blocks in the "Recent context" status display are replaced with `(...)` before flattening, preventing ugly pipe characters and separator lines from leaking into the single-line summary. Tables inside fenced code blocks are left intact.
+- **Visual text selection in input line** — Selected text in the input line is now highlighted with blue background. `input_line.rs` queries `textarea.selection_range()` and applies `selection_style()` (white on blue) to the selected characters via styled `Span`s. 6 unit tests for `apply_selection_to_line()`.
+- **Embedding progress indicator** — Status bar shows `⚙ current/total` when embeddings are being generated during startup indexing. `StatusBarState.embedding_progress` field tracks active embedding operations. Channel infrastructure (`mpsc::UnboundedSender`) wired through `App::with_embedding_channel()` and `RatatuiView::embedding_tx()` for future per-message progress reporting.
+- **Per-message embedding progress** — Each `tokio::spawn` embedding task in `session.rs` now sends `(0,1)` before spawn and `(1,1)` on completion via `EmbeddingProgressTx`, making the `⚙ 0/1` indicator briefly visible during per-message embedding generation. Startup regeneration (`regenerate_all_embeddings`) and recovery (`recover_missing_embeddings`) also send progress via the same channel, showing `⚙ current/total` during batch processing. `poll_embedding_progress()` drains the channel and keeps only the latest update; when `current >= total`, the indicator is cleared.
+- **`/reindex --yes` confirmation gate** — `/reindex` now requires `--yes` flag (matching `/forget` pattern) because it deletes ALL embeddings and regenerates them from scratch. Without `--yes`, shows: `⚠ /reindex will regenerate ALL embeddings from scratch. Use /reindex --yes to confirm.` This prevents accidental re-indexing which could be slow on large databases.
+- **`/reindex` bug fix: "0 of 0 embeddings"** — Previously `/reindex` returned "Regenerated 0 of 0 embeddings" when all content already had embeddings, because `get_content_items_for_reindex()` only queries `WHERE has_embedding = 0`. New `Database::reset_all_embedding_flags()` deletes all vec0 embeddings (`content_embeddings`, `chunk_embeddings_v2`, `fact_embeddings`), deletes all `content_chunks` rows (which are derived data — `regenerate_all_embeddings` re-creates them via `insert_content_chunk`), and resets `has_embedding = 0` across all tables before calling `regenerate_all_embeddings()`. This ensures every item is re-processed and prevents duplicate chunks that caused the count to grow on repeated `/reindex --yes` (131 → 156 → 181). `ResetStats` struct reports items/chunks_deleted/facts reset counts. Also fixed `ReindexData.total` to show `items_processed + chunks_processed` (combined count) instead of just `items_processed`.
+- **Concurrent reindex guard** — `ChatSession.is_reindexing` (`Arc<AtomicBool>`) prevents running `/reindex --yes` while another is already in progress. Returns a warning instead of starting a second one.
+- **Mermaid width truncation** — Mermaid diagram lines exceeding the terminal width (especially `sequenceDiagram` which ignores `max_width`) are now truncated with `…` ellipsis at the end using `truncate_visual_width()` (grapheme-level accuracy). Applies in both TUI mode (`render_mermaid_tui()`) and standalone mode (`render_mermaid_rich()`). Prevents visual corruption from overflowing box-drawing borders.
+- **`/toggle-style` command** (previously `/togglestyle`) — Toggle style rendering on/off with a single command. When style is off: Mermaid blocks show as source code blocks (no diagram rendering), code block syntax highlighting (syntect fg colors) is stripped (plain text with Catppuccin background preserved), and tables use pipe-delimited plain format (`| col | col |`) instead of box-drawing borders. Status bar indicator: 🎨 (style on) / 📄 (style off). Old `/togglestyle` command is still accepted for backward compatibility. Mental model: "I want to see the code underneath". `App.style_enabled` field, `toggle_style()` method, threaded through `render()` → `build_lines()` → `render_markdown_impl()`. 8 new tests.
+- **`tui_aware_print()` for tool indicators** — All tool visual indicators (📝 notes, 💾 facts, ⚡ commands, 📄 documents, 👎 feedback, 📖 skills) and sandbox warnings now use `tui_aware_print()` instead of `suspend_for_print(|| { eprintln!(...) })`. In TUI mode, these route through the `TUI_CALLBACK` channel to appear as `ChatMessage::tool()` in the chat area. In terminal mode, they fall back to `suspend_for_print` with `TOOL_DIM` styling. This fixes the bug where tool indicators corrupted the ratatui alternate screen (appearing as garbage on the status bar). Removed 17 `suspend_for_print` calls, 6 raw `eprintln!` calls, and 6 `#![expect(clippy::print_stderr)]` attributes from tool files. 2 new tests for `tui_aware_print`.
+- **Remove sub-agent output truncation** — Sub-agent results (vision, OCR, translate, summarize) are no longer truncated by `truncate_to_budget()`. The coordinator's emergency context overflow protection in `custom_coordinator.rs` still handles results that exceed the context window. Removed `SubagentConfig.max_output_chars` field and `DEFAULT_MAX_OUTPUT_TOKENS` constant. Vision `max_tokens` increased from 2048 to 8192 for multi-page PDF support.
+- **Remove `prompt` from `spawn_ocr_agent`** — OCR extraction is mode-driven, not prompt-driven. The `prompt` parameter was silently ignored for glm-ocr models and overridden by descriptive prompts for vision models. Removed the parameter entirely; the `ocr_mode` parameter controls extraction type. Updated system prompt to clarify: "OCR does NOT accept a custom prompt — use `ocr_mode` to select content type. For custom image analysis, use `spawn_vision_agent`."
+- **Fix tool message ordering regression** — Tool messages (🔧 calls, ⚡ indicators) were appearing before `Thinking` blocks when the LLM's first action was a tool call. Root cause: `insert_before_streaming_zone()` during `LlmState::ToolCall` incorrectly inserted messages before pre-tool `Thinking` blocks. Fix: append during `ToolCall`/`Idle` states, only insert before streaming zone during `Streaming`/`Thinking` states.
+- **Tool call indicators rendered bright, results dim** — `MessageType::Tool` messages starting with call/indicator prefixes (🔧⚡📝💾📄⏭🗑📖👍👎✎) are now rendered in normal style (no DIM overlay), making tool actions clearly visible. Tool results (✓ Result:, 📤 name result:) remain dimmed for visual hierarchy.
+- **Fix mouse selection offset with wrapped lines** — Mouse click/drag selection was misaligned from the actual content position when lines wrapped (long lines that span multiple display rows). Root cause: `visual_lines_cache` had one entry per source `Line` but `scroll_from_top` was in display-row space, causing index divergence whenever lines wrapped. Fix: `wrap_visual_lines()` expands each source `Line` into one or more display-row strings (matching ratatui's `Wrap { trim: false }`), and `source_line_map: Vec<usize>` maps each display row back to its source line. `apply_selection_highlight()` uses this map to convert display-row selection coordinates to source-line indices for correct span highlighting. `App.source_line_map_cache` stored alongside `visual_lines_cache` for future use in text extraction. Gated `count_ratatui_wrapped_lines()` and `count_word_wrapped_graphemes()` with `#[cfg(test)]` (superseded by `wrap_visual_lines()` in production). 13 new tests for wrap logic and selection highlighting.
+- **Filter empty tool parameter values from display** — `display_tool_call()` now omits empty-string parameter values from the compact format (`head=` suppressed → just `head` omitted entirely, not `key=`). `log_tool_call()` skips empty-value detail lines in verbose/trace mode. This removes visual noise from tool indicators like `⚡ run_cmd(head=, tail=, command="ls")` → `⚡ run_cmd(command="ls")`.
+- **`↳` arrow indent on compact tool results** — Tool result lines in the TUI chat area are now indented with `  ↳` (two spaces + arrow) instead of plain indentation, providing clear visual association with the parent tool call indicator. In verbose mode: `  ↳ ✓ Result: ...`; in trace mode: `  ↳ 📤 name result: ...`).
+- **Fix tool call detail lines leaking into TUI chat area** — When TUI mode is active, `set_tui_mode(true)` boosts `log::set_max_level()` to `Debug` so the log file captures useful diagnostics. This caused `log_tool_call()`'s verbose detail lines (`tool: pdfinfo`, `command: ls`) to pass the `log::log_enabled!(Debug)` check and leak into the TUI callback, appearing as extra lines between the compact tool indicator and the result. Fix: detail lines now go to `log::debug!()` (the log file) instead of the TUI callback. Only the compact `display_tool_call()` format routes through `TUI_CALLBACK`.
+- **Background reindex execution in TUI** — `/reindex --yes` no longer freezes the TUI. Regeneration runs in a `tokio::spawn` background task, keeping the event loop responsive. Progress shown as `⚙ current/total` in the status bar. Completion message arrives via `AsyncMessageTx` channel and `App::poll_async_messages()`, rendered as a system message in the chat area. Terminal mode runs synchronously with a progress bar. Architecture: `App::with_embedding_channel()` returns `(App, EmbeddingProgressTx, AsyncMessageTx)`, `RatatuiView` stores both senders, `ChatSession.async_message_tx: Option<AsyncMessageTx>`, `handle_reindex_cmd` branches on `async_message_tx.is_some()` for TUI (background) vs terminal (synchronous) execution.
+- **Static subcommand completion** — `/think on|off` and `/tools-output compact|full|hidden` (and their shortcuts `/t`, `/to`) now show argument completions. `ArgCompletion::StaticSubcommands` variant with `try_static_subcommand_fragment()`, `get_static_subcommands()`, and `complete_static_subcommand()` in `ChatCompleter`. Removed `#[allow(dead_code)]` from `StaticSubcommands` variant.
+- **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events (100ms poll for spinner). RatatuiView implements all 18 ChatView methods + all CommandOutput variants. TUI components: ChatMessage enum, StatusBarState with braille spinner, InputState with unicode cursor. MarkdownTheme (Dark/Light/Mono) from DisplaySettings.skin. WelcomeInfo and RecentContextInfo rendered as chat messages. Status bar with model name, token progress bar, and emoji indicators. Session save/restore on Ctrl+D and /quit. run_chat_repl() delegates all interactive display to run_chat_repl_tui() via RatatuiView. Non-chat subcommands continue using TerminalView (termimad+indicatif). Streaming: markdown rendered incrementally during LLM response (ChatMessage::assistant_streaming), then re-rendered on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop).
 
 ### Changed
 
-- **W6-PR1: CommandResult — Decouple Logic from Presentation (Issue #145)** — Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`. Creates the abstraction layer needed for the Ratatui migration (W6-PR2). No behavioral changes — all output remains identical, just routed through the new enum and trait methods instead of raw print calls.
+- **Replace termimad with standalone monochrome markdown renderer** — Removed `termimad = "0.34"` dependency. All markdown rendering (headings, bold, code, tables, links) now uses a custom pipeline: `extract_content_segments()` → per-segment renderers (`render_markdown_inline()`, `render_table_box_string()`, `render_mermaid_rich()`). Rich mode (ANSI) and plain mode (`--plain`, pipe-delimited tables, raw code blocks) fully functional. Removed dead code: `wrap_text()`, `wrap_single_paragraph()`, `content_contains_table()`, `collapse_tables()` from `table.rs`. Cleaned up stale TerminalView/termimad references across codebase. `print_markdown_plain()` wired for `--plain` flag in `main.rs` (3 sites) and `query/mod.rs` (2 sites). `display_thinking()` uses `render_markdown_plain()` instead of `wrap_text()`. Removed `#![expect(clippy::print_stdout)]` from `query/mod.rs`.
+
+- **Remove command aliases and shortcuts** — Removed ~40 single-letter and two-letter command shortcuts (`/q`, `/n`, `/h`, `/m`, `/s`, `/l`, `/t`, `/e`, `/ls`, `/i`, `/r`, `/u`, `/ctx`, `/to`, `/f`, `/sk`, `/fb`, `/fg`, `/fp`, `/fa`, `/fl`, `/fr`, `/fs`, `/no`, `/na`, `/nl`, `/ns`, `/nd`, `/di`, `/dl`, `/ds`, `/dd`, `/ta`, `/tl`, `/tu`, `/tg`, `/te`, `/td`, `/tcd`, `/tca`, `/tr`, `/sum`, `/cp`, `/sys`, `/?`, `/find`, `/exit` as completion) from both the command parser and tab completion. Only `/quit` and `/exit` remain as synonyms. Removed from `/help` output, tab completion menu, and documentation. Autocomplete now shows command descriptions even for single prefix matches (e.g., `/he` Tab shows `/help — Show available commands`). This simplifies the interface now that Tab completion provides descriptions for every command.
+- **Subcommand letter aliases removed** — Letter shortcuts in subcommand parsers (`/fact a`, `/fact l`, `/note a`, `/todo a`, `/doc i`, etc.) are no longer accepted. Use full subcommand names: `/fact add`, `/fact list`, `/note add`, `/todo add`, `/doc import`, etc.
+
+- **Markdown heading underline styles** — H1 and H2 headings now render with `Modifier::UNDERLINED` in all three TUI themes (Dark, Light, Mono), restoring the visual hierarchy that termimad provided in the previous terminal implementation. Dark: Yellow+Underline (H1), Cyan+Underline (H2). Light: Blue+Underline (H1), Magenta+Underline (H2). Mono: Bold+Underline (H1/H2). H3+ remain Bold-only, creating a clear visual distinction between title/subtitle and subsection levels.
+- **Fix Line.style propagation in Markdown rendering** — `tui-markdown` renders headings with heading style (color, bold, underline) in `Line.style` as a fallback for `Span`s with `Style::default()`. Four code paths were discarding `Line.style` when reconstructing `Line`s from `Span`s: (1) `render_markdown_inner_owned()` in `markdown.rs` now preserves `Line.style` when converting `Text<'a>` to `Text<'static>` (this was the primary bug — all heading styles were silently lost for all message types); (2) `wrap_styled_line()` in `wrap.rs` now propagates `Line.style` to each `Span` via `base_style.patch(span.style)` before processing, and `line_to_owned()` now preserves `Line.style`; (3) Tool message rendering in `chat_area.rs` now merges `Line.style` into each `Span` before applying the dim overlay via `base_style.patch(span.style).patch(dim_style)`; (4) Thinking block rendering is fixed by the `wrap_styled_line()` change. Without these fixes, heading styles (including underline) were silently lost in ALL message types.
+- **Markdown rendering during streaming and for tool outputs** — `AssistantStreaming` (streaming LLM responses) now renders Markdown incrementally on every frame via `render_markdown()` instead of displaying plain text. `Tool` messages also render Markdown with a dim style overlay (using `Style::patch()` to merge dim modifier with existing markdown styles). This brings feature parity with Thinking blocks which already used `render_markdown()` during streaming. Tool outputs containing code blocks, lists, and tables are now properly formatted instead of rendered as flat text. Removed `render_plain_text()` (was only used as a placeholder for streaming, now obsolete).
+- **Fix history_pos not reset on Enter** — When navigating command history (Up/Down arrow) and submitting a line with Enter, `history_pos` was left stale at the previous navigation position. On the next Up press, `history_prev()` would continue from the stale position instead of starting from the end of history. Added `self.history_input.history_pos = None` in the Enter handler to reset navigation state on submit, matching the rustyline backend behavior.
+- **Fix Ctrl+D skipping embedding flush** — Ctrl+D (EOF/quit) only saved session and history but did not flush pending embeddings, while `/quit` correctly called `flush_pending_embeddings()` and `flush_pending_fact_embeddings()`. This caused Ctrl+D to exit with unflushed embeddings in non-anonymous sessions. The Ctrl+D handler now calls both flush functions with `suppress_spinner=true` to avoid corrupting the alternate screen buffer. `flush_pending_embeddings()` changed from private to `pub(crate)` to enable this call from the TUI REPL loop.
+
+- **Key binding overhaul — explicit key mappings** — Switched from `textarea.input()` (which enabled all default Emacs shortcuts) to `textarea.input_without_shortcuts()` with explicit custom handlers for every key. This fixes several usability bugs: Ctrl+C with active selection copies to clipboard before clearing (was silently discarding selection); Ctrl+V now pastes from system clipboard (was PageDown); Ctrl+Y yanks from kill-ring (standard Emacs behavior); Ctrl+M no longer inserts newline; Shift+letter keys always produce uppercase. All movement (arrows, Home/End, Ctrl+arrows for word movement), selection (Shift+arrows, Shift+Home/End, Ctrl+Shift+arrows for word selection), editing (Ctrl+W delete word, Ctrl+K delete to EOL, Ctrl+X cut selection, Ctrl+U/R undo/redo, Ctrl+D forward delete), clipboard (Ctrl+C copy, Ctrl+V paste, Ctrl+X cut), and navigation (Up/Down history, PageUp/PageDown scroll) are now explicitly handled with predictable behavior.
+- **Clipboard key bindings simplified** — Removed Ctrl+Shift+C and Ctrl+Shift+V bindings (which were intercepted by terminal emulators like kitty and never reached the application). Ctrl+C now copies selection/textarea to system clipboard before clearing. Ctrl+V now pastes from system clipboard. Ctrl+Y changed from system clipboard paste to textarea kill-ring yank (standard Emacs behavior: Ctrl+W cuts a word → Ctrl+Y yanks it back). This provides two separate paste buffers: kill-ring (Ctrl+Y, internal) and system clipboard (Ctrl+V, cross-application).
+- **Ctrl+C context-dependent copy/cancel** — Ctrl+C now has 4 priority levels: (1) chat selection active → copy selected chat text to system clipboard and clear selection, (2) textarea selection active → copy selection to system clipboard and kill-ring, deselect but preserve text, (3) textarea has text (no selection) → select all, copy to clipboard, then clear textarea (cancel input), (4) empty textarea → cancel LLM or exit. Previously Ctrl+C always cleared the textarea when text was present, even with an active selection.
+- **Bidirectional selection mutual exclusion** — Clicking in the chat area now clears any active textarea selection, and starting a textarea selection (typing, Shift+arrows) clears any active chat selection. Previously only the textarea→chat direction worked.
+- **Bracketed paste support** — Enabled crossterm's `bracketed-paste` feature. Terminal paste events (Shift+Insert, middle-click paste) are now handled via `Event::Paste(String)` and insert the pasted text directly into the textarea instead of simulating keystrokes.
+- **Fix Shift+letter key input** — Shift+letter keys (e.g., Shift+V, Shift+C) now correctly produce uppercase characters. Previously, some terminals send `KeyCode::Char('v')` with `SHIFT` modifier instead of `KeyCode::Char('V')`, causing `input_without_shortcuts()` to insert the lowercase character. Added explicit handler for `Shift+Char` that normalizes to uppercase via `c.to_ascii_uppercase()`.
+- **Completion menu: Enter confirms and submits** — Pressing Enter in the completion menu now confirms the selection and submits the input line in one step. Previously, Enter confirmed the selection but returned None, leaving the user stuck unable to submit. Ctrl+C and Ctrl+V now dismiss the completion menu before performing their action.
+- **TUI event loop: conditional poll timeout fixes idle CPU burn** — Changed `event::poll(Duration::from_millis(0))` to be conditional: `poll(0ms)` during LLM streaming (tokens arrive without delay), `poll(SPINNER_TICK_MS, 120ms)` during idle (CPU properly sleeps). The unconditional zero-millisecond poll caused busy-wait at ~4300 iterations/second consuming ~5% CPU. The conditional fix eliminates busy-wait while preserving responsive token streaming.
+- **Flaky spinner tests eliminated** — `test_spinner_guard_auto_finish` intermittently failed (~10-20% rate): root cause was cross-test contention on `ACTIVE_SPINNER` global `RwLock`. Added `serial_test = "3.2"` dev-dependency and `#[serial_test::serial]` to all 4 spinner tests. Replaced direct `RwLock.read()` assertions with retry-based helpers (`assert_active_spinner_clear()`/`assert_active_spinner_present()`) yielding up to 1000× before panic. Zero failures in 20/20 stress-test runs (8 parallel threads).
+- **Streaming thinking block fragmentation fix** — When thinking and content tokens arrive interleaved from the LLM (e.g., thinking→content→thinking), `append_stream_thinking()` and `append_stream_token()` now find and append to existing blocks within the streaming zone instead of creating fragmented duplicates. `finalize_stream()` now consolidates only the `Thinking` blocks in the streaming zone (contiguous tail of Thinking/AssistantStreaming messages), preserving tool-call `Thinking` blocks from earlier rounds. The `streaming_zone_start()` helper identifies the boundary between stable messages (User, Assistant, Tool, etc.) and streaming-only messages, ensuring tool-call thinking is never accidentally removed or merged.
+- **TUI tool call display ordering fix** — Three parallel display channels (LLM streaming events, ViewAction forwarding, tool_call_rx drain) caused tool call messages to appear out of order relative to streaming content. Tool messages and ViewActions now arrive in the correct position: (1) `App::insert_before_streaming_zone()` inserts tool messages and ViewActions before the streaming zone (contiguous tail of Thinking/AssistantStreaming) when the LLM is `ToolCall` or `Streaming`, (2) `App::has_streaming_zone()` detects active streaming to avoid duplicating content already displayed via `StreamToken` events, (3) `RatatuiView::render()` no longer drains `tool_call_rx` — instead `drain_tool_messages()` is called in the event loop after each iteration, (4) `ViewEventReceiver::drain_into_llm_channel()` drains ViewEvents directly to the LLM event channel before `StreamDone`, eliminating the async forwarding ordering race, (5) `apply_view_action()` uses `insert_before_streaming_zone()` for content ViewActions during active streaming and skips `ShowAssistantResponse`/`ShowMarkdown` when content is already being streamed (deduplication).
+- **Thinking block visual refinement** — `[Thinking]` label replaced with `🧠 Thinking` header (dim cyan) + `│` left border (same Unicode box-drawing character as table cell borders). Content is now rendered as full Markdown via `render_markdown()`, supporting headers, bold, code blocks, and tables within thinking blocks. New `wrap_styled_line()` in `wrap.rs` provides width-aware word-wrap of `Line<Span>` with style preservation, ensuring terminal resize responsiveness without losing formatting. Each content line (including wrapped sub-lines) is prefixed with `│ ` (dim cyan), creating a visual block enclosure. Terminal (non-TUI) `show_thinking()` and `display_thinking()` synchronized to the same `🧠 Thinking` + `│ ` format. 10 new unit tests for `wrap_styled_line`.
 
 ## [0.43.0] - 2026-05-11
-
-### Changed
-
-- **Function extraction — reduce long functions (Issue #129)** — Refactor the worst `too_many_lines` violations. Three functions were genuinely extracted into smaller pieces: `run_migrations`/`apply_migrations` (484→~35 lines), `generate_all_tool_prompts`/`build_tool_context` (409→~40 lines), `dedup_new_fact`/`deduplicate_and_insert` (339→~20 lines dispatcher + extracted layer functions). Two dispatch tables (`handle_command` 304 lines, `parse_command` 278 lines) were annotated with `#[allow(clippy::too_many_lines)]` with justification: each arm is trivial routing/parsing, and reducing below 100 would require ~30 wrapper functions that add ceremony without reducing complexity. Inline handler logic was still extracted (7 new `handle_*` functions: `handle_quit`, `handle_forget_cmd`, `handle_save_cmd`, `handle_load_cmd`, `handle_debug_toggle`, `handle_skill_cmd`, `handle_skill_list_cmd`). Two parser functions (`parse_note_add`, `parse_note_subcommand`) also received `#[allow]` as state-machine and dispatch-table patterns respectively.
-
-- **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
-
-### Changed
-
-- **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
-- **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
 
 ### Added
 
@@ -38,6 +105,121 @@ All notable changes to Sprachspiel will be documented in this file.
 - **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/sprachspiel/sprachspiel.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
 
 - **SF5: Agent Spawning Tools (Issue #111)** — Replaced generic `spawn_subagent` tool with 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`. Each tool has only its relevant parameters (e.g., `ocr_mode` only on OCR agent), improving LLM docstring clarity and eliminating irrelevant optional parameters. Removed `spawn_document_agent` — the LLM already has `run_command` + spawning tools and follows the `document-processing` skill, making a limited document subagent redundant. Removed direct PDF/EPUB import from `import_document` — PDFs/EPUBs must be extracted to text via `run_command("pdftotext")` first, then imported as TXT/MD/ORG. Removed `--pages` flag, PDF pipeline code, checkpoint system, and `PdfConversionError`/`PdfSupport` error types from vision tool. Updated `document-processing.md` skill to reference new tool names and LLM-orchestrated two-phase pipeline (Phase 1: `pdftotext`, Phase 2: `pdftoppm` → `spawn_ocr_agent`/`spawn_vision_agent`).
+
+- **SF1: Colored user prompt** — User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display. The `colors` module in `view/mod.rs` was made public for cross-module reuse.
+
+- **SF2: Clippy configuration** — Added `clippy.toml` with thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), and project-specific `doc-valid-idents` (Sprachspiel, Ollama, SQLite, Vec0, GGUF, etc.). Added `[lints.clippy]` section in `Cargo.toml` enforcing `too_many_arguments`, `type_complexity`, `enum_variant_names`, `redundant_async_block` as warnings. `missing_transmute_annotations` set to allow (FFI requirement). Existing `#[allow]` attributes remain valid with justification comments; new violations produce warnings in CI and local dev.
+
+- `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
+
+- `normalize_adverb_verb()` in `src/facts/lang.rs` — Regex-based adverb+verb expansion for storage normalization. Handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" that are not covered by the static prefix lists in `normalize_replacements()` and `translate_pt_to_en()`.
+
+- `lemmatize_verb()` in `src/facts/lang.rs` — Verb lemmatization function for Layer 2 dedup comparison. Strips third-person inflection from verbs: "prefers" → "prefer", "likes" → "like", etc. Includes explicit lemma map and generic trailing-'s' rule with 'ss' guard.
+
+- `VERB_LEMMAS` constant in `src/facts/lang.rs` — Known third-person verb forms and their lemmas for `normalize_for_comparison()`. Covers common preference verbs and adverb+verb phrase combinations.
+
+- `EN_ADVERBS`, `PT_ADVERBS`, `EN_VERBS_FP_TP`, `PT_VERBS_EN_TP` constants in `src/facts/lang.rs` — Adverb and verb lookup tables for `normalize_adverb_verb()` regex expansion.
+
+- Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
+
+- Triple-based contradiction disambiguation in `src/facts/conflict.rs` — `FactTriple` struct and `extract_fact_triple()` function for separating contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) inside the semantic block. Now integrated into Layer 3.5 (after reorder) rather than Layer 2. Covers ~80% of preference/identity contradictions. Zero ML, sub-millisecond.
+
+- `SEMANTIC_SEARCH_THRESHOLD = 0.70` in `src/facts/conflict.rs` — Insert-time semantic search threshold. Lowered from the previous hardcoded 0.90 that missed all contradictions (antonym cosine ~0.77). Measured gap: all contradictions ≥0.77, different topics ≤0.60. Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs for startup O(n²) dedup.
+
+- **Fact dedup pipeline centralized in `src/facts/dedup.rs`** — The three fact insertion callers (`/fact add` CLI command, `fact_add` LLM tool, auto-extraction `insert_fact_with_dedup`) previously duplicated ~65-75% of the dedup pipeline logic, diverging in behavior. Created `DedupResult` enum (`Inserted`, `ExactDuplicate`, `NormalizedDuplicate`, `SemanticDuplicate`, `Updated`, `Fts5Conflict`, `Error`), `DedupConfig` struct, and `deduplicate_and_insert()` function as the single source of truth. Each caller is now a thin wrapper that formats the `DedupResult` for its UI. This fixes 4 behavioral bugs in the LLM tool path: (1) threshold 0.90 → 0.70, (2) missing triple disambiguation in Layer 3.5, (3) Layer 3.5 running after Layer 3 instead of before, (4) fire-and-forget embedding instead of synchronous. Removed `Fact::for_insert()` (dead code, `deduplicate_and_insert` uses `Fact::new` internally).
+
+- `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` constants in `src/facts/lang.rs` — Source-of-truth triple extraction patterns for `extract_fact_triple()`. Preference patterns cover single verbs (prefers, likes, etc.), adverb+verb combos (usually prefers, really likes, etc.), and negation (doesn't like, etc.). Identity patterns cover name, location, work, language, and role. Includes legacy first-person entries for pre-ADR-E4-fix database data.
+
+- `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES` constants in `src/facts/lang.rs` — Predicate classification for contradiction detection. Exclusive predicates (prefers, name is, lives in) → any different object = contradiction. Positive predicates (likes, loves, enjoys, adores) → accumulative, contradiction only with word overlap > 0.3. Negative predicates (hates, dislikes, doesn't like, detesta, odeia) → accumulative, paired with positive for polarity flip detection. Enforced by `test_all_predicates_classified` unit test.
+
+- `STOP_WORDS` constant in `src/facts/lang.rs` — EN + PT stop words for `object_word_overlap()` content word extraction. Keeps the list small to avoid false negatives from over-filtering.
+
+- `object_word_overlap()`, `is_exclusive_predicate()`, `is_polarity_flip()`, `is_positive_predicate()`, `is_negative_predicate()` functions in `src/facts/conflict.rs` — Helper functions for the two-tier contradiction logic in `FactTriple::contradicts()`.
+
+- `FactTriple::contradicts()` rewritten with two-tier logic — Exclusive predicates → any different object = contradiction; Accumulative predicates → only if `object_word_overlap()` > 0.3; Polarity flip → always contradiction.
+
+- SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
+
+- **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
+  - Post-response heuristic extraction of preferences and facts from user messages
+  - FTS5 deduplication against existing facts before insertion
+  - Configurable extraction mode: `off`, `heuristic`, `llm` (default: `heuristic`)
+  - Scope inference: project by default, global for cross-project patterns
+  - Source attribution: auto-extracted facts marked with `Source::Llm`
+  - User notification when facts are auto-extracted (configurable)
+  - `[facts]` config section with `auto_extract` and `auto_extract_notify` fields
+
+- **Feedback Infrastructure (P5)** - Complete feedback-driven memory system with active forgetting (Issue #23)
+  - `/feedback good|bad|correction:<text>` command with `msg:N` targeting and `/fg`/`/fb` shortcuts
+  - `feedback_signals` DB table (schema v10 migration) with CASCADE on content_items
+  - `src/feedback/` module (types, db, decay, prompt)
+  - Post-RRF boost/suppress multiplier in `search_content_hybrid()` with `.clamp(0.1, 3.0)`
+  - LLM `feedback_submit()` tool (config.toml toggle, default on, 30% weight per ADR-004)
+  - `ReplState.last_assistant_message_id` tracking for implicit feedback targeting
+  - Content Decay Activation (ADR-008): `src/content/decay.rs` with Ebbinghaus formula for content items
+  - Retrieval-Reinforced Retention (ADR-009): `on_content_access()` increments `access_count` + updates `last_accessed`
+  - Feedback → importance adjustment: good (+0.05), bad (-0.1), creating feedback-driven forgetting loop
+  - `/content prune` command + `/cp` shortcut for manual decay trigger
+  - `/context` enhancement showing feedback + decay statistics
+  - Soft-delete pruning (`pruned` column) preserves conversation chain integrity
+  - `[feedback]` config section in config.toml with all canonical fields
+  - 9 Architecture Decision Records (ADR-001 through ADR-009)
+
+- **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization (Issue #12)
+  - 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`
+  - `/ocr`, `/vision`, `/translate`, `/summarize` chat commands - Direct user access to subagents
+  - Feature flag: `subagent-tools` (default enabled)
+
+- **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
+  - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
+  - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
+  - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
+  - `ocr_mode` parameter on `spawn_ocr_agent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
+  - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
+  - All 3 OCR entry points (CLI, chat `/ocr`, `spawn_ocr_agent`) use model-aware prompt selection
+
+- **Fact Embedding & Semantic Dedup (P6.7)** - Embedding-based Layer 4 dedup for facts (Issue #73)
+  - Schema v11: `has_embedding INTEGER DEFAULT 0` column on `facts` table + `fact_embeddings` vec0 virtual table (256d Matryoshka)
+  - `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper for fact content embedding
+  - `src/facts/recovery.rs` — Startup/shutdown recovery of missing fact embeddings
+  - `src/facts/verify.rs` — O(n²) semantic dedup at startup with cosine similarity ≥ 0.90 threshold
+  - Eager embedding: `tokio::spawn` after fact insertion; graceful fallback when Ollama offline
+  - Startup sequence: `recover_missing_embeddings()` → `recover_missing_fact_embeddings()` → `verify_and_dedup_facts()`
+  - Shutdown: `flush_pending_fact_embeddings()` on `/exit`
+  - Conflict resolution: duplicate → keep newer, contradiction → keep newer, global-wins-project
+  - Silent by design: all operations use `log::info/debug` only
+
+### Changed
+
+- **Function extraction — reduce long functions (Issue #129)** — Refactor the worst `too_many_lines` violations. Three functions were genuinely extracted into smaller pieces: `run_migrations`/`apply_migrations` (484→~35 lines), `generate_all_tool_prompts`/`build_tool_context` (409→~40 lines), `dedup_new_fact`/`deduplicate_and_insert` (339→~20 lines dispatcher + extracted layer functions). Two dispatch tables (`handle_command` 304 lines, `parse_command` 278 lines) were annotated with `#[allow(clippy::too_many_lines)]` with justification: each arm is trivial routing/parsing, and reducing below 100 would require ~30 wrapper functions that add ceremony without reducing complexity. Inline handler logic was still extracted (7 new `handle_*` functions: `handle_quit`, `handle_forget_cmd`, `handle_save_cmd`, `handle_load_cmd`, `handle_debug_toggle`, `handle_skill_cmd`, `handle_skill_list_cmd`). Two parser functions (`parse_note_add`, `parse_note_subcommand`) also received `#[allow]` as state-machine and dispatch-table patterns respectively.
+
+- **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
+
+- **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
+
+- **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
+
+- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
+
+- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
+
+- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
+
+- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
+
+- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
+
+- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
+
+- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
+
+- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
+
+- OCR prompts now adapt to configured model: GLM-OCR uses rigid prefixes, vision models use descriptive prompts with no-commentary restriction.
+
+- Removed dead `OCR_SYSTEM_PROMPT` constant (was silently ignored by `/api/generate` API).
+
+- Removed module-level `#![allow(dead_code)]` from `security.rs` and `subagent.rs`.
 
 ### Fixed
 
@@ -73,123 +255,6 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Bug #4: Embedding serialization and timeout** — Added `Semaphore(1)` and 30-second timeout to `EmbeddingClient::embed()`. Previously, multiple concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama, causing silent embedding failures (`has_embedding = 0`). Now all embedding requests are serialized through the client, preventing model loading conflicts and timeouts. **Additionally**, embedding generation is now **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` and `handle_fact_add()`, eliminating the race condition where a subsequent fact's Layer 3.5 search couldn't find the previous fact's embedding. Added `EmbeddingError::Timeout` variant. Also added post-recovery verification in `facts/recovery.rs` that logs a warning if facts still lack embeddings after startup recovery.
 
-### Added
-
-- **SF1: Colored user prompt** — User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display. The `colors` module in `view/mod.rs` was made public for cross-module reuse.
-
-- **SF2: Clippy configuration** — Added `clippy.toml` with thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), and project-specific `doc-valid-idents` (Sprachspiel, Ollama, SQLite, Vec0, GGUF, etc.). Added `[lints.clippy]` section in `Cargo.toml` enforcing `too_many_arguments`, `type_complexity`, `enum_variant_names`, `redundant_async_block` as warnings. `missing_transmute_annotations` set to allow (FFI requirement). Existing `#[allow]` attributes remain valid with justification comments; new violations produce warnings in CI and local dev.
-
-- `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
-
-- `normalize_adverb_verb()` in `src/facts/lang.rs` — Regex-based adverb+verb expansion for storage normalization. Handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" that are not covered by the static prefix lists in `normalize_replacements()` and `translate_pt_to_en()`.
-
-- `lemmatize_verb()` in `src/facts/lang.rs` — Verb lemmatization function for Layer 2 dedup comparison. Strips third-person inflection from verbs: "prefers" → "prefer", "likes" → "like", etc. Includes explicit lemma map and generic trailing-'s' rule with 'ss' guard.
-
-- `VERB_LEMMAS` constant in `src/facts/lang.rs` — Known third-person verb forms and their lemmas for `normalize_for_comparison()`. Covers common preference verbs and adverb+verb phrase combinations.
-
-- `EN_ADVERBS`, `PT_ADVERBS`, `EN_VERBS_FP_TP`, `PT_VERBS_EN_TP` constants in `src/facts/lang.rs` — Adverb and verb lookup tables for `normalize_adverb_verb()` regex expansion.
-
-- Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
-
-- Triple-based contradiction disambiguation in `src/facts/conflict.rs` — `FactTriple` struct and `extract_fact_triple()` function for separating contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) inside the semantic block. Now integrated into Layer 3.5 (after reorder) rather than Layer 2. Covers ~80% of preference/identity contradictions. Zero ML, sub-millisecond.
-
-- `SEMANTIC_SEARCH_THRESHOLD = 0.70` in `src/facts/conflict.rs` — Insert-time semantic search threshold. Lowered from the previous hardcoded 0.90 that missed all contradictions (antonym cosine ~0.77). Measured gap: all contradictions ≥0.77, different topics ≤0.60. Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs for startup O(n²) dedup.
-
-- `is_contradiction()` now handles third-person forms — Added "likes ", "loves ", "enjoys ", "hates " to polarity detection, and "doesn't "/"don't " to negation detection. Previously only first-person forms were recognized.
-
-- **Fact dedup pipeline centralized in `src/facts/dedup.rs`** — The three fact insertion callers (`/fact add` CLI command, `fact_add` LLM tool, auto-extraction `insert_fact_with_dedup`) previously duplicated ~65-75% of the dedup pipeline logic, diverging in behavior. Created `DedupResult` enum (`Inserted`, `ExactDuplicate`, `NormalizedDuplicate`, `SemanticDuplicate`, `Updated`, `Fts5Conflict`, `Error`), `DedupConfig` struct, and `deduplicate_and_insert()` function as the single source of truth. Each caller is now a thin wrapper that formats the `DedupResult` for its UI. This fixes 4 behavioral bugs in the LLM tool path: (1) threshold 0.90 → 0.70, (2) missing triple disambiguation in Layer 3.5, (3) Layer 3.5 running after Layer 3 instead of before, (4) fire-and-forget embedding instead of synchronous. Removed `Fact::for_insert()` (dead code, `deduplicate_and_insert` uses `Fact::new` internally).
-
-- `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` constants in `src/facts/lang.rs` — Source-of-truth triple extraction patterns for `extract_fact_triple()`. Preference patterns cover single verbs (prefers, likes, etc.), adverb+verb combos (usually prefers, really likes, etc.), and negation (doesn't like, etc.). Identity patterns cover name, location, work, language, and role. Includes legacy first-person entries for pre-ADR-E4-fix database data.
-
-- `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES` constants in `src/facts/lang.rs` — Predicate classification for contradiction detection. Exclusive predicates (prefers, name is, lives in) → any different object = contradiction. Positive predicates (likes, loves, enjoys, adores) → accumulative, contradiction only with word overlap > 0.3. Negative predicates (hates, dislikes, doesn't like, detesta, odeia) → accumulative, paired with positive for polarity flip detection. Enforced by `test_all_predicates_classified` unit test.
-
-- `STOP_WORDS` constant in `src/facts/lang.rs` — EN + PT stop words for `object_word_overlap()` content word extraction. Keeps the list small to avoid false negatives from over-filtering.
-
-- `object_word_overlap()`, `is_exclusive_predicate()`, `is_polarity_flip()`, `is_positive_predicate()`, `is_negative_predicate()` functions in `src/facts/conflict.rs` — Helper functions for the two-tier contradiction logic in `FactTriple::contradicts()`.
-
-- `FactTriple::contradicts()` rewritten with two-tier logic — Exclusive predicates → any different object = contradiction; Accumulative predicates → only if `object_word_overlap()` > 0.3; Polarity flip → always contradiction.
-
-- SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
-
-### Changed
-
-- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
-
-- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
-
-- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
-
-- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
-
-- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
-
-- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
-
-- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
-
-- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
-
-### Deferred
-
-- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
-
- ### Added
-
-- **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
-  - Post-response heuristic extraction of preferences and facts from user messages
-  - FTS5 deduplication against existing facts before insertion
-  - Configurable extraction mode: `off`, `heuristic`, `llm` (default: `heuristic`)
-  - Scope inference: project by default, global for cross-project patterns
-  - Source attribution: auto-extracted facts marked with `Source::Llm`
-  - User notification when facts are auto-extracted (configurable)
-  - `[facts]` config section with `auto_extract` and `auto_extract_notify` fields
-
-- **Feedback Infrastructure (P5)** - Complete feedback-driven memory system with active forgetting (Issue #23)
-  - `/feedback good|bad|correction:<text>` command with `msg:N` targeting and `/fg`/`/fb` shortcuts
-  - `feedback_signals` DB table (schema v10 migration) with CASCADE on content_items
-  - `src/feedback/` module (types, db, decay, prompt)
-  - Post-RRF boost/suppress multiplier in `search_content_hybrid()` with `.clamp(0.1, 3.0)`
-  - LLM `feedback_submit()` tool (config.toml toggle, default on, 30% weight per ADR-004)
-  - `ReplState.last_assistant_message_id` tracking for implicit feedback targeting
-  - Content Decay Activation (ADR-008): `src/content/decay.rs` with Ebbinghaus formula for content items
-  - Retrieval-Reinforced Retention (ADR-009): `on_content_access()` increments `access_count` + updates `last_accessed`
-  - Feedback → importance adjustment: good (+0.05), bad (-0.1), creating feedback-driven forgetting loop
-  - `/content prune` command + `/cp` shortcut for manual decay trigger
-  - `/context` enhancement showing feedback + decay statistics
-  - Soft-delete pruning (`pruned` column) preserves conversation chain integrity
-  - `[feedback]` config section in config.toml with all canonical fields
-  - 9 Architecture Decision Records (ADR-001 through ADR-009)
-- **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization (Issue #12)
-  - 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`
-  - `/ocr`, `/vision`, `/translate`, `/summarize` chat commands - Direct user access to subagents
-  - Feature flag: `subagent-tools` (default enabled)
-
- - **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
-  - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
-  - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
-  - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
-  - `ocr_mode` parameter on `spawn_ocr_agent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
-  - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
-  - All 3 OCR entry points (CLI, chat `/ocr`, `spawn_ocr_agent`) use model-aware prompt selection
-
-- **Fact Embedding & Semantic Dedup (P6.7)** - Embedding-based Layer 4 dedup for facts (Issue #73)
-  - Schema v11: `has_embedding INTEGER DEFAULT 0` column on `facts` table + `fact_embeddings` vec0 virtual table (256d Matryoshka)
-  - `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper for fact content embedding
-  - `src/facts/recovery.rs` — Startup/shutdown recovery of missing fact embeddings
-  - `src/facts/verify.rs` — O(n²) semantic dedup at startup with cosine similarity ≥ 0.90 threshold
-  - Eager embedding: `tokio::spawn` after fact insertion; graceful fallback when Ollama offline
-  - Startup sequence: `recover_missing_embeddings()` → `recover_missing_fact_embeddings()` → `verify_and_dedup_facts()`
-  - Shutdown: `flush_pending_fact_embeddings()` on `/exit`
-  - Conflict resolution: duplicate → keep newer, contradiction → keep newer, global-wins-project
-  - Silent by design: all operations use `log::info/debug` only
-
-### Changed
-
-- OCR prompts now adapt to configured model: GLM-OCR uses rigid prefixes, vision models use descriptive prompts with no-commentary restriction
-- Removed dead `OCR_SYSTEM_PROMPT` constant (was silently ignored by `/api/generate` API)
-
-### Fixed
-
 - **Embeddings fail on startup when input exceeds context window** (Issue #40)
   - Proactive context length check in `EmbeddingClient::embed()` before API call — returns `ContextExceeded` early
   - Cached `context_length` in `EmbeddingClient` via `OnceCell` to avoid repeated `show_model_info` API calls
@@ -199,20 +264,25 @@ All notable changes to Sprachspiel will be documented in this file.
   - Fixed `has_embedding=1` marking logic — only marks item when ALL chunks verified complete
   - Increased embedding safety margins: `CONTEXT_SAFETY_MARGIN` 10%→20%, `EMBEDDING_PREFIX_TOKENS` 20→30, `DEFAULT_CHUNK_PERCENT` 90%→80%, `DEFAULT_PREFIX_MARGIN` 30→40
   - Added detailed documentation explaining why token estimation is used (ollama-rs v0.3.4 ignores `prompt_eval_count`) and referencing Issue #103 for future exact token count support
+
 - Fixed double "Error:" prefix in subagent security blocklist messages
+
 - Fixed broken markdown tables in command documentation (ocr, vision, translate, summarize, query, chat)
+
 - Fixed stale default feature flags in skills-system-design.md
+
 - Fixed `led-tools` missing checkmark in README.md features table
 
-### Changed
+### Deferred
 
-- Removed module-level `#![allow(dead_code)]` from `security.rs` and `subagent.rs`
+- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
 
 ### Removed
 
 - Removed dead code from subagent module: `uses_chat_api()`, `tool_whitelist` field, builder methods (`with_tool_whitelist`, `with_max_output_chars`, `with_model_options`), `settings` field on SubagentRunner, and `run_generate()` method (YAGNI)
 - Removed `ARCHITECTURE.md` and `ask-ai-architecture.html` (obsolete draft files)
 - Removed `MANUAL-TEST-SUBAGENT-SECURITY.md` (consolidated into unified test script)
+
 ## [0.40.0] - 2026-04-17
 
 ### Added
@@ -298,8 +368,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - `-d`/`--debug` completely removed from all subcommands (not deprecated)
   - New `-v` / `-vv` flags control verbosity (verbose / trace level)
   - `debug_default` config option replaced by `verbosity` in `[output]` section
-
-- **UX: `/forget` confirmation required** (Issue #85)
 
 - **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
   The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,
@@ -661,30 +729,6 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [0.37.2] - 2026-03-22
 
-### Fixed
-
-- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
-  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
-  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
-  - **New Design:** Function now manages chunk creation atomically with transaction support
-  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
-  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
-  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
-  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
-  - **Panics on misconfiguration:** Prevents database explosion from bad configs
-  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
-  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
-  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
-
-### Changed
-
-- **Startup Output Reorder** - Improved visual flow for chat startup
-  - ASCII art banner now appears first, before any other output
-  - Session resume and regeneration messages appear after banner
-  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
-  - Sandbox status strings now lowercase for consistency with other status fields
-  - "not compiled" sandbox status shortened to avoid exceeding column 80
-
 ### Added
 
 - **Status Bar Above Prompt** - Dynamic status bar showing context information
@@ -733,7 +777,41 @@ All notable changes to Sprachspiel will be documented in this file.
     - `INTER_TOOL_MIN = 512` tokens
     - `EMERGENCY_MIN = 256` tokens
 
+### Changed
+
+- **Startup Output Reorder** - Improved visual flow for chat startup
+  - ASCII art banner now appears first, before any other output
+  - Session resume and regeneration messages appear after banner
+  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
+  - Sandbox status strings now lowercase for consistency with other status fields
+  - "not compiled" sandbox status shortened to avoid exceeding column 80
+
+- **Compaction Thresholds** - Adjusted to prevent overflow loops
+  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
+  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
+  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
+  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
+
+- **Compaction Summary Template** - Restructured for better context preservation
+  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
+  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
+  - Inspired by OpenCode's compaction template for better context continuation
+  - Explicit token limit warning in prompt to prevent oversized summaries
+
 ### Fixed
+
+- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
+  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
+  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
+  - **New Design:** Function now manages chunk creation atomically with transaction support
+  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
+  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
+  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
+  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
+  - **Panics on misconfiguration:** Prevents database explosion from bad configs
+  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
+  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
+  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
 
 - **CRITICAL: Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
 
@@ -791,20 +869,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - Simplified `!x.is_none()` to `x.is_some()`
   - Added `#[allow(clippy::too_many_arguments)]` for functions that need many args
 
-### Changed
-
-- **Compaction Thresholds** - Adjusted to prevent overflow loops
-  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
-  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
-  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
-  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
-
-- **Compaction Summary Template** - Restructured for better context preservation
-  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
-  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
-  - Inspired by OpenCode's compaction template for better context continuation
-  - Explicit token limit warning in prompt to prevent oversized summaries
-
 ### Removed
 
 - **Dead Code Cleanup** - Removed unused code from `context_overflow.rs`
@@ -830,25 +894,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - `🧠` = think mode active
   - `🔧` = tools active
   - Example: `model🧠🔧>` instead of `model[t][T]>`
-
-### Changed
-
-- **`/clear` renamed to `/new`** - Command now starts a new conversation session
-  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
-  - New behavior: Creates new session ID, clears all session state
-  - Previous conversations remain searchable via `/search` and `remember()`
-  - `/new` generates session ID: `session-{timestamp}`
-  - Alias: `/n`
-
-- **`/load` Auto-save** - Automatically saves current session before loading another
-  - If current session has messages, it's saved before switching
-  - Prevents accidental loss of conversation when switching sessions
-
-- **Session Auto-Load** - Automatically loads the most recent session on startup
-  - Sessions are ordered by `updated_at DESC` to find the most recent
-  - If no sessions exist, starts a fresh session in memory
-
-### Added
 
 - **`/session` Command Group** - Unified session management interface
   - `/session new` - Same as `/new`
@@ -885,8 +930,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - Kept: `new()`, `max_chars()`, `overlap_chars()`, `min_chunk_chars()` (all production)
 
 - **YAGNI Variable Removal** - Removed unused `chunks_failed_before` variable in regenerate.rs
-
-### Added
 
 - **Notes System** - Persistent notes with semantic search
   - User commands: `/note add`, `/note list`, `/note show`, `/note edit`, `/note delete`, `/note search`
@@ -954,6 +997,21 @@ All notable changes to Sprachspiel will be documented in this file.
   - Aborts gracefully on Ollama connection errors with recovery instructions
 
 ### Changed
+
+- **`/clear` renamed to `/new`** - Command now starts a new conversation session
+  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
+  - New behavior: Creates new session ID, clears all session state
+  - Previous conversations remain searchable via `/search` and `remember()`
+  - `/new` generates session ID: `session-{timestamp}`
+  - Alias: `/n`
+
+- **`/load` Auto-save** - Automatically saves current session before loading another
+  - If current session has messages, it's saved before switching
+  - Prevents accidental loss of conversation when switching sessions
+
+- **Session Auto-Load** - Automatically loads the most recent session on startup
+  - Sessions are ordered by `updated_at DESC` to find the most recent
+  - If no sessions exist, starts a fresh session in memory
 
 - **Query Pattern Refactoring** - Dynamic SQL WHERE clause construction
   - Created `WhereBuilder` utility for parameterized queries
@@ -1357,21 +1415,6 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
 
 ## [0.27.1] - 2026-03-09
 
-### Fixed
-
-- **Token Count Bug** - Fixed incorrect token calculation in `/context` display
-  - `history_real_tokens()` now uses the LAST cumulative `prompt_tokens` value (Ollama's `prompt_eval_count`)
-  - Previous code incorrectly SUMMED all `prompt_tokens` values, causing ~184K tokens when actual was ~22K
-  - `check_context_overflow()` now correctly handles fallback path (includes tools estimate)
-  - Context status simplified to "OK", "MODERATE", "CRITICAL" (removed confusing "auto-compact triggered")
-
-### Fixed
-
-- **Token Persistence** - Added `prompt_tokens` column to messages table
-  - Messages now store `prompt_eval_count` from Ollama responses
-  - Token counts persist across sessions
-  - `/context` shows accurate token usage on startup
-
 ### Added
 
 - **Automatic JSON Migration** - One-time automatic migration on startup
@@ -1387,6 +1430,29 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - `/save` and `/load` now use SQLite exclusively
   - Removed `/migrate` command (automatic migration replaces it)
   - `/restore <id>` imported from JSON as disaster recovery option
+  - **`should_force_retrieve()` logic rewritten**
+    - Old: Only triggered when session.messages.is_empty()
+    - New: Triggers when DB count > session count (after /clear with new messages)
+    - Also triggers when session is empty AND has compacted_summary
+
+### Fixed
+
+- **Token Count Bug** - Fixed incorrect token calculation in `/context` display
+  - `history_real_tokens()` now uses the LAST cumulative `prompt_tokens` value (Ollama's `prompt_eval_count`)
+  - Previous code incorrectly SUMMED all `prompt_tokens` values, causing ~184K tokens when actual was ~22K
+  - `check_context_overflow()` now correctly handles fallback path (includes tools estimate)
+  - Context status simplified to "OK", "MODERATE", "CRITICAL" (removed confusing "auto-compact triggered")
+
+- **Token Persistence** - Added `prompt_tokens` column to messages table
+  - Messages now store `prompt_eval_count` from Ollama responses
+  - Token counts persist across sessions
+  - `/context` shows accurate token usage on startup
+
+- **CRITICAL: Retrieval after /clear now works!**
+  - Bug: `should_force_retrieve()` checked if session was empty, but user already added 1+ messages
+  - Fix: Compare DB message count vs session message count
+  - If DB has more messages than session, retrieval is forced
+  - This correctly handles: `/clear` → user asks question → retrieval happens
 
 ### Removed
 
@@ -1975,13 +2041,10 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `chat/repl.rs`: chat responses
   - `retrieval/search.rs`: search results
   - `thinking.rs`: Keeps its own skin (unaffected by global skin)
-
-### Technical
-
-- Added `markdown::init_markdown_skin()` call at startup
-- Created `markdown::print_markdown()` as replacement for `termimad::print_text()`
-- Added `markdown::get_markdown_skin()` for custom rendering needs
-- All modules now use `markdown::print_markdown()` instead of `print_text()`
+  - **`should_force_retrieve()` logic rewritten**
+    - Old: Only triggered when session.messages.is_empty()
+    - New: Triggers when DB count > session count (after /clear with new messages)
+    - Also triggers when session is empty AND has compacted_summary
 
 ### Fixed
 
@@ -1990,18 +2053,6 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - Fix: Compare DB message count vs session message count
   - If DB has more messages than session, retrieval is forced
   - This correctly handles: `/clear` → user asks question → retrieval happens
-
-### Changed
-
-- **`should_force_retrieve()` logic rewritten**
-  - Old: Only triggered when session.messages.is_empty()
-  - New: Triggers when DB count > session count (after /clear with new messages)
-  - Also triggers when session is empty AND has compacted_summary
-
-### Technical
-
-- Added test `test_should_force_retrieve_after_clear_with_new_messages`
-- `MIN_RETRIEVAL_FORCE_COUNT` now deprecated (kept with `#[allow(dead_code)]`)
 
 ## [0.22.6] - 2026-03-03
 
@@ -2632,19 +2683,17 @@ Added 3 new LED tool examples to demonstrate:
   - Added `resolve_model_config()` and `resolve_think_mode()` to `user_models.rs`
   - Added `SpinnerGuard` RAII pattern to `spinner.rs`
 
-### Removed
-
-- **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
-  - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
-  - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
-
-### Fixed
-
 - **Chat Mode CLI Flags** - Model and flags from CLI now work correctly
   - `ask chat -m <model>` now properly sets the initial model
   - `ask chat -t` now enables think mode from CLI
   - `ask chat --tools` now enables tools from CLI
   - `ask chat --ignore-agents` now ignores AGENTS.md from CLI
+
+### Removed
+
+- **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
+  - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
+  - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
 
 ## [0.14.2] - 2026-02-22
 

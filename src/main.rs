@@ -129,6 +129,10 @@ struct Cli {
     /// Custom database path (overrides default ~/.local/share/sprachspiel/sprachspiel.db)
     #[arg(long, value_name = "PATH")]
     db: Option<String>,
+
+    /// Force vision/OCR execution even if model lacks detected capability
+    #[arg(long)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -161,9 +165,6 @@ async fn main() -> AppResult<()> {
     let verbosity = crate::logging::Verbosity::resolve(cli.quiet, cli.verbose, config_verbosity);
     crate::logging::init(verbosity);
 
-    // Initialize markdown skin with user configuration
-    markdown::init_markdown_skin(&settings.display.skin);
-
     // Initialize tool call display flag from configuration
     crate::debug_tools::set_show_tool_calls(settings.display.show_tool_calls);
 
@@ -195,6 +196,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     }
 
     let output_flags = OutputFlags::resolve(cli.plain);
+
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
 
     log::debug!("Debug Mode - Translation Configuration:");
     log::debug!("==========================");
@@ -297,7 +301,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let translated = response.message.content.trim();
 
     if output_flags.plain {
-        println!("{}", translated);
+        markdown::print_markdown_plain(translated);
     } else {
         markdown::print_markdown(translated);
     }
@@ -469,7 +473,7 @@ fn get_query_legacy(cli: &Cli) -> AppResult<String> {
     Ok(input.trim().to_string())
 }
 
-async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult<()> {
+async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -496,6 +500,25 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
             )
         });
 
+    // Check if the model supports vision capabilities (required for OCR).
+    // Abort unless the user passes --force to override the capability check.
+    let ollama = settings.ollama_client();
+    let capabilities =
+        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+    if !capabilities.vision {
+        if cli.force {
+            eprintln!(
+                "⚠ Warning: Model '{}' may not support vision capabilities. \
+                 Proceeding anyway due to --force flag...",
+                model_id
+            );
+        } else {
+            return Err(
+                crate::vision::error::VisionError::NoVisionCapability { model: model_id }.into(),
+            );
+        }
+    }
+
     log::debug!("Debug Mode - OCR Configuration:");
     log::debug!("==========================");
     log::debug!("Model ID:          {}", model_id);
@@ -507,7 +530,6 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     log::debug!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
-    let ollama = settings.ollama_client();
 
     let prompt_override = if is_glm_ocr_model(&model_id) {
         None
@@ -576,6 +598,9 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
 
     let output_flags = OutputFlags::resolve(cli.plain);
 
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
+
     log::debug!("Debug Mode - Summarize Configuration:");
     log::debug!("==========================");
     log::debug!("Model ID:          {}", model_id);
@@ -605,7 +630,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     match processor.summarize(&args, &text, &model_id, settings).await {
         Ok(summary) => {
             if output_flags.plain {
-                println!("{}", summary);
+                markdown::print_markdown_plain(&summary);
             } else {
                 markdown::print_markdown(&summary);
             }
@@ -695,6 +720,28 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     let output_flags = OutputFlags::resolve(cli.plain);
 
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
+
+    // Check if the model supports vision capabilities.
+    // Abort unless the user passes --force to override the capability check.
+    let ollama = settings.ollama_client();
+    let capabilities =
+        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+    if !capabilities.vision {
+        if cli.force {
+            eprintln!(
+                "⚠ Warning: Model '{}' may not support vision. \
+                 Proceeding anyway due to --force flag...",
+                model_id
+            );
+        } else {
+            return Err(
+                crate::vision::error::VisionError::NoVisionCapability { model: model_id }.into(),
+            );
+        }
+    }
+
     log::debug!("Debug Mode - Vision Configuration:");
     log::debug!("==========================");
     log::debug!("Model:             {}", model_id);
@@ -709,7 +756,6 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let model_options = model_config
         .build_model_options()
         .num_predict(args.max_tokens as i32);
-    let ollama = settings.ollama_client();
     let processor = VisionProcessor::new();
 
     match processor
@@ -720,7 +766,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
             if args.json {
                 print_vision_results(&result, true);
             } else if output_flags.plain {
-                println!("{}", result.content);
+                markdown::print_markdown_plain(&result.content);
             } else {
                 markdown::print_markdown(&result.content);
             }

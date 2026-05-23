@@ -46,12 +46,6 @@ pub const EMERGENCY_MIN: usize = 256;
 /// Increased from 500 to 2000 based on typical response lengths.
 pub const RESPONSE_MARGIN: usize = 2_000;
 
-/// Maximum tokens for compacted summary
-/// Prevents summary from becoming large enough to cause overflow again.
-/// Based on research: 10-15% of original content, capped for safety.
-/// For 368 messages (~18K tokens original), 3K is ~17% - aggressive but safe.
-pub const MAX_SUMMARY_TOKENS: usize = 3_000;
-
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
@@ -770,5 +764,19 @@ mod tests {
             emergency, 983,
             "32K: emergency should be 983 (3%% remaining)"
         );
+    }
+
+    // ── Compaction limits removed ──────────────────────────────
+
+    #[test]
+    fn test_compaction_thresholds_are_positive() {
+        // Verify compaction thresholds exist and are positive.
+        // This test also serves as a regression guard: if someone
+        // re-introduces a MAX_SUMMARY_TOKENS-like constant with a
+        // numeric assertion, the test name will make the intent clear.
+        // The absence of token limits on summaries is a deliberate
+        // architectural decision — see COMPACTION_PROMPT doc comment.
+        assert!(COMPACTION_MIN > 0, "COMPACTION_MIN must be positive");
+        assert!(PRE_TOOL_MIN > 0, "PRE_TOOL_MIN must be positive");
     }
 }

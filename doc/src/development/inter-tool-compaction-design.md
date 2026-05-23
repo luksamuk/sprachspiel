@@ -539,7 +539,7 @@ Continue if you have next steps...
 
 ## References
 
-- [Context Overflow Implementation](./context-overflow-design.md) - Current implementation
+- [Context Overflow Implementation](./context-continuity.md) — Context overflow and continuation handling
 - [Context Anatomy](./context-anatomy.md) - How context is structured
 - [Continuation Handling](./context-continuity.md) - Existing continuation system
 - Issue #43 - Context overflow during multi-tool execution

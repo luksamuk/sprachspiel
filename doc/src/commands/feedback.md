@@ -6,8 +6,6 @@ Record feedback on assistant messages to influence future search ranking and ret
 
 ```
 /feedback <good|bad|correction:text> [msg:id]
-/fb <good|bad|correction:text> [msg:id]
-/fg                                          # Shortcut: /feedback good
 ```
 
 ## Description
@@ -35,15 +33,6 @@ By default, feedback applies to the **most recent assistant message**. To target
 ```
 
 The `msg:N` format uses the same ID visible in `/context` output.
-
-## Shortcuts
-
-| Shortcut | Equivalent |
-|----------|------------|
-| `/fb good` | `/feedback good` |
-| `/fb bad` | `/feedback bad` |
-| `/fb correction:text` | `/feedback correction:text` |
-| `/fg` | `/feedback good` |
 
 ## How Feedback Affects Search
 

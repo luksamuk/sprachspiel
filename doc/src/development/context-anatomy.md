@@ -334,5 +334,5 @@ graph TB
 ## See Also
 
 - [Context Composition Design](./context_composition_design.md) — Design decisions
-- [Retrieval Design](./retrieval_design.md) — Hybrid search implementation
+- [Retrieval Design](./retrieval-design.md) — Hybrid search implementation
 - [Architecture](./architecture.md) — Overall system architecture

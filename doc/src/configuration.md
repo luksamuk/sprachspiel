@@ -69,7 +69,7 @@ ollama_port = 11434
 
 # --- QUERY SUBCOMMAND ---
 [model.query]
-# The model to use for 'ask query' or 'ask q'.
+# The model to use for 'sprach query'.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
 
@@ -83,7 +83,7 @@ ollama_port = 11434
 
 # --- CHAT SUBCOMMAND ---
 [model.chat]
-# The model to use for 'ask chat'.
+# The model to use for 'sprach chat'.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
 
@@ -97,7 +97,7 @@ ollama_port = 11434
 
 # --- SUMMARIZE SUBCOMMAND ---
 [model.summarize]
-# The model to use for 'ask summarize'.
+# The model to use for 'sprach summarize'.
 # Recommended: a lightweight model for speed.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
@@ -182,7 +182,7 @@ plain_default = false
 [display]
 
 # The color theme for markdown rendering.
-# Options: "dark", "light", or "mono" (for terminals without color)
+# Options: "dark" (Catppuccin Mocha), "light" (Catppuccin Latte), or "mono" (monochrome)
 # Default: "dark"
 skin = "dark"
 ```
@@ -332,9 +332,9 @@ You can configure different models for different subcommands. This allows you to
 
 ### Available Subcommand Sections
 
-- `[model.query]` - Configuration for `ask query` (or `ask q`)
-- `[model.summarize]` - Configuration for `ask summarize`
-- `[model.code]` - Configuration for code mode (`ask query -c`)
+- `[model.query]` - Configuration for `sprach query`
+- `[model.summarize]` - Configuration for `sprach summarize`
+- `[model.code]` - Configuration for code mode (`sprach query -c`)
 
 ### Example Configuration
 
@@ -369,7 +369,7 @@ For subcommands, the priority is:
 2. **Subcommand-specific config** - e.g., `[model.code]` settings
 3. **Global default** - from `[model]` section
 
-Example: If you run `ask query -c "function"` with the above config:
+Example: If you run `sprach query -c "function"` with the above config:
 - It will use `qwen3-coder` (from `[model.code]`)
 - Not `ministral` (global default)
 

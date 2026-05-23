@@ -369,8 +369,10 @@ fn agent_section(blacklist: &HashSet<&str>) -> Option<String> {
         section.push_str(
             "\n- **spawn_ocr_agent** — Extract text from images via OCR\n\
               Best for: tables, formulas, scanned documents, structured text\n\
-              Requires: `prompt` (what to extract), `file_path` (image path)\n\
-              Optional: `ocr_mode` (\"text\", \"table\", \"figure\", \"formula\")\n",
+              Requires: `file_path` (image path)\n\
+              Optional: `ocr_mode` (\"text\", \"table\", \"figure\", \"formula\")\n\
+              NOTE: Does NOT accept a custom prompt — OCR mode determines extraction type.\n\
+              For custom image analysis, use spawn_vision_agent instead.\n",
         );
     }
 
@@ -404,7 +406,7 @@ fn agent_section(blacklist: &HashSet<&str>) -> Option<String> {
     let mut has_when = false;
 
     if has_tool(&"spawn_ocr_agent") {
-        when_to_use.push_str("- OCR → extracting text from images (screenshots, scanned docs)\n");
+        when_to_use.push_str("- OCR → extracting text from images (screenshots, scanned docs). No prompt — uses ocr_mode instead.\n");
         has_when = true;
     }
     if has_tool(&"spawn_vision_agent") {
@@ -445,10 +447,8 @@ fn agent_section(blacklist: &HashSet<&str>) -> Option<String> {
 
     if has_tool(&"spawn_ocr_agent") {
         examples.push_str(
-            "spawn_ocr_agent(\"Extract all text from this image\", \
-            \"/tmp/document.png\", None)\n\
-            spawn_ocr_agent(\"Extract table structure\", \"/tmp/table.png\", \
-            Some(\"table\"))\n",
+            "spawn_ocr_agent(\"/tmp/document.png\", None)\n\
+            spawn_ocr_agent(\"/tmp/table.png\", Some(\"table\"))\n",
         );
         has_examples = true;
     }

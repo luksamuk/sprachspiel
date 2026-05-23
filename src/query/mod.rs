@@ -2,8 +2,7 @@
 //!
 //! Consolidates common logic for query, legacy query, and chat message handling.
 
-#![expect(clippy::print_stdout)] // Query mode output
-#![expect(clippy::print_stderr)] // Query mode output
+#![expect(clippy::print_stderr)] // Query mode error output
 mod context;
 mod coordinator;
 mod executor;
@@ -82,28 +81,24 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
     use crate::chat::{display_thinking, strip_thinking_tags};
 
     match event {
-        ChatEvent::PreToolContent { content, thinking } => {
+        ChatEvent::PreToolContent {
+            content, thinking, ..
+        } => {
             suspend_for_print(|| {
                 if use_think {
-                    display_thinking(&content, thinking.as_ref(), !use_plain);
+                    display_thinking(&content, thinking.as_ref(), !use_plain, use_plain);
                 }
                 if !content.trim().is_empty() {
                     let cleaned = strip_thinking_tags(&content);
                     if !cleaned.trim().is_empty() {
                         if use_plain {
-                            println!("{}", cleaned);
+                            markdown::print_markdown_plain(&cleaned);
                         } else {
                             markdown::print_markdown(&cleaned);
                         }
                     }
                 }
             });
-        }
-        ChatEvent::ToolCall { .. } => {}
-        ChatEvent::ToolResult { .. } => {
-            // Tool result display is handled by log_tool_result() inside each
-            // tool function — no need to duplicate it here.
-            // The ChatEvent::ToolResult is kept for future use (e.g., TUI rendering).
         }
         ChatEvent::ContextNearLimit {
             tool_name,
@@ -192,13 +187,18 @@ pub fn display_result(result: &QueryResult, use_think: bool, use_plain: bool) {
     use crate::chat::{display_thinking, strip_thinking_tags};
 
     if use_think {
-        display_thinking(&result.content, result.thinking.as_ref(), !use_plain);
+        display_thinking(
+            &result.content,
+            result.thinking.as_ref(),
+            !use_plain,
+            use_plain,
+        );
     }
 
     let content = strip_thinking_tags(&result.content);
 
     if use_plain {
-        println!("{}", content);
+        markdown::print_markdown_plain(&content);
     } else {
         markdown::print_markdown(&content);
     }
@@ -241,6 +241,10 @@ pub async fn run_query(
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
         std::process::exit(1);
     }
+
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output).
+    // Must be set before any tool call display occurs.
+    crate::debug_tools::set_plain_mode(plain.unwrap_or(false));
 
     let ctx = QueryContextBuilder::new()
         .cli_model(cli_model.map(|s| s.to_string()))
@@ -309,7 +313,14 @@ pub async fn run_query(
             log::debug!("❌ Tool execution failed (RAW):\n{:#?}", e);
             if !log::log_enabled!(log::Level::Debug) {
                 let error_msg = format_tool_error(&e);
-                eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+                log::error!("Tool execution failed: {}", error_msg);
+                // Strip ANSI codes in plain mode for pipe-safe output
+                if ctx.output_flags.plain {
+                    let clean = crate::utils::strip_ansi_codes(&error_msg);
+                    eprintln!("\n❌ Tool execution failed: {}\n", clean);
+                } else {
+                    eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+                }
             }
             return Err(e.into());
         }

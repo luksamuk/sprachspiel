@@ -3,7 +3,7 @@
 //! This module provides ratatui `Style` and `Color` mappings that
 //! correspond to the ANSI color codes used in `view/mod.rs::colors`.
 //! The ANSI module is kept for non-chat subcommands (query, translate,
-//! OCR, summarize) which still use termimad+println.
+//! OCR, summarize) which use the standalone monochrome markdown renderer.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -16,7 +16,6 @@ pub const CYAN: Color = Color::Cyan;
 pub const YELLOW: Color = Color::Yellow;
 
 /// Green text color
-#[allow(dead_code)] // PR3: Will be used for TUI success indicators
 pub const GREEN: Color = Color::Green;
 
 /// Red text color
@@ -77,9 +76,20 @@ pub fn success_style() -> Style {
     Style::default().fg(GREEN)
 }
 
-/// Thinking content style (dim)
-pub fn thinking_content_style() -> Style {
-    dim()
+/// Style for the thinking block left border (│)
+///
+/// Same as `dim_cyan()` — the border and header share the same
+/// accent color for visual coherence.
+pub fn thinking_border_style() -> Style {
+    dim_cyan()
+}
+
+/// Style for the thinking block header (🧠 Thinking)
+///
+/// Same as `dim_cyan()` — the header introduces the block and
+/// should match the border accent.
+pub fn thinking_header_style() -> Style {
+    dim_cyan()
 }
 
 /// Progress bar color based on percentage

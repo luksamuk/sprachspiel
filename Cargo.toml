@@ -10,9 +10,9 @@ name = "sprach"
 path = "src/main.rs"
 
 [features]
-default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -35,6 +35,8 @@ document-tools = []
 subagent-tools = []
 # Landlock sandbox for Linux (kernel 5.13+)
 sandbox = ["dep:landlock"]
+# Mermaid diagram rendering (Unicode box-drawing text, pure Rust)
+mermaid = ["dep:mermaid-text"]
 
 [dependencies]
 base64 = "0.22.1"
@@ -59,10 +61,16 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rattles = "0.2"
 # regex is used directly in our code for file filtering
 regex = "1.10"
+# cli-clipboard provides cross-platform clipboard access (X11+Wayland+macOS+Windows)
+# Fails gracefully on Termux and headless environments
+cli-clipboard = "0.4.0"
 # crossterm provides terminal raw mode, events, and input for ratatui TUI
-crossterm = { version = "0.29", features = ["event-stream"] }
+# bracketed-paste enables Event::Paste for terminal paste support
+crossterm = { version = "0.29", features = ["event-stream", "bracketed-paste"] }
 # ratatui provides the TUI framework for responsive chat rendering
 ratatui = "0.30"
+# ratatui-textarea provides a multi-line text editor widget for the TUI input
+ratatui-textarea = "0.9.1"
 # tui-markdown converts markdown to ratatui Text with syntax highlighting
 tui-markdown = { version = "0.3", features = ["highlight-code"] }
 # unicode-segmentation for grapheme-aware text editing in CrosstermInput
@@ -72,13 +80,16 @@ unicode-segmentation = "1.11"
 scraper = { version = "0.22", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
-termimad = "0.34"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "sync"] }
+ serde_yaml = "0.9"
+ tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.8"
 urlencoding = "2.1"
 walkdir = "2.5"
 unicode-width = "0.2.2"
+# Mermaid diagram rendering as Unicode box-drawing text (pure Rust, no browser)
+# Optional — enabled by the "mermaid" feature flag
+mermaid-text = { version = "0.56", optional = true }
 # Database for semantic search
 rusqlite = { version = "0.32", features = ["bundled"] }
 sqlite-vec = "0.1"
@@ -96,6 +107,8 @@ landlock = { version = "0.4", optional = true }
 # Development dependencies
 [dev-dependencies]
 tempfile = "3"
+serial_test = "3.2"
+
 
 # Lint configuration — enforces code quality standards across CI and local dev.
 # Individual #[allow(clippy::...)] must include a justification comment.

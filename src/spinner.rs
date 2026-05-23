@@ -269,48 +269,77 @@ pub fn create_custom_spinner(message: &str, template: &str) -> ProgressBar {
 mod tests {
     use super::*;
 
+    // All spinner tests manipulate a *shared global* ACTIVE_SPINNER RwLock.
+    // Without serialization, tests running in parallel read/write the same
+    // global state → flaky cross-test interference. `#[serial]` serializes
+    // these four tests while still allowing other tests to run in parallel.
+
     #[test]
+    #[serial_test::serial]
     fn test_spinner_creation() {
         let spinner = create_spinner("Testing...");
         assert!(!spinner.is_finished());
         finish_spinner(spinner);
-        if let Ok(guard) = ACTIVE_SPINNER.read() {
-            assert!(guard.is_none());
-        }
+        assert_active_spinner_clear();
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_custom_spinner() {
         let spinner = create_custom_spinner("Custom...", "{spinner} {msg}");
         assert!(!spinner.is_finished());
         finish_spinner(spinner);
-        if let Ok(guard) = ACTIVE_SPINNER.read() {
-            assert!(guard.is_none());
-        }
+        assert_active_spinner_clear();
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_spinner_guard_auto_finish() {
         {
             let _spinner = SpinnerGuard::new("Auto cleanup test");
             // Spinner active
-            if let Ok(guard) = ACTIVE_SPINNER.read() {
-                assert!(guard.is_some());
-            }
+            assert_active_spinner_present();
         } // Drop here
-        if let Ok(guard) = ACTIVE_SPINNER.read() {
-            assert!(guard.is_none());
-        }
+        assert_active_spinner_clear();
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_spinner_guard_manual_finish() {
         let mut spinner = SpinnerGuard::new("Manual finish test");
         spinner.finish();
-        if let Ok(guard) = ACTIVE_SPINNER.read() {
-            assert!(guard.is_none());
-        }
+        assert_active_spinner_clear();
         // Drop should not panic
         drop(spinner);
+    }
+
+    /// Retry-based assertion: ACTIVE_SPINNER is empty.
+    ///
+    /// Scheduling delays between drop/finish and the next read can leave
+    /// the RwLock momentarily populated. Yield + retry with a generous cap
+    /// avoids flakiness without hard sleeps.
+    fn assert_active_spinner_clear() {
+        for _ in 0..1000 {
+            if let Ok(guard) = ACTIVE_SPINNER.read() {
+                if guard.is_none() {
+                    return;
+                }
+            }
+            std::thread::yield_now();
+        }
+        panic!("ACTIVE_SPINNER was not cleared after 1000 retries");
+    }
+
+    /// Retry-based assertion: ACTIVE_SPINNER has some spinner.
+    fn assert_active_spinner_present() {
+        for _ in 0..1000 {
+            if let Ok(guard) = ACTIVE_SPINNER.read() {
+                if guard.is_some() {
+                    return;
+                }
+            }
+            std::thread::yield_now();
+        }
+        panic!("ACTIVE_SPINNER was not set after 1000 retries");
     }
 }

@@ -19,12 +19,10 @@
 use std::sync::Arc;
 
 use crate::capabilities::ModelCapabilities;
-use crate::chat::view::StatusBarInfo;
 use crate::config::ModelConfig;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::settings::Settings;
-use crate::tokens::ContextMetrics;
 
 use super::session::ChatSession;
 
@@ -39,6 +37,7 @@ use super::session::ChatSession;
 /// - **Model**: current model, capabilities, config
 /// - **Tools**: tools active, think mode
 /// - **Context**: debug mode, agents.md, etc.
+#[derive(Clone)]
 pub struct ReplState {
     // Session state
     pub session: ChatSession,
@@ -186,27 +185,6 @@ impl ReplStateBuilder {
             settings,
             last_assistant_message_id: self.last_assistant_message_id,
         })
-    }
-}
-
-impl ReplState {
-    /// Get status bar info from context metrics
-    #[allow(dead_code)] // PR3: Will be used for TUI status bar
-    pub fn get_status_bar_info(&self, metrics: ContextMetrics) -> StatusBarInfo {
-        let percent = if metrics.context_window > 0 {
-            ((metrics.total_tokens as f64 / metrics.context_window as f64) * 100.0).min(100.0) as u8
-        } else {
-            0
-        };
-
-        StatusBarInfo {
-            model_name: self.current_model_name.clone(),
-            used_tokens: metrics.total_tokens,
-            max_tokens: metrics.context_window,
-            percent,
-            think_enabled: self.session.think && self.capabilities.thinking,
-            tools_enabled: self.tools_active,
-        }
     }
 }
 

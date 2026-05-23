@@ -1,151 +1,256 @@
-//! Input line component — user input display
+//! Input line component — user input display with word-wrap
 //!
-//! Renders the input line at the bottom of the TUI, showing
-//! the prompt string and current input buffer.
+//! Renders the textarea content at the bottom of the TUI, showing
+//! the prompt prefix (">>> " / "... ") and the current input content.
+//! Long lines are soft-wrapped at word boundaries (with glyph fallback
+//! for words wider than the viewport), eliminating horizontal scroll.
+//! Selection highlighting is applied by querying
+//! `textarea.selection_range()` and styling the selected characters
+//! with a blue background.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Paragraph};
+use ratatui_textarea::TextArea;
 
 use super::super::styles;
-use unicode_width::UnicodeWidthStr;
+use super::super::wrap::wrap_line;
+use super::chat_selection::selection_style;
 
-/// Input line state for rendering
-#[derive(Debug, Clone)]
-pub struct InputState {
-    /// Current input buffer content
-    pub buffer: String,
-    /// Cursor position within the buffer (byte offset)
-    pub cursor_pos: usize,
-    /// Whether input is disabled (e.g., during LLM processing)
-    pub disabled: bool,
-    /// Disabled reason (shown when input is disabled)
-    pub disabled_reason: Option<String>,
-}
+/// Width of the prompt prefix in characters: ">>> " or "... " = 4 chars.
+const PROMPT_WIDTH: usize = 4;
 
-impl InputState {
-    /// Create a new empty input state
-    pub fn new() -> Self {
-        Self {
-            buffer: String::new(),
-            cursor_pos: 0,
-            disabled: false,
-            disabled_reason: None,
-        }
-    }
-
-    /// Insert a character at the cursor position
-    pub fn insert_char(&mut self, c: char) {
-        self.buffer.insert(self.cursor_pos, c);
-        self.cursor_pos += c.len_utf8();
-    }
-
-    /// Delete the character before the cursor (backspace)
-    pub fn backspace(&mut self) -> bool {
-        if self.cursor_pos > 0 {
-            // Find the previous character boundary
-            let prev_pos = self.buffer[..self.cursor_pos]
-                .char_indices()
-                .last()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.buffer.drain(prev_pos..self.cursor_pos);
-            self.cursor_pos = prev_pos;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Delete the character at the cursor position (forward delete).
-    ///
-    /// This is the symmetrical counterpart to `backspace()`: while backspace
-    /// deletes the character **before** the cursor (moving it left), this
-    /// deletes the character **at** the cursor (keeping cursor position).
-    ///
-    /// Returns `true` if a character was deleted, `false` if the cursor is
-    /// at the end of the buffer.
-    pub fn delete_char_right(&mut self) -> bool {
-        if self.cursor_pos < self.buffer.len() {
-            // Find the next character boundary
-            let next_pos = self.buffer[self.cursor_pos..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor_pos + i)
-                .unwrap_or(self.buffer.len());
-            self.buffer.drain(self.cursor_pos..next_pos);
-            // Cursor position stays the same (character at cursor is removed,
-            // next character shifts left into its place)
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Move cursor left by one character
-    pub fn cursor_left(&mut self) {
-        if self.cursor_pos > 0 {
-            let prev_pos = self.buffer[..self.cursor_pos]
-                .char_indices()
-                .last()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.cursor_pos = prev_pos;
-        }
-    }
-
-    /// Move cursor right by one character
-    pub fn cursor_right(&mut self) {
-        if self.cursor_pos < self.buffer.len() {
-            let next_pos = self.buffer[self.cursor_pos..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor_pos + i)
-                .unwrap_or(self.buffer.len());
-            self.cursor_pos = next_pos;
-        }
-    }
-
-    /// Clear the buffer and reset cursor
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-        self.cursor_pos = 0;
-    }
-
-    /// Get the current line content for submission
-    #[allow(dead_code)] // PR3: Will be used for TUI input submission
-    pub fn line(&self) -> &str {
-        &self.buffer
-    }
-
-    /// Set the disabled state
-    pub fn set_disabled(&mut self, disabled: bool, reason: Option<String>) {
-        self.disabled = disabled;
-        self.disabled_reason = reason;
-    }
-}
-
-impl Default for InputState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Render the input line
+/// A single wrapped sub-line within a logical line.
 ///
-/// Shows ">>> " prompt when enabled, or a disabled indicator when
-/// the LLM is processing. Long input lines scroll horizontally so the
-/// cursor stays visible. Scroll is computed at render time from the
-/// actual `area.width` — no state tracking needed.
-pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
-    let prompt_style = styles::prompt_style();
-    let dim_style = Style::default().add_modifier(Modifier::DIM);
-    const PROMPT_WIDTH: u16 = 4; // ">>> "
+/// Tracks the byte offset range within the original logical line so
+/// that selection highlighting can be mapped from logical positions
+/// (row, col) to visual positions within wrapped sub-lines.
+struct WrappedSubLine {
+    /// The wrapped text content.
+    text: String,
+    /// Character offset within the original logical line where this
+    /// sub-line starts. Used to map selection ranges onto wrapped lines.
+    char_offset: usize,
+}
 
-    if state.disabled {
-        let reason = state.disabled_reason.as_deref().unwrap_or("Processing...");
+/// Build display lines with word-wrap, prompt prefixes, and selection highlighting.
+///
+/// Each logical line is wrapped to `wrap_width` columns using `wrap_line()`.
+/// The first sub-line of the first logical line gets ">>> " prefix; all
+/// others get "... ". If a selection is active, characters within the range
+/// are rendered with a blue background.
+fn build_display_lines(textarea: &TextArea<'static>, wrap_width: usize) -> Vec<Line<'static>> {
+    let lines = textarea.lines();
+    let prompt_style = styles::prompt_style();
+    let sel_style = selection_style();
+    let selection = textarea
+        .selection_range()
+        .map(|((sr, sc), (er, ec))| SelectionRange {
+            start_row: sr,
+            start_col: sc,
+            end_row: er,
+            end_col: ec,
+        });
+
+    // wrap_width must account for the prompt prefix (4 chars).
+    // The text area for content is (wrap_width - PROMPT_WIDTH) columns wide.
+    let content_width = wrap_width.saturating_sub(PROMPT_WIDTH);
+    let effective_width = if content_width > 0 { content_width } else { 20 };
+
+    let mut display_lines: Vec<Line<'static>> = Vec::new();
+    let mut first_line = true;
+
+    for (logical_row, text_line) in lines.iter().enumerate() {
+        // Wrap the logical line into sub-lines that fit the content width
+        let wrapped_texts = wrap_line(text_line, effective_width);
+
+        // Compute char offsets for each sub-line so we can map selection
+        // ranges. wrap_line() splits on character boundaries, so we can
+        // count chars in each sub-line to compute cumulative offsets.
+        let mut sub_lines: Vec<WrappedSubLine> = Vec::new();
+        let mut char_offset = 0usize;
+        for sub_text in &wrapped_texts {
+            sub_lines.push(WrappedSubLine {
+                text: sub_text.clone(),
+                char_offset,
+            });
+            char_offset += sub_text.chars().count();
+        }
+
+        // Build display lines for each sub-line
+        for sub_line in &sub_lines {
+            let prompt = if first_line {
+                Span::styled(">>> ", prompt_style)
+            } else {
+                Span::styled("... ", prompt_style)
+            };
+            first_line = false;
+
+            let text_spans = if let Some(ref sel) = selection {
+                // Check if the selection intersects this sub-line's logical row
+                if logical_row >= sel.start_row && logical_row <= sel.end_row {
+                    apply_selection_to_wrapped_subline(
+                        &sub_line.text,
+                        logical_row,
+                        sub_line.char_offset,
+                        sel,
+                        sel_style,
+                    )
+                } else {
+                    vec![Span::raw(sub_line.text.clone())]
+                }
+            } else {
+                vec![Span::raw(sub_line.text.clone())]
+            };
+
+            let mut spans = vec![prompt];
+            spans.extend(text_spans);
+            display_lines.push(Line::from(spans));
+        }
+    }
+
+    // If textarea is completely empty, show at least the prompt line
+    if display_lines.is_empty() {
+        display_lines.push(Line::from(vec![
+            Span::styled(">>> ", prompt_style),
+            Span::raw(String::new()),
+        ]));
+    }
+
+    display_lines
+}
+
+/// Selection range derived from `textarea.selection_range()`.
+///
+/// Stores the start and end positions as (row, col) pairs so that
+/// selection parameters can be passed as a single struct instead of
+/// 6 individual arguments.
+struct SelectionRange {
+    start_row: usize,
+    start_col: usize,
+    end_row: usize,
+    end_col: usize,
+}
+
+/// Apply selection highlighting to a wrapped sub-line.
+///
+/// The `char_offset` is the character offset of this sub-line within
+/// the original logical line. Selection positions (`start_col`, `end_col`)
+/// are in character positions within the logical line, so we subtract
+/// `char_offset` to get positions within the sub-line.
+fn apply_selection_to_wrapped_subline(
+    text: &str,
+    logical_row: usize,
+    char_offset: usize,
+    sel: &SelectionRange,
+    sel_style: Style,
+) -> Vec<Span<'static>> {
+    let chars: Vec<char> = text.chars().collect();
+    let char_count = chars.len();
+
+    // Convert selection columns from logical-line coords to sub-line coords
+    let local_start = if logical_row == sel.start_row {
+        sel.start_col.saturating_sub(char_offset)
+    } else {
+        0
+    };
+    let local_end = if logical_row == sel.end_row {
+        sel.end_col
+            .min(char_offset + char_count)
+            .saturating_sub(char_offset)
+    } else {
+        char_count
+    };
+
+    if local_start >= char_count || local_end <= local_start {
+        return vec![Span::raw(text.to_string())];
+    }
+
+    let mut spans = Vec::new();
+
+    // Before selection
+    if local_start > 0 {
+        let before: String = chars[..local_start].iter().collect();
+        spans.push(Span::raw(before));
+    }
+
+    // Selection
+    let selected: String = chars[local_start..local_end.min(char_count)]
+        .iter()
+        .collect();
+    spans.push(Span::styled(selected, sel_style));
+
+    // After selection
+    if local_end < char_count {
+        let after: String = chars[local_end..].iter().collect();
+        spans.push(Span::raw(after));
+    }
+
+    spans
+}
+
+/// Compute the cursor position on screen, accounting for word-wrap.
+///
+/// Returns `(visual_row, visual_col)` where `visual_row` is the 0-indexed
+/// display line (counting wrapped sub-lines) and `visual_col` is the
+/// character column within that sub-line (including prompt prefix offset).
+fn cursor_visual_position(textarea: &TextArea<'static>, content_width: usize) -> (usize, usize) {
+    let cursor = textarea.cursor();
+    let cursor_row = cursor.0;
+    let cursor_col = cursor.1;
+    let lines = textarea.lines();
+    let effective_width = if content_width > 0 { content_width } else { 20 };
+
+    let mut visual_row = 0usize;
+
+    for (i, line) in lines.iter().enumerate() {
+        let wrapped = wrap_line(line, effective_width);
+        if i == cursor_row {
+            // Find which sub-line the cursor is on
+            let mut char_offset = 0usize;
+            for sub_line in &wrapped {
+                let sub_len = sub_line.chars().count();
+                if cursor_col < char_offset + sub_len
+                    || sub_line == wrapped.last().unwrap_or(&String::new())
+                {
+                    // Cursor is on this sub-line
+                    let col_in_sub = cursor_col.saturating_sub(char_offset);
+                    return (visual_row, col_in_sub);
+                }
+                char_offset += sub_len;
+                visual_row += 1;
+            }
+            // Fallback: cursor is at end of last sub-line
+            return (visual_row, 0);
+        } else {
+            visual_row += wrapped.len();
+        }
+    }
+
+    (0, 0)
+}
+
+/// Render the input line with word-wrap, prompt prefixes, and cursor positioning.
+///
+/// Returns the number of visual (wrapped) lines rendered, used by the
+/// caller to calculate the input area height for the next render cycle.
+///
+/// When input is disabled (during LLM processing), shows a dim prompt
+/// with the reason. When enabled, renders the textarea content with
+/// prompt prefixes, selection highlighting, and word-wrap.
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    textarea: &TextArea<'static>,
+    disabled: bool,
+    disabled_reason: Option<&str>,
+) -> usize {
+    let dim_style = Style::default().add_modifier(Modifier::DIM);
+
+    if disabled {
+        let reason = disabled_reason.unwrap_or("Processing...");
         let spans = vec![
             Span::styled(">>> ", dim_style),
             Span::styled(reason.to_string(), dim_style),
@@ -153,158 +258,227 @@ pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line);
         f.render_widget(paragraph, area);
+        return 1;
+    }
+
+    let block = Block::default();
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Wrap width = available inner width (includes prompt prefix space)
+    let wrap_width = inner.width as usize;
+    let content_width = wrap_width.saturating_sub(PROMPT_WIDTH);
+
+    // Build lines with word-wrap, prompt prefixes, and selection highlighting
+    let display_lines = build_display_lines(textarea, wrap_width);
+    let total_visual_lines = display_lines.len();
+
+    // Calculate vertical scroll offset to keep cursor visible.
+    // Scroll so that the cursor's visual row is within the visible area.
+    let (cursor_visual_row, cursor_visual_col) = cursor_visual_position(textarea, content_width);
+
+    let visible_lines = inner.height as usize;
+    let scroll_y = if cursor_visual_row >= visible_lines {
+        (cursor_visual_row - visible_lines + 1) as u16
     } else {
-        let spans = vec![Span::styled(">>> ", prompt_style), Span::raw(&state.buffer)];
-        let line = Line::from(spans);
+        0
+    };
 
-        // Compute horizontal scroll so cursor stays within the visible area.
-        let text_before_cursor = &state.buffer[..state.cursor_pos];
-        let cursor_visual = PROMPT_WIDTH + text_before_cursor.width() as u16;
-        let right_edge = area.width;
-        let scroll_x = (cursor_visual + 1).saturating_sub(right_edge);
+    // Render the wrapped text with vertical scrolling
+    let text = ratatui::text::Text::from(display_lines);
+    let paragraph = Paragraph::new(text).scroll((scroll_y, 0));
 
-        let paragraph = Paragraph::new(line).scroll((0, scroll_x));
-        f.render_widget(paragraph, area);
+    f.render_widget(paragraph, inner);
 
-        // Set cursor position in the input area
-        let cursor_x = area.x + cursor_visual.saturating_sub(scroll_x);
-        // Clamp cursor to visible area
-        let cursor_x = cursor_x.min(area.x + area.width.saturating_sub(1));
-        let cursor_y = area.y;
+    // Position cursor: visual row adjusted by scroll, visual col offset by prompt
+    let cursor_y = inner.y + cursor_visual_row as u16 - scroll_y;
+    let cursor_x = inner.x + PROMPT_WIDTH as u16 + cursor_visual_col as u16;
+
+    // Only show cursor if it's within the visible area
+    if cursor_y >= inner.y
+        && cursor_y < inner.y + inner.height
+        && cursor_x >= inner.x
+        && cursor_x < inner.x + inner.width
+    {
         f.set_cursor_position((cursor_x, cursor_y));
     }
+
+    total_visual_lines
 }
 
 #[cfg(test)]
 mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui_textarea::TextArea;
+
     use super::*;
 
-    #[test]
-    fn test_input_state_new() {
-        let state = InputState::new();
-        assert!(state.buffer.is_empty());
-        assert_eq!(state.cursor_pos, 0);
-        assert!(!state.disabled);
+    /// Helper to create a terminal with a test backend for rendering tests
+    fn test_terminal(width: u16, height: u16) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(width, height);
+        Terminal::new(backend).unwrap()
     }
 
     #[test]
-    fn test_insert_char() {
-        let mut state = InputState::new();
-        state.insert_char('a');
-        assert_eq!(state.buffer, "a");
-        assert_eq!(state.cursor_pos, 1);
-        state.insert_char('b');
-        assert_eq!(state.buffer, "ab");
-        assert_eq!(state.cursor_pos, 2);
+    fn test_render_empty_textarea() {
+        let mut terminal = test_terminal(80, 5);
+        let textarea = TextArea::default();
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, false, None);
+            })
+            .unwrap();
     }
 
     #[test]
-    fn test_backspace() {
-        let mut state = InputState::new();
-        state.insert_char('a');
-        state.insert_char('b');
-        state.backspace();
-        assert_eq!(state.buffer, "a");
-        assert_eq!(state.cursor_pos, 1);
+    fn test_render_disabled_input() {
+        let mut terminal = test_terminal(80, 5);
+        let textarea = TextArea::default();
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, true, Some("Thinking..."));
+            })
+            .unwrap();
     }
 
     #[test]
-    fn test_cursor_movement() {
-        let mut state = InputState::new();
-        state.insert_char('a');
-        state.insert_char('b');
-        state.insert_char('c');
-        assert_eq!(state.cursor_pos, 3);
-
-        state.cursor_left();
-        assert_eq!(state.cursor_pos, 2);
-
-        state.cursor_right();
-        assert_eq!(state.cursor_pos, 3);
+    fn test_render_multiline_textarea() {
+        let mut terminal = test_terminal(80, 10);
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello\nworld");
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, false, None);
+            })
+            .unwrap();
     }
 
     #[test]
-    fn test_unicode_cursor() {
-        let mut state = InputState::new();
-        state.insert_char('你');
-        state.insert_char('好');
-        assert_eq!(state.buffer, "你好");
-        assert_eq!(state.cursor_pos, 6); // 3 bytes per CJK char
-        state.cursor_left();
-        // Should move back by one char (3 bytes)
-        assert_eq!(state.cursor_pos, 3);
+    fn test_render_with_prompt_narrow() {
+        let mut terminal = test_terminal(20, 5);
+        let textarea = TextArea::default();
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, false, None);
+            })
+            .unwrap();
     }
 
     #[test]
-    fn test_disabled_state() {
-        let mut state = InputState::new();
-        state.set_disabled(true, Some("Thinking...".to_string()));
-        assert!(state.disabled);
-        assert_eq!(state.disabled_reason.as_deref(), Some("Thinking..."));
+    fn test_render_with_selection() {
+        let mut terminal = test_terminal(80, 5);
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello world");
+        // Select "llo" (cols 2-5)
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.start_selection();
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        assert!(textarea.is_selecting());
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, false, None);
+            })
+            .unwrap();
     }
 
     #[test]
-    fn test_clear() {
-        let mut state = InputState::new();
-        state.insert_char('a');
-        state.insert_char('b');
-        state.clear();
-        assert!(state.buffer.is_empty());
-        assert_eq!(state.cursor_pos, 0);
+    fn test_apply_selection_to_wrapped_subline_full_line() {
+        let style = selection_style();
+        // Select entire line (row 0, start_col 0, end_col 5)
+        let sel = SelectionRange {
+            start_row: 0,
+            start_col: 0,
+            end_row: 0,
+            end_col: 5,
+        };
+        let spans = apply_selection_to_wrapped_subline("hello", 0, 0, &sel, style);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello");
     }
 
     #[test]
-    fn test_delete_char_right() {
-        // Delete at start: removes first character
-        let mut state = InputState::new();
-        state.insert_char('a');
-        state.insert_char('b');
-        state.insert_char('c');
-        // cursor at end: "abc|"
-        assert!(!state.delete_char_right()); // nothing to delete at end
-        assert_eq!(state.buffer, "abc");
-
-        // Move cursor to position 1: "a|bc"
-        state.cursor_left();
-        state.cursor_left();
-        assert_eq!(state.cursor_pos, 1);
-        assert!(state.delete_char_right()); // deletes 'b'
-        assert_eq!(state.buffer, "ac");
-        assert_eq!(state.cursor_pos, 1); // cursor stays at 1
-
-        // Delete at cursor: "a|c" → "a"
-        assert!(state.delete_char_right()); // deletes 'c'
-        assert_eq!(state.buffer, "a");
-        assert_eq!(state.cursor_pos, 1);
-
-        // Empty buffer
-        state.clear();
-        assert!(!state.delete_char_right());
+    fn test_apply_selection_to_wrapped_subline_partial() {
+        let style = selection_style();
+        // Select "llo" from "hello" (cols 2-5) on row 0
+        let sel = SelectionRange {
+            start_row: 0,
+            start_col: 2,
+            end_row: 0,
+            end_col: 5,
+        };
+        let spans = apply_selection_to_wrapped_subline("hello", 0, 0, &sel, style);
+        // "he" (unselected) + "llo" (selected)
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "he");
+        assert_eq!(spans[1].content, "llo");
     }
 
     #[test]
-    fn test_delete_char_right_unicode() {
-        let mut state = InputState::new();
-        state.insert_char('你');
-        state.insert_char('好');
-        state.insert_char('世');
-        state.insert_char('界');
-        // "你好世界", cursor at end (position 12 = 4 * 3 bytes)
-        state.cursor_left(); // move back one CJK char: cursor at 9 (after 你好世)
-        assert_eq!(state.cursor_pos, 9);
-        assert!(state.delete_char_right()); // deletes 界
-        assert_eq!(state.buffer, "你好世");
-        assert_eq!(state.cursor_pos, 9); // cursor stays at same position
+    fn test_apply_selection_to_wrapped_subline_with_offset() {
+        let style = selection_style();
+        // Sub-line "world" starts at char_offset=6 in "hello world"
+        // Selection covers cols 6-11 (the word "world")
+        let sel = SelectionRange {
+            start_row: 0,
+            start_col: 6,
+            end_row: 0,
+            end_col: 11,
+        };
+        let spans = apply_selection_to_wrapped_subline("world", 0, 6, &sel, style);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "world");
     }
 
     #[test]
-    fn test_delete_char_right_at_middle() {
-        // "abcde", cursor at position 2 (between b and c)
-        let mut state = InputState::new();
-        state.buffer = "abcde".to_string();
-        state.cursor_pos = 2;
-        assert!(state.delete_char_right()); // deletes 'c'
-        assert_eq!(state.buffer, "abde");
-        assert_eq!(state.cursor_pos, 2);
+    fn test_apply_selection_to_wrapped_subline_no_intersection() {
+        let style = selection_style();
+        // Sub-line "world" at offset 6, but selection is on row 2
+        let sel = SelectionRange {
+            start_row: 2,
+            start_col: 0,
+            end_row: 3,
+            end_col: 5,
+        };
+        let spans = apply_selection_to_wrapped_subline("world", 0, 6, &sel, style);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "world");
+    }
+
+    #[test]
+    fn test_cursor_visual_position_single_line() {
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello");
+        // Cursor at end of "hello" (row 0, col 5)
+        // With content_width=80, single line — no wrapping
+        let (row, col) = cursor_visual_position(&textarea, 80);
+        assert_eq!(row, 0);
+        assert_eq!(col, 5);
+    }
+
+    #[test]
+    fn test_cursor_visual_position_multiline() {
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello\nworld");
+        // After insert_str, cursor is at end of "world": (row=1, col=5)
+        // With content_width=80, neither line wraps, so visual_row=1
+        let (row, col) = cursor_visual_position(&textarea, 80);
+        assert_eq!(row, 1);
+        assert_eq!(col, 5);
+    }
+
+    #[test]
+    fn test_cursor_visual_position_wrapped() {
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello world foo bar");
+        // With content_width=6, "hello" (5 chars) fits on one line,
+        // "world" (5 chars) on the next, etc.
+        let (row, _col) = cursor_visual_position(&textarea, 6);
+        // Cursor is at end of line (col 19), which is on a wrapped sub-line
+        // Just verify it returns without panic and visual_row > 0
+        assert!(row > 0, "cursor should be on a wrapped sub-line");
     }
 }

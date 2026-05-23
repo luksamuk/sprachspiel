@@ -95,7 +95,7 @@ User sends message → Add to session → Display to user → End session → Lo
 **Commands:**
 - `/save [name]` — Persist session to named storage
 - `/load <name>` — Load a saved session
-- `/clear` — Clear session messages
+- `/new` — Clear session messages
 - `/forget` — Delete session from database
 
 ---
@@ -391,13 +391,13 @@ graph LR
 
 **User Commands:**
 
-| Command | Shortcut | Description |
-|---------|----------|-------------|
-| `/fact add <text> [--global]` | `/fa` | Add a fact |
-| `/fact list [--global]` | `/fl` | List stored facts |
-| `/fact search <query>` | `/fs` | Search facts |
-| `/fact remove <id>` | `/fr` | Remove a fact |
-| `/fact prune` | `/fp` | Run decay manually |
+| Command | Description |
+|---------|-------------|
+| `/fact add <text> [--global]` | Add a fact |
+| `/fact list [--global]` | List stored facts |
+| `/fact search <query>` | Search facts |
+| `/fact remove <id>` | Remove a fact |
+| `/fact prune` | Run decay manually |
 
 **LLM Tools:**
 
