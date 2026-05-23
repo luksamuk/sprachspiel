@@ -337,7 +337,7 @@ impl ChatSession {
             role: MessageRole::User,
             content: content.clone(),
             timestamp: now,
-            item_id: None, // TODO(local-db): populated from DB below
+            item_id: None, // Populated from DB below
             ..Default::default()
         });
         self.updated_at = now;
@@ -486,7 +486,7 @@ impl ChatSession {
             timestamp: now,
             prompt_tokens,
             message_type: None,
-            item_id: None, // TODO(local-db): populated from DB below
+            item_id: None, // Populated from DB below
         });
         self.updated_at = now;
 

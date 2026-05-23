@@ -372,10 +372,6 @@ pub enum CompletionResult {
         matches: Vec<String>,
         /// Descriptions for each match (same length as matches; empty strings if none)
         descriptions: Vec<String>,
-        /// Current index in the matches cycle (0-based)
-        #[allow(dead_code)]
-        // Kept for API compatibility; menu uses its own selection state
-        cycle_index: usize,
     },
 }
 
@@ -400,12 +396,6 @@ impl ChatCompleter {
             cycle_index: 0,
             last_fragment: String::new(),
         }
-    }
-
-    /// Update the model names list (e.g., after a model switch or refresh).
-    #[allow(dead_code)] // Will be called from model switch event handler
-    pub fn set_model_names(&mut self, names: Vec<String>) {
-        self.model_names = names;
     }
 
     /// Attempt tab completion based on the current buffer and cursor position.
@@ -524,7 +514,6 @@ impl ChatCompleter {
                 CompletionResult::Multiple {
                     matches: match_strings,
                     descriptions,
-                    cycle_index: 0,
                 }
             }
         }
@@ -560,7 +549,6 @@ impl ChatCompleter {
                     CompletionResult::Multiple {
                         matches: vec![cmd.trigger.to_string()],
                         descriptions: vec![cmd.description.to_string()],
-                        cycle_index: 0,
                     }
                 }
             }
@@ -592,7 +580,6 @@ impl ChatCompleter {
                 }
 
                 // Already at the common prefix, show completion menu
-                let idx = self.cycle_index % match_strings.len();
                 self.cycle_index += 1;
 
                 let descriptions: Vec<String> = matches
@@ -603,7 +590,6 @@ impl ChatCompleter {
                 CompletionResult::Multiple {
                     matches: match_strings,
                     descriptions,
-                    cycle_index: idx,
                 }
             }
         }
@@ -655,7 +641,6 @@ impl ChatCompleter {
                 CompletionResult::Multiple {
                     matches: match_strings,
                     descriptions,
-                    cycle_index: 0,
                 }
             }
         }

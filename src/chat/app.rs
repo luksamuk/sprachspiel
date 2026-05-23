@@ -611,33 +611,8 @@ impl App {
     }
 
     /// Get a mutable reference to the textarea
-    #[allow(dead_code)] // Public API — called from repl_tui.rs via app_mut().textarea_mut()
     pub fn textarea_mut(&mut self) -> &mut TextArea<'static> {
         &mut self.textarea
-    }
-
-    /// Whether input is disabled (during LLM processing)
-    #[allow(dead_code)] // Public API — accessible for external state queries
-    pub fn input_disabled(&self) -> bool {
-        self.input_disabled
-    }
-
-    /// Get the disabled reason text
-    #[allow(dead_code)] // Public API — accessible for external state queries
-    pub fn disabled_reason(&self) -> Option<&str> {
-        self.disabled_reason.as_deref()
-    }
-
-    /// Get a reference to the completion menu state
-    #[allow(dead_code)] // Public API — accessible for external state queries
-    pub fn completion_menu(&self) -> &CompletionMenuState {
-        &self.completion_menu
-    }
-
-    /// Get a mutable reference to the completion menu state
-    #[allow(dead_code)] // Public API — accessible for external state mutation
-    pub fn completion_menu_mut(&mut self) -> &mut CompletionMenuState {
-        &mut self.completion_menu
     }
 
     /// Get the current LLM state
@@ -658,12 +633,6 @@ impl App {
     /// Get a mutable reference to the chat selection state
     pub fn chat_selection_mut(&mut self) -> &mut ChatSelection {
         &mut self.chat_selection
-    }
-
-    /// Get the cached visual lines (for selection text extraction)
-    #[allow(dead_code)] // Used internally by Ctrl+Shift+C copy handler
-    pub fn visual_lines_cache(&self) -> &[String] {
-        &self.visual_lines_cache
     }
 
     /// Get the cached scroll offset from top (for mouse mapping)
@@ -1635,7 +1604,6 @@ impl App {
             CompletionResult::Multiple {
                 matches,
                 descriptions,
-                ..
             } => {
                 // Compute common prefix for highlighting
                 let common = common_prefix_str(&matches);
@@ -1676,7 +1644,6 @@ impl App {
                 super::completer::CompletionResult::Multiple {
                     matches,
                     descriptions,
-                    ..
                 } => {
                     let common = common_prefix_str(&matches);
                     self.completion_menu.show(matches, descriptions, common);
@@ -1726,7 +1693,6 @@ impl App {
             super::completer::CompletionResult::Multiple {
                 matches,
                 descriptions,
-                ..
             } => {
                 let common = common_prefix_str(&matches);
                 self.completion_menu.show(matches, descriptions, common);

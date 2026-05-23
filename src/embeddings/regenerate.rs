@@ -319,12 +319,14 @@ pub async fn regenerate_all_embeddings(
                     {
                         progress.finish_and_clear();
                         if quiet {
-                            log::warn!("Cannot connect to Ollama for embedding generation.");
-                        } else {
-                            eprintln!(
-                                "\nError: Cannot connect to Ollama for embedding generation."
+                            log::warn!(
+                                "Cannot connect to embedding service for embedding generation."
                             );
-                            eprintln!("Please ensure Ollama is running and try again.");
+                        } else {
+                            eprintln!("\nError: Cannot connect to embedding service.");
+                            eprintln!(
+                                "Please ensure the embedding service is running and try again."
+                            );
                             eprintln!(
                                 "Progress saved: {}/{} items processed.",
                                 stats.items_processed,
@@ -445,10 +447,10 @@ pub async fn regenerate_all_embeddings(
                 {
                     progress.finish_and_clear();
                     if quiet {
-                        log::warn!("Cannot connect to Ollama for embedding generation.");
+                        log::warn!("Cannot connect to embedding service for embedding generation.");
                     } else {
-                        eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
-                        eprintln!("Please ensure Ollama is running and try again.");
+                        eprintln!("\nError: Cannot connect to embedding service.");
+                        eprintln!("Please ensure the embedding service is running and try again.");
                         eprintln!(
                             "Progress saved: {}/{} chunks processed.",
                             stats.chunks_processed,

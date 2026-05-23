@@ -1440,13 +1440,6 @@ fn content_contains_special_blocks(content: &str) -> bool {
     false
 }
 
-/// Backward-compatible alias for `content_contains_special_blocks`.
-#[deprecated(since = "0.44.0", note = "Use content_contains_special_blocks instead")]
-#[allow(dead_code)] // Kept for backward compatibility with tests
-fn content_contains_table(content: &str) -> bool {
-    content_contains_special_blocks(content)
-}
-
 // ── Mermaid diagram rendering (TUI) ──────────────────────────────────
 
 /// Render a Mermaid diagram as styled ratatui `Line`s for the TUI.

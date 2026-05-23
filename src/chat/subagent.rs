@@ -39,13 +39,13 @@ pub enum SubagentType {
 
 impl SubagentType {
     /// Returns `true` for variants that use `/api/generate` (image-based).
-    #[allow(dead_code)] // Public API method used in tests
+    #[cfg(test)]
     pub fn uses_generate_api(&self) -> bool {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
     /// Human-readable label for this subagent type.
-    #[allow(dead_code)] // Public API method used in tests
+    #[cfg(test)]
     pub fn label(&self) -> &'static str {
         match self {
             SubagentType::Ocr => "OCR",
@@ -74,14 +74,12 @@ impl std::str::FromStr for SubagentType {
     }
 }
 
+#[cfg(test)]
 impl SubagentType {
     /// Parse a string into a SubagentType (convenience wrapper).
     ///
     /// Returns None if the string doesn't match any known type.
     /// Case-insensitive matching.
-    ///
-    /// This is a convenience method that wraps the `FromStr` implementation.
-    #[allow(dead_code)] // Public API method used in tests
     pub fn parse(s: &str) -> Option<Self> {
         s.parse().ok()
     }

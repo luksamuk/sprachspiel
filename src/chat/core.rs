@@ -218,8 +218,8 @@ pub fn setup_coordinator(
                 // (this is informational, not user-facing)
             }
             _ => {
-                // Other events (ToolCall, ToolResult, ContextNearLimit)
-                // are handled by log_tool_call/log_tool_result/log::debug
+                // Other events (ContextNearLimit) are handled by
+                // log_tool_call/log_tool_result/log::debug
             }
         }
     });

@@ -146,7 +146,7 @@ pub enum CommandOutput {
     /// Contains statistics from `/reindex`.
     /// Note: In TUI mode, reindex runs in the background and results are sent
     /// as async system messages via `AsyncMessageTx`, not as `CommandOutput`.
-    #[allow(dead_code)] // Used in terminal mode; TUI uses async_message_tx
+    /// This variant is used only in the terminal (non-TUI) mode path.
     ReindexResult(ReindexData),
 
     /// Help text display.

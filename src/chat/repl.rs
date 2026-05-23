@@ -21,7 +21,7 @@ use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
 };
-use super::core::{send_message, send_message_stream};
+use super::core::send_message_stream;
 use super::llm_event::LlmEvent;
 use super::session::{ChatSession, MessageRole};
 use super::view::ChatView;
@@ -79,6 +79,7 @@ fn init_chat_database(
              Use --anonymous for anonymous mode without database persistence.",
             storage_path.display()
         );
+        log::error!("Database initialization failed: {}", error_msg);
         eprintln!("\x1B[31m{}\x1B[0m", error_msg);
         Some(error_msg)
     } else {
@@ -136,119 +137,6 @@ async fn run_startup_tasks(
                 }
                 Err(e) => {
                     log::debug!("Warning: Content decay cycle failed: {}", e);
-                }
-            }
-        }
-    }
-}
-
-/// Handle user input that's not a command.
-///
-/// Non-streaming version — used as fallback when streaming is unavailable.
-/// The TUI REPL uses `handle_user_message_stream()` instead.
-#[allow(dead_code)] // Kept as non-streaming fallback; TUI uses streaming variant
-pub async fn handle_user_message(
-    line: &str,
-    state: &mut super::repl_state::ReplState,
-    view: &mut dyn ChatView,
-    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
-) {
-    let user_message_id = state.session.add_user_message(line.to_string());
-    if !state.session.anonymous
-        && let Err(e) = state.session.save_sqlite()
-    {
-        log::debug!("Warning: Could not save session: {}", e);
-    }
-
-    let context_window = state.model_config.num_ctx as usize;
-    let system_prompt_for_check = build_pre_tool_prompt(state);
-    check_and_compact_before_tool(
-        state,
-        &system_prompt_for_check,
-        context_window,
-        view,
-        llm_tx.clone(),
-    )
-    .await;
-
-    let think_enabled = state.session.think;
-    let mut compaction_cycles = 0;
-    let mut current_input = line.to_string();
-
-    loop {
-        match send_message(
-            &state.ollama,
-            &state.model_config,
-            &mut state.session,
-            &current_input,
-            state.tools_active,
-            think_enabled,
-            state.cli_code,
-            &state.settings,
-            state.agents_md.as_deref(),
-            state.db.as_ref(),
-            state.embedding_client.as_ref(),
-            state.cli_soulless,
-            None,
-            view,
-        )
-        .await
-        {
-            Ok(result) => {
-                match process_send_result(state, result, user_message_id, view, llm_tx.clone())
-                    .await
-                {
-                    ProcessResult::Success => {
-                        // Auto-extract facts from recent user messages (autoDream-lite)
-                        try_auto_extract_facts(state, view).await;
-                    }
-                    ProcessResult::ContinuationError(e) => {
-                        view.show_error(&format!("Continuation failed: {}", e));
-                    }
-                }
-                break;
-            }
-            Err(e) => {
-                let error_str = e.to_string();
-                match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
-                    OverflowHandleResult::NotOverflow => {
-                        view.show_error(&format_tool_error(&error_str));
-                        break;
-                    }
-                    OverflowHandleResult::HandledContinue => {
-                        view.show_warning("Please retry your message.");
-                        break;
-                    }
-                    OverflowHandleResult::InterToolCompaction { tools_executed } => {
-                        compaction_cycles += 1;
-
-                        if compaction_cycles > MAX_COMPACTION_CYCLES {
-                            view.show_warning(&format!(
-                                "Maximum compaction cycles reached ({}). Please continue manually.",
-                                MAX_COMPACTION_CYCLES
-                            ));
-                            break;
-                        }
-
-                        let remaining_cycles = MAX_COMPACTION_CYCLES - compaction_cycles;
-                        log::debug!(
-                            "[Inter-tool Compaction] Cycle {}/{} ({} tools executed before pause)",
-                            compaction_cycles,
-                            MAX_COMPACTION_CYCLES,
-                            tools_executed.len()
-                        );
-                        if remaining_cycles > 0 {
-                            log::debug!(
-                                "[Inter-tool Compaction] {} compaction(s) remaining before manual intervention",
-                                remaining_cycles
-                            );
-                        }
-
-                        view.show_progress("Continuing...");
-
-                        current_input = build_inter_tool_compaction_prompt(&tools_executed);
-                        continue;
-                    }
                 }
             }
         }
@@ -520,6 +408,7 @@ fn create_session(
                     };
                 }
                 Err(e) => {
+                    log::warn!("Could not load session '{}': {}", session_name, e);
                     eprintln!(
                         "\x1B[33m⚠️ Could not load session '{}': {}\x1B[0m",
                         session_name, e
@@ -564,6 +453,7 @@ fn create_session(
                     };
                 }
                 Err(e) => {
+                    log::warn!("Could not load most recent session '{}': {}", last_id, e);
                     eprintln!(
                         "\x1B[33m⚠️ Could not load session '{}': {}\x1B[0m",
                         last_id, e
@@ -575,6 +465,7 @@ fn create_session(
                 // No sessions exist - create new session (not persisted yet)
             }
             Err(e) => {
+                log::warn!("Could not query sessions: {}", e);
                 eprintln!("\x1B[33m⚠️ Could not query sessions: {}\x1B[0m", e);
                 eprintln!("Starting new session...");
             }
@@ -605,6 +496,7 @@ fn resolve_session_model(
             session.set_model(model.to_string());
             return true;
         }
+        log::error!("Unknown model specified: '{}'", model);
         eprintln!(
             "\x1B[31mUnknown model '{}'. Use --list to see available models.\x1B[0m",
             model
@@ -613,6 +505,11 @@ fn resolve_session_model(
     }
 
     if !crate::user_models::is_model_valid(&session.model) {
+        log::warn!(
+            "Saved model '{}' no longer exists. Using default '{}'.",
+            session.model,
+            default_model
+        );
         eprintln!(
             "\x1B[33m⚠️ Saved model '{}' no longer exists. Using default '{}'.\x1B[0m",
             session.model, default_model
@@ -636,6 +533,10 @@ fn resolve_thinking_mode(
 
     if cli_think_flag {
         if !capabilities.thinking {
+            log::warn!(
+                "Model '{}' does not support think mode. Ignoring -t/--think flag.",
+                model_config.model_id
+            );
             eprintln!(
                 "\x1B[33m⚠️ Model '{}' does not support think mode. Ignoring -t/--think flag.\x1B[0m",
                 model_config.model_id
@@ -647,6 +548,10 @@ fn resolve_thinking_mode(
 
     let requested_thinking = config_thinking || model_default_thinking;
     if requested_thinking && !capabilities.thinking {
+        log::warn!(
+            "Model '{}' does not support think mode. Disabled for this session.",
+            model_config.model_id
+        );
         eprintln!(
             "\x1B[33m⚠️ Model '{}' does not support think mode. Disabled for this session.\x1B[0m",
             model_config.model_id
@@ -698,6 +603,7 @@ pub async fn run_chat_repl(
     if !args.anonymous && db.is_none() {
         if db_error.is_some() {
             // Error already printed in init_database
+            log::error!("Cannot start chat session without database.");
             eprintln!("\x1B[31mCannot start chat session without database.\x1B[0m");
             eprintln!("Either fix the database issue or use --anonymous mode.");
         }

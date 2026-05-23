@@ -100,12 +100,6 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
                 }
             });
         }
-        ChatEvent::ToolCall { .. } => {}
-        ChatEvent::ToolResult { .. } => {
-            // Tool result display is handled by log_tool_result() inside each
-            // tool function — no need to duplicate it here.
-            // The ChatEvent::ToolResult is kept for future use (e.g., TUI rendering).
-        }
         ChatEvent::ContextNearLimit {
             tool_name,
             tokens_used,
@@ -319,6 +313,7 @@ pub async fn run_query(
             log::debug!("❌ Tool execution failed (RAW):\n{:#?}", e);
             if !log::log_enabled!(log::Level::Debug) {
                 let error_msg = format_tool_error(&e);
+                log::error!("Tool execution failed: {}", error_msg);
                 // Strip ANSI codes in plain mode for pipe-safe output
                 if ctx.output_flags.plain {
                     let clean = crate::utils::strip_ansi_codes(&error_msg);

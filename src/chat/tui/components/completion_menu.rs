@@ -130,18 +130,6 @@ impl CompletionMenuState {
             self.scroll_offset = self.selected - visible + 1;
         }
     }
-
-    /// Get the number of items
-    #[allow(dead_code)] // Public API for external state queries
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    /// Whether there are no items
-    #[allow(dead_code)] // Public API for external state queries
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
 }
 
 impl Default for CompletionMenuState {
@@ -275,7 +263,7 @@ mod tests {
     fn test_completion_menu_new() {
         let state = CompletionMenuState::new();
         assert!(!state.is_visible());
-        assert!(state.is_empty());
+        assert!(state.items.is_empty());
     }
 
     #[test]
@@ -287,7 +275,7 @@ mod tests {
             "h".to_string(),
         );
         assert!(state.is_visible());
-        assert_eq!(state.len(), 2);
+        assert_eq!(state.items.len(), 2);
         assert_eq!(state.selected_item(), Some("help"));
 
         state.hide();

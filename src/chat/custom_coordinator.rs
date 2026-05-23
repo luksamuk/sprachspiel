@@ -16,8 +16,8 @@ use ollama_rs::re_exports::serde::{Deserialize, Serialize, de::DeserializeOwned}
 use ollama_rs::{
     Ollama,
     generation::{
-        chat::{ChatMessage, ChatMessageResponse, MessageRole, request::ChatMessageRequest},
-        parameters::{FormatType, KeepAlive, ThinkType},
+        chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
+        parameters::ThinkType,
         tools::Tool,
     },
     history::ChatHistory,
@@ -220,16 +220,6 @@ pub enum ChatEvent {
         thinking: Option<String>,
         already_streamed: bool,
     },
-    /// Tool call is about to be executed (fields kept for future use)
-    #[allow(dead_code)]
-    ToolCall {
-        name: String,
-        arguments: serde_json::Value,
-    },
-    /// Tool execution result
-    /// Name field kept for future debugging use
-    #[allow(dead_code)]
-    ToolResult { name: String, result: String },
     /// Context is near limit after tool execution (inter-tool threshold)
     /// Indicates compaction may be needed before next tool
     ContextNearLimit {
@@ -276,8 +266,6 @@ pub struct CustomCoordinator<C: ChatHistory> {
     history: C,
     tool_infos: Vec<CustomToolInfo>,
     tools: HashMap<String, Box<dyn ToolHolder>>,
-    format: Option<FormatType>,
-    keep_alive: Option<KeepAlive>,
     think: Option<ThinkType>,
     /// Callback for events
     event_callback: Option<Box<dyn Fn(ChatEvent) + Send + Sync>>,
@@ -314,8 +302,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             history,
             tool_infos: Vec::default(),
             tools: HashMap::default(),
-            format: None,
-            keep_alive: None,
             think: None,
             event_callback: None,
             context_window: None,
@@ -552,22 +538,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     }
 
     /// Set the format (for future use)
-    #[allow(dead_code)]
-    pub fn format(mut self, format: FormatType) -> Self {
-        self.format = Some(format);
-        self
-    }
-
     /// Set model options
     pub fn options(mut self, options: ModelOptions) -> Self {
         self.options = options;
-        self
-    }
-
-    /// Set keep alive (for future use)
-    #[allow(dead_code)]
-    pub fn keep_alive(mut self, keep_alive: KeepAlive) -> Self {
-        self.keep_alive = Some(keep_alive);
         self
     }
 
@@ -833,22 +806,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
     /// Apply optional settings to request
     fn apply_optional_settings(&self, mut request: ChatMessageRequest) -> ChatMessageRequest {
-        if let Some(ref keep_alive) = self.keep_alive {
-            request = request.keep_alive(keep_alive.clone());
-        }
-
         if let Some(ref think) = self.think {
             request = request.think(think.clone());
-        }
-
-        if let Some(ref format) = self.format {
-            if self.tool_infos.is_empty() {
-                request = request.format(format.clone());
-            } else if let Some(last_message) = self.history.messages().last()
-                && last_message.role == MessageRole::Tool
-            {
-                request = request.format(format.clone());
-            }
         }
 
         request
@@ -872,22 +831,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             serde_json::from_str(&tools_json).unwrap_or_default();
         request = request.tools(tools);
 
-        if let Some(ref keep_alive) = self.keep_alive {
-            request = request.keep_alive(keep_alive.clone());
-        }
-
         if let Some(ref think) = self.think {
             request = request.think(think.clone());
-        }
-
-        if let Some(ref format) = self.format {
-            if self.tool_infos.is_empty() {
-                request = request.format(format.clone());
-            } else if let Some(last_message) = self.history.messages().last()
-                && last_message.role == MessageRole::Tool
-            {
-                request = request.format(format.clone());
-            }
         }
 
         request
@@ -970,12 +915,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
 
-                // Emit tool call event
-                self.emit_event(ChatEvent::ToolCall {
-                    name: tool_name.clone(),
-                    arguments: args.clone(),
-                });
-
                 log::debug!("Tool call: {:?}", call.function);
 
                 let Some(tool) = self.tools.get_mut(&tool_name) else {
@@ -1004,12 +943,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 };
 
                 log::debug!("Tool response: {}", &result);
-
-                // Emit tool result event
-                self.emit_event(ChatEvent::ToolResult {
-                    name: tool_name.clone(),
-                    result: result.clone(),
-                });
 
                 // Inter-tool context check: detect overflow and truncate if needed
                 let check_result = self.check_and_handle_context_overflow(result);
@@ -1107,12 +1040,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Non-streaming path — content was not streamed.
         self.process_response(resp, /*already_streamed=*/ false)
             .await
-    }
-
-    /// Get the number of registered tools (for future use)
-    #[allow(dead_code)]
-    pub fn tool_count(&self) -> usize {
-        self.tools.len()
     }
 }
 

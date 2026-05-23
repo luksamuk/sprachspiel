@@ -985,8 +985,6 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         "debug" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
         "toggle-style" => ChatCommand::ToggleStyle,
-        // Also accept old "togglestyle" for backward compatibility
-        "togglestyle" => ChatCommand::ToggleStyle,
         "compact" => ChatCommand::Compact,
         "tools-output" => {
             if args.is_empty() {
