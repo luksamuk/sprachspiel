@@ -4785,11 +4785,13 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.6 | Simplify `run_chat_repl()` → direct `App::run()` call | 🔨 PARTIAL — `repl.rs` handles pre-TUI setup then delegates to `repl_tui` |
 | 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
 | 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
-| 4.9 | Remove YAGNI `#[allow(dead_code)]` methods from `App` (Hefesto review) | ✅ COMPLETED (PR3) — removed `messages()`, `textarea()`, `input_state()`, `input_state_mut()`, `scroll_state()`, `update_model_names()`; removed obsolete `llm_state()` annotation |
-| 4.10 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 NOT STARTED |
+| 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
+| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | 📋 NOT STARTED |
 | 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
-| 4.12 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
-| 4.13 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
+| 4.12 | Decompose `run_app_loop()` — extract `tokio::select!` branches into named async methods (629-line function) | 📋 NOT STARTED |
+| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "embedding service" or backend-agnostic phrasing | 📋 NOT STARTED |
+| 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
+| 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
 - `rustyline = "14"` — removed in PR2
@@ -4814,8 +4816,8 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | # | Issue | Severity | Source | Fix |
 |---|-------|----------|--------|-----|
 | 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
-| 12 | `/togglestyle` alias should not exist | 🟡 Medium | Test #23/#36 | Remove `"togglestyle" => ChatCommand::ToggleStyle` from `commands.rs:982` |
-| 5 | `/think on` toggles instead of explicitly enabling | 🟡 Low | Test #2 | Add explicit `/think on`/`/think off` commands, or document toggle behavior |
+| 12 | `/togglestyle` alias should not exist | ✅ **FIXED** | Test #23/#36 | Removed `"togglestyle"` alias from `commands.rs` in PR3 YAGNI sweep |
+| 5 | `/think on` toggles instead of explicitly enabling | ✅ **FIXED** | Test #2 | `ChatCommand::Think { enabled: Option<bool> }` parser now supports `/think on`/`/think off` explicitly |
 | 7 | `/compact` freezes TUI — no async progress | ✅ **FIXED** | Test #31 | `spawn_compact_task()` runs compaction in background tokio task; `LlmState::Compacting` state; Ctrl+C ignored during compaction |
 | 8 | `/compact` output not streamed | ✅ **FIXED** | Test #31 | `LlmEvent::CompactStreamToken/Done` events stream summary tokens in real time |
 | 9 | `/compact` output appears truncated/sparse | ✅ **FIXED** | Test #31 | `MAX_SUMMARY_TOKENS` removed; `COMPACTION_PROMPT` rewritten to preserve ALL context |
