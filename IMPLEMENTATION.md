@@ -646,9 +646,6 @@ todo_clear_all()             // Clear all tasks
 /todo update <id> <status>          // Update task status (pending|in_progress|done)
 /todo clear-done                    // Clear completed tasks
 /todo clear-all                      // Clear all tasks
-/ta <description>                   // Shortcut: add task
-/tl                                   // Shortcut: list tasks
-/tu <id> <status>                    // Shortcut: update task
 ```
 
 **Architecture:**
@@ -976,6 +973,8 @@ todo_clear_all()             // Clear all tasks
 - `e226374` test: add unit tests for extracted subcommand parsers
 - fix: remove /f shortcut from /forget, move to /search (collision causing data loss)
 - fix: add missing /todo shortcuts (/tg, /te, /td, /tcd, /tca)
+
+> **Note:** These shortcuts were later removed in PR #154 alias cleanup. Only canonical commands (`/todo add`, `/todo list`, etc.) remain.
 
 **Bugs found during manual testing (fixed):**
 - `/f` was mapped to `/forget` instead of `/search` — collision causing accidental data loss

@@ -388,6 +388,13 @@ pub async fn run_chat_repl_tui(
                                                  // Handle other commands
                                                  let mut dummy_input =
                                                      super::input::CrosstermInput::default();
+                                                 // Track whether this command changes status bar
+                                                 // indicators (🧠 think, 🔧 tools) so we can
+                                                 // update the modeline after execution.
+                                                 let updates_status = matches!(
+                                                     cmd,
+                                                     ChatCommand::Think { .. } | ChatCommand::Tools
+                                                 );
                                                  // For commands that need llm_tx (e.g., /compact,
                                                  // /retry), create a channel or reuse existing.
                                                  // Track whether we had an active LLM task before
@@ -432,6 +439,22 @@ pub async fn run_chat_repl_tui(
                                                  }
 
                                                 view.show_command_outputs(&outputs);
+
+                                                // Commands that change status bar indicators
+                                                // (🧠 think, 🔧 tools) must update the modeline.
+                                                // Model and ToggleStyle are handled in their own
+                                                // blocks above; Think and Tools fall through here.
+                                                if updates_status {
+                                                    let think_enabled =
+                                                        state.session.think && state.capabilities.thinking;
+                                                    let tools_enabled =
+                                                        state.tools_active && state.capabilities.tools;
+                                                    view.update_status_model(
+                                                        &state.model_config.model_id,
+                                                        think_enabled,
+                                                        tools_enabled,
+                                                    );
+                                                }
 
                                                 if outputs.iter().any(|o| matches!(o, CommandOutput::Quit))
                                                 {
