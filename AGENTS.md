@@ -130,6 +130,28 @@ These specific patterns were identified as YAGNI violations and removed during P
 **Enforcement:** Before accepting any `#[allow(dead_code)]`, verify that the item has
 at least one non-test call site. If it doesn't, remove it.
 
+### Function Length and `tokio::select!` Nesting
+
+Functions should not exceed ~200 lines. When a function grows beyond this, decompose it by
+extracting named methods for each logical branch — especially `tokio::select!` arms, where
+each branch should be a named async method on a state struct.
+
+**Pattern (from PR3 review):** The original `run_app_loop()` grew to 629 lines with deeply
+nested `tokio::select!` branches. The approved decomposition plan (PR4 phase 4.12):
+
+1. **Introduce `EventLoopState` struct** — holds shared mutable state (view, session, config)
+   so methods can access it via `&self` instead of passing 8+ arguments.
+2. **Extract each branch** into a named method:
+   - `handle_crossterm_event(&mut self, event: CrosstermEvent)` — keyboard/mouse/resize
+   - `handle_llm_event(&mut self, event: LlmEvent)` — streaming tokens, tool calls, errors
+   - `handle_key_line(&mut self, input: String)` — user text submission
+3. **Result:** `run_app_loop()` becomes a thin `loop { tokio::select! { ... } }` dispatcher
+   (~200 lines), with each handler being independently testable.
+
+**Enforcement:** When a function exceeds 200 lines, consider decomposition. When a
+`tokio::select!` contains more than 3 branches or branches exceeding 20 lines each,
+extract them into named methods.
+
 ### TUI Preparation Code Policy
 
 **CRITICAL: Do not declare unused code "for future TUI implementation".**

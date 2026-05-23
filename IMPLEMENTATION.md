@@ -4788,7 +4788,7 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
 | 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | 📋 NOT STARTED |
 | 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
-| 4.12 | Decompose `run_app_loop()` — extract `tokio::select!` branches into named async methods (629-line function) | 📋 NOT STARTED |
+| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract `handle_crossterm_event()`, `handle_llm_event()`, `handle_key_line()` from `tokio::select!` branches (reduce ~629-line function to ~200 lines) | 📋 NOT STARTED |
 | 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "embedding service" or backend-agnostic phrasing | 📋 NOT STARTED |
 | 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
 | 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
