@@ -4712,7 +4712,7 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 - `src/chat/commands.rs` — `ChatCommand::ToggleStyle` variant
 - `src/chat/command_handlers.rs` — ToggleStyle match arm (placeholder for exhaustiveness)
 - `src/chat/repl_tui.rs` — ToggleStyle handled directly (needs App access for `toggle_style()`)
-- `src/chat/completer.rs` — `/toggle-style` tab completion entry (with `/togglestyle` backward-compatible alias)
+- `src/chat/completer.rs` — `/toggle-style` tab completion entry
 
 **Tests added:**
 - `test_render_table_plain_lines_basic` — simple 2-column table → 3 lines
