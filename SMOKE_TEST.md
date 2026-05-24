@@ -1417,7 +1417,53 @@ The following were removed as dead code in W6-PR1. Verify they don't appear as v
 
 ---
 
-## 22b. Bare #[allow(dead_code)] Check
+## 23. TUI Event Loop & Rendering (W6-PR4 #148)
+
+Verify the decomposed event loop handlers and rendering fixes from PR #148.
+
+### 23.1 Multi-line User Input Rendering
+
+Bug B2 fix: multi-line user messages (Shift+Enter) now render with `>>>` prefix on first line and `    ` (4-space indent) on continuation lines.
+
+- [ ] Start chat, type `line1` → Shift+Enter → `line2` → Enter
+- [ ] Verify: `>>> line1` on first line, `    line2` on second line (4-space indent, no `>>>`)
+- [ ] Type `Hello, single line` → Enter
+- [ ] Verify: Shows `>>> Hello, single line` (single line, `>>>` prefix, no extra blank lines)
+
+### 23.2 Embedding Exit Hint
+
+Bug B3 fix: "Saving embeddings..." message appears before exit when there are pending embeddings.
+
+- [ ] Start chat, send a few messages to generate facts
+- [ ] Type `/quit` or press Ctrl+D
+- [ ] Verify: "Saving embeddings..." message appears before the app exits
+- [ ] Start chat with `sprach chat -- --anonymous`
+- [ ] Type `/quit` or press Ctrl+D
+- [ ] Verify: No "Saving embeddings..." message (anonymous mode has no DB)
+
+### 23.3 Provider-Agnostic Error Messages
+
+Phase 4.13: Error messages use "LLM" prefix instead of "Ollama" for generic errors.
+
+- [ ] Stop ollama (`pkill ollama` or disable service)
+- [ ] Start chat: `sprach chat`
+- [ ] Send a message
+- [ ] Verify: Error message contains "LLM" (not hardcoded "Ollama" as generic error prefix)
+- [ ] Note: `(start it with \`ollama serve\`)` in the hint is correct — that's the actual command
+
+### 23.4 Event Loop Regression
+
+PR #148 refactored the event loop into handler functions. Verify all interactions still work.
+
+- [ ] `/think on` → 🧠 indicator appears in status line
+- [ ] `/think off` → 🧠 indicator removed
+- [ ] `/tools` → tool list shown
+- [ ] Send a message, press Ctrl+C during streaming → "[Interrupted]" message, can send again
+- [ ] Send 3 messages in sequence → all responses appear correctly, no missing/duplicated content
+
+---
+
+## 24. Bare #[allow(dead_code)] Check
 
 Run this before release to ensure no dead code is silenced without justification:
 
@@ -1515,4 +1561,5 @@ The script above runs automated tests. The following tests must be run manually:
 18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
 19. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
 20. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
+21. **Section 23**: TUI Event Loop & Rendering (multi-line rendering, embedding exit hint, provider-agnostic errors, event loop regression)
 These tests require chat interaction and visual verification of results.
