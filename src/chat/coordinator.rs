@@ -40,7 +40,7 @@ impl RecoverableError {
                 format!("Network error: {}", message)
             }
             RecoverableError::OllamaError { message } => {
-                format!("Ollama error: {}", message)
+                format!("{}: {}", crate::consts::app::ERR_LLM_ERROR, message)
             }
             RecoverableError::JsonError { message } => {
                 format!("JSON error: {}", message)
@@ -126,7 +126,7 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
         }
         RecoverableError::OllamaError { message } => {
             format!(
-                "Error: Ollama encountered an internal error: {}. \
+                "Error: The LLM server encountered an internal error: {}. \
                  Please try again or provide a response without using tools if the issue persists.",
                 message
             )

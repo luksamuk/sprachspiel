@@ -30,10 +30,10 @@ pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 /// Default model for code mode (optimized for coding with tools)
 pub const DEFAULT_CODE_MODEL: &str = "qwen2.5-coder:7b";
 
-/// Default Ollama host
+/// Default LLM server host
 pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 
-/// Default Ollama port
+/// Default LLM server port
 pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
 
 /// Normalize host string to ensure it has a scheme (http:// or https://)
@@ -79,10 +79,10 @@ pub struct ModelSettings {
     /// Default model preset name (used by query subcommand if not specified)
     #[serde(default = "default_model")]
     pub default: String,
-    /// Ollama host address
+    /// LLM server host address (config key: ollama_host)
     #[serde(default = "default_ollama_host")]
     pub ollama_host: String,
-    /// Ollama port
+    /// LLM server port (config key: ollama_port)
     #[serde(default = "default_ollama_port")]
     pub ollama_port: u16,
     /// Global default for thinking mode (used as fallback for all subcommands)

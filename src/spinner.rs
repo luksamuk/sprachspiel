@@ -1,8 +1,17 @@
 //! Spinner/progress indicator for UX feedback
 //!
-//! Provides visual feedback while waiting for Ollama responses.
+//! Provides visual feedback while waiting for LLM responses.
 //! Supports suspend/resume for printing tool calls.
 //! Uses rattles presets for randomized spinner animations.
+//!
+//! ## Chat vs non-chat mode
+//!
+//! In chat (TUI) mode, the status bar widget handles progress indication —
+//! `create_spinner_suppressed()` returns a hidden `ProgressBar` to avoid
+//! ANSI escape sequences corrupting the alternate screen buffer.
+//!
+//! In non-chat mode (query, translate, summarize, OCR), `create_spinner()`
+//! shows an animated spinner via `indicatif`.
 
 use indicatif::{ProgressBar, ProgressStyle};
 use rattles::Rattle;
@@ -106,10 +115,10 @@ fn random_spinner_frames() -> Vec<&'static str> {
 ///     Ok(()) // Spinner automatically finished here
 /// } // Or finished here on early return
 /// ```
-#[allow(dead_code)]
+#[cfg(test)]
 pub struct SpinnerGuard(Option<ProgressBar>);
 
-#[allow(dead_code)]
+#[cfg(test)]
 impl SpinnerGuard {
     /// Create a new spinner guard with the given message
     pub fn new(message: &str) -> Self {
@@ -124,6 +133,7 @@ impl SpinnerGuard {
     }
 }
 
+#[cfg(test)]
 impl Drop for SpinnerGuard {
     fn drop(&mut self) {
         if let Some(spinner) = self.0.take() {
@@ -238,14 +248,14 @@ where
     f();
 }
 
-/// Create a spinner with a custom style
+/// Create a spinner with a custom style (test only — no production callers).
 ///
-/// Allows customizing the spinner appearance for different contexts
+/// Allows customizing the spinner appearance for different contexts.
 ///
 /// # Arguments
 /// * `message` - The message to display
 /// * `template` - A custom template string (see indicatif docs)
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn create_custom_spinner(message: &str, template: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     let frames = random_spinner_frames();

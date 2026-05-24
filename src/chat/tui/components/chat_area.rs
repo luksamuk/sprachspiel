@@ -423,11 +423,24 @@ fn build_lines(
     for msg in messages {
         match msg.msg_type {
             MessageType::User => {
-                // ">>> " prefix in bold cyan, content in bold cyan
-                lines.push(Line::from(vec![
-                    Span::styled(">>> ", styles::bold_cyan()),
-                    Span::styled(msg.content.clone(), styles::bold_cyan()),
-                ]));
+                // ">>> " prefix on first line, "    " continuation on
+                // subsequent lines. Multi-line input (Shift+Enter) preserves
+                // \n in the content but ratatui Line does not render embedded
+                // newlines — each visual line must be a separate Line.
+                let content_lines = msg.content.split('\n').collect::<Vec<_>>();
+                for (i, content_line) in content_lines.iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(">>> ", styles::bold_cyan()),
+                            Span::styled((*content_line).to_string(), styles::bold_cyan()),
+                        ]));
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::styled("    ", styles::bold_cyan()),
+                            Span::styled((*content_line).to_string(), styles::bold_cyan()),
+                        ]));
+                    }
+                }
             }
             MessageType::Assistant => {
                 // Blank line before response for visual separation

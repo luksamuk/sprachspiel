@@ -1,7 +1,7 @@
-//! Model capability detection via Ollama API
+//! Model capability detection via the LLM server API
 //!
-//! This module provides runtime detection of model capabilities (tools, vision, thinking)
-//! by querying the Ollama API's show_model_info endpoint.
+//! Capabilities (tools, vision, thinking) are detected at runtime
+//! by querying the server's model info endpoint.
 
 #![expect(clippy::print_stderr)] // Model capability detection output
 use ollama_rs::Ollama;
@@ -28,10 +28,10 @@ impl Default for ModelCapabilities {
 }
 
 impl ModelCapabilities {
-    /// Detect model capabilities by querying Ollama API
+    /// Detect model capabilities by querying the LLM server
     ///
     /// # Arguments
-    /// * `ollama` - The Ollama client instance
+    /// * `ollama` - The LLM server client instance
     /// * `model_name` - The name of the model to check (e.g., "qwen3.5:4b")
     ///
     /// # Returns

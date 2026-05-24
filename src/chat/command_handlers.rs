@@ -1035,16 +1035,17 @@ pub async fn handle_retry(
                 }
 
                 // Auto-compact if needed (after response, before next input)
-                super::core::auto_compact_if_needed(
-                    &state.ollama,
-                    &state.model_config,
-                    &mut state.session,
-                    &state.settings,
-                    state.agents_md.as_deref(),
-                    result.context_window,
+                super::compaction::CompactionContext {
+                    ollama: &state.ollama,
+                    model_config: &state.model_config,
+                    session: &mut state.session,
+                    settings: &state.settings,
+                    agents_md: state.agents_md.as_deref(),
+                    context_window: result.context_window,
                     view,
-                    llm_tx.clone(),
-                )
+                    llm_tx: llm_tx.clone(),
+                }
+                .compact_if_needed()
                 .await;
 
                 if !state.session.anonymous

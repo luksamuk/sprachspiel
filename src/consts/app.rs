@@ -35,3 +35,24 @@ pub const APP_DATA_DIR: &str = "sprachspiel";
 
 /// Project-level directory name (e.g., .sprachspiel/skills/)
 pub const APP_PROJECT_DIR: &str = ".sprachspiel";
+
+// ── Provider-agnostic error messages ──────────────────────────
+// These replace "Ollama" with "LLM server" or "embedding service"
+// for multi-backend readiness. DO NOT use "Ollama" in these strings.
+
+/// Error prefix for LLM connection failures.
+/// Used in error messages when the backend server is unreachable.
+pub const ERR_LLM_CONNECTION: &str =
+    "Could not connect to the LLM server. Make sure it is running.";
+
+/// Error message when the LLM server is not running.
+/// Used in vision/OCR error display where `ollama serve` was previously suggested.
+pub const ERR_LLM_NOT_RUNNING: &str = "LLM server is not running (start it with `ollama serve`)";
+
+/// Error prefix for LLM server errors.
+/// Used as format string prefix: `format!("{ERR_LLM_ERROR}: {details}")`
+pub const ERR_LLM_ERROR: &str = "LLM error";
+
+/// Error message when the LLM client is unavailable in tool context.
+/// Used by subagent tools that can't access the LLM backend.
+pub const ERR_LLM_CLIENT_UNAVAILABLE: &str = "Error: LLM client not available in tool context.";

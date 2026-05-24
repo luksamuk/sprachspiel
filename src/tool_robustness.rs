@@ -62,8 +62,9 @@ pub fn format_tool_error(error: &str) -> String {
     if error.contains("Failed to get response from Ollama") {
         return format!(
             "{}\n\n\
-            💡 **Tip:** Could not connect to Ollama. Make sure Ollama is running.",
-            error
+            💡 **Tip:** {}",
+            error,
+            crate::consts::app::ERR_LLM_CONNECTION
         );
     }
 

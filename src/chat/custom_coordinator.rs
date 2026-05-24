@@ -391,7 +391,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Debug log (only when debug enabled)
         log::debug!("[INTER-TOOL-CHECK-DETAILS]");
         log::debug!(
-            "  base_tokens={} (from Ollama, includes sys+tools+history)",
+            "  base_tokens={} (from the LLM server, includes sys+tools+history)",
             base_tokens
         );
         log::debug!("  initial_message_count={}", self.initial_message_count);

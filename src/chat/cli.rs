@@ -12,7 +12,7 @@ use super::session::ToolOutputLevel;
 #[command(
     about = "Interactive chat with conversation history",
     long_about = r#"
-Start an interactive chat session with an Ollama model.
+Start an interactive chat session with an LLM model.
 
 Conversations are automatically saved per project (identified by git remote URL
 or folder name). Use --anonymous for temporary sessions without persistence.

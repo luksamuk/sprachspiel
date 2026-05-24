@@ -4789,10 +4789,10 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
 | 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
 | 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
-| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | 📋 NOT STARTED |
-| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
-| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract `handle_crossterm_event()`, `handle_llm_event()`, `handle_key_line()` from `tokio::select!` branches (reduce ~629-line function to ~200 lines) | 📋 NOT STARTED |
-| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "embedding service" or backend-agnostic phrasing | 📋 NOT STARTED |
+| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | ✅ COMPLETED (PR4) — Updated doc comment (backend-agnostic), gated `SpinnerGuard` and `create_custom_spinner` behind `#[cfg(test)]` (test-only code) |
+| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | ✅ COMPLETED (PR4) — New `src/chat/compaction.rs` with `CompactionContext` struct + `compact_if_needed()` method. Removed old `auto_compact_if_needed()` from `core.rs`. Updated 7 call sites in `continuation.rs` and `command_handlers.rs`. |
+| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract handler methods | 📋 DEFERRED — High risk, 570-line refactor. Moved to follow-up PR to reduce merge risk. |
+| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "LLM server" or backend-agnostic phrasing | ✅ COMPLETED (PR4) — 12 user-facing strings replaced. Added `ERR_LLM_CONNECTION`, `ERR_LLM_NOT_RUNNING`, `ERR_LLM_ERROR`, `ERR_LLM_CLIENT_UNAVAILABLE` constants in `src/consts/app.rs`. Config keys `ollama_host`/`ollama_port` NOT renamed (W2 scope). |
 | 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
 | 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
@@ -4818,15 +4818,15 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 | # | Issue | Severity | Source | Fix |
 |---|-------|----------|--------|-----|
-| 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
+| 6 | 🧠 indicator stays in status bar when `/think` toggles off | ✅ **FIXED** | Test #2 | `update_status_model()` after `/think` command already in event loop (commit 7bc4511) |
 | 12 | `/togglestyle` alias should not exist | ✅ **FIXED** | Test #23/#36 | Removed `"togglestyle"` alias from `commands.rs` in PR3 YAGNI sweep |
 | 5 | `/think on` toggles instead of explicitly enabling | ✅ **FIXED** | Test #2 | `ChatCommand::Think { enabled: Option<bool> }` parser now supports `/think on`/`/think off` explicitly |
 | 7 | `/compact` freezes TUI — no async progress | ✅ **FIXED** | Test #31 | `spawn_compact_task()` runs compaction in background tokio task; `LlmState::Compacting` state; Ctrl+C ignored during compaction |
 | 8 | `/compact` output not streamed | ✅ **FIXED** | Test #31 | `LlmEvent::CompactStreamToken/Done` events stream summary tokens in real time |
 | 9 | `/compact` output appears truncated/sparse | ✅ **FIXED** | Test #31 | `MAX_SUMMARY_TOKENS` removed; `COMPACTION_PROMPT` rewritten to preserve ALL context |
-| 13 | Embedding hang on exit (several seconds, no visual cue) | 🟡 Low | Test #1 | Show "Saving embeddings..." message or async flush |
+| 13 | Embedding hang on exit (several seconds, no visual cue) | ✅ **FIXED** | Test #1 | Added `view.show_system("Saving embeddings...")` before `/quit` and Ctrl+D flush paths |
 | 14 | Home/End keys don't work in Kitty terminal | 🟡 Low | Test #3 | Add Kitty key mappings (`^[OH`/`^[OF`) or document limitation |
-| 17 | Multi-line input loses newlines on submit | 🟡 Medium | Test #8 | Fix textarea `submit()` to preserve `\n` characters |
+| 17 | Multi-line input loses newlines on submit | ✅ **FIXED** | Test #8 | Fixed `MessageType::User` rendering to split on `\n` with `>>> ` prefix + `    ` continuation |
 | 18 | Bracketed paste loses newlines (Ctrl+V from external clipboard) | 🟡 Low | Test #12 | Investigate crossterm/Kitty clipboard protocol |
 | 20 | Diagram rendering CPU creep (5-7% with multiple mermaid in scrollback) | 🟡 Low | Test #29 | Cache rendered diagrams, skip re-rendering off-screen content |
 | 23 | Mono theme preserves colors in prompt/thinking | 🟡 Low | Test #4 | Strip all colors except bold/underline in mono theme |

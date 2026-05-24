@@ -7,13 +7,14 @@
 //! # Architecture
 //!
 //! ```text
-//! Layer 4 (Core): continuation.rs
+//! Layer 5 (Continuation): continuation.rs
 //!     ↓ uses
+//! Layer 4 (Core): core.rs (send_message), compaction.rs (CompactionContext)
 //! Layer 3 (State): repl_state.rs
-//! Layer 2 (Core): core.rs (send_message, auto_compact_if_needed)
 //! ```
 
-use super::core::{SendMessageResult, TokenMetrics, auto_compact_if_needed, send_message};
+use super::compaction::CompactionContext;
+use super::core::{SendMessageResult, TokenMetrics, send_message};
 use super::llm_event::LlmEvent;
 use super::repl_state::ReplState;
 use super::view::ChatView;
@@ -110,16 +111,17 @@ pub async fn process_send_result(
     }
 
     // Auto-compact if needed (after response, before next input)
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
+    CompactionContext {
+        ollama: &state.ollama,
+        model_config: &state.model_config,
+        session: &mut state.session,
+        settings: &state.settings,
+        agents_md: state.agents_md.as_deref(),
         context_window,
         view,
         llm_tx,
-    )
+    }
+    .compact_if_needed()
     .await;
 
     // Sync global TODO state back to session before saving
@@ -166,16 +168,17 @@ pub async fn check_and_compact_before_tool(
             ),
         );
 
-        auto_compact_if_needed(
-            &state.ollama,
-            &state.model_config,
-            &mut state.session,
-            &state.settings,
-            state.agents_md.as_deref(),
+        CompactionContext {
+            ollama: &state.ollama,
+            model_config: &state.model_config,
+            session: &mut state.session,
+            settings: &state.settings,
+            agents_md: state.agents_md.as_deref(),
             context_window,
             view,
             llm_tx,
-        )
+        }
+        .compact_if_needed()
         .await;
     } else if needs_pre_tool_compaction(&state.session, context_window) {
         // At 75%: just show warning, don't compact yet
@@ -256,16 +259,17 @@ pub async fn handle_continuation(
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
-        continuation_context_window,
+    CompactionContext {
+        ollama: &state.ollama,
+        model_config: &state.model_config,
+        session: &mut state.session,
+        settings: &state.settings,
+        agents_md: state.agents_md.as_deref(),
+        context_window: continuation_context_window,
         view,
-        llm_tx.clone(),
-    )
+        llm_tx: llm_tx.clone(),
+    }
+    .compact_if_needed()
     .await;
 
     // Send first continuation request
@@ -312,16 +316,17 @@ pub async fn handle_continuation(
                 ));
 
                 // Compact again before next continuation
-                auto_compact_if_needed(
-                    &state.ollama,
-                    &state.model_config,
-                    &mut state.session,
-                    &state.settings,
-                    state.agents_md.as_deref(),
-                    cont_result.context_window,
+                CompactionContext {
+                    ollama: &state.ollama,
+                    model_config: &state.model_config,
+                    session: &mut state.session,
+                    settings: &state.settings,
+                    agents_md: state.agents_md.as_deref(),
+                    context_window: cont_result.context_window,
                     view,
-                    llm_tx.clone(),
-                )
+                    llm_tx: llm_tx.clone(),
+                }
+                .compact_if_needed()
                 .await;
 
                 let next_result = send_message(
@@ -427,16 +432,17 @@ pub async fn handle_overflow_error(
     log::debug!("Removed {} messages after overflow error", removed);
 
     view.show_progress("Auto-compacting after overflow error...");
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
-        state.model_config.num_ctx as usize,
+    CompactionContext {
+        ollama: &state.ollama,
+        model_config: &state.model_config,
+        session: &mut state.session,
+        settings: &state.settings,
+        agents_md: state.agents_md.as_deref(),
+        context_window: state.model_config.num_ctx as usize,
         view,
         llm_tx,
-    )
+    }
+    .compact_if_needed()
     .await;
 
     if !state.session.anonymous
@@ -489,16 +495,17 @@ async fn handle_inter_tool_compaction_error(
         tools_executed.join(", ")
     );
 
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
+    CompactionContext {
+        ollama: &state.ollama,
+        model_config: &state.model_config,
+        session: &mut state.session,
+        settings: &state.settings,
+        agents_md: state.agents_md.as_deref(),
         context_window,
         view,
         llm_tx,
-    )
+    }
+    .compact_if_needed()
     .await;
 
     let tokens_after = state.session.history_real_tokens();
