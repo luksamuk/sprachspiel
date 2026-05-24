@@ -289,10 +289,9 @@ impl log::Log for StderrLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        // Suppress TUI internals (crossterm, ratatui, rustyline-derivative)
+        // Suppress TUI internals (crossterm, ratatui)
         if record.target().starts_with("crossterm")
             || record.target().starts_with("ratatui")
-            || record.target().starts_with("rustyline")
         {
             return;
         }
@@ -399,10 +398,9 @@ impl log::Log for FileLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        // Suppress TUI internals (crossterm, ratatui, rustyline-derivative)
+        // Suppress TUI internals (crossterm, ratatui)
         if record.target().starts_with("crossterm")
             || record.target().starts_with("ratatui")
-            || record.target().starts_with("rustyline")
         {
             return;
         }

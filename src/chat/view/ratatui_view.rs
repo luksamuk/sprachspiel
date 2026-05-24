@@ -378,7 +378,7 @@ impl RatatuiView {
     /// Any ANSI escape codes would appear as garbled text. This method strips
     /// ANSI codes before creating the `ChatMessage::system()`, ensuring clean
     /// rendering in the TUI while allowing the same code paths that produce
-    /// ANSI-colored output for `TerminalView`.
+    /// ANSI-colored output by the standalone renderer (non-chat subcommands).
     fn add_system_message(&mut self, text: &str) {
         let clean = strip_ansi_codes(text);
         self.app.add_message(ChatMessage::system(clean));

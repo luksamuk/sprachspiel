@@ -15,7 +15,7 @@
 //! Layer 6: repl.rs (coordinator)
 //! ```
 //!
-//! # TUI Migration (W6-PR2, Issue #146)
+//! # TUI Architecture (W6-PR2, Issue #146)
 //!
 //! The chat REPL now runs via ratatui + crossterm for responsive rendering
 //! at any terminal width. `RustylineInput` has been removed because rustyline

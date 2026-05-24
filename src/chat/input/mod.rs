@@ -1,7 +1,7 @@
 //! Input abstraction layer for chat REPL
 //!
 //! This module provides the `InputBackend` trait for abstracting input handling,
-//! enabling future migration from rustyline to alternative input methods (e.g., TUI).
+//! decoupling the event loop from the specific input implementation.
 //!
 //! # Architecture
 //!
@@ -13,14 +13,12 @@
 //! CrosstermInput (current TUI) ─── RustylineInput (removed)
 //! ```
 //!
-//! # TUI Migration
+//! # History
 //!
-//! The `RustylineInput` has been removed in PR2 (#146) because
-//! rustyline and ratatui are technically incompatible (both require
-//! raw mode and terminal control). `CrosstermInput` handles key events
-//! via the crossterm event loop, which integrates naturally with ratatui.
-//!
-//! IMPORTANT: Review and remove any dead code after TUI is implemented.
+//! The `RustylineInput` was removed in PR2 (#146) because rustyline and
+//! ratatui are incompatible (both require raw mode and terminal control).
+//! `CrosstermInput` handles key events via the crossterm event loop, which
+//! integrates naturally with ratatui.
 
 use std::path::PathBuf;
 

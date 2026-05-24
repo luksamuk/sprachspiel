@@ -4791,10 +4791,11 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
 | 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | ✅ COMPLETED (PR4) — Updated doc comment (backend-agnostic), gated `SpinnerGuard` and `create_custom_spinner` behind `#[cfg(test)]` (test-only code) |
 | 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | ✅ COMPLETED (PR4) — New `src/chat/compaction.rs` with `CompactionContext` struct + `compact_if_needed()` method. Removed old `auto_compact_if_needed()` from `core.rs`. Updated 7 call sites in `continuation.rs` and `command_handlers.rs`. |
-| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract handler methods | 📋 DEFERRED — High risk, 570-line refactor. Moved to follow-up PR to reduce merge risk. |
+| 4.12 | Decompose `run_app_loop()` — extract handler methods from event loop | ✅ COMPLETED (PR4) — `repl_tui.rs` reduced from ~1060 to 378 lines. Handler functions extracted to `event_loop.rs` (~821 lines). `EventLoopState` struct NOT used — handlers are free functions with explicit params due to `tokio::select!` borrow constraints. `LoopAction` enum (`Continue`/`Quit`) replaces `Option<()>`. |
 | 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "LLM server" or backend-agnostic phrasing | ✅ COMPLETED (PR4) — 12 user-facing strings replaced. Added `ERR_LLM_CONNECTION`, `ERR_LLM_NOT_RUNNING`, `ERR_LLM_ERROR`, `ERR_LLM_CLIENT_UNAVAILABLE` constants in `src/consts/app.rs`. Config keys `ollama_host`/`ollama_port` NOT renamed (W2 scope). |
 | 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
-| 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
+| 4.15 | Stale doc cleanup — remove TerminalView/TUI-migration/rustyline references from docstrings and logging | ✅ COMPLETED (PR4) — 9 edits in 6 files: `ratatui_view.rs` TerminalView→standalone renderer, `input/mod.rs` removed "future migration" framing and stale "IMPORTANT" note, `view/mod.rs` replaced "TUI Migration" with event-flow description, `mod.rs` TUI Migration→TUI Architecture, `search.rs` "future TUI migration"→"independent of rendering", `logging.rs` removed dead `rustyline` filter. Zero logic changes. |
+| 4.16 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
 - `rustyline = "14"` — removed in PR2
@@ -4858,16 +4859,23 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 2. **Phase 4.6 (`run_chat_repl()` simplification):** Already delegates to `run_chat_repl_tui()`. Pre-TUI setup (database, session) must happen before TUI and cannot be merged. Status: COMPLETE with justification.
 
-3. **Phase 4.12 (EventLoopState):** New file `src/chat/event_loop.rs`:
-   - `EventLoopState<'a>` struct: `ReplState`, `RatatuiView`, `ModelCapabilities`, channel state
-   - `handle_crossterm_event()` (~240 lines, async)
-   - `handle_llm_event()` (~185 lines, async)
-   - `handle_key_line()` (~50 lines)
-   - Main `loop { tokio::select! { ... } }` stays in `repl_tui.rs` as thin dispatcher (~200 lines)
+3. **Phase 4.12 (Event loop decomposition):** New file `src/chat/event_loop.rs`:
+   - Free functions (not `EventLoopState` methods) due to `tokio::select!` borrow constraints
+   - `handle_key_line()` — user text submission + command routing
+   - `handle_interrupt()` — Ctrl+C handling
+   - `handle_eof()` — Ctrl+D / EOF handling
+   - `handle_llm_event()` — streaming tokens, tool calls, errors
+   - `apply_view_action()` — renders ViewAction variants to RatatuiView
+   - `drain_and_add_tool_messages()` — processes tool results during streaming
+   - `spawn_llm_task()` / `spawn_compact_task()` — async task spawners
+   - `LoopAction` enum (`Continue`/`Quit`) replaces `Option<()>`
+   - Main `loop { tokio::select! { ... } }` stays in `repl_tui.rs` as thin dispatcher (378 lines)
 
 4. **Phase 4.13 (strings):** Config keys `ollama_host`/`ollama_port` NOT renamed — breaking change for W2.
 
-5. **Bug #17 (multi-line):** `textarea.lines().join("\n")` preserves newlines. `trim()` only strips leading/trailing whitespace. Bug is in rendering or `CrosstermEvent::Paste` handling.
+5. **Phase 4.15 (stale doc cleanup):** 6 files, 9 edits, zero logic changes. Removed stale references to `TerminalView` (deleted in PR2 but still mentioned in docstrings), "TUI Migration" framing (TUI is now the current architecture, not "future"), "future RatatuiView" comments (RatatuiView already consumes ViewEvents via ChannelView), and dead `rustyline` filter in `logging.rs` (rustyline removed as dependency in PR2, the `.starts_with("rustyline")` check matched nothing).
+
+6. **Bug #17 (multi-line):** `textarea.lines().join("\n")` preserves newlines. `trim()` only strips leading/trailing whitespace. Bug is in rendering or `CrosstermEvent::Paste` handling.
 
 **CompactionContext Refactor (Phase 4.11):**
 
@@ -4916,7 +4924,8 @@ Call sites (7 total): `continuation.rs` (lines 113, 169, 259, 315, 430, 492), `c
 | 5 | 4.11: `CompactionContext` | 1 day | Medium |
 | 6 | 4.12: `EventLoopState` | 2 days | High |
 | 7 | 4.13: Strings audit | 0.5 day | Low |
-| 8 | 4.14–4.15: Docs + tests | 1 day | Low |
+| 8 | 4.14–4.16: Docs + tests | 1 day | Low |
+| 9 | 4.15: Stale doc cleanup | 0.5 day | Low |
 
 **Blockers found in PR3 testing (must fix before merge — tracked in PR3 branch):**
 
