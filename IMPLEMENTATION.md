@@ -4831,6 +4831,93 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 20 | Diagram rendering CPU creep (5-7% with multiple mermaid in scrollback) | 🟡 Low | Test #29 | Cache rendered diagrams, skip re-rendering off-screen content |
 | 23 | Mono theme preserves colors in prompt/thinking | 🟡 Low | Test #4 | Strip all colors except bold/underline in mono theme |
 
+**Requirements Checkpoint (Phase 2.6) — All ✅ CLEAR:**
+
+| # | Requirement | Status | Notes |
+|---|-------------|--------|-------|
+| R1 | 🧠 indicator disappear on `/think` toggle off | ✅ | Add `update_status_model()` after `/think` in event loop |
+| R2 | Multi-line newlines preserved on submit | ✅ | Data path preserves `\n` (`textarea.lines().join("\n")` + `trim()` keeps internal newlines). Bug likely in rendering or paste handling — investigate at runtime. |
+| R3 | "Saving embeddings..." visual hint on exit | ✅ | Add `view.show_system()` before flush |
+| R4 | Pre-TUI ANSI codes justified | ✅ | Serve pre-TUI init errors before alternate screen. No change needed. |
+| R5 | `run_chat_repl()` simplification justified | ✅ | Already delegates to `run_chat_repl_tui()`. Pre-TUI setup cannot be eliminated. |
+| R6–R10 | Phases 4.4–4.9 completed in PR2/PR3 | ✅ | No action needed |
+| R11 | `spinner.rs` chat/non-chat split | ✅ | Add doc comment. Review `SpinnerGuard` dead_code. |
+| R12 | `CompactionContext` refactor | ✅ | Struct with 8 fields. 7 call sites in `continuation.rs` + `command_handlers.rs`. |
+| R13 | `run_app_loop()` decomposition | ✅ | New `src/chat/event_loop.rs` with `EventLoopState` + 3 handler methods. Main loop stays in `repl_tui.rs`. |
+| R14 | Provider-agnostic strings | ✅ | 29 replacements in ~10 files. Config keys NOT renamed (W2 scope). |
+| R15 | Documentation | ✅ | CHANGELOG done. Architecture update at end. |
+| R16 | Manual testing | ✅ | 80/120/200 cols, /think, Shift+Enter, exit |
+| R17 | `log::error!/warn!` companions | ✅ | Verify any new eprintln in PR4 |
+| R18 | No unjustified `#[allow(dead_code)]` | ✅ | Review SpinnerGuard |
+| R19 | Functions ≤ 200 lines | ✅ | Each handler method ≤ 200 lines |
+| R20 | Quality gates pass | ✅ | cargo fmt, clippy, test |
+
+**Architecture Decisions:**
+
+1. **Phase 4.3 (ANSI codes):** Pre-TUI `eprintln!` with ANSI in `repl.rs` are correct — they run BEFORE the alternate screen is activated. No TUI corruption. Status: COMPLETE with justification.
+
+2. **Phase 4.6 (`run_chat_repl()` simplification):** Already delegates to `run_chat_repl_tui()`. Pre-TUI setup (database, session) must happen before TUI and cannot be merged. Status: COMPLETE with justification.
+
+3. **Phase 4.12 (EventLoopState):** New file `src/chat/event_loop.rs`:
+   - `EventLoopState<'a>` struct: `ReplState`, `RatatuiView`, `ModelCapabilities`, channel state
+   - `handle_crossterm_event()` (~240 lines, async)
+   - `handle_llm_event()` (~185 lines, async)
+   - `handle_key_line()` (~50 lines)
+   - Main `loop { tokio::select! { ... } }` stays in `repl_tui.rs` as thin dispatcher (~200 lines)
+
+4. **Phase 4.13 (strings):** Config keys `ollama_host`/`ollama_port` NOT renamed — breaking change for W2.
+
+5. **Bug #17 (multi-line):** `textarea.lines().join("\n")` preserves newlines. `trim()` only strips leading/trailing whitespace. Bug is in rendering or `CrosstermEvent::Paste` handling.
+
+**CompactionContext Refactor (Phase 4.11):**
+
+Current signature (8 parameters):
+```rust
+pub async fn auto_compact_if_needed(
+    ollama: &ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    session: &mut ChatSession,
+    settings: &Settings,
+    agents_md: Option<&str>,
+    context_window: usize,
+    view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+)
+```
+
+Proposed struct:
+```rust
+pub struct CompactionContext<'a> {
+    ollama: &'a ollama_rs::Ollama,
+    model_config: &'a ModelConfig,
+    session: &'a mut ChatSession,
+    settings: &'a Settings,
+    agents_md: Option<&'a str>,
+    context_window: usize,
+    view: &'a mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+}
+```
+
+Call sites (7 total): `continuation.rs` (lines 113, 169, 259, 315, 430, 492), `command_handlers.rs` (line 1038).
+
+**Provider-Agnostic Strings Audit (Phase 4.13):**
+
+29 user-facing strings containing "Ollama" across ~10 files. Key replacements: error messages → "LLM server", help text → "LLM model", status → "the LLM server". Config keys (`ollama_host`, `ollama_port`) NOT renamed.
+
+**Implementation Order:**
+
+| # | Phase | Effort | Risk |
+|---|-------|--------|------|
+| 1 | B1: 🧠 indicator fix | 0.5 day | Low |
+| 2 | B2: Multi-line newlines | 0.5 day | Medium |
+| 3 | B3: Embedding exit hint | 0.5 day | Low |
+| 4 | 4.10: `spinner.rs` | 0.5 day | Low |
+| 5 | 4.11: `CompactionContext` | 1 day | Medium |
+| 6 | 4.12: `EventLoopState` | 2 days | High |
+| 7 | 4.13: Strings audit | 0.5 day | Low |
+| 8 | 4.14–4.15: Docs + tests | 1 day | Low |
+
 **Blockers found in PR3 testing (must fix before merge — tracked in PR3 branch):**
 
 | # | Issue | Severity | Source | Fix |
