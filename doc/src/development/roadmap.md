@@ -542,7 +542,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | Phase 3 | T3-Phase3: Semantic/Reflect + Facts Integration | P1 | M3 |
 | Phase 4 | T3-Phase4: Optimization (Quality > Quantity, Compression, Caching) | P2 | M4 |
 
-**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks". Full technical report: `~/thinking-traces-study/RELATORIO-TECNICO.md`
+**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
 ---
 

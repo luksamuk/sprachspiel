@@ -90,12 +90,51 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Sprachspiel implication (P0-CRITICAL):**
   - `strip_thinking_tags()` permanently deletes thinking content before storage (~80% of traces lost)
   - Pre-tool messages store thinking inline (accidental); normal messages delete it entirely
-  - **T3 Phase 0:** Preserve thinking in `thinking_content` column (bug fix)
-  - **T3 Phase 1:** Struct transform + ThinkingTrace pipeline
-  - **T3 Phase 2:** Thinking-aware retrieval with RRF fusion
-  - **T3 Phase 3:** Semantic/Reflect transforms, facts from Reflect
+  - **T3 Phase 0:** Preserve thinking in `thinking_content` column (bug fix, #151)
+  - **T3 Phase 1:** Struct transform + ThinkingTrace pipeline (#152)
+  - **T3 Phase 2:** Thinking-aware retrieval with RRF fusion (#153 + #137)
+  - **T3 Phase 3:** Semantic/Reflect transforms, facts from Reflect (M3)
 - **Hardware:** CPU-only fallback (LFM 2.5 1.2B) for transforms; same-model cascade when loaded
-- **Full report:** `~/thinking-traces-study/RELATORIO-TECNICO.md`
+
+#### PEEK — Context Map as Orientation Cache (Gu et al. 2026)
+
+- **Paper:** arXiv:2605.19932
+- **Key findings:** +6.3–34.0% quality gains on reasoning/aggregation tasks with constant map
+- **Sprachspiel implication:** Orientation Cache (OC-1a through OC-3) replaces AGENTS.md static injection with dynamic, session-persistent context map. See R-21 in research-icebox.md.
+
+#### RLM — Recursive Language Models (Zhang et al. 2025)
+
+- **Paper:** arXiv:2512.24601
+- **Key findings:** Sub-agents with isolated context preserve 100% of information vs. compaction which loses details. But slower (2-5x) and compaction remains inevitable for long history.
+- **Sprachspiel implication:** Context-offload via sub-agent (R-26) resolves 1 of 3 context pressure sources. Session variables (R-26 §4) add on-demand injection. Benchmark-driven validation required (B1.5). See RECURSION-SPRACHSPIEL.md analysis.
+
+#### NLP Historical Errors — Cultural Grounding (Diógenes et al. 2026)
+
+- **Paper:** PRW-5188-2880
+- **Key findings:** 
+  - Models trained dominantly in English fail in Global South regionalisms and pragmatics
+  - SOUL.md solves ~40-60% at linguistic register level, but not deep semantic loss
+  - Invisibility principle: curatorial priority should follow how invisible errors are to the model
+  - Empathy ≠ failure: behavioral shifts are not bugs, opacity is
+- **Sprachspiel implication:** Cultural Grounding (R-24, moved to M4). Empathy ≠ Failure principle orients S2.meta1-3 (#99/#100/#101). See unified-vision.md §8.
+
+#### TurboQuant / RaBitQ — Norm Correction for Embeddings (Zandieh et al. 2026, Gao & Long 2024)
+
+- **Papers:** ICLR 2026 (arXiv:2504.19874), SIGMOD 2024 (arXiv:2405.12497)
+- **Key findings:** Scalar quantization systematically underestimates cosine similarity. 1 float per vector corrects the bias at zero query-time cost.
+- **Sprachspiel implication:** Norm correction (R-25) as ~20-line Rust addendum to W4.x. Critical when d_eff < 0.7 (Matryoshka truncation). Prerequisite of TAP-2.
+
+#### Passive Models as Middleware
+
+- **Papers/Models:** BusyBeaver-50M (DJLougen/GestaltLabs), OpenAI Privacy Filter, LlamaFirewall (Meta), PII Shield, WebWorld (Qwen), Needle (Cactus-Compute), Dreamer4 (Hafner et al.)
+- **Key findings:** Three archetypes: Classifiers (Privacy Filter, PromptGuard 2), Policy Models (BusyBeaver), World Simulators (WebWorld, Dreamer4). Small models (26M-50M) can route tools, detect PII, predict next state.
+- **Sprachspiel implication:** Passive models as curatorial middleware (R-28), prioritized by invisibility (NLP-Historical §9.7): Confidence scorer > Pragmatics classifier > Calque detector > TTR monitor. Requires plugin system (#15).
+
+#### Translation Models — Cultural Fragility Canary
+
+- **Models:** Hy-MT2-1.8B (Tencent), TranslateGemma-4B (Google)
+- **Key findings:** Even specialized translation models fail on pt-BR slang. Hy-MT2: literal translations. TranslateGemma: better but imperfect. If even these fail, general models fail more.
+- **Sprachspiel implication:** Translation fleet as canary test for cultural fragility (R-27). Not a code feature — a testing pattern that guides where SOUL.md needs patches.
 
 ## Related Blog Posts
 
@@ -190,5 +229,113 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   author={Arabzadeh, Negar and Ma, Wentai and Min, Sewon and Zaharia, Matei},
   journal={arXiv preprint arXiv:2605.03344},
   year={2026}
+}
+
+@article{peek_2026,
+  title={PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents},
+  author={Gu, Zijian and others},
+  journal={arXiv preprint arXiv:2605.19932},
+  year={2026}
+}
+
+@article{rlm_2025,
+  title={Recursive Language Models},
+  author={Zhang, Xiang and Kraska, Tim and Khattab, Omar},
+  journal={arXiv preprint arXiv:2512.24601},
+  year={2025}
+}
+
+@article{nlp_historical_2026,
+  title={Evolu\c{c}\~ao do uso de tags e marcadores em Processamento de Linguagem Natural (PLN)},
+  author={Di\'ogenes, F.H.P. and Souza, I.O. and Guelpeli, M.V.C.},
+  journal={Peer Review, PRW-5188-2880},
+  year={2026},
+  doi={10.53660/PRW-5188-2880}
+}
+
+@article{turboquant_2026,
+  title={TurboQuant: Productive Quantization for Vector Search},
+  author={Zandieh, Amin and others},
+  journal={ICLR 2026},
+  year={2026},
+  note={arXiv:2504.19874}
+}
+
+@article{rabitq_2024,
+  title={RaBitQ: Quantization for Vector Search},
+  author={Gao, Jianhao and Long, Cheng},
+  journal={SIGMOD 2024},
+  year={2024},
+  note={arXiv:2405.12497}
+}
+
+@article{fademem_2026,
+  title={FadeMem: Dual-Layer Ebbinghaus Decay},
+  journal={arXiv:2601.18642},
+  year={2026}
+}
+
+@article{llamafirewall_2025,
+  title={LlamaFirewall: An Open Source Guardrail System for Building Secure AI Agents},
+  author={Chennabasappa, Sahana and Nikolaidis, Cyrus and Song, Daniel and Molnar, David and others},
+  journal={arXiv preprint arXiv:2505.03574},
+  year={2025}
+}
+
+@article{piishield_2026,
+  title={PII Shield: A Browser-Level Overlay for User-Controlled Personal Identifiable Information (PII) Management in AI Interactions},
+  author={Holschneider, Max and LeeYouk, Saetbyeol},
+  journal={arXiv preprint arXiv:2603.24895},
+  note={Accepted at CHI 2026 Workshop: Ethics at the Front-End},
+  year={2026}
+}
+
+@article{guran2024middleware,
+  title={Towards a Middleware for Large Language Models},
+  author={Guran, Narcisa and Knauf, Florian and Ngo, Man and Petrescu, Stefan and Rellermeyer, Jan S.},
+  journal={arXiv preprint arXiv:2411.14513},
+  year={2024}
+}
+
+@article{webworld_2026,
+  title={WebWorld: World Model for Web Agents},
+  author={Xiao, Zikai and Tu, Jianhong and Zou, Chuhang and others},
+  journal={arXiv preprint arXiv:2602.14721},
+  year={2026}
+}
+
+@article{dreamer4_2025,
+  title={Mastering Diverse Domains through World Models},
+  author={Hafner, Danijar and Yan, Wilson and Lillicrap, Timothy},
+  journal={arXiv preprint arXiv:2509.24527},
+  year={2025}
+}
+
+@article{shaukat2026chunking,
+  title={Document Chunking Strategies},
+  author={Shaukat, H. and others},
+  journal={arXiv:2603.06976},
+  year={2026}
+}
+
+@article{antoinelli2025complexity,
+  title={Desafios de grandes modelos de linguagem generativa na reprodu\c{c}\~ao de complexidade textual},
+  author={Antonelli, A.L.},
+  journal={Texto Livre},
+  year={2025}
+}
+
+@article{bender2021parrots,
+  title={On the Dangers of Stochastic Parrots: Can Language Models Be Too Big?},
+  author={Bender, E.M. and Gebru, T. and McMillan-Major, A. and Shmitchell, S.},
+  journal={FAccT '21},
+  year={2021}
+}
+
+@article{nunes2008nlp,
+  title={Processamento de l\^\{i\}nguas naturais: para qu\^e e para quem?},
+  author={Nunes, M.G.V.},
+  journal={EBLC},
+  year={2008}
 }
 ```

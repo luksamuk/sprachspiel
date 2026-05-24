@@ -338,7 +338,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. T3 transforms live in a separate `thinking_traces` table (Phase 1).
 3. **`strip_thinking_tags()` remains for display:** The function is still used by views and query mode to strip thinking from displayed content. Only the storage path changes.
 
-**Reference:** Full technical report in `~/thinking-traces-study/RELATORIO-TECNICO.md`
+**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
 ---
 
@@ -2905,7 +2905,7 @@ These criteria extend the original validation with geometry metrics discovered i
 
 **Background:** An embedding geometry audit revealed that the current nomic-embed-text-v2-moe model produces embeddings with **d_eff=7** (effective dimensionality out of 256 truncated dimensions) and **d̄=0.353** (mean cosine similarity across all directions). The audit identified that the SPREAD system (θ∈{0°, 30°, 60°, 90°}) operates at near-random similarity levels for θ≥60°, and BM25 silently compensates for poor vector discrimination via the hardcoded 0.4/0.6 RRF weights.
 
-**Audit Reference:** `~/embedding-geometry-audit/EMBEDDING-GEOMETRY-AUDIT.md`
+**Audit Reference:** Internal embedding geometry audit (see `doc/src/development/embedding-research.md` for findings)
 
 **Key Findings:**
 
@@ -3447,7 +3447,7 @@ Updated instructions that guide the LLM to use batch patterns: convert all visua
 - ❌ `TempDir` auto-cleanup (LLM instructed to use /tmp, already sandboxed)
 - ❌ Change to document concept (remains "curated mini article")
 
-**Reference:** Hermes research doc (`~/sprachspiel-batch-document-processing.md`), Issue #9 (Document Import Tool, COMPLETED), SF5 (Agent Spawning Tools, COMPLETED)
+**Reference:** Hermes Agent research (internal analysis), Issue #9 (Document Import Tool, COMPLETED), SF5 (Agent Spawning Tools, COMPLETED)
 
 **Related:** Issue #132
 
@@ -5841,7 +5841,7 @@ timeout_ms = 2000
 
 **Refinement topics (see research-icebox.md):** R-18 (Rust-native classifier as long-term goal)
 
-**Source:** ~/privacy-filter-integration-proposal.md
+**Source:** Privacy filter integration proposal (internal analysis)
 
 ---
 
@@ -5861,7 +5861,7 @@ timeout_ms = 2000
 - #100 (Layer 2 Telemetry): Detector should focus on unannounced system drift, not user-initiated topic changes
 - #101 (Layer 3 Reflection): Validation step is mandatory — system must ask user before classifying a behavioral shift as a failure
 
-**Source:** ~/meta-cognition-brainstorm.md Section 0.5
+**Source:** Meta-cognition brainstorm (internal analysis, Section 0.5)
 
 ---
 
@@ -5886,7 +5886,7 @@ timeout_ms = 2000
 }
 ```
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.2
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.2)
 
 **Refinement topics (see research-icebox.md):** R-14 (full research record)
 
@@ -5901,7 +5901,7 @@ timeout_ms = 2000
 
 **Goal:** Detect tensions between configured personality (SOUL.md) and emergent behavioral patterns. Analogous to factual contradiction detection but for personality: "SOUL.md says 'challenge premises', but operational pattern is 'shift to supportive on vulnerability'."
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.3
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.3)
 
 **Refinement topics (see research-icebox.md):** R-15 (full research record)
 
@@ -5918,7 +5918,7 @@ timeout_ms = 2000
 
 **Implementation:** `[best, 2nd_best, ...middle..., 3rd_best, 4th_best]`
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 5
+**Source:** RAG improvement research (internal analysis, Section 5)
 
 ---
 
@@ -5933,7 +5933,7 @@ timeout_ms = 2000
 
 **Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading).
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 1
+**Source:** RAG improvement research (internal analysis, Section 1)
 
 **Competitive research (see research-icebox.md):** C-12 (Shaukat et al.)
 
@@ -5948,7 +5948,7 @@ timeout_ms = 2000
 
 **Goal:** Annotate chunks at ingestion time with entity_type, source, authority (0.0-1.0), recency (exponential decay), version. RRF scoring: BM25(0.3) + cosine(0.4) + metadata_boost(0.3). Addresses ClashEval finding that LLMs overwrite correct knowledge with incorrect retrieved evidence >60% of the time when no authority signal exists.
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 2
+**Source:** RAG improvement research (internal analysis, Section 2)
 
 **Competitive research (see research-icebox.md):** C-13 (ClashEval)
 
@@ -5963,7 +5963,7 @@ timeout_ms = 2000
 
 **Goal:** Clustering by cosine similarity (threshold ~0.92) to eliminate near-duplicate chunks before indexing. Runs as offline batch job (`sprach reindex --dedup`), NOT in hot ingestion path. Option A: O(n²) vector comparison (simple, works for ≤100k chunks). Option B: MinHash+LSH (scales better, adds dependency).
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 4
+**Source:** RAG improvement research (internal analysis, Section 4)
 
 ---
 
@@ -5978,7 +5978,7 @@ timeout_ms = 2000
 
 **Trade-off:** Inference cost proportional to corpus size. Worth it for static documents that are queried repeatedly; not worth it for dynamic chat messages.
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 3
+**Source:** RAG improvement research (internal analysis, Section 3)
 
 **Competitive research (see research-icebox.md):** C-14 (HyDE + Dense X Retrieval)
 
@@ -5993,7 +5993,7 @@ timeout_ms = 2000
 
 **Goal:** Train vector representations of conversation mode for more precise shift detection than heuristic keyword matching. Enables mode clustering, cross-session behavioral similarity, and pattern recognition. Evolution of Layer 2 telemetry.
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.1
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.1)
 
 **Refinement topics (see research-icebox.md):** R-13 (full research record)
 
@@ -6008,7 +6008,7 @@ timeout_ms = 2000
 
 **Goal:** Add behavioral_alignment as second signal in RRF score alongside content feedback. Responses generated in unconfirmed behavioral mode have reduced retrieval weight. Behavioral decay: patterns that user consistently redirects decay faster (analogous to Ebbinghaus but for habits, not facts).
 
-**Source:** ~/meta-cognition-brainstorm.md Section 3
+**Source:** Meta-cognition brainstorm (internal analysis, Section 3)
 
 ---
 

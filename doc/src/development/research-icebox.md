@@ -140,7 +140,7 @@
 
 ### R-13: Behavioral Embeddings (Conversation Mode Vectors)
 
-- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.1)
+- **Source:** Meta-cognition brainstorm (internal analysis, §4.1)
 - **Current state:** Layer 2 telemetry (#100) uses heuristics (pronoun count, keyword detection) for shift detection
 - **Why deferred:** No calibration data from real conversations. Heuristic detection in Layer 2 needs to run first and produce the training data that embeddings would replace.
 - **Prerequisite:** Layer 2 (#100) producing shift detection data from 20-30+ real conversations
@@ -150,7 +150,7 @@
 
 ### R-14: Meta-cognition as Active Tool (meta_cognize)
 
-- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.2)
+- **Source:** Meta-cognition brainstorm (internal analysis, §4.2)
 - **Current state:** Board draft "meta_cognize() Active Behavioral Tool [M3]" — LLM-callable tool returning behavioral state (mode, shift detection, suggestions)
 - **Why deferred to M3:** Depends on Layer 2 (#100) telemetry producing structured data. Complementary to passive telemetry — makes reflection explicit and traceable.
 - **Prerequisite:** #100 (Behavioral Telemetry) producing shift data
@@ -160,7 +160,7 @@
 
 ### R-15: Behavioral Conflict Detection
 
-- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.3)
+- **Source:** Meta-cognition brainstorm (internal analysis, §4.3)
 - **Current state:** Board draft "Behavioral Conflict Detection [M3]" — detect tensions between SOUL.md (configured personality) and emergent behavior
 - **Why deferred to M3:** Depends on #77/#78 (Visualize Connections / Relations Graph) for the structural foundation to represent personality-behavior tensions as a graph problem.
 - **Prerequisite:** #77 and #78 implemented with relation extraction working
@@ -170,7 +170,7 @@
 
 ### R-16: Distributive Meta-cognition (Multi-Personality Evaluation)
 
-- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.4)
+- **Source:** Meta-cognition brainstorm (internal analysis, §4.4)
 - **Current state:** Not on board — too speculative even for a draft
 - **Why deferred:** Requires SOUL.md multi-personality support (multiple configurable personas evaluating each other). Currently sprachspiel has a single personality.
 - **Prerequisite:** Extended Personalities System (#49) implemented; Layer 3 (#101) producing reflections that can be compared across personalities
@@ -180,7 +180,7 @@
 
 ### R-17: RAPTOR-like Hierarchical Retrieval
 
-- **Source:** RAG improvement research (~/RAG-IMPROVEMENT-ROADMAP.md §5); Sarthi et al. 2024 (arXiv:2401.18059)
+- **Source:** RAG improvement research (internal analysis, §5); Sarthi et al. 2024 (arXiv:2401.18059)
 - **Current state:** Flat retrieval (BM25 + cosine + RRF). No hierarchical summarization.
 - **Why deferred:** Requires Metadata Enrichment, HyDE-like pairing, and Semantic Dedup (board drafts) to be stabilized first. RAPTOR adds a summarization layer on top of functioning chunk-level retrieval.
 - **Prerequisite:** Context-Aware Chunking, Metadata Enrichment, Semantic Dedup all in production
@@ -190,7 +190,7 @@
 
 ### R-18: Privacy Filter as Rust-Native Classifier
 
-- **Source:** Privacy filter proposal (~/privacy-filter-integration-proposal.md §10)
+- **Source:** Privacy filter proposal (internal analysis, §10)
 - **Current state:** Board draft "Privacy Filter Integration [M3]" uses Python sidecar (only viable path currently)
 - **Why deferred:** ONNX runtime (`ort` + `tokenizers`) would add ~30MB binary + heavy deps, violating single-binary/Termux philosophy. A Rust-native Viterbi classifier without ONNX deps is theoretically possible but requires significant implementation effort.
 - **Prerequisite:** Python sidecar proves value in production; enough usage data to justify Rust-native investment
@@ -437,3 +437,113 @@
   3. Adding a content type for something that is never independently searched/retrieved by users (it's an attribute, not standalone content) would create confusion in the type system.
 - **Alternative path:** `thinking_content TEXT` column in `content_items` (Phase 0); `thinking_traces` table with `transform_type TEXT` (Phase 1)
 - **Revisit only if:** T3 traces need to be independently searchable by users via commands like `/search traces`, at which point `ContentType::ThinkingTrace` could be reconsidered
+
+---
+
+### R-21: Orientation Cache (PEEK)
+
+- **Source:** Gu et al. 2026 (arXiv:2605.19932)
+- **Current state:** No cached orientation between sessions. AGENTS.md provides static context only.
+- **Why significant:** +6.3–34.0% quality gains on reasoning/aggregation tasks with constant map. Orientation survives session boundaries, reducing cold-start problems.
+- **Implementation phases:**
+  - **OC-1a (P1-high):** Static Context Map composition — compose from AGENTS.md + facts + retrieved content. No LLM needed. Can start in parallel with W6/W7.
+  - **OC-1b (P1-high):** Compaction summary as TAP input — save summaries that already exist and feed them to the Reflect pipeline. Minimum effort.
+  - **OC-2 (P1):** Dynamic Distiller — LLM-powered orientation extraction. Depends on TAP-3.
+  - **OC-3 (P2):** Cartographer + Evictor — automatic map maintenance and stale item removal.
+- **Prerequisite:** TAP-2 for meaningful feedback; #136 for embedding quality
+- **Cross-refs:** DESIGN.md §15.5, PEEK cross-reference, UNIFIED-RESEARCH-VISION §2
+- **Revisit when:** TAP-2 complete; OC-1a can start independently
+
+---
+
+### R-22: Trace Analysis Pipeline (Unified Background Analysis)
+
+- **Source:** Synthesis of PEEK + T3 + existing feedback
+- **Current state:** T3 phases 0-2 planned (W4.5, W7.0, W7.1). No unified pipeline.
+- **Why significant:** 1 analysis, multiple destinations. Amortizes LLM call cost.
+- **Implementation phases:** See DESIGN.md §4.1 (TAP-0 through TAP-4)
+- **Prerequisite:** TAP-1 as base; model benchmark (§11.5) for fallback
+- **Cross-refs:** DESIGN.md §4.1, UNIFIED-RESEARCH-VISION §3
+- **Revisit when:** W7.0 complete
+
+---
+
+### R-23: Compaction-Triggered Analysis
+
+- **Source:** DESIGN.md §12.4 crossover
+- **Current state:** Compaction generates summary but discards it.
+- **Why significant:** Summary is a free Distiller — already produced, currently thrown away.
+- **Implementation:** Save compaction summary to DB; trigger TAP-Reflect on saved summary.
+- **Prerequisite:** TAP-3 starting
+- **Cross-refs:** RECURSION-SPRACHSPIEL.md §5, UNIFIED-RESEARCH-VISION §3 Sinergy 5
+- **Revisit when:** TAP-3 begins
+
+---
+
+### R-24: Enraizamento Cultural (Cultural Grounding)
+
+- **Source:** Diógenes, Souza, Guelpeli 2026 (PRW-5188-2880)
+- **Current state:** SOUL.md has communication instructions but no explicit cultural grounding. No mechanism to detect or correct calques, pragmatic loss, or competence illusion ("stochastic parrot" — Bender et al. 2021).
+- **Why significant:** Models trained dominantly in English fail in regionalisms and Global South pragmatics. SOUL.md solves ~40-60% at the linguistic register level, but not deep semantic loss, slang anachronisms, or factual cultural knowledge gaps.
+- **Implementation phases:**
+  - **Phase 1 (M4, immediate documentation):** Add cultural grounding section to SOUL.md (NLP-Historical §7, A4). Principle of invisibility, transparent confidence, no calquing.
+  - **Phase 2 (M4):** S2.5 Patching + S2.meta2/S2.meta3 for personality evolution based on cultural failures
+  - **Phase 3 (M4+):** Passive models (calque classifier, pragmatics classifier) as pipeline middleware, prioritized by invisibility principle (§9.7)
+  - **Phase 4 (M4+):** pt-BR cultural knowledge RAG (C1, NLP-Hist §9.2)
+- **Cross-refs:** Translation fleet as canary test (NLP-Hist §9.2); Passive models as curatorial immune system (NLP-Hist §9.5); TTR monitor as Reflect input (NLP-Hist §9.3); UNIFIED-RESEARCH-VISION §3 Sinergy 7
+- **Key insight:** "Empathy ≠ failure" — behavioral shifts are not bugs, but must be transparent. Suppression is not the goal; visibility and user choice are. (NLP-Historical §10)
+- **Revisit when:** Immediate (Phase 1 is documentation only); Phase 2 depends on S2.5 operational
+
+---
+
+### R-25: Norm Correction for Embeddings (TurboVec Technique)
+
+- **Source:** TurboQuant (Zandieh et al., ICLR 2026); TurboVec (Codrai 2026); RaBitQ (Gao & Long, SIGMOD 2024)
+- **Current state:** Cosine similarity in sqlite-vec has systematic underestimation bias, amplified when d_eff is low (Matryoshka 768→256).
+- **Why significant:** 1 float per vector corrects the bias at zero query-time cost. Impacts TAP-2 (thinking-aware retrieval), fact dedup, and all semantic retrieval. Especially important when d_eff < 0.7.
+- **Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.
+- **Effort:** ~20 lines Rust, 1 SQL migration
+- **Prerequisite:** #133 (embedding diagnostics) to measure d_eff and confirm bias
+- **Cross-refs:** RAG-Vector §2, UNIFIED-RESEARCH-VISION §3 Sinergy 4
+- **Milestone:** M1/W4.x (addendum to #136)
+- **Revisit when:** #133 complete; add as addendum of W4.x
+
+---
+
+### R-26: Context-Offload via Sub-Agent
+
+- **Source:** RLM (Zhang et al. 2025, arXiv:2512.24601); RECURSION-SPRACHSPIEL.md
+- **Current state:** Compaction is the only mechanism when context fills. Offload resolves 1 of 3 pressure sources (large tool results).
+- **Why significant:** Preserves 100% of information (sub-agent sees everything), vs compaction which loses details. But slower (2-5x) and compaction remains inevitable for long history.
+- **Depends on:** B1.5 benchmark (validate H1: offload preserves more facts than compaction)
+- **Implementation:** Offload threshold between 85% and 88%, SubagentRunner with config, SourceType::ToolOffload
+- **Cross-refs:** TAP offline vs offload inline (complementary); Session variables as on-demand session vars (RLM §4)
+- **Critical constraint:** Benchmark-driven validation required before ANY architecture change. Models <10B are probably inadequate for managing their own search. H6 must be tested.
+- **Milestone:** M3 (conditional on B1.5 confirming H1)
+- **Revisit when:** B1.5 implemented; if H1 confirmed, feature flag `[context] offload_enabled = true`
+
+---
+
+### R-27: Translation Fleet as Cultural Fragility Canary Test
+
+- **Source:** NLP-Historical §9.2 + Translation Models research
+- **Current state:** Hy-MT2 (1.8B) and TranslateGemma (4B) are specialized translation models. If even specialized models fail on pt-BR slang, general models fail more.
+- **Why significant:** The translation fleet is a low-cost detector for cultural fragility. Can be used as an automatic test: if the translation model fails on a term, the general model likely fails worse. This guides where SOUL.md needs patches and where curation is most urgent.
+- **Implementation:** Not a code feature — it's a testing pattern. Run translations of critical pt-BR terms via fleet and verify quality.
+- **Cross-refs:** R-24 (Cultural Grounding) Phase 2+; NLP-Hist §9.2
+- **Milestone:** M3+ (informational, when cultural curation is active)
+- **Revisit when:** R-24 Phase 2+ (curatorial workflow active)
+
+---
+
+### R-28: Passive Models as Curatorial Middleware
+
+- **Source:** Passive Models research (BusyBeaver, Privacy Filter, LlamaFirewall, WebWorld, Needle, Nandi, Dreamer4)
+- **Current state:** Three archetypes identified (Classifiers, Policy Models, World Simulators), but none integrated into Sprachspiel.
+- **Why significant:** Lightweight classifiers (calque detector, pragmatics classifier, confidence scorer, TTR monitor) form a "curatorial immune system" — detecting where human intervention is needed and reducing review volume to what matters (NLP-Hist §9.5).
+- **Key constraint:** Models with custom architectures (BusyBeaver QDelta, Needle encoder-decoder) cannot run on llama.cpp. They need their own runtime or Wasm. Most viable integration is via Ollama (ShieldGemma, LlamaGuard) or as sidecar process.
+- **Priority ordering (by invisibility, NLP-Hist §9.7):** Confidence scorer > Pragmatics classifier > Calque detector > TTR monitor
+- **Implementation phases:** M3 plugin system design (WASM or Ollama sidecars); M4+ for models with custom runtime
+- **Cross-refs:** UNIFIED-RESEARCH-VISION §3 Sinergy 2 and §7; Passive Models README §9-11
+- **Milestone:** M3 (design) / M4 (implementation)
+- **Revisit when:** Plugin system operational (#15); S2.5 proving curatorial value
