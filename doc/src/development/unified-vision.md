@@ -461,6 +461,54 @@ Added to `doc/src/development/research-icebox.md`:
 
 ---
 
+### 8.10 Information Routing Consistency
+
+**Added:** 2026-05-24
+**Sources:** Gated DeltaNet-2 (arXiv:2605.22791), UniMem (arXiv:2402.03009), Pichay (arXiv:2603.09023), Titans (arXiv:2501.00663), Context Cartography (arXiv:2603.20578). See Section 8.9 for full citations.
+
+**Core insight:** Token attention, RAG retrieval, context compaction, and persistent memory are instances of the same abstract operation:
+
+```
+L = (Q, K, V, Gate, Capacity, Heads)
+```
+
+Where:
+- **Q** (query): What information is needed now (current prompt, search query, session context)
+- **K** (keys): What information is available (document embeddings, turn summaries, fact triples)
+- **V** (values): What information is delivered (retrieved chunks, kept turns, injected facts)
+- **Gate**: Binary/soft decision to keep or discard information
+- **Capacity**: Budget constraint (context window, token limit, retrieval count k)
+- **Heads**: Parallel attention channels (semantic, lexical, temporal)
+
+**Sprachspiel components as instances:**
+
+| Component | Q | K | V | Gate | Capacity | Heads |
+|-----------|---|---|---|------|----------|-------|
+| Token attention | current token | all token embeddings | weighted values | softmax | context window | attention heads |
+| RAG retrieval | search query | chunk embeddings | retrieved chunks | cosine ≥ threshold | k results | 1 (semantic only) |
+| Context compaction | recent context | all turn summaries | kept turns | recency (keep first N + last N) | token budget | 1 (recency only) |
+| Persistent memory | session prompt | fact embeddings | injected facts | decay ≥ threshold | fact injection budget | 1 (semantic only) |
+
+**Biggest gap identified:** Context compaction and RAG retrieval both use **single-head, single-signal Gate functions** (recency for compaction, semantic similarity for retrieval). Research shows that multi-signal, multi-head designs consistently outperform monolithic ones (Gated DeltaNet-2, UniMem).
+
+**Proposed improvements mapped to routing abstraction:**
+
+1. **Multi-head retrieval** (#137): Add lexical and temporal heads to RAG retrieval. Currently single-head (semantic). The RRF fusion formula already supports it: `RRF(d) = Σ_{h ∈ H} w_h / (k + rank_h(d))`. This is the aggregation function for multi-head attention.
+
+2. **Multi-signal compaction gate** (M3.γ): Replace recency-only with `g_i = σ(α·relevance + β·recency + γ·importance)`. This is decoupled gates applied to compaction — the forget gate and update gate are independent signals instead of a monolithic heuristic.
+
+3. **Cross-scale flow**: Retrieval scores (session level) → compaction importance (turn level). Currently no information flows between scales. This is analogous to cross-attention in transformers, where one scale informs another.
+
+4. **Compaction quality metric** (R-30): `quality = 1 - Σ(discarded g_i) / Σ(all g_i)`. Measures how much V is preserved vs discarded by the Gate. Phase A (recency-only, trivially computable, ~5 lines). Phase B (multi-signal, after M3.γ).
+
+5. **Norm correction** (R-25): Improves K accuracy in the semantic retrieval head. One float per vector corrects systematic underestimation of cosine similarity. This is improving the distance computation within a Head, not changing the Gate or number of Heads.
+
+**Formal issue:** #179 (Information Routing Consistency Mapping) — research document, zero code deliverable.
+
+**See also:** R-29 and R-30 in research-icebox.md for the icebox entries.
+
+---
+
 ## 7. Open Questions
 
 1. **Study source type:** Should `content_type` enum add `'study'` or should study items be notes with a `verified` flag? Decision pending B3 design.

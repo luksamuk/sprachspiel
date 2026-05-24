@@ -453,6 +453,7 @@
 - **Prerequisite:** TAP-2 for meaningful feedback; #136 for embedding quality
 - **Cross-refs:** DESIGN.md §15.5, PEEK cross-reference, UNIFIED-RESEARCH-VISION §2
 - **Revisit when:** TAP-2 complete; OC-1a can start independently
+- **Information routing reframing:** PEEK maps to **persistent K/V store at session level** — the Orientation Cache is a context map that persists across sessions, providing K (key concepts) and V (orientation summaries) that are always available, with Gate=open for the current session and Capacity=session context window. See R-29 for the full mapping.
 
 ---
 
@@ -464,6 +465,7 @@
 - **Implementation phases:** See DESIGN.md §4.1 (TAP-0 through TAP-4)
 - **Prerequisite:** TAP-1 as base; model benchmark (§11.5) for fallback
 - **Cross-refs:** DESIGN.md §4.1, UNIFIED-RESEARCH-VISION §3
+- **Information routing reframing:** TAP maps to **offline gate function learning** — the pipeline learns which information to GATE in/out based on Q=current context, K=past content, V=extracted facts/patterns. TAP-Reflect = learning the Gate function from failure patterns. TAP-Struct = learning what V format maximizes downstream retrieval quality. See R-29 for the full mapping.
 - **Revisit when:** W7.0 complete
 
 ---
@@ -476,6 +478,7 @@
 - **Implementation:** Save compaction summary to DB; trigger TAP-Reflect on saved summary.
 - **Prerequisite:** TAP-3 starting
 - **Cross-refs:** RECURSION-SPRACHSPIEL.md §5, UNIFIED-RESEARCH-VISION §3 Sinergy 5
+- **Information routing reframing:** Compaction-triggered analysis maps to **compressing V** — compaction produces a summary (compressed V), which is currently discarded. TAP-Reflect processes this compressed V to extract orientation and failure patterns. The quality of compression determines how much information is preserved (see R-30 for the metric). See R-29 for the full mapping.
 - **Revisit when:** TAP-3 begins
 
 ---
@@ -506,6 +509,7 @@
 - **Prerequisite:** #133 (embedding diagnostics) to measure d_eff and confirm bias
 - **Cross-refs:** RAG-Vector §2, UNIFIED-RESEARCH-VISION §3 Sinergy 4
 - **Milestone:** M1/W4.x (addendum to #136)
+- **Information routing reframing:** Norm correction improves **K accuracy in the semantic retrieval head** — systematic underestimation of cosine similarity from scalar quantization means K vectors are less distinguishable. One float per vector corrects the bias, making the Gate function more accurate at its job. See R-29 for the full mapping, R-30 for the quality metric that measures downstream impact.
 - **Revisit when:** #133 complete; add as addendum of W4.x
 
 ---
@@ -519,6 +523,7 @@
 - **Implementation:** Offload threshold between 85% and 88%, SubagentRunner with config, SourceType::ToolOffload
 - **Cross-refs:** TAP offline vs offload inline (complementary); Session variables as on-demand session vars (RLM §4)
 - **Critical constraint:** Benchmark-driven validation required before ANY architecture change. Models <10B are probably inadequate for managing their own search. H6 must be tested.
+- **Information routing reframing:** Context-offload maps to an **alternative Gate mechanism** — instead of compressing within context (compaction Gate: discard low-g_i turns), offload routes entire tool-result V to a sub-agent (Gate: route to different Capacity). This preserves 100% of information for the offloaded content but adds latency. The choice between compaction and offload is a Gate design decision. See R-29 for the full mapping.
 - **Milestone:** M3 (conditional on B1.5 confirming H1)
 - **Revisit when:** B1.5 implemented; if H1 confirmed, feature flag `[context] offload_enabled = true`
 
@@ -547,3 +552,51 @@
 - **Cross-refs:** UNIFIED-RESEARCH-VISION §3 Sinergy 2 and §7; Passive Models README §9-11
 - **Milestone:** M3 (design) / M4 (implementation)
 - **Revisit when:** Plugin system operational (#15); S2.5 proving curatorial value
+
+---
+
+### R-29: Information Routing Consistency Mapping
+
+- **Source:** Synthesis of attention, retrieval, and memory management research (Gated DeltaNet-2, UniMem, Pichay, Titans, Context Cartography)
+- **Current state:** No formal mapping between Sprachspiel components and the information routing abstraction. Components (context compaction, RAG retrieval, RRF fusion) are designed independently.
+- **Why significant:** Research reveals that token attention, RAG retrieval, context compaction, and persistent memory are instances of the same abstract operation: `L = (Q, K, V, Gate, Capacity, Heads)`. Making this structure explicit enables:
+  1. Identifying where Sprachspiel uses 1-signal heuristics that could benefit from multi-signal gates
+  2. Designing adaptive weights with theoretical grounding instead of arbitrary tuning
+  3. Enabling quantitative measurement of information loss during compaction
+  4. Allowing cross-scale signal flow (retrieval scores → compaction importance)
+- **Biggest gap identified:** Context compaction uses 1-signal heuristic (recency) vs. multi-signal gate (relevance + recency + importance). See R-30 for the quality metric that quantifies this gap.
+- **Deliverable:** `doc/src/development/information-routing-mapping.md` — formal mapping document. Zero code, purely architectural.
+- **Implementation:** Research document only. No code changes.
+- **Cross-refs:** #179 (formal issue); R-21 (Orientation Cache = persistent K/V at session level); R-22 (TAP = offline gate function); R-23 (Compaction = compressed V with quality metric); R-25 (Norm Correction = improving K accuracy); R-26 (Offload = alternative gate mechanism)
+- **Information routing reframing notes:**
+  - R-21 → PEEK maps to **persistent K/V store at the session level** (Gate=open for current session, Capacity=session context window)
+  - R-22 → TAP maps to **offline gate function learning** (learning which information to Gates in/out based on relevance/recency/importance)
+  - R-23 → Compaction-triggered analysis maps to **compressing V** (keeping summaries, discarding raw content, tracked by quality metric R-30)
+  - R-25 → Norm correction maps to **improving K accuracy in the semantic retrieval head** (reducing systematic bias in similarity computation)
+  - R-26 → Context-offload maps to **alternative Gate mechanism** (routing to sub-agent instead of compressing within context)
+- **Milestone:** M3 (research) / M4 (informing design)
+- **Revisit when:** When adaptive RRF (#137) or multi-signal compaction design begins; OC-1a can proceed independently
+
+---
+
+### R-30: Compaction Quality Metric
+
+- **Source:** Synthesis of information routing research; compaction as rank-reduction operation
+- **Current state:** No quantitative measure of information loss during compaction. "Keep first N + last N" has no quality score.
+- **Why significant:** Without a quality metric, we cannot optimize compaction without running full end-to-end benchmarks every time. The metric enables:
+  1. Fast iteration on compaction strategies (lightweight proxy for task performance)
+  2. Quantitative comparison in B1.5 (offload preserves X% of gated information vs compaction Y%)
+  3. Validation that multi-signal gates improve over recency-only (H1.1 in B1.5)
+- **Formula:**
+  ```
+  quality = 1 - Σ(discarded g_i) / Σ(all g_i)
+  ```
+  Where `g_i` is the gate/retention weight of each turn. Phase A (recency-only): `g_i = 1` for kept, `0` for discarded → quality = kept_turns / total_turns. Phase B (multi-signal): `g_i = σ(α·relevance + β·recency + γ·importance)`.
+- **Implementation phases:**
+  - **Phase A (with TAP-1, ~5 lines):** Log recency-weighted quality on every compaction event. Add `/context quality` command. Trivially computable with current system.
+  - **Phase B (after M3.γ multi-signal gate):** Enrich metric with relevance and importance signals. Depends on B1.5 validating H1 (multi-signal > recency-only).
+- **Phase A is tiny scope** — can be added as an addendum to #152 (TAP-1) without needing a separate issue.
+- **Cross-refs:** #152 (TAP-1 — add Phase A as sub-item); #158 (B1.5 — uses metric for quantitative comparison); #179 (Information Routing Mapping — formal framing)
+- **Information routing reframing note:** Quality metric measures how much "V" (information value) is preserved vs discarded by the compaction Gate. Currently the Gate uses recency-only (binary: keep/discard), making quality = kept/total. Multi-signal Gate produces continuous g_i values, enabling weighted quality scores.
+- **Milestone:** M1 (Phase A, with TAP-1) / M3 (Phase B, after multi-signal gate)
+- **Revisit when:** Phase A can start immediately with TAP-1; Phase B after B1.5

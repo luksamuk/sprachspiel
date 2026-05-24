@@ -20,6 +20,12 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **How Small Transformations Expose Weakness of Similarity Measures** | — | [arXiv:2509.09714](https://arxiv.org/abs/2509.09714) | 2025 |
 | **Sparse Contrastive Learning for Contradiction Retrieval (SparseCL)** | — | [arXiv:2406.10746](https://arxiv.org/abs/2406.10746) | 2025 |
 | **RAG over Thinking Traces Can Improve Reasoning Tasks (T3)** | Arabzadeh, Ma, Min, Zaharia | [arXiv:2605.03344](https://arxiv.org/abs/2605.03344) | 2026 |
+| **PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents** | Gu et al. | [arXiv:2605.19932](https://arxiv.org/abs/2605.19932) | 2026 |
+| **Gated DeltaNet-2** | Hatamizadeh et al. | [arXiv:2605.22791](https://arxiv.org/abs/2605.22791) | 2026 |
+| **UniMem: Towards a Unified View of Memory Architectures** | Fang et al. | [arXiv:2402.03009](https://arxiv.org/abs/2402.03009) | 2024 |
+| **Pichay: Demand Paging for LLM Context** | Mason | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) | 2026 |
+| **Titans: Learning to Memorize at Test Time** | Behrouz et al. | [arXiv:2501.00663](https://arxiv.org/abs/2501.00663) | 2024 |
+| **Context Cartography** | Wu & Gartner | [arXiv:2603.20578](https://arxiv.org/abs/2603.20578) | 2026 |
 
 ## Key Contributions
 
@@ -135,6 +141,36 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Models:** Hy-MT2-1.8B (Tencent), TranslateGemma-4B (Google)
 - **Key findings:** Even specialized translation models fail on pt-BR slang. Hy-MT2: literal translations. TranslateGemma: better but imperfect. If even these fail, general models fail more.
 - **Sprachspiel implication:** Translation fleet as canary test for cultural fragility (R-27). Not a code feature — a testing pattern that guides where SOUL.md needs patches.
+
+#### Gated DeltaNet-2 (Hatamizadeh et al. 2026)
+
+- **Paper:** arXiv:2605.22791
+- **Key findings:** Decoupled gates (separate forget gate and update gate) outperform monolithic gates in linear attention. Fine-grained, independent control over what to forget vs. what to update provides better information routing than a single combined gate.
+- **Sprachspiel implication:** Informs multi-head retrieval design (#137) and multi-signal compaction (R-23). The key insight: **decoupled, fine-grained gates outperform monolithic ones** — applied to RRF fusion (separate weights per head) and compaction (separate signals for recency/relevance/importance instead of a single heuristic).
+
+#### UniMem: Towards a Unified View of Memory Architectures (Fang et al. 2024)
+
+- **Paper:** arXiv:2402.03009
+- **Key findings:** Proposes a unified framework for understanding diverse memory architectures (attention, retrieval, compression, persistent storage) as instances of the same abstract operation with different hyperparameters.
+- **Sprachspiel implication:** Validates the information routing abstraction (#179) — our compaction, RAG检索, and memory systems share the same underlying pattern. UniMem provides the academic framing for why thinking traces, facts, and context all benefit from the same gate/retain/evict pattern.
+
+#### Pichay: Demand Paging for LLM Context (Mason 2026)
+
+- **Paper:** arXiv:2603.09023
+- **Key findings:** LLM context can be managed like virtual memory, with demand paging bringing in information on demand. The cost model (latency of page fault vs. latency of lost information) directly informs the offload vs. compaction tradeoff.
+- **Sprachspiel implication:** Validates the session variables concept (R-26, RLM §4) and the B1.5 benchmark design (#158) — demand paging is another "Gate mechanism" in the information routing abstraction, routing information between "in-context" and "on-disk" capacity levels.
+
+#### Titans: Learning to Memorize at Test Time (Behrouz et al. 2024)
+
+- **Paper:** arXiv:2501.00663
+- **Key findings:** Neural memory with learned gates that decide what to store, what to forget, and what to retrieve. The surprise metric (how unexpected new information is) drives the gate function.
+- **Sprachspiel implication:** TAP-Reflect (R-22) is analogous to Titans' learned gate — extracting "what was surprising" from thinking traces. The surprise metric maps to TAP-Reflect's failure pattern extraction. Our compaction quality metric (R-30) serves a similar purpose: measuring how much "memorable" information was retained vs. discarded.
+
+#### Context Cartography (Wu & Gartner 2026)
+
+- **Paper:** arXiv:2603.20578
+- **Key findings:** LLMs have predictable "attention deserts" — regions of context that receive systematically less attention. The middle of context is especially neglected. Mapping these deserts enables strategic information placement.
+- **Sprachspiel implication:** Validates our middle-compaction strategy (keep first N + last N). Informs R-04 (attention-based prompt optimization) and R-29 (information routing mapping) — attention distribution is part of the Capacity allocation in the routing abstraction.
 
 ## Related Blog Posts
 
@@ -337,5 +373,40 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   author={Nunes, M.G.V.},
   journal={EBLC},
   year={2008}
+}
+
+@article{gated_deltanet_2026,
+  title={Gated DeltaNet-2},
+  author={Hatamizadeh, Ali and others},
+  journal={arXiv preprint arXiv:2605.22791},
+  year={2026}
+}
+
+@article{unimem_2024,
+  title={UniMem: Towards a Unified View of Memory Architectures},
+  author={Fang, Xiang and others},
+  journal={arXiv preprint arXiv:2402.03009},
+  year={2024}
+}
+
+@article{pichay_2026,
+  title={Pichay: Demand Paging for LLM Context},
+  author={Mason, David},
+  journal={arXiv preprint arXiv:2603.09023},
+  year={2026}
+}
+
+@article{titans_2024,
+  title={Titans: Learning to Memorize at Test Time},
+  author={Behrouz, Ali and Delavari, Pezhman and Bighash, Simin},
+  journal={arXiv preprint arXiv:2501.00663},
+  year={2024}
+}
+
+@article{context_cartography_2026,
+  title={Context Cartography: Mapping Attention Deserts in LLM Context},
+  author={Wu, Zhiyuan and Gartner, Jan},
+  journal={arXiv preprint arXiv:2603.20578},
+  year={2026}
 }
 ```
