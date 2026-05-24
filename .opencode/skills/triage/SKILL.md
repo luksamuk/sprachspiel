@@ -157,13 +157,51 @@ for item in data['items']:
 
 ### Issue title format:
 
-- `[P0-CRITICAL]` — Bug fixes, data loss
-- `[P0]` — Addendum to current wave
-- `[P0-HIGH]` — Dependencies
-- `[P2]` — Medium priority, deferred
-- `[Draft]` — Research items (add `research` label)
-- `ADR:` — Architecture Decision Records
-- `B1.X` — Benchmark sub-items
+**CRITICAL RULE: Priority belongs in labels, NOT in titles.** Titles should be descriptive and permanent — priority changes over time, titles should not.
+
+- ✅ `T3-Phase0: Preserve Thinking Content + Schema Foundation`
+- ✅ `Norm Correction in Embedding Tables`
+- ✅ `B1.5 — Context Strategy Comparison Benchmark`
+- ❌ `[P0-CRITICAL] T3-Phase0: Preserve Thinking Content + Schema Foundation` (priority in title)
+- ❌ `[P0] Norm Correction in Embedding Tables` (priority in title)
+- ❌ `[P0-HIGH] T3-Phase1: ThinkingTrace Pipeline` (priority in title)
+- ❌ `[P2] B1.5 — Context Strategy Comparison Benchmark` (priority in title)
+
+Prefixes that ARE allowed in titles:
+- `Draft:` — Research items (add `research` label) — indicates this is an investigation, not implementation
+- `ADR:` — Architecture Decision Records — indicates this is a decision document, not code
+
+**Set priority via labels, not titles:**
+
+```bash
+# Priority labels (use these, not title prefixes)
+gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:critical"
+gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:high"
+gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:medium"
+gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:low"
+```
+
+**Set priority via project board fields:**
+
+```bash
+# Using gh project item-edit (field IDs from project #4)
+gh project item-edit --id <ITEM_ID> --project-id PVT_kwHOADplIc4BRnZ9 \
+  --field-id PVTSSF_lAHOADplIc4BRnZ9zg_ZHWU \
+  --single-select-option-id <OPTION_ID>
+# Critical=63eaf02a, High=02a9e1dd, Medium=44f71207, Low=8efef8c9
+```
+
+**When triaging existing issues with priority tags in titles, remove the tags:**
+
+If an existing issue has `[P0-CRITICAL]`, `[P0]`, `[P0-HIGH]`, or `[P2]` in its title, remove the prefix and set the priority via label/board field instead:
+
+```bash
+# Remove priority prefix from title
+gh issue edit <N> --repo luksamuk/sprachspiel --title "New title without prefix"
+
+# Set priority via label
+gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:high"
+```
 
 ### Issue body template for research items:
 
@@ -458,6 +496,29 @@ for ms in ['M1 - Core Evolution', 'M2 - Sprach 2.0',
 If items from different milestones are interleaved on the board, re-move them.
 
 **Rule:** After reordering, verify that board positions match milestone groups. The board should read M1 block → M2 block → M3 block → M4 block without interleaving.
+
+## Lesson 9: Priority Tags Belong in Labels, Not Titles
+
+**What happened:** Issues were created with priority tags in titles like `[P0-CRITICAL]`, `[P0-HIGH]`, `[P2]`. These tags:
+1. Make titles noisy and hard to scan
+2. Become stale when priorities change (P0 today → P2 next week, but title still says P0)
+3. Duplicate information that's already in labels and board priority fields
+4. Leak internal priority language into user-facing issue titles
+
+**Correct approach:** Use GitHub labels and project board fields for priority. Keep titles descriptive and permanent.
+
+| Aspect | Wrong | Right |
+|--------|-------|-------|
+| Title | `[P0-CRITICAL] T3-Phase0: Preserve Thinking Content` | `T3-Phase0: Preserve Thinking Content + Schema Foundation` |
+| Title | `[P2] B1.5 — Context Strategy Comparison` | `B1.5 — Context Strategy Comparison Benchmark` |
+| Priority | `[P0-HIGH]` in title | `priority:high` label + board Priority field |
+| Status | `📋 READY` in title | Scrum Status field on project board |
+
+The only prefixes allowed in titles are type indicators: `Draft:` for research items and `ADR:` for architecture decisions. These indicate the *nature* of the issue, not its priority.
+
+**When creating new issues:** Set priority via `--label "priority:high"` and board fields, never via title prefix.
+
+**When triaging existing issues:** Remove `[P0-CRITICAL]`, `[P0]`, `[P0-HIGH]`, `[P2]`, `[Draft]` prefixes from titles and replace with labels. `Draft:` is the only title prefix allowed because it indicates the issue's nature (investigation vs implementation), not its priority.
 
 ## Step 8: Commit and Push
 
