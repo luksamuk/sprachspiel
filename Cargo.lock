@@ -3606,7 +3606,6 @@ dependencies = [
  "urlencoding",
  "walkdir",
  "which",
- "zerocopy",
 ]
 
 [[package]]

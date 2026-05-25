@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::collections::HashMap;
 use std::str::FromStr;
-use zerocopy::IntoBytes;
 
 use super::document::{Document, FileType};
 use super::types::{
@@ -532,7 +531,7 @@ impl Database {
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
         self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
+            let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
 
             conn.execute(
@@ -540,7 +539,7 @@ impl Database {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     item_id,
-                    embedding_bytes,
+                    embedding_bytes.as_slice(),
                     content_type,
                     conversation_id,
                     project_id,
@@ -570,7 +569,7 @@ impl Database {
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
         self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
+            let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
 
             conn.execute(
@@ -578,7 +577,7 @@ impl Database {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     chunk_id,
-                    embedding_bytes,
+                    embedding_bytes.as_slice(),
                     content_type,
                     conversation_id,
                     project_id,
@@ -766,7 +765,7 @@ impl Database {
         limit: usize,
     ) -> Result<Vec<ContentSearchResult>> {
         self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
+            let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
 
             let fetch_limit = if conversation_id.is_some() || project_id.is_some() {
                 limit * 3
@@ -778,44 +777,47 @@ impl Database {
 
             let mut stmt = conn.prepare(SEMANTIC_SEARCH_ITEMS_SQL.trim())?;
             let rows = stmt
-                .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
-                    let item_id: i64 = row.get(0)?;
-                    let distance: f32 = row.get(1)?;
-                    let item = ContentItem {
-                        id: row.get(2)?,
-                        content_type: ContentType::from_str(&row.get::<_, String>(3)?)
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        conversation_id: row.get(4)?,
-                        role: row.get(5)?,
-                        message_type: row.get(6)?,
-                        previous_item_id: row.get(7)?,
-                        prompt_tokens: row.get(8)?,
-                        scope: row
-                            .get::<_, Option<String>>(9)?
-                            .map(|s| ContentScope::from_str(&s))
-                            .transpose()
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        source: row
-                            .get::<_, Option<String>>(10)?
-                            .map(|s| ContentSource::from_str(&s))
-                            .transpose()
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        title: row.get(11)?,
-                        content: row.get(12)?,
-                        importance: row.get(13)?,
-                        access_count: row.get::<_, i32>(14)? as u32,
-                        decay_score: row.get(15)?,
-                        created_at: DateTime::from_timestamp(row.get::<_, i64>(16)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        updated_at: DateTime::from_timestamp(row.get::<_, i64>(17)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        last_accessed: DateTime::from_timestamp(row.get::<_, i64>(18)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        has_embedding: row.get::<_, i32>(19)? != 0,
-                        project_id: row.get(20)?,
-                    };
-                    Ok((item_id, item, distance))
-                })?
+                .query_map(
+                    params![embedding_bytes.as_slice(), fetch_limit as i32],
+                    |row| {
+                        let item_id: i64 = row.get(0)?;
+                        let distance: f32 = row.get(1)?;
+                        let item = ContentItem {
+                            id: row.get(2)?,
+                            content_type: ContentType::from_str(&row.get::<_, String>(3)?)
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            conversation_id: row.get(4)?,
+                            role: row.get(5)?,
+                            message_type: row.get(6)?,
+                            previous_item_id: row.get(7)?,
+                            prompt_tokens: row.get(8)?,
+                            scope: row
+                                .get::<_, Option<String>>(9)?
+                                .map(|s| ContentScope::from_str(&s))
+                                .transpose()
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            source: row
+                                .get::<_, Option<String>>(10)?
+                                .map(|s| ContentSource::from_str(&s))
+                                .transpose()
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            title: row.get(11)?,
+                            content: row.get(12)?,
+                            importance: row.get(13)?,
+                            access_count: row.get::<_, i32>(14)? as u32,
+                            decay_score: row.get(15)?,
+                            created_at: DateTime::from_timestamp(row.get::<_, i64>(16)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(17)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(18)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            has_embedding: row.get::<_, i32>(19)? != 0,
+                            project_id: row.get(20)?,
+                        };
+                        Ok((item_id, item, distance))
+                    },
+                )?
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance) in rows {
@@ -835,57 +837,60 @@ impl Database {
 
             let mut stmt = conn.prepare(SEMANTIC_SEARCH_CHUNKS_SQL.trim())?;
             let rows = stmt
-                .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
-                    let _chunk_id: i64 = row.get(0)?;
-                    let distance: f32 = row.get(1)?;
-                    let item_id: i64 = row.get(2)?;
-                    let _chunk_index: i32 = row.get(3)?;
-                    let chunk_content: String = row.get(4)?;
-                    let start_offset: i32 = row.get(5)?;
-                    let end_offset: i32 = row.get(6)?;
+                .query_map(
+                    params![embedding_bytes.as_slice(), fetch_limit as i32],
+                    |row| {
+                        let _chunk_id: i64 = row.get(0)?;
+                        let distance: f32 = row.get(1)?;
+                        let item_id: i64 = row.get(2)?;
+                        let _chunk_index: i32 = row.get(3)?;
+                        let chunk_content: String = row.get(4)?;
+                        let start_offset: i32 = row.get(5)?;
+                        let end_offset: i32 = row.get(6)?;
 
-                    let item = ContentItem {
-                        id: row.get(7)?,
-                        content_type: ContentType::from_str(&row.get::<_, String>(8)?)
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        conversation_id: row.get(9)?,
-                        role: row.get(10)?,
-                        message_type: row.get(11)?,
-                        previous_item_id: row.get(12)?,
-                        prompt_tokens: row.get(13)?,
-                        scope: row
-                            .get::<_, Option<String>>(14)?
-                            .map(|s| ContentScope::from_str(&s))
-                            .transpose()
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        source: row
-                            .get::<_, Option<String>>(15)?
-                            .map(|s| ContentSource::from_str(&s))
-                            .transpose()
-                            .map_err(rusqlite::Error::InvalidParameterName)?,
-                        title: row.get(16)?,
-                        content: row.get(17)?,
-                        importance: row.get(18)?,
-                        access_count: row.get::<_, i32>(19)? as u32,
-                        decay_score: row.get(20)?,
-                        created_at: DateTime::from_timestamp(row.get::<_, i64>(21)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        updated_at: DateTime::from_timestamp(row.get::<_, i64>(22)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        last_accessed: DateTime::from_timestamp(row.get::<_, i64>(23)?, 0)
-                            .unwrap_or_else(Utc::now),
-                        has_embedding: row.get::<_, i32>(24)? != 0,
-                        project_id: row.get(25)?,
-                    };
+                        let item = ContentItem {
+                            id: row.get(7)?,
+                            content_type: ContentType::from_str(&row.get::<_, String>(8)?)
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            conversation_id: row.get(9)?,
+                            role: row.get(10)?,
+                            message_type: row.get(11)?,
+                            previous_item_id: row.get(12)?,
+                            prompt_tokens: row.get(13)?,
+                            scope: row
+                                .get::<_, Option<String>>(14)?
+                                .map(|s| ContentScope::from_str(&s))
+                                .transpose()
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            source: row
+                                .get::<_, Option<String>>(15)?
+                                .map(|s| ContentSource::from_str(&s))
+                                .transpose()
+                                .map_err(rusqlite::Error::InvalidParameterName)?,
+                            title: row.get(16)?,
+                            content: row.get(17)?,
+                            importance: row.get(18)?,
+                            access_count: row.get::<_, i32>(19)? as u32,
+                            decay_score: row.get(20)?,
+                            created_at: DateTime::from_timestamp(row.get::<_, i64>(21)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(22)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(23)?, 0)
+                                .unwrap_or_else(Utc::now),
+                            has_embedding: row.get::<_, i32>(24)? != 0,
+                            project_id: row.get(25)?,
+                        };
 
-                    Ok((
-                        item_id,
-                        item,
-                        distance,
-                        Some(chunk_content),
-                        Some((start_offset, end_offset)),
-                    ))
-                })?
+                        Ok((
+                            item_id,
+                            item,
+                            distance,
+                            Some(chunk_content),
+                            Some((start_offset, end_offset)),
+                        ))
+                    },
+                )?
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {

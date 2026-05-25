@@ -244,9 +244,12 @@ fn compute_d_eff(vectors: &[Vec<f64>], n: usize, d: usize) -> (Vec<f64>, f64) {
     let sum_lambda_sq_computed: f64 = eigenvalues.iter().map(|x| x.powi(2)).sum::<f64>();
 
     // Residual eigenvalues (those not computed by power iteration)
-    // Assume they're very small and approximately equal
+    // After centering, max rank = min(d, n-1), not d. Using d would
+    // distribute residual variance across dimensions that must be zero,
+    // inflating d_eff for small corpora.
+    let max_rank = d.min(n - 1);
     let residual_variance = (total_variance - sum_computed).max(0.0);
-    let residual_count = d.saturating_sub(k);
+    let residual_count = max_rank.saturating_sub(k);
     let residual_each = if residual_count > 0 {
         residual_variance / residual_count as f64
     } else {
@@ -311,9 +314,9 @@ fn power_iteration_eigenvalues(
         let cov = compute_covariance_matrix(centered);
         let mut deflated = cov.clone();
 
-        for _ in 0..k {
+        for i in 0..k {
             let (eigenvalue, eigenvector) =
-                power_iteration_with_eigenvector(&deflated, d, max_iter, tolerance);
+                power_iteration_with_eigenvector(&deflated, d, max_iter, tolerance, i as u64);
             let eigenvalue = eigenvalue.max(0.0);
             eigenvalues.push(eigenvalue);
 
@@ -330,9 +333,9 @@ fn power_iteration_eigenvalues(
         let n_f = n as f64;
         let mut deflated = gram.clone();
 
-        for _ in 0..k.min(n) {
+        for i in 0..k.min(n) {
             let (eigenvalue, eigenvector) =
-                power_iteration_with_eigenvector(&deflated, n, max_iter, tolerance);
+                power_iteration_with_eigenvector(&deflated, n, max_iter, tolerance, i as u64);
             let eigenvalue_cov = eigenvalue.max(0.0) / n_f;
             eigenvalues.push(eigenvalue_cov);
 
@@ -353,17 +356,44 @@ fn power_iteration_eigenvalues(
 ///
 /// Returns (eigenvalue, normalized_eigenvector) using Rayleigh quotient
 /// for better eigenvalue estimation.
+///
+/// Uses a pseudo-random starting vector (seeded by `seed`) to avoid
+/// pathological cases where a standard basis vector is orthogonal to
+/// an eigenspace. For matrices with degenerate eigenvalues, different
+/// seeds explore different directions in the eigenspace.
 fn power_iteration_with_eigenvector(
     matrix: &[Vec<f64>],
     dim: usize,
     max_iter: usize,
     tolerance: f64,
+    seed: u64,
 ) -> (f64, Vec<f64>) {
-    // Initialize with standard basis vector (not uniform vector!)
-    // Uniform vector [1/√d, ...] is often in the null space of centered
-    // data covariance matrices, causing convergence to garbage.
+    // Pseudo-random starting vector using a simple LCG.
+    // This avoids the pathological case where a standard basis vector
+    // is orthogonal to an eigenspace, which causes power iteration to
+    // miss eigenvalues or produce garbage after deflation.
+    let mut rng_state = seed;
     let mut vec = vec![0.0; dim];
-    vec[0] = 1.0;
+    for x in vec.iter_mut() {
+        // LCG: x_{n+1} = 6364136223846793005 * x_n + 1442695040888963407 (Knuth)
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        // Map to [-1, 1] via simple bit manipulation
+        *x = (rng_state as i64 as f64) / (i64::MAX as f64);
+    }
+
+    // Normalize the starting vector
+    let norm: f64 = vec.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm < tolerance {
+        // Fallback to standard basis if random vector is degenerate
+        vec = vec![0.0; dim];
+        vec[0] = 1.0;
+    } else {
+        for x in vec.iter_mut() {
+            *x /= norm;
+        }
+    }
 
     for _ in 0..max_iter {
         // Matrix-vector product
@@ -763,7 +793,7 @@ mod tests {
     #[test]
     fn test_small_corpus_d_eff_unreliable() {
         // 3 vectors in 256D — after centering, max rank = 2
-        let mut v1 = vec![1.0; 256];
+        let mut v1 = vec![0.0; 256];
         v1[0] = 1.0;
         let mut v2 = vec![0.0; 256];
         v2[1] = 1.0;
@@ -775,8 +805,8 @@ mod tests {
 
         // d_eff should be at most n-1 = 2 (not 256!)
         assert!(
-            diagnostics.d_eff <= 3.0,
-            "d_eff with n=3 vectors should be at most n-1=2 (plus float tolerance), got {}",
+            diagnostics.d_eff <= 2.5,
+            "d_eff with n=3 vectors should be at most n-1=2 (with float tolerance ≤ 2.5), got {}",
             diagnostics.d_eff
         );
         assert!(

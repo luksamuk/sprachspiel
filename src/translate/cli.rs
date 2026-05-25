@@ -157,13 +157,13 @@ impl DiagArgs {
 
 impl TranslateArgs {
     /// Check if this is a list-only operation
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_list_only(&self) -> bool {
         self.list.is_some() && self.language.is_none()
     }
 
     /// Get the list filter if provided
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn list_filter(&self) -> Option<&str> {
         self.list
             .as_ref()
