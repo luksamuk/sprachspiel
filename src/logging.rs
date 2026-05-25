@@ -730,12 +730,18 @@ mod tests {
         assert_eq!(level_filter_from_u8(6), None);
     }
 
+    // Tests below mutate global atomics (TUI_MODE, FILE_LEVEL_OVERRIDE).
+    // #[serial] prevents flaky cross-test interference in parallel runs.
+    // (Same pattern as spinner.rs and tool_robustness.rs tests.)
+
+    #[serial_test::serial]
     #[test]
     fn test_tui_mode_default_off() {
         // TUI mode starts off
         assert!(!is_tui_mode());
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_tui_mode_toggle() {
         // TUI mode can be enabled and disabled
@@ -745,6 +751,7 @@ mod tests {
         assert!(!is_tui_mode());
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_set_and_clear_file_level() {
         // File level override starts at default sentinel
@@ -766,6 +773,7 @@ mod tests {
         );
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_file_logger_effective_level_default() {
         let file_logger = FileLogger::new(PathBuf::from("/dev/null"), LevelFilter::Warn);
@@ -774,6 +782,7 @@ mod tests {
         assert_eq!(file_logger.effective_level(), LevelFilter::Warn);
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_file_logger_effective_level_override() {
         let file_logger = FileLogger::new(PathBuf::from("/dev/null"), LevelFilter::Warn);
@@ -786,6 +795,7 @@ mod tests {
         assert_eq!(file_logger.effective_level(), LevelFilter::Warn);
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_stderr_logger_suppressed_in_tui_mode() {
         // TUI mode starts off — stderr should not be suppressed
@@ -801,6 +811,7 @@ mod tests {
         assert!(!is_tui_mode());
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_tui_mode_sets_file_level_to_debug() {
         clear_file_level();
@@ -813,6 +824,7 @@ mod tests {
         set_tui_mode(false);
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_tui_mode_clear_restores_file_level() {
         set_file_level(LevelFilter::Debug);
@@ -824,6 +836,7 @@ mod tests {
         );
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_tui_mode_toggle_verbosity_trace() {
         // Simulate TUI mode + /debug toggle

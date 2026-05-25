@@ -535,6 +535,7 @@ mod tests {
         );
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_plain_mode_flag() {
         // Default: plain mode off
@@ -549,6 +550,7 @@ mod tests {
         assert!(!is_plain_mode());
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_display_tool_call_plain_mode_no_ansi() {
         // In plain mode, display_tool_call should not emit ANSI codes

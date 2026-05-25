@@ -177,6 +177,11 @@ mod tests {
     // Defined in debug_tools but re-imported here for convenience.
     use crate::debug_tools::PlainModeGuard;
 
+    // All tests below mutate the global PLAIN_MODE AtomicBool.
+    // #[serial] prevents flaky cross-test interference in parallel runs.
+    // (Same pattern as spinner.rs tests that touch global spinner state.)
+
+    #[serial_test::serial]
     #[test]
     fn test_format_error_plain_no_ansi() {
         // Plain mode: no ANSI codes in output
@@ -192,17 +197,22 @@ mod tests {
         );
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_format_error_ansi_contains_codes() {
-        // Non-plain mode: should contain ANSI codes
+        // Non-plain mode: should contain ANSI codes.
+        // PlainModeGuard saves/restores original state; we override to false.
+        let original = crate::debug_tools::is_plain_mode();
         crate::debug_tools::set_plain_mode(false);
         let result = format_error_with_status("connection error: status 404 not found");
         assert!(
             result.contains("\x1B["),
             "Terminal mode should contain ANSI codes, got: {result}"
         );
+        crate::debug_tools::set_plain_mode(original);
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_format_error_plain_error_prefix() {
         // Plain mode: "Error:" prefix without ANSI red
@@ -218,6 +228,7 @@ mod tests {
         );
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_format_tool_error_no_ansi_in_plain() {
         // format_tool_error (public API) should not produce ANSI in plain mode
