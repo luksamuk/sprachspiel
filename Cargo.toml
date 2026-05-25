@@ -62,7 +62,8 @@ rattles = "0.2"
 # regex is used directly in our code for file filtering
 regex = "1.10"
 # cli-clipboard provides cross-platform clipboard access (X11+Wayland+macOS+Windows)
-# Fails gracefully on Termux and headless environments
+# Not available on Android (Termux) — clipboard module uses no-op fallback
+[target.'cfg(not(target_os = "android"))'.dependencies]
 cli-clipboard = "0.4.0"
 # crossterm provides terminal raw mode, events, and input for ratatui TUI
 # bracketed-paste enables Event::Paste for terminal paste support

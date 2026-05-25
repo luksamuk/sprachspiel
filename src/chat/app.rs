@@ -899,7 +899,7 @@ impl App {
             if self.chat_selection.is_active() {
                 let text = self.chat_selection.extract_text(&self.visual_lines_cache);
                 if !text.is_empty() {
-                    let _ = cli_clipboard::set_contents(text);
+                    let _ = crate::clipboard::set_contents(text);
                 }
                 self.chat_selection.clear();
                 return None;
@@ -914,7 +914,7 @@ impl App {
                     if let Some(text) = self.yank_text()
                         && !text.is_empty()
                     {
-                        let _ = cli_clipboard::set_contents(text);
+                        let _ = crate::clipboard::set_contents(text);
                     }
                     self.textarea.cancel_selection();
                 } else {
@@ -924,7 +924,7 @@ impl App {
                     if let Some(text) = self.yank_text()
                         && !text.is_empty()
                     {
-                        let _ = cli_clipboard::set_contents(text);
+                        let _ = crate::clipboard::set_contents(text);
                     }
                     self.textarea_clear();
                 }
@@ -949,7 +949,7 @@ impl App {
             }
         ) {
             self.completion_menu.hide();
-            if let Ok(text) = cli_clipboard::get_contents()
+            if let Ok(text) = crate::clipboard::get_contents()
                 && !text.is_empty()
             {
                 self.textarea.insert_str(&text);
@@ -1130,7 +1130,7 @@ impl App {
                 if let Some(text) = self.yank_text()
                     && !text.is_empty()
                 {
-                    let _ = cli_clipboard::set_contents(text);
+                    let _ = crate::clipboard::set_contents(text);
                 }
                 None
             }
@@ -1156,7 +1156,7 @@ impl App {
                     if let Some(text) = self.yank_text()
                         && !text.is_empty()
                     {
-                        let _ = cli_clipboard::set_contents(text);
+                        let _ = crate::clipboard::set_contents(text);
                     }
                 }
                 None

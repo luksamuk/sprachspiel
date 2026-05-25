@@ -8,6 +8,7 @@
 #![expect(clippy::print_stderr)] // CLI entry point — user-facing output
 mod capabilities;
 mod chat;
+mod clipboard;
 mod config;
 mod consts;
 mod content;
