@@ -20,6 +20,7 @@ This document describes the mandatory workflow for implementing features and fix
 1. **NEVER close issues before PR merge** — Issues are closed automatically when PR is merged via "Closes #N"
 2. **NEVER move cards to "Done"** — Cards move to "Done" automatically when PR merges (via "Closes #N"), verify manually afterward
 3. **NEVER merge without approval** — PRs must be reviewed before merge
+4. **NEVER merge without explicit "merge it" / "pronto para merge" from the user** — All quality gates passing, all reviews resolved, and all tests passing is NOT sufficient. The user must explicitly authorize the merge. The agent MUST NOT infer merge readiness from context.
 
 ### ALWAYS Do These
 
@@ -28,6 +29,27 @@ This document describes the mandatory workflow for implementing features and fix
 3. **ALWAYS update CHANGELOG and IMPLEMENTATION.md** — Before committing code changes
 4. **ALWAYS reference the issue in PR body** — Use "Closes #N" or "Related #N"
 5. **ALWAYS add new issues to roadmap** — When creating new issues, add them to IMPLEMENTATION.md with priority label
+
+## ⛔ MERGE AUTHORIZATION (NON-NEGOTIABLE)
+
+**The agent MUST NOT merge a PR unless the user explicitly says to merge.**
+
+Examples of what is NOT sufficient (even if everything is green):
+- "All tests pass" ❌
+- "All review comments resolved" ❌
+- "The reviewer approved" ❌
+- "The PR is ready for review" ❌
+- "I'm reviewing the PR" ❌ (user is still reviewing)
+- Silence / no objection ❌
+
+Examples of explicit authorization:
+- "Pode mergear" ✅
+- "Merge it" ✅
+- "Pronto para merge" ✅
+- "Go ahead and merge" ✅
+- "Aprovação concedida, pode fazer o merge" ✅
+
+**If in doubt, ASK. Never assume.**
 
 ## Workflow Summary
 
@@ -44,7 +66,7 @@ The PR workflow consists of 7 phases. **For the complete step-by-step instructio
 | 4 | Mark PR ready, move card to "In Review" | `pr-workflow` |
 | 5 | Review & iteration (respond to each thread) | `pr-workflow` |
 | 6 | Testing: manual tests + smoke test | `pr-testing` + `manual-test-verification` |
-| 7 | Merge (after authorization) | `pr-workflow` |
+| 7 | Merge (⛔ requires explicit user authorization) | `pr-workflow` |
 
 **Phase 2.6 is NON-NEGOTIABLE.** Without the requirements checkpoint, the agent may implement features that already exist, make wrong assumptions, or cause conflicts. Present the requirements table and get explicit user approval.
 

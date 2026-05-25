@@ -582,10 +582,14 @@ Minimum before each PR:
 - Inform user
 - Wait for reviewer approval → proceed to Phase 6 (testing)
 
-## Phase 7: Merge (AFTER Authorization)
+## Phase 7: Merge (⛔ REQUIRES EXPLICIT USER AUTHORIZATION)
+
+**⛔ NON-NEGOTIABLE: The agent MUST NOT merge unless the user explicitly says to merge.**
+
+All quality gates passing, all reviews resolved, and all tests passing is NOT sufficient authorization. The user must give an explicit "merge it" / "pode mergear" / "pronto para merge" command. If in doubt, ASK. Never assume.
 
 ```bash
-# User authorizes merge
+# ONLY after user explicitly authorizes merge
 gh pr merge PR_NUMBER --merge --delete-branch
 
 # IMPORTANT:
@@ -631,7 +635,7 @@ If the PR addresses a canonical issue that had duplicates:
 1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
 2. **NEVER skip Phase 0** — if a card is `🟡 RESEARCH NEEDED`, research MUST complete before creating a branch
 3. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
-4. **NEVER merge without approval** — PRs must be reviewed
+4. **NEVER merge without explicit user authorization** — "All green" is NOT authorization. The user must say "merge it" / "pode mergear" / "pronto para merge". Ask if unsure.
 5. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
 6. **ALWAYS check for duplicate issues** before creating a branch — use the duplicate check in Phase 1
 7. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies, board cards should all reference the canonical issue (not a duplicate)
