@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Embedding Diagnostics Subcommand (Issue #133)** — `sprach diagnostics embeddings` performs spectral analysis on stored embedding vectors, reporting effective dimensionality (d_eff), mean cosine distance (d̄), regime classification (SPREAD/TIGHT) at thresholds 0.70–0.85, and variance explained distribution. Supports `--source content|chunks|facts` for per-source analysis (default: all sources combined). Pure-Rust power iteration SVD (no new dependencies). Warnings for small corpora (n < 100) and low discriminative power (d_eff/25 < 2).
+
 ## [0.44.0] - 2026-05-25
 
 ### Added

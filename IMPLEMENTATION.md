@@ -2922,7 +2922,7 @@ These criteria extend the original validation with geometry metrics discovered i
 
 | Phase | Issue | Description | Priority | Milestone |
 |-------|-------|-------------|----------|-----------|
-| W4.0 | #133 | `sprach diag embeddings` — diagnose d_eff, magnitude, threshold pass rate | High | M1 |
+| W4.0 | #133 | `sprach diagnostics embeddings` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
 | W4.1 | #134 | Validate fact semantic threshold 0.70 vs 0.80 before changing | High | M1 |
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
 | W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
@@ -2930,6 +2930,127 @@ These criteria extend the original validation with geometry metrics discovered i
 | W4.5 | #136 | Geometry-aware default dimensions formula (d_eff × 4, floor 64) | Medium | M1 |
 | W4.6 | #137 | Geometry-aware RRF weight adjustment based on d_eff | Medium | M1 |
 | W4.7 | #138 | Documentation rewrite — model selection, hybrid search, provider docs | Medium | M1 |
+
+### Embedding Diagnostics Subcommand — #133 [M1/W4.0]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #133
+**Branch:** `feat/embedding-diagnostics`
+**Depends on:** None
+**Estimated effort:** 2-3 days
+
+**Goal:** Add `sprach diagnostics embeddings` subcommand that performs spectral analysis on stored embeddings, reporting d_eff, mean cosine distance (d̄), regime classification, and variance distribution. This is the W4.0 gateway card — foundational infrastructure for all subsequent W4 phases.
+
+**Design Decisions:**
+
+| Decision | Rationale |
+|----------|-----------|
+| Subcommand name `diagnostics` (alias `diag`) | Long form for clarity, short alias for convenience |
+| Default: combine all 3 embedding sources | Matches issue spec; `--source` flag for granular analysis |
+| Pure-Rust power iteration SVD (no new crate) | Avoids ~500KB binary increase + 15 deps; d_eff needs only top ~20 eigenvalues |
+| `zerocopy::FromBytes` for BLOB deserialization | Already in Cargo.toml; consistent with write path using `IntoBytes::as_bytes()` |
+| Output includes source breakdown in header | Even default (combined) mode shows "content: N, chunks: M, facts: K" |
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | New module `src/diagnostics/` + DB read functions + CLI subcommand | 📋 |
+| 2 | Spectral analysis: d_eff, d̄, eigenvalues, regime classification | 📋 |
+| 3 | Terminal display formatting + warnings + tests | 📋 |
+
+**Files to Create:**
+
+| File | Content |
+|------|---------|
+| `src/diagnostics/mod.rs` | Module root, re-exports |
+| `src/diagnostics/embeddings.rs` | Spectral analysis: d_eff, d̄, eigenvalues, regime |
+| `src/diagnostics/display.rs` | Terminal output formatting |
+
+**Files to Modify:**
+
+| File | Change |
+|------|--------|
+| `src/translate/cli.rs` | Add `Diagnostics(DiagArgs)` to `Commands` enum + `DiagArgs` struct |
+| `src/main.rs` | Add `mod diagnostics;`, `Commands::Diagnostics` handler, `handle_diag()` |
+| `src/content/db.rs` | Add `get_all_content_embedding_vectors()`, `get_all_chunk_embedding_vectors()` |
+| `src/facts/db.rs` | Add `get_all_fact_embedding_vectors()` |
+
+**Output Format (default — all sources combined):**
+
+```
+Embedding Diagnostics — nomic-embed-text-v2-moe
+══════════════════════════════════════════
+Vectors: 23 (content: 18, chunks: 2, facts: 3)
+Nominal dimensions: 256
+d_eff (participation ratio): 7.0 (2.74%)
+Mean cosine distance (d̄): 0.353
+Min/max cosine distance: 0.073 / 0.592
+
+Regime Analysis:
+  θ=0.70 → SPREAD (d̄ >= θ' = 0.30)
+  θ=0.75 → SPREAD (d̄ >= θ' = 0.25)
+  θ=0.80 → SPREAD (d̄ >= θ' = 0.20)
+  θ=0.85 → SPREAD (d̄ >= θ' = 0.15)
+
+Variance Explained:
+  50% → PC #3
+  90% → PC #10
+  95% → PC #12
+  99% → PC #15
+
+⚠️  d_eff/25 ≈ 1 — vector search has minimal discriminative power.
+    BM25 is silently compensating. Consider RRF weight adjustment.
+```
+
+**Output Format (`--source content`):**
+
+```
+Embedding Diagnostics — nomic-embed-text-v2-moe [content]
+═════════════════════════════════════════════════
+Vectors: 18
+...
+```
+
+**CLI Syntax:**
+
+```bash
+sprach diagnostics embeddings              # All sources combined
+sprach diagnostics embeddings --source content   # content_embeddings only
+sprach diagnostics embeddings --source chunks    # chunk_embeddings_v2 only
+sprach diagnostics embeddings --source facts    # fact_embeddings only
+sprach diag embeddings                        # Shortcut
+```
+
+**Algorithms (no external dependencies):**
+
+1. **d_eff (Participation Ratio):** `d_eff = (Σλᵢ)² / Σλᵢ²` — covariance matrix trace + power iteration for eigenvalues
+2. **d̄ (Mean Cosine Distance):** Gram matrix `G = X·X^T`, `d̄ = 1 - mean(Gᵢⱼ)` for i≠j
+3. **Regime Classification:** SPREAD if `d̄ ≥ (1 - θ)`, TIGHT otherwise
+4. **Variance Explained:** Cumulative eigenvalue sum / total
+
+**Warnings:**
+
+| Condition | Message |
+|-----------|---------|
+| N < 100 | `⚠ Corpus is small (N=X). d_eff estimates are unreliable (max d_eff from PCA is N-1).` |
+| d_eff/25 < 2 | `⚠ d_eff/25 ≈ N — vector search has minimal discriminative power.` |
+| N = 0 | `No embeddings found in database. Run a chat session first.` |
+
+**New DB methods (BLOB → Vec\<f32\> deserialization):**
+
+```rust
+// src/content/db.rs
+pub fn get_all_content_embedding_vectors(&self) -> Result<Vec<Vec<f32>>>
+pub fn get_all_chunk_embedding_vectors(&self) -> Result<Vec<Vec<f32>>>
+
+// src/facts/db.rs
+pub fn get_all_fact_embedding_vectors(&self) -> Result<Vec<Vec<f32>>>
+```
+
+**Key insight:** The codebase currently NEVER reads embedding vectors back from vec0 tables — only KNN distances are queried. These new methods are the first to perform bulk SELECT + BLOB deserialization.
+
+**Related:** Issue #133
 
 **Deferred to Later Milestones:**
 
