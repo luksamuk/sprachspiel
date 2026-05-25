@@ -63,8 +63,6 @@ rattles = "0.2"
 regex = "1.10"
 # cli-clipboard provides cross-platform clipboard access (X11+Wayland+macOS+Windows)
 # Not available on Android (Termux) — clipboard module uses no-op fallback
-[target.'cfg(not(target_os = "android"))'.dependencies]
-cli-clipboard = "0.4.0"
 # crossterm provides terminal raw mode, events, and input for ratatui TUI
 # bracketed-paste enables Event::Paste for terminal paste support
 crossterm = { version = "0.29", features = ["event-stream", "bracketed-paste"] }
@@ -104,6 +102,10 @@ shell-words = "1.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 # Landlock sandbox for filesystem isolation (Linux kernel 5.13+)
 landlock = { version = "0.4", optional = true }
+
+# Dependencies excluded on Android (Termux) — clipboard uses no-op fallback
+[target.'cfg(not(target_os = "android"))'.dependencies]
+cli-clipboard = "0.4.0"
 
 # Development dependencies
 [dev-dependencies]
