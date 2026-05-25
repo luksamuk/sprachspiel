@@ -72,7 +72,7 @@ fn init_chat_database(
              4. Disk full or I/O error\n\
              \n\
              To diagnose:\n\
-             - Check if the LLM server is running: ollama list\n\
+             - Check if the LLM server is running\n\
              - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
              - Run with -v for more information\n\
              \n\
