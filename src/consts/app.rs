@@ -47,7 +47,8 @@ pub const ERR_LLM_CONNECTION: &str =
 
 /// Error message when the LLM server is not running.
 /// Used in vision/OCR error display where `ollama serve` was previously suggested.
-pub const ERR_LLM_NOT_RUNNING: &str = "LLM server is not running (start it with `ollama serve`)";
+/// Provider-agnostic: does not reference any specific backend command.
+pub const ERR_LLM_NOT_RUNNING: &str = "LLM server is not running (start it and try again)";
 
 /// Error prefix for LLM server errors.
 /// Used as format string prefix: `format!("{ERR_LLM_ERROR}: {details}")`

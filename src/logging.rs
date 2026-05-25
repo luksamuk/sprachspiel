@@ -290,9 +290,7 @@ impl log::Log for StderrLogger {
             return;
         }
         // Suppress TUI internals (crossterm, ratatui)
-        if record.target().starts_with("crossterm")
-            || record.target().starts_with("ratatui")
-        {
+        if record.target().starts_with("crossterm") || record.target().starts_with("ratatui") {
             return;
         }
         let level = Self::colored_level(record.level());
@@ -399,9 +397,7 @@ impl log::Log for FileLogger {
             return;
         }
         // Suppress TUI internals (crossterm, ratatui)
-        if record.target().starts_with("crossterm")
-            || record.target().starts_with("ratatui")
-        {
+        if record.target().starts_with("crossterm") || record.target().starts_with("ratatui") {
             return;
         }
 

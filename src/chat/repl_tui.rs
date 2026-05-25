@@ -71,7 +71,7 @@ pub async fn run_chat_repl_tui(
 
     let theme = super::tui::markdown::MarkdownTheme::from_config(&state.settings.display.skin);
 
-    // Create the TUI view (initializes terminal in raw mode, installs panic hook)
+    // Create the TUI view (see RatatuiView::new() for initialization details)
     let mut view = RatatuiView::new(theme, model_names);
 
     // Wire embedding progress channel to session for per-message progress reporting

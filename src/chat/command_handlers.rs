@@ -897,8 +897,11 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
 ///
 /// Compacts conversation history by summarizing old messages.
 ///
-/// Uses `view.suppress_progress_spinner()` to determine whether indicatif
-/// spinners should be suppressed (TUI mode) or shown (terminal mode).
+/// **Note:** The `_view` parameter is present for signature compatibility with
+/// `dispatch_command()` but is not used by this handler. In the TUI path,
+/// `/compact` is intercepted by the event loop (`spawn_compact_task()`) and
+/// never reaches this function. This handler is only called via the non-TUI
+/// (standalone renderer) path.
 pub async fn handle_compact(
     state: &mut ReplState,
     _view: &mut dyn super::view::ChatView,

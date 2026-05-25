@@ -66,9 +66,10 @@ impl RatatuiView {
     /// Create a new RatatuiView with the given theme and model names.
     ///
     /// Initializes the terminal for TUI mode (raw mode, alternate screen),
-    /// then creates the App state. Also sets up a global callback so that
-    /// tool call output (`debug_tools::log_tool_call`) is routed through the
-    /// chat area instead of corrupting the alternate screen with raw stderr.
+    /// installs a panic hook that restores the terminal on panic, then creates
+    /// the App state. Also sets up a global callback so that tool call output
+    /// (`debug_tools::log_tool_call`) is routed through the chat area instead
+    /// of corrupting the alternate screen with raw stderr.
     /// Call `restore()` when done to clean up the terminal.
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
         // Cannot proceed without terminal — fatal error is appropriate here
