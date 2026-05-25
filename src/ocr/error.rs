@@ -111,6 +111,6 @@ mod tests {
         };
         let msg = format!("{}", err);
         assert!(msg.contains("Connection refused"));
-        assert!(msg.contains("ollama serve"));
+        assert!(msg.contains("LLM server is not running"));
     }
 }

@@ -120,7 +120,7 @@ mod tests {
         };
         let msg = format!("{}", err);
         assert!(msg.contains("Connection refused"));
-        assert!(msg.contains("ollama serve"));
+        assert!(msg.contains("LLM server is not running"));
 
         let err = VisionError::NoVisionCapability {
             model: "llama3.2:3b".to_string(),
