@@ -4782,10 +4782,10 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 |-------|-------------|--------|
 | 4.1 | Remove `TerminalView` (println-based implementation) | ✅ COMPLETED (PR2) |
 | 4.2 | Remove `RustylineInput` and `rustyline` dependency | ✅ COMPLETED (PR2) |
-| 4.3 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | 🔨 PARTIAL — `repl.rs` still has `eprintln!` with ANSI for pre-TUI init errors; `view/mod.rs` ANSI codes serve non-chat pipe-safe output |
+| 4.3 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | ✅ COMPLETED (PR4) — pre-TUI `eprintln!` with ANSI are correct (running before alternate screen). `view/mod.rs` ANSI codes serve non-chat pipe-safe output intentionally. |
 | 4.4 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | ✅ COMPLETED (PR3) |
 | 4.5 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | ✅ COMPLETED (PR3) |
-| 4.6 | Simplify `run_chat_repl()` → direct `App::run()` call | 🔨 PARTIAL — `repl.rs` handles pre-TUI setup then delegates to `repl_tui` |
+| 4.6 | Simplify `run_chat_repl()` → direct `App::run()` call | ✅ COMPLETED (PR4) — `repl.rs` handles pre-TUI setup then delegates to `repl_tui` (necessary — DB/session setup must happen before TUI). |
 | 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
 | 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
 | 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
@@ -4793,7 +4793,7 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | ✅ COMPLETED (PR4) — New `src/chat/compaction.rs` with `CompactionContext` struct + `compact_if_needed()` method. Removed old `auto_compact_if_needed()` from `core.rs`. Updated 7 call sites in `continuation.rs` and `command_handlers.rs`. |
 | 4.12 | Decompose `run_app_loop()` — extract handler methods from event loop | ✅ COMPLETED (PR4) — `repl_tui.rs` reduced from ~1060 to 378 lines. Handler functions extracted to `event_loop.rs` (~821 lines). `EventLoopState` struct NOT used — handlers are free functions with explicit params due to `tokio::select!` borrow constraints. `LoopAction` enum (`Continue`/`Quit`) replaces `Option<()>`. |
 | 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "LLM server" or backend-agnostic phrasing | ✅ COMPLETED (PR4) — 12 user-facing strings replaced. Added `ERR_LLM_CONNECTION`, `ERR_LLM_NOT_RUNNING`, `ERR_LLM_ERROR`, `ERR_LLM_CLIENT_UNAVAILABLE` constants in `src/consts/app.rs`. Config keys `ollama_host`/`ollama_port` NOT renamed (W2 scope). |
-| 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
+| 4.14 | Documentation: CHANGELOG, architecture, roadmap | ✅ COMPLETED (PR4) — Updated IMPLEMENTATION.md (serves as changelog), SMOKE_TEST.md Section 23, PR-PROCESS.md Phase 6, architecture.md. Created manual-test-verification skill. |
 | 4.15 | Stale doc cleanup — remove TerminalView/TUI-migration/rustyline references from docstrings and logging | ✅ COMPLETED (PR4) — 9 edits in 6 files: `ratatui_view.rs` TerminalView→standalone renderer, `input/mod.rs` removed "future migration" framing and stale "IMPORTANT" note, `view/mod.rs` replaced "TUI Migration" with event-flow description, `mod.rs` TUI Migration→TUI Architecture, `search.rs` "future TUI migration"→"independent of rendering", `logging.rs` removed dead `rustyline` filter. Zero logic changes. |
 | 4.16 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
