@@ -57,7 +57,7 @@ Some tests require the LLM to call tools (sections 4.1, 4.2, 5, 6, 6.5.5, 10, 10
 
 - [ ] Binary runs: `./target/release/sprach --help`
 - [ ] Version visible: `./target/release/sprach --version`
-- [ ] Subcommands listed (chat, query, translate)
+- [ ] Subcommands listed (chat, query, translate, diagnostics)
 
 ---
 
@@ -1484,6 +1484,63 @@ Every `#[allow(dead_code)]` MUST have a `//` comment on the same line explaining
 
 ---
 
+## 25. Embedding Diagnostics (Issue #133)
+
+**Objective:** Verify the `sprach diagnostics` subcommand works and reports embedding geometry.
+
+```bash
+./target/release/sprach diagnostics
+```
+
+- [ ] Report header displays "Embedding Diagnostics Report"
+- [ ] Model name shows "nomic-embed-text-v2-moe:latest"
+- [ ] Nominal dimensions: 256
+- [ ] Vector counts shown per source (content, chunks, facts)
+- [ ] d_eff (participation ratio) is a positive number
+- [ ] Pairwise cosine distance: Mean, Min, Max all numeric
+- [ ] Regime classification at 4 thresholds (0.70, 0.75, 0.80, 0.85)
+- [ ] Variance explained: PC numbers for 50%, 90%, 95%, 99%
+- [ ] No NaN or infinity values
+
+### 25.1 Source Filter
+
+```bash
+./target/release/sprach diagnostics --source content
+```
+
+- [ ] Only "content" source shown in vector counts
+- [ ] No chunks or facts counts
+
+### 25.2 Alias
+
+```bash
+./target/release/sprach diag
+```
+
+- [ ] Same output as `sprach diagnostics`
+
+### 25.3 Empty Database
+
+```bash
+rm -f /tmp/test_diag_empty.db
+./target/release/sprach diagnostics --db /tmp/test_diag_empty.db
+```
+
+- [ ] No panic or crash
+- [ ] Shows "No embedding vectors found" warning
+- [ ] All source counts are 0
+
+### 25.4 Invalid Source
+
+```bash
+./target/release/sprach diagnostics --source invalid_source
+```
+
+- [ ] Error message (not panic)
+- [ ] Mentions valid values (content, chunks, facts)
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -1557,6 +1614,7 @@ The script above runs automated tests. The following tests must be run manually:
 14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
+17. **Section 25**: Embedding Diagnostics (read-only subcommand, no LLM needed)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
 18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
 19. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
