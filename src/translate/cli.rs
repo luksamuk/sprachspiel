@@ -6,6 +6,7 @@
 use clap::{Args, Subcommand};
 
 use crate::chat::ChatArgs;
+use crate::diagnostics::embeddings::EmbeddingSource;
 use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 use crate::vision::VisionArgs;
@@ -36,6 +37,10 @@ pub enum Commands {
     /// Analyze and describe images using vision models
     #[command(visible_alias = "v")]
     Vision(VisionArgs),
+
+    /// Diagnose embedding geometry and retrieval health
+    #[command(visible_alias = "diag")]
+    Diagnostics(DiagArgs),
 
     /// Generate shell completions
     #[command(about = "Generate shell completions for sprach")]
@@ -112,6 +117,42 @@ pub struct QueryArgs {
     /// The query to send to the model (optional, reads from stdin if not provided)
     #[arg(value_name = "QUERY")]
     pub query: Option<String>,
+}
+
+/// Arguments for the diagnostics subcommand
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Diagnose embedding geometry and retrieval health",
+    long_about = r#"
+Analyze stored embedding vectors to assess retrieval quality.
+
+Computes spectral metrics (d_eff, d̄, regime classification, variance
+distribution) on all embedding vectors in the database. Reports whether
+the embedding geometry supports effective vector search at standard
+similarity thresholds.
+
+By default, combines vectors from all sources (content, chunks, facts).
+Use --source to analyze a specific source only.
+
+EXAMPLES:
+  sprach diagnostics
+  sprach diag --source facts
+  sprach diag --source content --db /path/to/sprachspiel.db
+"#
+)]
+pub struct DiagArgs {
+    /// Which embedding source to analyze
+    ///
+    /// If not specified, combines all sources (content, chunks, facts).
+    #[arg(long, value_name = "SOURCE")]
+    pub source: Option<EmbeddingSource>,
+}
+
+impl DiagArgs {
+    /// Get the source filter, or None for all sources
+    pub fn source_filter(&self) -> Option<EmbeddingSource> {
+        self.source
+    }
 }
 
 impl TranslateArgs {

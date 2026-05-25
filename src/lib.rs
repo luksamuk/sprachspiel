@@ -21,6 +21,7 @@ pub mod context;
 pub mod context_overflow;
 pub mod db;
 pub mod debug_tools;
+pub mod diagnostics;
 pub mod embeddings;
 pub mod external;
 pub mod facts;

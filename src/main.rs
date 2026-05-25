@@ -16,6 +16,7 @@ mod context;
 mod context_overflow;
 mod db;
 mod debug_tools;
+mod diagnostics;
 mod embeddings;
 pub mod external;
 mod facts;
@@ -54,8 +55,8 @@ use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
-    Commands, CompletionArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs, TranslationStyle,
-    build_translation_prompt, parse_language_pair,
+    Commands, CompletionArgs, DiagArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs,
+    TranslationStyle, build_translation_prompt, parse_language_pair,
 };
 use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
@@ -183,6 +184,9 @@ async fn main() -> AppResult<()> {
             }
             Commands::Chat(args) => return handle_chat(args.clone(), &cli, &settings).await,
             Commands::Vision(args) => return handle_vision(args.clone(), &cli, &settings).await,
+            Commands::Diagnostics(args) => {
+                return handle_diag(args.clone(), &cli, &settings);
+            }
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
         }
     }
@@ -778,6 +782,75 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
             std::process::exit(1);
         }
     }
+}
+
+fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()> {
+    use crate::db::Database;
+    use crate::diagnostics::display::display_diagnostics;
+    use crate::diagnostics::embeddings::{EmbeddingSource, analyze_embeddings, vectors_f32_to_f64};
+    use crate::embeddings::DEFAULT_EMBEDDING_MODEL;
+    use crate::embeddings::TRUNCATED_DIMENSIONS;
+
+    let db_path: Option<std::path::PathBuf> = cli.db.as_ref().map(std::path::PathBuf::from);
+    let db = match db_path {
+        Some(ref path) => Database::with_path(path),
+        None => Database::new(),
+    };
+
+    let db = match db {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("Error opening database: {}", e);
+            log::error!("Failed to open database for diagnostics: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let source_filter = args.source_filter();
+
+    // Collect embedding vectors from requested sources
+    let mut all_vectors: Vec<Vec<f32>> = Vec::new();
+    let mut source_counts: Vec<(EmbeddingSource, usize)> = Vec::new();
+
+    macro_rules! collect_source {
+        ($source:expr, $get_fn:ident) => {
+            if source_filter.is_none() || source_filter == Some($source) {
+                match db.$get_fn() {
+                    Ok(vectors) => {
+                        let count = vectors.len();
+                        if count > 0 {
+                            all_vectors.extend(vectors.into_iter().map(|(_id, emb)| emb));
+                        }
+                        source_counts.push(($source, count));
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to read {} embeddings: {}", $source, e);
+                        log::warn!("Failed to read {} embeddings: {}", $source, e);
+                        source_counts.push(($source, 0));
+                    }
+                }
+            }
+        };
+    }
+
+    collect_source!(EmbeddingSource::Content, get_all_content_embedding_vectors);
+    collect_source!(EmbeddingSource::Chunks, get_all_chunk_embedding_vectors);
+    collect_source!(EmbeddingSource::Facts, get_all_fact_embedding_vectors);
+
+    // Convert to f64 for numerical stability in SVD
+    let vectors_f64 = vectors_f32_to_f64(&all_vectors);
+
+    // Run spectral analysis
+    let diagnostics = analyze_embeddings(
+        &vectors_f64,
+        TRUNCATED_DIMENSIONS,
+        DEFAULT_EMBEDDING_MODEL,
+        source_counts,
+    );
+
+    display_diagnostics(&diagnostics);
+
+    Ok(())
 }
 
 #[cfg(test)]

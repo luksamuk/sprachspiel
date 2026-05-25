@@ -12,6 +12,16 @@ use super::types::{Category, Fact, Scope, Source};
 use crate::db::Database;
 use crate::db::WhereBuilder;
 
+/// Deserialize a BLOB (raw f32 bytes) into a Vec<f32>
+///
+/// sqlite-vec stores FLOAT vectors as raw little-endian f32 bytes.
+/// Each f32 is 4 bytes, so the blob length must be a multiple of 4.
+fn blob_to_f32_vec(blob: &[u8]) -> Vec<f32> {
+    blob.chunks_exact(4)
+        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
 /// Escape a string for FTS5 MATCH queries.
 fn fts5_escape(query: &str) -> String {
     let escaped = query.replace('"', "\"\"");
@@ -501,6 +511,26 @@ impl Database {
                 let id: i64 = row.get(0)?;
                 let content: String = row.get(1)?;
                 Ok((id, content))
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Get all fact embedding vectors from the vec0 table
+    ///
+    /// Returns (fact_id, embedding) pairs for all facts that have
+    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// deserialized into Vec<f32>.
+    pub fn get_all_fact_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT fact_id, embedding FROM fact_embeddings")?;
+
+            let rows = stmt.query_map([], |row| {
+                let fact_id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                let embedding = blob_to_f32_vec(&blob);
+                Ok((fact_id, embedding))
             })?;
 
             rows.collect::<Result<Vec<_>, _>>()

@@ -3,6 +3,16 @@
 //! Provides CRUD operations and search for content_items table.
 
 #![expect(clippy::print_stderr)] // Database content output
+
+/// Deserialize a BLOB (raw f32 bytes) into a Vec<f32>
+///
+/// sqlite-vec stores FLOAT vectors as raw little-endian f32 bytes.
+/// Each f32 is 4 bytes, so the blob length must be a multiple of 4.
+fn blob_to_f32_vec(blob: &[u8]) -> Vec<f32> {
+    blob.chunks_exact(4)
+        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
 use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::collections::HashMap;
@@ -591,6 +601,46 @@ impl Database {
             )?;
 
             Ok(())
+        })
+    }
+
+    /// Get all content embedding vectors from the vec0 table
+    ///
+    /// Returns (item_id, embedding) pairs for all content items that have
+    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// deserialized into Vec<f32>.
+    pub fn get_all_content_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT item_id, embedding FROM content_embeddings")?;
+
+            let rows = stmt.query_map([], |row| {
+                let item_id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                let embedding = blob_to_f32_vec(&blob);
+                Ok((item_id, embedding))
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Get all chunk embedding vectors from the vec0 table
+    ///
+    /// Returns (chunk_id, embedding) pairs for all content chunks that have
+    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// deserialized into Vec<f32>.
+    pub fn get_all_chunk_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT chunk_id, embedding FROM chunk_embeddings_v2")?;
+
+            let rows = stmt.query_map([], |row| {
+                let chunk_id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                let embedding = blob_to_f32_vec(&blob);
+                Ok((chunk_id, embedding))
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>()
         })
     }
 
