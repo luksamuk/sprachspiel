@@ -3639,6 +3639,38 @@ Updated instructions that guide the LLM to use batch patterns: convert all visua
 
 **Note:** P6.5 and P1 #105 describe the same feature. Use #105 as the canonical issue. See P1 section for full implementation details.
 
+#### Sub-item: `--skin` CLI Override for Chat
+
+Add `--skin` CLI flag to `sprach chat` that overrides `[display] skin` from config.toml for the current session only.
+
+**Priority:** CLI `--skin` > config.toml `[display] skin` > default `"dark"`
+
+**Scope:** ChatArgs-only (not global `Cli`). No effect on query, translate, summarize, vision, or ocr.
+
+**Estimated effort:** 0.5 day
+
+**Behavior:**
+- `sprach chat --skin light` → Uses light theme (Catppuccin Latte) for this session
+- `sprach chat --skin mono` → Uses monochrome theme (no colors)
+- `sprach chat --skin dark` → Explicitly uses dark theme (same as default)
+- `sprach chat` → Uses whatever `[display] skin` is in config.toml, or `"dark"` default
+- Invalid skin value → Warning to stderr, falls back to `"dark"`
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `VALID_SKINS` constant + `resolve_skin()` in `src/settings.rs` | 📋 |
+| 2 | Add `pub skin: Option<String>` to `ChatArgs` in `src/chat/cli.rs` | 📋 |
+| 3 | Add `resolved_skin: String` to `ReplState` + builder in `src/chat/repl_state.rs` | 📋 |
+| 4 | Resolve skin in `run_chat_repl()` (CLI > config > default) in `src/chat/repl.rs` | 📋 |
+| 5 | Use `state.resolved_skin` instead of `state.settings.display.skin` in `src/chat/repl_tui.rs` | 📋 |
+| 6 | Update documentation (`configuration.md`, `commands/chat.md`) | 📋 |
+
+**Files to Modify:** `src/settings.rs`, `src/chat/cli.rs`, `src/chat/repl_state.rs`, `src/chat/repl.rs`, `src/chat/repl_tui.rs`, `doc/src/configuration.md`, `doc/src/commands/chat.md`
+
+**Files NOT Modified:** `src/main.rs` (not a global flag), `src/chat/tui/markdown.rs` (already accepts `&str`), non-chat subcommand CLIs
+
 ---
 
 ### Fact Embeddings & Semantic Dedup — #108 (CLOSED)
