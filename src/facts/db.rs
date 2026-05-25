@@ -11,16 +11,7 @@ use super::decay::should_prune;
 use super::types::{Category, Fact, Scope, Source};
 use crate::db::Database;
 use crate::db::WhereBuilder;
-
-/// Deserialize a BLOB (raw f32 bytes) into a Vec<f32>
-///
-/// sqlite-vec stores FLOAT vectors as raw little-endian f32 bytes.
-/// Each f32 is 4 bytes, so the blob length must be a multiple of 4.
-fn blob_to_f32_vec(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(4)
-        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
-}
+use crate::db::blob_to_f32_vec;
 
 /// Escape a string for FTS5 MATCH queries.
 fn fts5_escape(query: &str) -> String {

@@ -3,16 +3,6 @@
 //! Provides CRUD operations and search for content_items table.
 
 #![expect(clippy::print_stderr)] // Database content output
-
-/// Deserialize a BLOB (raw f32 bytes) into a Vec<f32>
-///
-/// sqlite-vec stores FLOAT vectors as raw little-endian f32 bytes.
-/// Each f32 is 4 bytes, so the blob length must be a multiple of 4.
-fn blob_to_f32_vec(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(4)
-        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
-}
 use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::collections::HashMap;
@@ -27,6 +17,7 @@ use super::types::{
 use crate::consts::roles::ROLE_USER;
 use crate::db::Database;
 use crate::db::WhereBuilder;
+use crate::db::blob_to_f32_vec;
 use crate::db::fts5_escape;
 
 // === SQL Constants ===

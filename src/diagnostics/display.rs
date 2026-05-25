@@ -131,4 +131,14 @@ pub fn display_diagnostics(diag: &EmbeddingDiagnostics) {
         );
         println!();
     }
+
+    // Large corpus scalability note
+    if diag.vector_count > 5000 {
+        println!(
+            "  ℹ Large corpus ({} vectors). Pairwise analysis is O(n²),",
+            diag.vector_count
+        );
+        println!("    results may take several seconds.");
+        println!();
+    }
 }

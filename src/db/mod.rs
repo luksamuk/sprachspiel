@@ -2,6 +2,7 @@
 //!
 //! Provides SQLite storage with sqlite-vec extension for vector embeddings.
 
+mod blob;
 mod connection;
 mod init;
 mod operations;
@@ -11,6 +12,7 @@ pub mod schema;
 pub mod content_decay_ops;
 pub mod feedback_ops;
 
+pub use blob::blob_to_f32_vec;
 pub use connection::Database;
 pub use init::init_database_core;
 pub use operations::{ConversationMetadataParams, SourceType, TodoRow, fts5_escape};
