@@ -89,7 +89,7 @@ pub async fn spawn_ocr_agent(
     let ollama = match get_ollama() {
         Some(o) => o,
         None => {
-            let err = "Error: Ollama client not available in tool context.".to_string();
+            let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
             log_tool_result("spawn_ocr_agent", &err);
             return Ok(err);
         }
@@ -208,7 +208,7 @@ pub async fn spawn_vision_agent(
     let ollama = match get_ollama() {
         Some(o) => o,
         None => {
-            let err = "Error: Ollama client not available in tool context.".to_string();
+            let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
             log_tool_result("spawn_vision_agent", &err);
             return Ok(err);
         }
@@ -285,7 +285,7 @@ pub async fn spawn_translate_agent(
     let ollama = match get_ollama() {
         Some(o) => o,
         None => {
-            let err = "Error: Ollama client not available in tool context.".to_string();
+            let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
             log_tool_result("spawn_translate_agent", &err);
             return Ok(err);
         }
@@ -362,7 +362,7 @@ pub async fn spawn_summarize_agent(
     let ollama = match get_ollama() {
         Some(o) => o,
         None => {
-            let err = "Error: Ollama client not available in tool context.".to_string();
+            let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
             log_tool_result("spawn_summarize_agent", &err);
             return Ok(err);
         }

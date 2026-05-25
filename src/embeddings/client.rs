@@ -1,11 +1,11 @@
-//! Embedding client for Ollama API
+//! Embedding client for the LLM server API
 //!
 //! Generates embeddings using nomic-embed-text-v2-moe model.
 //!
 //! # Concurrency
 //!
 //! All embedding requests are serialized through an internal semaphore
-//! (max concurrency = 1). This prevents overwhelming the Ollama server
+//! (max concurrency = 1). This prevents overwhelming the LLM server
 //! when multiple embedding requests arrive simultaneously (e.g., fact
 //! insertion + message embedding + document indexing). Without serialization,
 //! concurrent requests can cause timeouts, model loading conflicts, or

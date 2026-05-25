@@ -101,7 +101,7 @@ pub async fn recover_missing_fact_embeddings(
     {
         log::warn!(
             "Fact embedding recovery incomplete: {} fact(s) still without embeddings. \
-             This may indicate Ollama was unavailable during startup.",
+             This may indicate the embedding service was unavailable during startup.",
             remaining.len()
         );
     }

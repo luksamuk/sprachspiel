@@ -1,6 +1,6 @@
 //! Chat module - Interactive multi-line chat mode
 //!
-//! This module provides an interactive REPL for conversing with Ollama models,
+//! This module provides an interactive REPL for conversing with LLM models,
 //! with persistent session storage per project.
 //!
 //! # Architecture
@@ -8,13 +8,14 @@
 //! ```text
 //! Layer 0: input.rs (trait), view.rs (trait) - NO dependencies
 //! Layer 1: session.rs, cli.rs
-//! Layer 2: input/crossterm_input.rs, view/terminal.rs, view/ratatui_view.rs
+//! Layer 2: input/crossterm_input.rs, view/ratatui_view.rs
 //! Layer 3: repl_state.rs
-//! Layer 4: core.rs, command_handlers.rs
-//! Layer 5: repl.rs (coordinator)
+//! Layer 4: core.rs, command_handlers.rs, compaction.rs
+//! Layer 5: continuation.rs
+//! Layer 6: repl.rs (coordinator)
 //! ```
 //!
-//! # TUI Migration (W6-PR2, Issue #146)
+//! # TUI Architecture (W6-PR2, Issue #146)
 //!
 //! The chat REPL now runs via ratatui + crossterm for responsive rendering
 //! at any terminal width. `RustylineInput` has been removed because rustyline
@@ -30,11 +31,13 @@ pub mod cli;
 pub mod command_handlers;
 pub mod command_output;
 pub mod commands;
+pub mod compaction;
 pub mod completer;
 pub mod continuation;
 pub mod coordinator;
 pub mod core;
 pub mod custom_coordinator;
+pub mod event_loop;
 pub mod input;
 pub mod llm_event;
 pub mod model_switch;

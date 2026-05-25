@@ -78,8 +78,8 @@ pub use crate::chat::core::TokenMetrics;
 // are sent through an `mpsc` channel and drained into the view after the
 // coordinator call completes.
 //
-// TUI Migration: `RatatuiView` will consume the same `ViewEvent` stream
-// and update widgets incrementally via `drain_into_tui()`.
+// Event flow: ViewEvent messages are sent via mpsc channel and processed
+// by the event loop, which applies them to RatatuiView via ViewAction.
 
 /// Visual events emitted by the coordinator callback during tool execution.
 ///
@@ -87,8 +87,8 @@ pub use crate::chat::core::TokenMetrics;
 /// which has access to `ChatView`. This avoids requiring the callback
 /// closure to hold a mutable reference to the view.
 ///
-/// Design for TUI: The future `RatatuiView` will consume these same events
-/// via channel, updating widgets incrementally.
+/// These events are consumed by the event loop and applied to RatatuiView
+/// via `apply_view_action()`.
 #[derive(Debug)]
 pub enum ViewEvent {
     /// Pre-tool content (text + thinking generated before tool calls)

@@ -54,7 +54,7 @@ impl fmt::Display for VisionError {
                 writeln!(f, "Error: {}", message)?;
                 writeln!(f)?;
                 writeln!(f, "Common causes:")?;
-                writeln!(f, "  1. Ollama daemon is not running (run: ollama serve)")?;
+                writeln!(f, "  1. {}", crate::consts::app::ERR_LLM_NOT_RUNNING)?;
                 writeln!(
                     f,
                     "  2. Vision model not downloaded (run: ollama pull qwen3.5:4b)"
@@ -120,7 +120,7 @@ mod tests {
         };
         let msg = format!("{}", err);
         assert!(msg.contains("Connection refused"));
-        assert!(msg.contains("ollama serve"));
+        assert!(msg.contains("LLM server is not running"));
 
         let err = VisionError::NoVisionCapability {
             model: "llama3.2:3b".to_string(),

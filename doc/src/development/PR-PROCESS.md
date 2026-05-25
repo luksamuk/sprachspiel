@@ -43,7 +43,7 @@ The PR workflow consists of 7 phases. **For the complete step-by-step instructio
 | 3 | Implementation: code, tests, linters, commit, push | `pr-workflow` |
 | 4 | Mark PR ready, move card to "In Review" | `pr-workflow` |
 | 5 | Review & iteration (respond to each thread) | `pr-workflow` |
-| 6 | Testing: manual tests + smoke test | `pr-testing` |
+| 6 | Testing: manual tests + smoke test | `pr-testing` + `manual-test-verification` |
 | 7 | Merge (after authorization) | `pr-workflow` |
 
 **Phase 2.6 is NON-NEGOTIABLE.** Without the requirements checkpoint, the agent may implement features that already exist, make wrong assumptions, or cause conflicts. Present the requirements table and get explicit user approval.
@@ -55,11 +55,11 @@ The PR workflow consists of 7 phases. **For the complete step-by-step instructio
 - **Smoke tests** (Phase 6.4) are generalized, versioned in `SMOKE_TEST.md`, ensure minimum guarantees
 
 **Who does what:**
-- **Primary agent (OpenCode):** Creates manual test script, reviews SMOKE_TEST.md, processes results
+- **Primary agent (OpenCode):** Creates manual test script, verifies it against source code (see `manual-test-verification` skill), reviews SMOKE_TEST.md, processes results
 - **Hermes Agent:** Executes both manual tests and smoke tests, reports results
 - **User:** Approves test scripts, requests smoke tests, reviews results
 
-**Load the `pr-testing` skill for complete instructions.**
+**Load the `pr-testing` skill for complete instructions.** After drafting the manual test script, load `manual-test-verification` to validate all commands, UI strings, and feature references against the source code.
 
 ## Quality Gates
 

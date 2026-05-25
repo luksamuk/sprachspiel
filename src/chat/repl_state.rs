@@ -165,7 +165,7 @@ impl ReplStateBuilder {
         let session = self.session.ok_or("session is required")?;
         let model_config = self.model_config.ok_or("model_config is required")?;
         let capabilities = self.capabilities.ok_or("capabilities is required")?;
-        let ollama = self.ollama.ok_or("ollama client is required")?;
+        let ollama = self.ollama.ok_or("LLM client is required")?;
         let settings = self.settings.ok_or("settings is required")?;
 
         let current_model_name = session.model.clone();

@@ -38,7 +38,9 @@ impl std::fmt::Display for TranslationError {
             TranslationError::ModelNotFound(m) => {
                 write!(f, "Model '{}' not found in configuration", m)
             }
-            TranslationError::OllamaError(e) => write!(f, "Ollama error: {}", e),
+            TranslationError::OllamaError(e) => {
+                write!(f, "{}: {}", crate::consts::app::ERR_LLM_ERROR, e)
+            }
             TranslationError::StdinError(e) => write!(f, "Failed to read from stdin: {}", e),
         }
     }

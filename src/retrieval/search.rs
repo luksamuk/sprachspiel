@@ -7,7 +7,7 @@
 //!
 //! `run_search()` returns a `SearchOutcome` enum instead of printing directly.
 //! Callers (like `handle_search()`) convert the outcome to `CommandOutput`
-//! for rendering via `ChatView`. This separation enables future TUI migration.
+//! for rendering via `ChatView`. This separation keeps search logic independent of rendering.
 
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
@@ -51,7 +51,7 @@ impl From<ContentSearchResult> for FormattedResult {
 /// Outcome of a search operation.
 ///
 /// Returns data instead of printing, enabling callers to render
-/// via `ChatView` (terminal) or future `RatatuiView` (TUI).
+/// via `RatatuiView` (TUI chat) or the standalone renderer (non-chat subcommands).
 pub enum SearchOutcome {
     /// Search completed successfully with results (may be empty)
     Results(Vec<FormattedResult>),

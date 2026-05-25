@@ -299,7 +299,7 @@ Planned Storage Path:
 4. **`[t3] enabled = false` feature flag** — Default off; controls whether T3 pipeline processes traces. Thinking content is always preserved regardless of this flag.
 5. **Joint migration v12→v13 with #136** — Single schema migration for both thinking columns and geometry-aware dimensions.
 
-**Reference:** Full technical report in `~/thinking-traces-study/RELATORIO-TECNICO.md`
+**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
 ### 6. Chat Mode
 

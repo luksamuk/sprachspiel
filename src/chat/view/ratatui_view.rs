@@ -66,9 +66,10 @@ impl RatatuiView {
     /// Create a new RatatuiView with the given theme and model names.
     ///
     /// Initializes the terminal for TUI mode (raw mode, alternate screen),
-    /// then creates the App state. Also sets up a global callback so that
-    /// tool call output (`debug_tools::log_tool_call`) is routed through the
-    /// chat area instead of corrupting the alternate screen with raw stderr.
+    /// installs a panic hook that restores the terminal on panic, then creates
+    /// the App state. Also sets up a global callback so that tool call output
+    /// (`debug_tools::log_tool_call`) is routed through the chat area instead
+    /// of corrupting the alternate screen with raw stderr.
     /// Call `restore()` when done to clean up the terminal.
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
         // Cannot proceed without terminal — fatal error is appropriate here
@@ -378,7 +379,7 @@ impl RatatuiView {
     /// Any ANSI escape codes would appear as garbled text. This method strips
     /// ANSI codes before creating the `ChatMessage::system()`, ensuring clean
     /// rendering in the TUI while allowing the same code paths that produce
-    /// ANSI-colored output for `TerminalView`.
+    /// ANSI-colored output by the standalone renderer (non-chat subcommands).
     fn add_system_message(&mut self, text: &str) {
         let clean = strip_ansi_codes(text);
         self.app.add_message(ChatMessage::system(clean));

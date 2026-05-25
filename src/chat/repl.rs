@@ -66,13 +66,13 @@ fn init_chat_database(
              Storage path: {}\n\
              \n\
              Possible causes:\n\
-             1. sqlite-vec extension not loaded (check Ollama installation)\n\
+             1. sqlite-vec extension not loaded (check your installation)\n\
              2. Permission denied for storage directory\n\
              3. Corrupted database file (try deleting and restarting)\n\
              4. Disk full or I/O error\n\
              \n\
              To diagnose:\n\
-             - Check if Ollama is running: ollama list\n\
+             - Check if the LLM server is running\n\
              - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
              - Run with -v for more information\n\
              \n\

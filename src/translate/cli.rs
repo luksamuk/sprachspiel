@@ -95,9 +95,9 @@ pub struct TranslateArgs {
 /// Arguments for the query subcommand (original CLI behavior)
 #[derive(Args, Debug, Clone)]
 #[command(
-    about = "Query an Ollama LLM model",
+    about = "Query an LLM model",
     long_about = r#"
-Send a query to an Ollama LLM model.
+Send a query to an LLM model.
 
 EXAMPLES:
   ask query "What is Rust?"

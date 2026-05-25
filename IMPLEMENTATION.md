@@ -338,7 +338,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. T3 transforms live in a separate `thinking_traces` table (Phase 1).
 3. **`strip_thinking_tags()` remains for display:** The function is still used by views and query mode to strip thinking from displayed content. Only the storage path changes.
 
-**Reference:** Full technical report in `~/thinking-traces-study/RELATORIO-TECNICO.md`
+**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
 ---
 
@@ -2905,7 +2905,7 @@ These criteria extend the original validation with geometry metrics discovered i
 
 **Background:** An embedding geometry audit revealed that the current nomic-embed-text-v2-moe model produces embeddings with **d_eff=7** (effective dimensionality out of 256 truncated dimensions) and **d̄=0.353** (mean cosine similarity across all directions). The audit identified that the SPREAD system (θ∈{0°, 30°, 60°, 90°}) operates at near-random similarity levels for θ≥60°, and BM25 silently compensates for poor vector discrimination via the hardcoded 0.4/0.6 RRF weights.
 
-**Audit Reference:** `~/embedding-geometry-audit/EMBEDDING-GEOMETRY-AUDIT.md`
+**Audit Reference:** Internal embedding geometry audit (see `doc/src/development/embedding-research.md` for findings)
 
 **Key Findings:**
 
@@ -3447,7 +3447,7 @@ Updated instructions that guide the LLM to use batch patterns: convert all visua
 - ❌ `TempDir` auto-cleanup (LLM instructed to use /tmp, already sandboxed)
 - ❌ Change to document concept (remains "curated mini article")
 
-**Reference:** Hermes research doc (`~/sprachspiel-batch-document-processing.md`), Issue #9 (Document Import Tool, COMPLETED), SF5 (Agent Spawning Tools, COMPLETED)
+**Reference:** Hermes Agent research (internal analysis), Issue #9 (Document Import Tool, COMPLETED), SF5 (Agent Spawning Tools, COMPLETED)
 
 **Related:** Issue #132
 
@@ -4768,7 +4768,11 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 ---
 
-#### PR 4: Final Cleanup — Remove TerminalView + ANSI Artifacts (~4-5 days) — #148
+#### PR 4: Final Transition — Remove Rustyline, Make Ratatui Default (~4-5 days) — #148
+
+**Status:** 🔄 IN PROGRESS
+**Branch:** `refactor/w6-pr4-final-transition`
+**Depends on:** W6-PR3 (#147) — merged ✅
 
 **Goal:** Remove TerminalView, hardcoded ANSI escapes, CHAT_TERMINAL_WIDTH = 80, and rustyline-related code. Ratatui is the only chat rendering mode.
 
@@ -4785,12 +4789,13 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
 | 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
 | 4.9 | Remove YAGNI dead code — full sweep (Hefesto PR3 review) | ✅ COMPLETED (PR3) — removed 21+ items: dead getters from `App`, `CompletionMenuState::len()/is_empty()`, `content_contains_table()`, `CompletionResult::Multiple { cycle_index }`, `set_model_names()`, `handle_user_message()` non-streaming path, `get_status_bar_info()`, `ChatEvent::ToolCall/ToolResult` variants, `CustomCoordinator` builder methods (`format/keep_alive/tool_count`), `SubagentType` methods gated behind `#[cfg(test)]`; added `log::error!/warn!` companions for all `eprintln!` in production code |
-| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | 📋 NOT STARTED |
-| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
-| 4.12 | Decompose `run_app_loop()` — introduce `EventLoopState` struct + extract `handle_crossterm_event()`, `handle_llm_event()`, `handle_key_line()` from `tokio::select!` branches (reduce ~629-line function to ~200 lines) | 📋 NOT STARTED |
-| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "embedding service" or backend-agnostic phrasing | 📋 NOT STARTED |
+| 4.10 | Update `src/spinner.rs` — chat mode uses ratatui widget exclusively | ✅ COMPLETED (PR4) — Updated doc comment (backend-agnostic), gated `SpinnerGuard` and `create_custom_spinner` behind `#[cfg(test)]` (test-only code) |
+| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | ✅ COMPLETED (PR4) — New `src/chat/compaction.rs` with `CompactionContext` struct + `compact_if_needed()` method. Removed old `auto_compact_if_needed()` from `core.rs`. Updated 7 call sites in `continuation.rs` and `command_handlers.rs`. |
+| 4.12 | Decompose `run_app_loop()` — extract handler methods from event loop | ✅ COMPLETED (PR4) — `repl_tui.rs` reduced from ~1060 to 378 lines. Handler functions extracted to `event_loop.rs` (~821 lines). `EventLoopState` struct NOT used — handlers are free functions with explicit params due to `tokio::select!` borrow constraints. `LoopAction` enum (`Continue`/`Quit`) replaces `Option<()>`. |
+| 4.13 | Provider-agnostic strings audit — remove remaining "Ollama" references, replace with "LLM server" or backend-agnostic phrasing | ✅ COMPLETED (PR4) — 12 user-facing strings replaced. Added `ERR_LLM_CONNECTION`, `ERR_LLM_NOT_RUNNING`, `ERR_LLM_ERROR`, `ERR_LLM_CLIENT_UNAVAILABLE` constants in `src/consts/app.rs`. Config keys `ollama_host`/`ollama_port` NOT renamed (W2 scope). |
 | 4.14 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
-| 4.15 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
+| 4.15 | Stale doc cleanup — remove TerminalView/TUI-migration/rustyline references from docstrings and logging | ✅ COMPLETED (PR4) — 9 edits in 6 files: `ratatui_view.rs` TerminalView→standalone renderer, `input/mod.rs` removed "future migration" framing and stale "IMPORTANT" note, `view/mod.rs` replaced "TUI Migration" with event-flow description, `mod.rs` TUI Migration→TUI Architecture, `search.rs` "future TUI migration"→"independent of rendering", `logging.rs` removed dead `rustyline` filter. Zero logic changes. |
+| 4.16 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
 - `rustyline = "14"` — removed in PR2
@@ -4814,18 +4819,113 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 | # | Issue | Severity | Source | Fix |
 |---|-------|----------|--------|-----|
-| 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
+| 6 | 🧠 indicator stays in status bar when `/think` toggles off | ✅ **FIXED** | Test #2 | `update_status_model()` after `/think` command already in event loop (commit 7bc4511) |
 | 12 | `/togglestyle` alias should not exist | ✅ **FIXED** | Test #23/#36 | Removed `"togglestyle"` alias from `commands.rs` in PR3 YAGNI sweep |
 | 5 | `/think on` toggles instead of explicitly enabling | ✅ **FIXED** | Test #2 | `ChatCommand::Think { enabled: Option<bool> }` parser now supports `/think on`/`/think off` explicitly |
 | 7 | `/compact` freezes TUI — no async progress | ✅ **FIXED** | Test #31 | `spawn_compact_task()` runs compaction in background tokio task; `LlmState::Compacting` state; Ctrl+C ignored during compaction |
 | 8 | `/compact` output not streamed | ✅ **FIXED** | Test #31 | `LlmEvent::CompactStreamToken/Done` events stream summary tokens in real time |
 | 9 | `/compact` output appears truncated/sparse | ✅ **FIXED** | Test #31 | `MAX_SUMMARY_TOKENS` removed; `COMPACTION_PROMPT` rewritten to preserve ALL context |
-| 13 | Embedding hang on exit (several seconds, no visual cue) | 🟡 Low | Test #1 | Show "Saving embeddings..." message or async flush |
+| 13 | Embedding hang on exit (several seconds, no visual cue) | ✅ **FIXED** | Test #1 | Added `view.show_system("Saving embeddings...")` before `/quit` and Ctrl+D flush paths |
 | 14 | Home/End keys don't work in Kitty terminal | 🟡 Low | Test #3 | Add Kitty key mappings (`^[OH`/`^[OF`) or document limitation |
-| 17 | Multi-line input loses newlines on submit | 🟡 Medium | Test #8 | Fix textarea `submit()` to preserve `\n` characters |
+| 17 | Multi-line input loses newlines on submit | ✅ **FIXED** | Test #8 | Fixed `MessageType::User` rendering to split on `\n` with `>>> ` prefix + `    ` continuation |
 | 18 | Bracketed paste loses newlines (Ctrl+V from external clipboard) | 🟡 Low | Test #12 | Investigate crossterm/Kitty clipboard protocol |
 | 20 | Diagram rendering CPU creep (5-7% with multiple mermaid in scrollback) | 🟡 Low | Test #29 | Cache rendered diagrams, skip re-rendering off-screen content |
 | 23 | Mono theme preserves colors in prompt/thinking | 🟡 Low | Test #4 | Strip all colors except bold/underline in mono theme |
+
+**Requirements Checkpoint (Phase 2.6) — All ✅ CLEAR:**
+
+| # | Requirement | Status | Notes |
+|---|-------------|--------|-------|
+| R1 | 🧠 indicator disappear on `/think` toggle off | ✅ | Add `update_status_model()` after `/think` in event loop |
+| R2 | Multi-line newlines preserved on submit | ✅ | Data path preserves `\n` (`textarea.lines().join("\n")` + `trim()` keeps internal newlines). Bug likely in rendering or paste handling — investigate at runtime. |
+| R3 | "Saving embeddings..." visual hint on exit | ✅ | Add `view.show_system()` before flush |
+| R4 | Pre-TUI ANSI codes justified | ✅ | Serve pre-TUI init errors before alternate screen. No change needed. |
+| R5 | `run_chat_repl()` simplification justified | ✅ | Already delegates to `run_chat_repl_tui()`. Pre-TUI setup cannot be eliminated. |
+| R6–R10 | Phases 4.4–4.9 completed in PR2/PR3 | ✅ | No action needed |
+| R11 | `spinner.rs` chat/non-chat split | ✅ | Add doc comment. Review `SpinnerGuard` dead_code. |
+| R12 | `CompactionContext` refactor | ✅ | Struct with 8 fields. 7 call sites in `continuation.rs` + `command_handlers.rs`. |
+| R13 | `run_app_loop()` decomposition | ✅ | New `src/chat/event_loop.rs` with `EventLoopState` + 3 handler methods. Main loop stays in `repl_tui.rs`. |
+| R14 | Provider-agnostic strings | ✅ | 29 replacements in ~10 files. Config keys NOT renamed (W2 scope). |
+| R15 | Documentation | ✅ | CHANGELOG done. Architecture update at end. |
+| R16 | Manual testing | ✅ | 80/120/200 cols, /think, Shift+Enter, exit |
+| R17 | `log::error!/warn!` companions | ✅ | Verify any new eprintln in PR4 |
+| R18 | No unjustified `#[allow(dead_code)]` | ✅ | Review SpinnerGuard |
+| R19 | Functions ≤ 200 lines | ✅ | Each handler method ≤ 200 lines |
+| R20 | Quality gates pass | ✅ | cargo fmt, clippy, test |
+
+**Architecture Decisions:**
+
+1. **Phase 4.3 (ANSI codes):** Pre-TUI `eprintln!` with ANSI in `repl.rs` are correct — they run BEFORE the alternate screen is activated. No TUI corruption. Status: COMPLETE with justification.
+
+2. **Phase 4.6 (`run_chat_repl()` simplification):** Already delegates to `run_chat_repl_tui()`. Pre-TUI setup (database, session) must happen before TUI and cannot be merged. Status: COMPLETE with justification.
+
+3. **Phase 4.12 (Event loop decomposition):** New file `src/chat/event_loop.rs`:
+   - Free functions (not `EventLoopState` methods) due to `tokio::select!` borrow constraints
+   - `handle_key_line()` — user text submission + command routing
+   - `handle_interrupt()` — Ctrl+C handling
+   - `handle_eof()` — Ctrl+D / EOF handling
+   - `handle_llm_event()` — streaming tokens, tool calls, errors
+   - `apply_view_action()` — renders ViewAction variants to RatatuiView
+   - `drain_and_add_tool_messages()` — processes tool results during streaming
+   - `spawn_llm_task()` / `spawn_compact_task()` — async task spawners
+   - `LoopAction` enum (`Continue`/`Quit`) replaces `Option<()>`
+   - Main `loop { tokio::select! { ... } }` stays in `repl_tui.rs` as thin dispatcher (378 lines)
+
+4. **Phase 4.13 (strings):** Config keys `ollama_host`/`ollama_port` NOT renamed — breaking change for W2.
+
+5. **Phase 4.15 (stale doc cleanup):** 6 files, 9 edits, zero logic changes. Removed stale references to `TerminalView` (deleted in PR2 but still mentioned in docstrings), "TUI Migration" framing (TUI is now the current architecture, not "future"), "future RatatuiView" comments (RatatuiView already consumes ViewEvents via ChannelView), and dead `rustyline` filter in `logging.rs` (rustyline removed as dependency in PR2, the `.starts_with("rustyline")` check matched nothing).
+
+6. **Bug #17 (multi-line):** `textarea.lines().join("\n")` preserves newlines. `trim()` only strips leading/trailing whitespace. Bug is in rendering or `CrosstermEvent::Paste` handling.
+
+**CompactionContext Refactor (Phase 4.11):**
+
+Current signature (8 parameters):
+```rust
+pub async fn auto_compact_if_needed(
+    ollama: &ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    session: &mut ChatSession,
+    settings: &Settings,
+    agents_md: Option<&str>,
+    context_window: usize,
+    view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+)
+```
+
+Proposed struct:
+```rust
+pub struct CompactionContext<'a> {
+    ollama: &'a ollama_rs::Ollama,
+    model_config: &'a ModelConfig,
+    session: &'a mut ChatSession,
+    settings: &'a Settings,
+    agents_md: Option<&'a str>,
+    context_window: usize,
+    view: &'a mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+}
+```
+
+Call sites (7 total): `continuation.rs` (lines 113, 169, 259, 315, 430, 492), `command_handlers.rs` (line 1038).
+
+**Provider-Agnostic Strings Audit (Phase 4.13):**
+
+29 user-facing strings containing "Ollama" across ~10 files. Key replacements: error messages → "LLM server", help text → "LLM model", status → "the LLM server". Config keys (`ollama_host`, `ollama_port`) NOT renamed.
+
+**Implementation Order:**
+
+| # | Phase | Effort | Risk |
+|---|-------|--------|------|
+| 1 | B1: 🧠 indicator fix | 0.5 day | Low |
+| 2 | B2: Multi-line newlines | 0.5 day | Medium |
+| 3 | B3: Embedding exit hint | 0.5 day | Low |
+| 4 | 4.10: `spinner.rs` | 0.5 day | Low |
+| 5 | 4.11: `CompactionContext` | 1 day | Medium |
+| 6 | 4.12: `EventLoopState` | 2 days | High |
+| 7 | 4.13: Strings audit | 0.5 day | Low |
+| 8 | 4.14–4.16: Docs + tests | 1 day | Low |
+| 9 | 4.15: Stale doc cleanup | 0.5 day | Low |
 
 **Blockers found in PR3 testing (must fix before merge — tracked in PR3 branch):**
 
@@ -5837,7 +5937,7 @@ timeout_ms = 2000
 
 **Refinement topics (see research-icebox.md):** R-18 (Rust-native classifier as long-term goal)
 
-**Source:** ~/privacy-filter-integration-proposal.md
+**Source:** Privacy filter integration proposal (internal analysis)
 
 ---
 
@@ -5857,7 +5957,7 @@ timeout_ms = 2000
 - #100 (Layer 2 Telemetry): Detector should focus on unannounced system drift, not user-initiated topic changes
 - #101 (Layer 3 Reflection): Validation step is mandatory — system must ask user before classifying a behavioral shift as a failure
 
-**Source:** ~/meta-cognition-brainstorm.md Section 0.5
+**Source:** Meta-cognition brainstorm (internal analysis, Section 0.5)
 
 ---
 
@@ -5882,7 +5982,7 @@ timeout_ms = 2000
 }
 ```
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.2
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.2)
 
 **Refinement topics (see research-icebox.md):** R-14 (full research record)
 
@@ -5897,7 +5997,7 @@ timeout_ms = 2000
 
 **Goal:** Detect tensions between configured personality (SOUL.md) and emergent behavioral patterns. Analogous to factual contradiction detection but for personality: "SOUL.md says 'challenge premises', but operational pattern is 'shift to supportive on vulnerability'."
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.3
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.3)
 
 **Refinement topics (see research-icebox.md):** R-15 (full research record)
 
@@ -5914,7 +6014,7 @@ timeout_ms = 2000
 
 **Implementation:** `[best, 2nd_best, ...middle..., 3rd_best, 4th_best]`
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 5
+**Source:** RAG improvement research (internal analysis, Section 5)
 
 ---
 
@@ -5929,7 +6029,7 @@ timeout_ms = 2000
 
 **Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading).
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 1
+**Source:** RAG improvement research (internal analysis, Section 1)
 
 **Competitive research (see research-icebox.md):** C-12 (Shaukat et al.)
 
@@ -5944,7 +6044,7 @@ timeout_ms = 2000
 
 **Goal:** Annotate chunks at ingestion time with entity_type, source, authority (0.0-1.0), recency (exponential decay), version. RRF scoring: BM25(0.3) + cosine(0.4) + metadata_boost(0.3). Addresses ClashEval finding that LLMs overwrite correct knowledge with incorrect retrieved evidence >60% of the time when no authority signal exists.
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 2
+**Source:** RAG improvement research (internal analysis, Section 2)
 
 **Competitive research (see research-icebox.md):** C-13 (ClashEval)
 
@@ -5959,7 +6059,7 @@ timeout_ms = 2000
 
 **Goal:** Clustering by cosine similarity (threshold ~0.92) to eliminate near-duplicate chunks before indexing. Runs as offline batch job (`sprach reindex --dedup`), NOT in hot ingestion path. Option A: O(n²) vector comparison (simple, works for ≤100k chunks). Option B: MinHash+LSH (scales better, adds dependency).
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 4
+**Source:** RAG improvement research (internal analysis, Section 4)
 
 ---
 
@@ -5974,7 +6074,7 @@ timeout_ms = 2000
 
 **Trade-off:** Inference cost proportional to corpus size. Worth it for static documents that are queried repeatedly; not worth it for dynamic chat messages.
 
-**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 3
+**Source:** RAG improvement research (internal analysis, Section 3)
 
 **Competitive research (see research-icebox.md):** C-14 (HyDE + Dense X Retrieval)
 
@@ -5989,7 +6089,7 @@ timeout_ms = 2000
 
 **Goal:** Train vector representations of conversation mode for more precise shift detection than heuristic keyword matching. Enables mode clustering, cross-session behavioral similarity, and pattern recognition. Evolution of Layer 2 telemetry.
 
-**Source:** ~/meta-cognition-brainstorm.md Section 4.1
+**Source:** Meta-cognition brainstorm (internal analysis, Section 4.1)
 
 **Refinement topics (see research-icebox.md):** R-13 (full research record)
 
@@ -6004,7 +6104,7 @@ timeout_ms = 2000
 
 **Goal:** Add behavioral_alignment as second signal in RRF score alongside content feedback. Responses generated in unconfirmed behavioral mode have reduced retrieval weight. Behavioral decay: patterns that user consistently redirects decay faster (analogous to Ebbinghaus but for habits, not facts).
 
-**Source:** ~/meta-cognition-brainstorm.md Section 3
+**Source:** Meta-cognition brainstorm (internal analysis, Section 3)
 
 ---
 

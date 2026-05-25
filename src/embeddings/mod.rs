@@ -1,7 +1,7 @@
 //! Embeddings module for vector embeddings generation
 //!
 //! Provides:
-//! - Ollama embedding client
+//! - LLM server embedding client
 //! - Matryoshka truncation (768d → 256d)
 //! - Text chunking for long messages
 //! - Embedding recovery for interrupted processes
