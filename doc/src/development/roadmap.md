@@ -133,19 +133,49 @@ This document outlines planned features and the current state of Sprachspiel.
 
 ## Upcoming Release
 
-### v0.43.0 (Planned)
-
-**Features:**
-- Config Upgrade Command (#105) — `sprach config upgrade` merges missing default fields into existing config.toml
-- `/session forget` (#36) — Destructive session deletion with confirmations
+### v0.45.0 (Planned)
 
 **Infrastructure:**
+- Config Upgrade Command (#105) — `sprach config upgrade` merges missing default fields into existing config.toml
 - Retry Threshold with Backoff (#116) — Recoverable server errors with exponential backoff
 - Tool Trait + Proc Macro (#118) — `#[sprachspiel::tool]` replacing `#[ollama_rs::function]`
 
 ---
 
 ## Recent Releases
+
+### v0.44.0 (2026-05-25)
+
+**Responsive Chat Rebuild (W6, Issues #145–#148, PR #155):**
+- Ratatui-based responsive rendering at any terminal width (replaces println+ANSI)
+- CrosstermInput with ratatui-textarea (replaces rustyline)
+- App event loop with crossterm key events, tokio mpsc channels
+- Streaming compaction, tool message ordering, inter-tool thinking
+- Intelligent table reflow, Mermaid diagram rendering, catppuccin code blocks
+- Mouse scroll, text selection, floating completion menu, bracketed paste
+- Ctrl+C context-dependent copy/cancel (4 priority levels)
+- `/toggle-style`, `/reindex --yes`, embedding progress indicator
+- Provider-agnostic error strings, CompactionContext refactor
+- Flaky test fix with `#[serial_test::serial]`
+
+**Changed:**
+- Removed TerminalView (println-based), RustylineInput, termimad dependency
+- Removed ~40 command shortcuts/aliases
+- Standalone monochrome markdown renderer replaces termimad
+- Key binding overhaul with explicit mappings
+
+### v0.43.0 (2026-05-11)
+
+**Features:**
+- Visual indicators for tool actions
+- Proactive skill loading
+- Tool call display decoupled from `log` crate
+- `run_command` tilde expansion with blocklist
+- SF4: Logging overhaul (MultiLogger, file logging, data sensitivity)
+- SF5: Agent spawning tools (4 dedicated tools)
+- Auto fact extraction, feedback infrastructure, semantic dedup
+- Triple-based contradiction disambiguation
+- Fact dedup pipeline centralized in `src/facts/dedup.rs`
 
 ### v0.42.0 (2026-05-01)
 
@@ -600,13 +630,13 @@ User-defined tools via dynamic loading or compilation.
 
 ### Responsive Chat Rebuild with Ratatui [M1, W6]
 
-**Status:** 📋 PLANNED (after critical bugs are resolved)
+**Status:** ✅ COMPLETE (v0.44.0, PR #155)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework. Same chat UX, but responsive layout that adapts to terminal width. Replaces `println!` + hardcoded ANSI with declarative rendering.
 
 **This is NOT the full TUI (#16).** This is the foundation — rendering engine, event loop, and crossterm input. The full TUI (sidebars, /queue, /steer, multi-pane) builds ON TOP of this in M2.
 
-**Problem:** Chat only renders correctly at 80 columns. Any resize produces broken output. Root cause: 600+ `println!` calls with hardcoded widths across 222 ANSI escape sequences.
+**Problem:** Chat only rendered correctly at 80 columns. Any resize produces broken output. Root cause: 600+ `println!` calls with hardcoded widths across 222 ANSI escape sequences.
 
 **Architecture:** The `ChatView` and `InputBackend` traits already exist for this migration. We implement `RatatuiView` and `CrosstermInput` as the new backends.
 
@@ -627,28 +657,29 @@ User-defined tools via dynamic loading or compilation.
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Delivery:** 4 sequential PRs, each leaving the codebase functional and testable.
+**Delivered in 4 PRs (each left the codebase functional and testable):**
 
-| PR | Scope | Effort | Key Deliverable | Issue |
-|----|-------|--------|-----------------|-------|
-| PR 1 | CommandResult — decouple logic from presentation | 5-6 days | All output goes through `CommandResult` enum + `ChatView` | #145 |
-| PR 2 | Ratatui infrastructure + responsive rendering | 5-6 days | `RatatuiView` with `--tui` flag for visual testing | #146 |
-| PR 3 | Crossterm input + event loop + streaming | 5-6 days | `--tui` mode fully functional: chat, commands, streaming | #147 |
-| PR 4 | Final transition — remove rustyline, make ratatui default | 3-4 days | Single rendering mode, responsive at any width | #148 |
+| PR | Scope | Key Deliverable | Issue |
+|----|-------|-----------------|-------|
+| PR #152 | CommandResult — decouple logic from presentation | All output goes through `CommandResult` enum + `ChatView` | #145 |
+| PR #153 | Ratatui infrastructure + responsive rendering | `RatatuiView` with `--tui` flag for visual testing | #146 |
+| PR #154 | Crossterm input + event loop + streaming | Full chat, commands, streaming in `--tui` mode | #147 |
+| PR #155 | Final transition — remove rustyline, make ratatui default | Single rendering mode, responsive at any width | #148 |
 
 **Dependencies Added:**
 - `ratatui = "0.29"` — TUI rendering framework
 - `crossterm = { version = "0.28", features = ["event-stream"] }` — terminal backend + input
+- `ratatui-textarea` — full-featured text editing widget
 - `tui-markdown = "0.2"` — markdown rendering in ratatui widgets
 - `unicode-segmentation = "1.11"` — cursor movement in input editing
 
 **Dependencies Kept:**
-- `termimad` — query/translate/summarize/ocr (non-chat subcommands)
 - `indicatif` — subcommand spinners (non-chat)
 - `rattles` — animation frames (ratatui widget + non-chat, more natural integration)
 
-**Dependencies Removed (PR 4):**
+**Dependencies Removed:**
 - `rustyline` — input now via crossterm
+- `termimad` — replaced by standalone monochrome markdown renderer
 
 **Prerequisite for:** Full TUI (#16, M2) — `/queue`, `/steer`, sidebars, multi-pane layout all build on top of this infrastructure.
 
@@ -656,11 +687,11 @@ User-defined tools via dynamic loading or compilation.
 
 ### TUI (Terminal User Interface) [M2]
 
-**Status:** ❌ NOT STARTED
+**Status:** 📋 PLANNED (W6 foundation complete, awaiting UX design)
 
 **Goal:** Build the full TUI experience on top of the Responsive Chat Rebuild (W6): sidebars, /queue, /steer, multi-pane layout, UX design, and formal ApplicationBackend abstraction.
 
-**Depends on:** Responsive Chat Rebuild (M1, W6) — the Ratatui rendering engine, event loop, CrosstermInput, and CommandResult enum are prerequisites delivered by W6.
+**Depends on:** Responsive Chat Rebuild (M1, W6) ✅ COMPLETE — the Ratatui rendering engine, event loop, CrosstermInput, and CommandResult enum are now available.
 
 **What W6 already delivers (no need to re-implement):**
 
