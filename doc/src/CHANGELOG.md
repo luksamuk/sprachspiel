@@ -4,6 +4,11 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Norm Correction in Embedding Tables (Issue #157)** — Add `norm_correction REAL` column to all vec0 embedding tables (`content_embeddings`, `chunk_embeddings_v2`, `fact_embeddings`) to correct systematic cosine similarity underestimation when effective dimensionality (d_eff) is low. Calculated on insert as the inverse norm of the truncated dimensions. Applied as multiplicative correction in cosine similarity scoring at zero query-time cost. Prerequisite for TAP-2 (#153, thinking-aware retrieval). Schema migration v12→v13.
+- **Fact Semantic Threshold Validation (Issue #134)** — Data-driven validation of the `SEMANTIC_SEARCH_THRESHOLD` constant (currently 0.70) using `sprach diag embeddings`. The diagnostics report now includes a concrete recommendation section that evaluates whether the current threshold is appropriate given the measured d_eff and d̄. When d_eff is low (≤10), the threshold may accept near-random similarity matches; the recommendation explains the trade-off between recall (0.70) and precision (0.80).
+
 ### Fixed
 
 - **User message duplication in LLM prompt** — Every user message appeared twice in the prompt sent to the LLM. The root cause was that `add_user_message()` (called in `handle_user_message_stream()`) added the user message to `session.messages`, and then `build_context()` included it via `session.messages[start_idx..]` while `prepare_messages()` also explicitly added `ChatMessage::user(user_input)` at the end. Fix: `build_context()` now excludes the last user message from `session.messages[start_idx..]` since `prepare_messages()` always adds the current query at the end. This ensures the user message appears exactly once in the LLM prompt. This also saves tokens (each duplicated message cost the full message + overhead per turn) and eliminates confused responses where the LLM addressed the user message twice.

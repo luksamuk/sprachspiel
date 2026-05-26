@@ -344,9 +344,11 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY: Norm Correction in Embedding Tables — #157 [M1]
 
-**Status:** 📋 NOT STARTED
+**Status:** 🔄 IN PROGRESS
 **Issue:** #157
-**Depends on:** #133 (Embedding Diagnostics) — need d_eff measurement to confirm bias
+**Branch:** `feat/norm-correction-and-threshold-validation`
+**Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
+**Prerequisite of:** #153 (TAP-2 — thinking-aware retrieval)
 
 **Goal:** Add `norm_correction REAL` column to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). One float per vector corrects the bias at zero query-time cost.
 
@@ -354,7 +356,18 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 **Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.
 
-**Effort:** ~20 lines of Rust, 1 SQL migration
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Schema migration v12→v13: add `norm_correction REAL` to vec0 tables | 📋 |
+| 2 | Calculate norm_correction on embedding insert (1/sqrt(Σvᵢ² for truncated dims)) | 📋 |
+| 3 | Apply norm correction in cosine similarity scoring (search, dedup) | 📋 |
+| 4 | Enhance diagnostics report with norm correction awareness | 📋 |
+| 5 | Add threshold validation recommendation to diagnostics (joint with #134) | 📋 |
+| 6 | Tests: migration, norm calculation, search quality | 📋 |
+
+**Effort:** ~1.5 days (20+ lines Rust, 1 SQL migration, diagnostics enhancement)
 
 **Cross-refs:** R-25 (research-icebox.md), #133 (diagnostics), #153 (TAP-2)
 
@@ -2977,6 +2990,7 @@ These criteria extend the original validation with geometry metrics discovered i
 |-------|-------|-------------|----------|-----------|
 | W4.0 | #133 | `sprach diagnostics embeddings` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
 | W4.1 | #134 | Validate fact semantic threshold 0.70 vs 0.80 before changing | High | M1 |
+| W4.0b | #157 | Norm correction in embedding tables | High | M1 |
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
 | W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
 | W4.4 | #107 | Embedding provider abstraction — multi-provider support | High | M1 |
@@ -3185,6 +3199,38 @@ Three interrelated bugs discovered via production database investigation (12 ite
 | 4 | Read existing fact embeddings from DB instead of regenerating on every startup | ✅ COMPLETED |
 | 5 | `DELETE + INSERT` pattern for all vec0 embedding update methods | ✅ COMPLETED |
 | 6 | Orphan embedding cleanup in `/gc` (content, chunk, and fact embeddings) | ✅ COMPLETED |
+
+### Threshold Validation — #134 [M1/W4.1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #134
+**Branch:** `feat/norm-correction-and-threshold-validation`
+**Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
+**Joint PR with:** #157 (Norm Correction)
+
+**Goal:** Data-driven validation of `SEMANTIC_SEARCH_THRESHOLD` (currently 0.70 in `src/facts/conflict.rs:230`) before potentially changing to 0.80. Use `sprach diag embeddings` to measure whether the current threshold is appropriate given the measured d_eff and d̄.
+
+**Background:** The embedding geometry audit revealed d_eff=7 and d̄=0.353. At θ=0.70, θ'=0.30, and d̄=0.353 ≥ 0.30 → SPREAD regime. This means at the current 0.70 threshold, a large fraction of random vector pairs will be accepted as semantically similar. The risk is that fact dedup (`src/facts/dedup.rs:319`) may accept near-random matches as semantically similar, causing false dedup matches.
+
+**Implementation approach:** Rather than arbitrarily changing the constant, enhance the diagnostics report to produce a concrete recommendation with measured data. The diagnostics report now includes a "Threshold Recommendation" section that evaluates:
+- Whether the current `SEMANTIC_SEARCH_THRESHOLD` produces SPREAD or TIGHT regime
+- The false acceptance rate at the current threshold
+- Whether 0.80 would be more appropriate (and at what cost to recall)
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add threshold recommendation section to diagnostics report | 📋 |
+| 2 | Add `recommend_threshold()` function to embeddings.rs | 📋 |
+| 3 | Include norm correction status in recommendation | 📋 |
+| 4 | Tests for threshold recommendation logic | 📋 |
+
+**Files to Modify:**
+- `src/diagnostics/embeddings.rs` — Add `ThresholdRecommendation` struct, `recommend_threshold()` function, extend `EmbeddingDiagnostics`
+- `src/diagnostics/display.rs` — Add "Threshold Recommendation" section to markdown report
+
+**Effort:** ~0.5 day
 
 **Deferred to Later Milestones:**
 
