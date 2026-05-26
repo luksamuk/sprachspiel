@@ -114,7 +114,40 @@ pub struct EmbeddingDiagnostics {
     pub model_name: String,
 }
 
-/// Analyze embedding vectors and compute diagnostics
+/// Progress callback type for spectral analysis.
+///
+/// Called with `(phase_name, progress_fraction)` where `progress_fraction`
+/// is 0.0–1.0. Used to update a progress bar during long-running computations.
+///
+/// For a corpus of 30K vectors, the spectral analysis phases and their
+/// approximate cost are:
+/// - Phase 1 "Centering data" — ~1% (O(n·d))
+/// - Phase 2 "Computing covariance matrix" — ~50% (O(n²·d))
+/// - Phase 3 "Computing eigenvalues" — ~5% (O(k·n²))
+/// - Phase 4 "Computing pairwise distances" — ~44% (O(n²·d))
+pub type ProgressFn = dyn Fn(&str, f64);
+
+/// Analyze embedding vectors and compute diagnostics (without progress reporting).
+///
+/// Convenience wrapper that calls [`analyze_embeddings_with_progress`] with a
+/// no-op callback. Use this in tests and when progress reporting is not needed.
+#[cfg(test)]
+pub fn analyze_embeddings(
+    vectors: &[Vec<f64>],
+    nominal_dimensions: usize,
+    model_name: &str,
+    source_counts: Vec<(EmbeddingSource, usize)>,
+) -> EmbeddingDiagnostics {
+    analyze_embeddings_with_progress(
+        vectors,
+        nominal_dimensions,
+        model_name,
+        source_counts,
+        &|_, _| {},
+    )
+}
+
+/// Analyze embedding vectors and compute diagnostics with progress reporting.
 ///
 /// Takes a matrix of embedding vectors (each row is a vector) and computes
 /// d_eff, d̄, regime classification, and variance distribution.
@@ -124,15 +157,17 @@ pub struct EmbeddingDiagnostics {
 /// * `nominal_dimensions` - Original embedding dimensionality (e.g., 256)
 /// * `model_name` - Name of the embedding model
 /// * `source_counts` - Breakdown by source
+/// * `progress` - Callback called with (phase_name, progress_fraction 0.0–1.0)
 ///
 /// # Caveats
 /// * With n < 100 vectors, d_eff estimates are unreliable (max d_eff = n-1)
 /// * With n < 2 vectors, d̄ and min/max cannot be computed
-pub fn analyze_embeddings(
+pub fn analyze_embeddings_with_progress(
     vectors: &[Vec<f64>],
     nominal_dimensions: usize,
     model_name: &str,
     source_counts: Vec<(EmbeddingSource, usize)>,
+    progress: &ProgressFn,
 ) -> EmbeddingDiagnostics {
     let n = vectors.len();
 
@@ -159,16 +194,36 @@ pub fn analyze_embeddings(
 
     let d = vectors[0].len();
 
-    // Compute d_eff via eigenvalues
-    let (eigenvalues, d_eff) = compute_d_eff(vectors, n, d);
+    // Phase 1: Centering (1% of total work)
+    progress("Centering data", 0.0);
+    let mean = compute_mean(vectors, d);
+    let centered = center_vectors(vectors, &mean);
 
-    // Compute pairwise cosine distance statistics
-    let (mean_cd, min_cd, max_cd) = compute_cosine_distance_stats(vectors, n, d);
+    // Phase 2: Covariance/Gram matrix (51% of total work)
+    // The matrix computation is the most expensive step: O(n²·d)
+    progress("Computing covariance matrix", 0.01);
+    let total_variance: f64 = centered
+        .iter()
+        .map(|v| v.iter().map(|x| x * x).sum::<f64>())
+        .sum::<f64>()
+        / n as f64;
 
-    // Regime classification at standard thresholds
+    // Phase 2b: Eigenvalue computation via power iteration (5% of total work)
+    progress("Computing eigenvalues", 0.52);
+    let (eigenvalues, d_eff) = if total_variance == 0.0 {
+        (Vec::new(), 0.0)
+    } else {
+        compute_d_eff_from_centered(&centered, n, d, total_variance)
+    };
+
+    // Phase 3: Pairwise cosine distance (44% of total work)
+    progress("Computing pairwise distances", 0.57);
+    let (mean_cd, min_cd, max_cd) =
+        compute_cosine_distance_stats_with_progress(vectors, n, d, progress, 0.57, 1.0);
+
+    // Phase 4: Regime classification and variance (trivial)
+    progress("Finalizing analysis", 0.99);
     let regimes = compute_regimes(mean_cd);
-
-    // Variance explained
     let variance_explained = compute_variance_explained(&eigenvalues, d);
 
     EmbeddingDiagnostics {
@@ -207,20 +262,15 @@ pub fn vectors_f32_to_f64(vectors: &[Vec<f32>]) -> Vec<Vec<f64>> {
 /// eigenvalues of the D×D covariance matrix.
 ///
 /// For n ≥ d, uses the covariance matrix directly.
+#[cfg(test)]
 fn compute_d_eff(vectors: &[Vec<f64>], n: usize, d: usize) -> (Vec<f64>, f64) {
     if n < 2 || d < 1 {
         return (Vec::new(), 0.0);
     }
 
-    // Number of eigenvalues to compute via power iteration
-    let k = (d.min(n - 1)).min(50);
-
-    // Center the data (subtract mean)
     let mean = compute_mean(vectors, d);
     let centered = center_vectors(vectors, &mean);
 
-    // Compute total variance (trace of covariance matrix)
-    // Since data is already centered, variance = mean of squared values
     let total_variance: f64 = centered
         .iter()
         .map(|v| v.iter().map(|x| x * x).sum::<f64>())
@@ -231,10 +281,24 @@ fn compute_d_eff(vectors: &[Vec<f64>], n: usize, d: usize) -> (Vec<f64>, f64) {
         return (Vec::new(), 0.0);
     }
 
+    compute_d_eff_from_centered(&centered, n, d, total_variance)
+}
+
+/// Compute d_eff from already-centered vectors.
+///
+/// Separated from `compute_d_eff` so that `analyze_embeddings_with_progress`
+/// can reuse the centered vectors without recomputing them.
+fn compute_d_eff_from_centered(
+    centered: &[Vec<f64>],
+    n: usize,
+    d: usize,
+    total_variance: f64,
+) -> (Vec<f64>, f64) {
+    // Number of eigenvalues to compute via power iteration
+    let k = (d.min(n - 1)).min(50);
+
     // Compute top-k eigenvalues via power iteration
-    // The function internally dispatches between covariance (D×D)
-    // and Gram (N×N) approaches based on dimensions
-    let eigenvalues = power_iteration_eigenvalues(&centered, k, 100, 1e-10);
+    let eigenvalues = power_iteration_eigenvalues(centered, k, 100, 1e-10);
 
     // For d_eff, we need (Σλᵢ)² / Σλᵢ²
     let sum_lambda = total_variance;
@@ -499,7 +563,25 @@ fn compute_rayleigh_quotient(matrix: &[Vec<f64>], v: &[f64]) -> f64 {
 ///
 /// For L2-normalized vectors, cosine similarity = dot product.
 /// Cosine distance = 1 - cosine_similarity.
+///
+/// Convenience wrapper without progress reporting. Used in tests.
+#[cfg(test)]
 fn compute_cosine_distance_stats(vectors: &[Vec<f64>], n: usize, _d: usize) -> (f64, f64, f64) {
+    compute_cosine_distance_stats_with_progress(vectors, n, _d, &|_, _| {}, 0.0, 1.0)
+}
+
+/// Compute cosine distance statistics with progress reporting.
+///
+/// The `progress` callback is called at intervals during the O(n²) computation.
+/// `start_frac` and `end_frac` define the fraction of total work this phase represents.
+fn compute_cosine_distance_stats_with_progress(
+    vectors: &[Vec<f64>],
+    n: usize,
+    _d: usize,
+    progress: &ProgressFn,
+    start_frac: f64,
+    end_frac: f64,
+) -> (f64, f64, f64) {
     if n < 2 {
         return (0.0, 0.0, 0.0);
     }
@@ -508,6 +590,9 @@ fn compute_cosine_distance_stats(vectors: &[Vec<f64>], n: usize, _d: usize) -> (
     let mut count = 0usize;
     let mut min_cd = f64::MAX;
     let mut max_cd = f64::NEG_INFINITY;
+
+    // Report progress every ~1% of the outer loop
+    let report_interval = (n / 100).max(1);
 
     for i in 0..n {
         for j in (i + 1)..n {
@@ -518,7 +603,16 @@ fn compute_cosine_distance_stats(vectors: &[Vec<f64>], n: usize, _d: usize) -> (
             min_cd = min_cd.min(cos_dist);
             max_cd = max_cd.max(cos_dist);
         }
+
+        // Report progress periodically
+        if i % report_interval == 0 && i > 0 {
+            let frac = start_frac + (end_frac - start_frac) * (i as f64 / n as f64);
+            progress("Computing pairwise distances", frac);
+        }
     }
+
+    // Final progress report for this phase
+    progress("Computing pairwise distances", end_frac);
 
     let mean_cd = if count > 0 { sum / count as f64 } else { 0.0 };
     (mean_cd, min_cd, max_cd)
@@ -813,6 +907,60 @@ mod tests {
             diagnostics.d_eff >= 1.0,
             "d_eff with 3 distinct vectors should be >= 1.0, got {}",
             diagnostics.d_eff
+        );
+    }
+
+    /// Test: analyze_embeddings_with_progress calls progress callback
+    #[test]
+    fn test_progress_callback_is_called() {
+        use std::sync::{Arc, Mutex};
+
+        let vectors: Vec<Vec<f64>> = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+        ];
+
+        let progress_calls: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_calls = Arc::clone(&progress_calls);
+        let diagnostics = analyze_embeddings_with_progress(
+            &vectors,
+            3,
+            "test-model",
+            vec![],
+            &move |phase, frac| {
+                captured_calls
+                    .lock()
+                    .unwrap()
+                    .push((phase.to_string(), frac));
+            },
+        );
+
+        // Should have been called at least once
+        let calls = progress_calls.lock().unwrap();
+        assert!(
+            !calls.is_empty(),
+            "Progress callback should have been called at least once"
+        );
+
+        // Should have called with known phase names
+        let phases: Vec<&str> = calls.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(
+            phases.iter().any(|p| p.contains("Centering")
+                || p.contains("covariance")
+                || p.contains("pairwise")),
+            "Progress phases should include centering, covariance, or pairwise, got: {:?}",
+            phases
+        );
+        drop(calls);
+
+        // Results should be identical to analyze_embeddings (no progress)
+        let baseline = analyze_embeddings(&vectors, 3, "test-model", vec![]);
+        assert!(
+            (diagnostics.d_eff - baseline.d_eff).abs() < 0.01,
+            "d_eff with progress should match baseline: {} vs {}",
+            diagnostics.d_eff,
+            baseline.d_eff
         );
     }
 }

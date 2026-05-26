@@ -787,9 +787,15 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()> {
     use crate::db::Database;
     use crate::diagnostics::display::display_diagnostics;
-    use crate::diagnostics::embeddings::{EmbeddingSource, analyze_embeddings, vectors_f32_to_f64};
+    use crate::diagnostics::embeddings::{
+        EmbeddingSource, analyze_embeddings_with_progress, vectors_f32_to_f64,
+    };
     use crate::embeddings::DEFAULT_EMBEDDING_MODEL;
     use crate::embeddings::TRUNCATED_DIMENSIONS;
+    use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
+
+    // Phase 1: Open database and collect vectors (fast — spinner only)
+    let spinner = create_spinner("Loading embeddings...");
 
     let db_path: Option<std::path::PathBuf> = cli.db.as_ref().map(std::path::PathBuf::from);
     let db = match db_path {
@@ -800,6 +806,7 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
     let db = match db {
         Ok(db) => db,
         Err(e) => {
+            finish_spinner(spinner);
             eprintln!("Error opening database: {}", e);
             log::error!("Failed to open database for diagnostics: {}", e);
             std::process::exit(1);
@@ -840,15 +847,38 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
     // Convert to f64 for numerical stability in SVD
     let vectors_f64 = vectors_f32_to_f64(&all_vectors);
 
-    // Run spectral analysis
-    let diagnostics = analyze_embeddings(
+    finish_spinner(spinner);
+
+    // Phase 2: Spectral analysis (slow for large corpora — progress bar)
+    let plain = cli.plain.unwrap_or(false);
+    let progress = if !is_spinner_enabled() || plain {
+        indicatif::ProgressBar::hidden()
+    } else {
+        let pb = indicatif::ProgressBar::new(100);
+        #[expect(clippy::expect_used)] // hardcoded template string is always valid
+        let style = indicatif::ProgressStyle::with_template("  {msg} [{bar:20}] {percent}%")
+            .expect("Invalid progress template")
+            .progress_chars("█▓░");
+        pb.set_style(style);
+        pb
+    };
+
+    let progress_clone = progress.clone();
+    let diagnostics = analyze_embeddings_with_progress(
         &vectors_f64,
         TRUNCATED_DIMENSIONS,
         DEFAULT_EMBEDDING_MODEL,
         source_counts,
+        &move |phase, frac| {
+            progress_clone.set_message(phase.to_string());
+            progress_clone.set_position((frac * 100.0).round() as u64);
+        },
     );
 
-    display_diagnostics(&diagnostics);
+    progress.finish_and_clear();
+
+    // Phase 3: Display results
+    display_diagnostics(&diagnostics, plain);
 
     Ok(())
 }
