@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **System Prompt Clarifications (Issue #182)** — Fix behavioral bug where instruction hierarchy was missing, causing USER FACTS constraints (e.g., "rm is not authorized") to lose to SOUL.md behavioral defaults (e.g., "confirm before rm"). Added `### INSTRUCTION HIERARCHY` section specifying priority order: USER FACTS > SOUL > TOOL DESCRIPTIONS > BASE INSTRUCTIONS. Added `### LANGUAGE` note in prompt builder (persists with `--soulless`, unlike SOUL.md). Reformulated `### TOOL USAGE` to concise behavioral instruction replacing the generic 3-step process that partially conflicted with SOUL.md "Search first" behavior. Reduced TODO and Notes tool description verbosity (token optimization).
+
 ### Added
 
 - **Embedding Diagnostics Subcommand (Issue #133)** — `sprach diagnostics embeddings` performs spectral analysis on stored embedding vectors, reporting effective dimensionality (d_eff), mean cosine distance (d̄), regime classification (SPREAD/TIGHT) at thresholds 0.70–0.85, and variance explained distribution. Supports `--source content|chunks|facts` for per-source analysis (default: all sources combined). Pure-Rust power iteration SVD (no new dependencies). Warnings for small corpora (n < 100) and low discriminative power (d_eff/25 < 2).
