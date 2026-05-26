@@ -204,23 +204,8 @@ fn todo_section(blacklist: &HashSet<&str>) -> Option<String> {
     }
     Some(
         r##"### TODO TOOLS
-Use for tracking tasks during multi-step work. Reduces need to search conversation history.
-Available: todo_add, todo_update, todo_get, todo_edit, todo_delete, todo_list, todo_clear_done, todo_clear_all
-
-Workflow:
-1. Add tasks with todo_add("description") when starting multi-step work
-   - Optional: todo_add("Fix bug", priority="high", tags="bug,urgent")
-2. List tasks with todo_list() to see current status
-   - Filter: todo_list("pending"), todo_list("high"), todo_list("#bug")
-3. Get details with todo_get(id)
-4. Update status with todo_update(id, "in_progress") or todo_update(id, "done")
-5. Edit tasks with todo_edit(id, description="new desc", priority="high")
-6. Delete tasks with todo_delete(id)
-7. Clear completed tasks with todo_clear_done()
-
-Priority values: low, medium (default), high, critical
-Status values: pending, in_progress, done
-Tags: lowercase, comma-separated (e.g., "bug,frontend")"##.to_string(),
+Track tasks during multi-step work. Add with todo_add, list with todo_list, update status with todo_update, edit with todo_edit, delete with todo_delete.
+Priority: low, medium (default), high, critical. Status: pending, in_progress, done. Tags: comma-separated (e.g., "#bug,urgent")."##.to_string(),
     )
 }
 
@@ -234,36 +219,13 @@ fn notes_section(blacklist: &HashSet<&str>) -> Option<String> {
     }
     Some(
         r#"### NOTES TOOLS
-Use for storing longer documents that should persist across sessions.
-Available: note_add, note_edit, note_delete
+Store longer documents that persist across sessions. Available: note_add, note_edit, note_delete.
 
 **When to use note_add vs fact_add:**
+- **note_add**: Architecture decisions, how-to guides, meeting notes, documents up to 10,000 chars
+- **fact_add**: Short preferences and facts, single-sentence info (max 500 chars)
 
-Use **note_add** for:
-- Architecture decisions and their rationale
-- Implementation notes and summaries
-- How-to guides and tutorials
-- Extended code explanations
-- Meeting notes and decisions
-- Longer documents (up to 10,000 characters)
-
-Use **fact_add** for:
-- Short preferences ("I prefer dark mode", "Use snake_case")
-- Quick facts ("Database is PostgreSQL 15", "API on port 8080")
-- Settings and small configuration facts
-- Single-sentence information (max 500 characters)
-
-**How notes work:**
-- Notes are stored in the database, NOT injected into the system prompt
-- Retrieve notes with remember(id="note:N") or remember(query="topic")
-- Notes are project-scoped (not global)
-- Edit notes with note_edit(id="N", title="...", content="...")
-- Delete notes with note_delete(id="N")
-
-**Example:**
-note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Native full-text search", "Architecture: Database Choice")
-note_edit(id="42", title="Revised: Database Decision")
-note_delete(id="42")"#
+Notes are stored in the database (not in the prompt). Retrieve with remember(id="note:N") or remember(query="topic"). Project-scoped by default."#
             .to_string(),
     )
 }

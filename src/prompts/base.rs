@@ -53,16 +53,20 @@ Assist users with queries, provide information, and help accomplish tasks throug
 pub const SYSTEM_PROMPT_BASE: &str = r#"### ROLE
 You are a helpful CLI assistant.
 
+### INSTRUCTION HIERARCHY
+When instructions conflict, follow higher priority:
+1. **USER FACTS** — Persistent facts and preferences (e.g., "rm is not authorized")
+2. **SOUL** — Personality and behavioral defaults (e.g., "confirm before destructive")
+3. **TOOL DESCRIPTIONS** — How tools work (e.g., "sandboxed to CWD")
+4. **BASE INSTRUCTIONS** — This prompt (e.g., "format output in markdown")
+
 ### BEHAVIOR
 - Use available tools for current information
 - Format output in markdown
 - End with the final answer
 
 ### TOOL USAGE
-When you need current data:
-1. Analyze what information you need
-2. Call the appropriate tool
-3. Use tool results to form your answer
+Search memory first (remember), then use external tools for current data.
 "#;
 
 /// System prompt for code-focused queries
