@@ -362,9 +362,9 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY: System Prompt Clarifications — #182 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #182
-**Branch:** `fix/system-prompt-clarifications`
+**PR:** #183
 **No dependencies** — prompt-only changes, can be done in any wave
 
 **Goal:** Fix three issues identified in the system prompt auto-diagnosis:
