@@ -19,6 +19,7 @@
 use std::sync::Arc;
 
 use super::embedding::generate_fact_embedding;
+use crate::chat::app::EmbeddingProgressTx;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
@@ -30,12 +31,14 @@ use crate::embeddings::EmbeddingClient;
 /// # Arguments
 /// * `db` - Database connection
 /// * `client` - Embedding client for generating embeddings
+/// * `progress_tx` - Optional channel for TUI progress updates
 ///
 /// # Returns
 /// Number of fact embeddings successfully recovered
 pub async fn recover_missing_fact_embeddings(
     db: &Arc<Database>,
     client: &Arc<EmbeddingClient>,
+    progress_tx: Option<EmbeddingProgressTx>,
 ) -> usize {
     let facts_for_reindex = match db.get_facts_for_reindex() {
         Ok(facts) if !facts.is_empty() => facts,
@@ -53,10 +56,20 @@ pub async fn recover_missing_fact_embeddings(
 
     log::debug!("Recovering {} missing fact embedding(s)...", total);
 
+    // Report initial progress so the status bar shows count
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((0, total));
+    }
+
     let mut recovered = 0;
+    let mut processed: usize = 0;
     for (fact_id, content) in &facts_for_reindex {
         // Skip empty content (shouldn't happen, but defensive)
         if content.trim().is_empty() {
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total));
+            }
             continue;
         }
 
@@ -89,10 +102,19 @@ pub async fn recover_missing_fact_embeddings(
                 // has_embedding stays 0, will be retried on next startup
             }
         }
+        processed += 1;
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((processed, total));
+        }
     }
 
     if recovered > 0 {
         log::debug!("Successfully recovered {} fact embedding(s).", recovered);
+    }
+
+    // Signal completion
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((total, total));
     }
 
     // Post-recovery verification: check if any facts still lack embeddings
@@ -107,25 +129,6 @@ pub async fn recover_missing_fact_embeddings(
     }
 
     recovered
-}
-
-/// Flush pending fact embeddings before exit.
-///
-/// Called from the /exit handler after content embedding flush.
-/// Simply delegates to `recover_missing_fact_embeddings()` since
-/// facts are short content and don't need a progress bar.
-///
-/// # Arguments
-/// * `db` - Database connection
-/// * `client` - Embedding client
-///
-/// # Returns
-/// Number of fact embeddings recovered
-pub async fn flush_pending_fact_embeddings(
-    db: &Arc<Database>,
-    client: &Arc<EmbeddingClient>,
-) -> usize {
-    recover_missing_fact_embeddings(db, client).await
 }
 
 #[cfg(test)]

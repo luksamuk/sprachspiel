@@ -147,7 +147,9 @@ pub async fn regenerate_all_embeddings(
         }
     };
 
-    let total = items.len() + chunks.len();
+    // Dynamic total: starts as items + chunks, but grows when chunking
+    // splits an item into multiple chunks (each chunk is a unit of work).
+    let mut total = items.len() + chunks.len();
 
     if total == 0 {
         // No embeddings to regenerate - this is normal for new installations
@@ -167,12 +169,17 @@ pub async fn regenerate_all_embeddings(
         );
     }
 
+    // Track processed count manually (not via progress.position()) so
+    // that each chunk within a multi-chunk item increments the counter.
+    let mut processed: usize = 0;
+
     // Report initial progress (0 of total) so the status bar shows total count
     if let Some(ref tx) = progress_tx {
         let _ = tx.send((0, total));
     }
 
     // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
+    // We use set_length() to update the total dynamically when items are chunked.
     let progress = if quiet {
         ProgressBar::hidden()
     } else {
@@ -194,9 +201,11 @@ pub async fn regenerate_all_embeddings(
     };
 
     // Report embedding progress to the TUI status bar.
-    // Sends (current_processed, total) where total is the combined count
-    // of items and chunks to process.
-    let report_progress = |processed: usize, total: usize| {
+    // Sends (processed, total) where total may grow dynamically
+    // as items are split into chunks during processing.
+    let report_progress = |processed: usize, total: usize, progress: &ProgressBar| {
+        progress.set_position(processed as u64);
+        progress.set_length(total as u64);
         if let Some(ref tx) = progress_tx {
             let _ = tx.send((processed, total));
         }
@@ -207,8 +216,8 @@ pub async fn regenerate_all_embeddings(
         // Skip if content is empty or too short
         if content.trim().is_empty() || content.len() < 10 {
             stats.items_failed += 1;
-            progress.inc(1);
-            report_progress(progress.position() as usize, total);
+            processed += 1;
+            report_progress(processed, total, &progress);
             continue;
         }
 
@@ -221,8 +230,14 @@ pub async fn regenerate_all_embeddings(
 
         // Check if content needs chunking based on dynamic config
         if content.len() > max_chars {
-            // Long content - create chunks and embed each chunk with fallback
+            // Long content - create chunks and embed each chunk with fallback.
+            // Each chunk is a separate unit of work, so we expand the total.
             let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
+            let num_chunks = chunks_list.len();
+            let extra_work = num_chunks.saturating_sub(1); // item already counted as 1
+            if extra_work > 0 {
+                total += extra_work;
+            }
 
             for chunk in &chunks_list {
                 // Insert chunk into database
@@ -278,6 +293,8 @@ pub async fn regenerate_all_embeddings(
                         stats.chunks_failed += 1;
                     }
                 }
+                processed += 1;
+                report_progress(processed, total, &progress);
             }
 
             // Mark item as having embeddings ONLY if all chunks are complete
@@ -297,8 +314,12 @@ pub async fn regenerate_all_embeddings(
             match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
                 Ok(result) => {
                     if result.chunks_created > 0 {
-                        // Item was chunked due to fallback
+                        // Item was chunked due to fallback — each extra chunk is a unit of work
                         stats.chunks_processed += result.chunks_created;
+                        let extra_work = result.chunks_created.saturating_sub(1);
+                        if extra_work > 0 {
+                            total += extra_work;
+                        }
                     }
                     stats.items_processed += 1;
                 }
@@ -342,8 +363,12 @@ pub async fn regenerate_all_embeddings(
             }
         }
 
-        progress.inc(1);
-        report_progress(progress.position() as usize, total);
+        // For long items, processed was already incremented per-chunk above.
+        // For short items (or skipped items), increment here.
+        if content.len() <= max_chars || content.trim().is_empty() || content.len() < 10 {
+            processed += 1;
+            report_progress(processed, total, &progress);
+        }
     }
 
     // Process content chunks
@@ -351,8 +376,8 @@ pub async fn regenerate_all_embeddings(
         // Skip if content is empty
         if content.trim().is_empty() {
             stats.chunks_failed += 1;
-            progress.inc(1);
-            report_progress(progress.position() as usize, total);
+            processed += 1;
+            report_progress(processed, total, &progress);
             continue;
         }
 
@@ -378,8 +403,8 @@ pub async fn regenerate_all_embeddings(
             None => {
                 // Chunk has no parent item - shouldn't happen
                 stats.chunks_failed += 1;
-                progress.inc(1);
-                report_progress(progress.position() as usize, total);
+                processed += 1;
+                report_progress(processed, total, &progress);
                 continue;
             }
         };
@@ -399,7 +424,8 @@ pub async fn regenerate_all_embeddings(
             Some(id) => id,
             None => {
                 stats.chunks_failed += 1;
-                progress.inc(1);
+                processed += 1;
+                report_progress(processed, total, &progress);
                 continue;
             }
         };
@@ -465,8 +491,8 @@ pub async fn regenerate_all_embeddings(
             }
         }
 
-        progress.inc(1);
-        report_progress(progress.position() as usize, total);
+        processed += 1;
+        report_progress(processed, total, &progress);
     }
 
     progress.finish_and_clear();

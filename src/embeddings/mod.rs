@@ -25,6 +25,6 @@ pub use client::{
 pub use fallback::{
     EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
 };
-pub use recovery::{recover_missing_embeddings, recover_missing_embeddings_with_progress};
+pub use recovery::recover_missing_embeddings;
 pub use regenerate::regenerate_all_embeddings;
 pub use truncate::{TRUNCATED_DIMENSIONS, cosine_similarity};

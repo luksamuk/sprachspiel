@@ -200,7 +200,11 @@ impl ChatView for RatatuiView {
     }
 
     fn show_error(&mut self, error: &str) {
-        self.app.add_message(ChatMessage::error(error.to_string()));
+        // Strip ANSI codes — the TUI renderer applies its own styling.
+        // Error messages may contain ANSI from format_tool_error or other sources
+        // that assume a terminal, not a TUI widget.
+        let clean = strip_ansi_codes(error);
+        self.app.add_message(ChatMessage::error(clean));
         self.render();
     }
 
@@ -315,7 +319,10 @@ impl ChatView for RatatuiView {
                 self.add_system_message(&format!("⚠️ {}", msg));
             }
             CommandOutput::Error(msg) => {
-                self.app.add_message(ChatMessage::error(msg.clone()));
+                // Strip ANSI codes — the TUI renderer applies its own styling.
+                // Error messages may contain ANSI from format_tool_error or other sources.
+                let clean = strip_ansi_codes(msg);
+                self.app.add_message(ChatMessage::error(clean));
             }
             CommandOutput::Progress(msg) => {
                 self.add_system_message(&format!("⏳ {}", msg));
@@ -659,7 +666,8 @@ impl RatatuiView {
                 self.add_system_message(&msg);
             }
         } else if let Some(error) = &data.error {
-            self.app.add_message(ChatMessage::error(error.clone()));
+            let clean = strip_ansi_codes(error);
+            self.app.add_message(ChatMessage::error(clean));
         }
     }
 
@@ -704,8 +712,8 @@ impl RatatuiView {
         if data.success {
             self.add_system_message(&format!("✓ {}", data.message));
         } else {
-            self.app
-                .add_message(ChatMessage::error(data.message.clone()));
+            let clean = strip_ansi_codes(&data.message);
+            self.app.add_message(ChatMessage::error(clean));
         }
     }
 
@@ -798,9 +806,10 @@ impl RatatuiView {
             );
             self.add_system_message(&msg);
         } else if let Some(error) = &data.error {
+            let clean = strip_ansi_codes(error);
             self.app.add_message(ChatMessage::error(format!(
                 "Failed to prune content: {}",
-                error
+                clean
             )));
         }
     }
@@ -813,8 +822,9 @@ impl RatatuiView {
             );
             self.add_system_message(&msg);
         } else if let Some(error) = &data.error {
+            let clean = strip_ansi_codes(error);
             self.app
-                .add_message(ChatMessage::error(format!("Reindex failed: {}", error)));
+                .add_message(ChatMessage::error(format!("Reindex failed: {}", clean)));
         }
     }
 }

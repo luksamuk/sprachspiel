@@ -103,8 +103,11 @@ fn try_format_ollama_error(error: &str) -> Option<String> {
 }
 
 fn format_error_with_status(msg: &str) -> String {
-    // In plain mode, strip ANSI codes for pipe-safe output
-    if crate::debug_tools::is_plain_mode() {
+    // In plain mode (pipe-safe) or TUI mode (ratatui handles styling),
+    // produce plain text without ANSI codes. The TUI renderer applies its
+    // own colors via Span::styled(), so ANSI codes would appear as garbled
+    // text like "␛[31mError:␛[0m Internal Server Error".
+    if crate::debug_tools::is_plain_mode() || crate::logging::is_tui_mode() {
         return format_error_plain(msg);
     }
 
@@ -230,13 +233,39 @@ mod tests {
 
     #[serial_test::serial]
     #[test]
-    fn test_format_tool_error_no_ansi_in_plain() {
-        // format_tool_error (public API) should not produce ANSI in plain mode
-        let _guard = PlainModeGuard::new();
+    fn test_format_error_tui_mode_no_ansi() {
+        // TUI mode: no ANSI codes (ratatui handles styling)
+        let original_plain = crate::debug_tools::is_plain_mode();
+        let original_tui = crate::logging::is_tui_mode();
+        crate::debug_tools::set_plain_mode(false);
+        crate::logging::set_tui_mode(true);
+        let result = format_error_with_status("connection error: status 404 not found");
+        assert!(
+            !result.contains("\x1B["),
+            "TUI mode should not contain ANSI codes, got: {result}"
+        );
+        assert!(
+            result.contains("404 Not Found"),
+            "TUI mode should contain readable status text, got: {result}"
+        );
+        crate::debug_tools::set_plain_mode(original_plain);
+        crate::logging::set_tui_mode(original_tui);
+    }
+
+    #[serial_test::serial]
+    #[test]
+    fn test_format_tool_error_no_ansi_in_tui() {
+        // format_tool_error (public API) should not produce ANSI in TUI mode
+        let original_plain = crate::debug_tools::is_plain_mode();
+        let original_tui = crate::logging::is_tui_mode();
+        crate::debug_tools::set_plain_mode(false);
+        crate::logging::set_tui_mode(true);
         let result = format_tool_error(r#"{"error":"status 400 Bad Request"}"#);
         assert!(
             !result.contains("\x1B["),
-            "format_tool_error in plain mode should not contain ANSI, got: {result}"
+            "format_tool_error in TUI mode should not contain ANSI, got: {result}"
         );
+        crate::debug_tools::set_plain_mode(original_plain);
+        crate::logging::set_tui_mode(original_tui);
     }
 }

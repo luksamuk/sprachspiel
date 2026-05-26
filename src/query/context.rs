@@ -161,12 +161,15 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
-        let (db, embedding_client) = crate::db::init_database_core(
+        let result = crate::db::init_database_core(
             ollama.clone(),
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
             None, // Use default database path
         );
+
+        let db = result.db;
+        let embedding_client = result.embedding;
 
         let retrieval_enabled = db.is_some() && embedding_client.is_some();
 

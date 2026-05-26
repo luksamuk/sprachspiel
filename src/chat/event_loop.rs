@@ -5,7 +5,7 @@
 //!
 //! - `handle_key_line()`: processes user input (slash commands and LLM queries)
 //! - `handle_interrupt()`: handles Ctrl+C cancellation
-//! - `handle_eof()`: handles Ctrl+D quit with embedding flush
+//! - `handle_eof()`: handles Ctrl+D quit (saves session, exits immediately)
 //! - `handle_llm_event()`: processes streaming tokens, completion, errors
 //!
 //! Helper functions moved from `repl_tui.rs`:
@@ -20,8 +20,6 @@ use crossterm::event::MouseButton;
 use crossterm::event::MouseEvent;
 use tokio_util::sync::CancellationToken;
 
-use std::sync::Arc;
-
 use super::app::LlmState;
 use super::channel_view::ChannelView;
 use super::command_handlers;
@@ -34,6 +32,7 @@ use super::tui::components::chat_selection::mouse_to_visual_pos;
 use super::view::ChatView;
 use super::view::RatatuiView;
 use crate::capabilities::ModelCapabilities;
+use crate::utils::strip_ansi_codes;
 
 /// Channel capacity for LLM view actions.
 ///
@@ -147,16 +146,6 @@ pub async fn handle_key_line(
                 // Handle other commands
                 let mut dummy_input = super::input::CrosstermInput::default();
 
-                // Show visual hint before /quit's embedding flush
-                // so the user knows the app hasn't frozen.
-                if matches!(cmd, ChatCommand::Quit)
-                    && !state.session.anonymous
-                    && state.db.is_some()
-                    && state.embedding_client.is_some()
-                {
-                    view.show_system("Saving embeddings...");
-                }
-
                 // Track whether this command changes status bar
                 // indicators (🧠 think, 🔧 tools) so we can
                 // update the modeline after execution.
@@ -267,10 +256,11 @@ pub fn handle_interrupt(
     }
 }
 
-/// Handle Ctrl+D (quit) — save session, flush embeddings.
+/// Handle Ctrl+D (quit) — save session.
 ///
-/// Shows "Saving embeddings..." before flushing so the user knows
-/// the app hasn't frozen during the embedding write.
+/// Embedding recovery is NOT performed on exit — it runs on next startup
+/// via the background recovery pipeline (see `repl_tui.rs`). This avoids
+/// blocking the application exit while hundreds of embeddings are generated.
 ///
 /// Note: The caller is responsible for calling `view.restore()` after
 /// this function returns, since `restore()` consumes `self`.
@@ -278,23 +268,6 @@ pub async fn handle_eof(state: &mut ReplState, view: &mut RatatuiView) {
     let _ = view.app_mut().save_history();
     if !state.session.anonymous {
         let _ = state.session.save_sqlite();
-
-        // Flush pending embeddings before exit (same as /quit)
-        if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-            // Show visual hint so the user knows
-            // the app hasn't frozen during the
-            // embedding flush.
-            view.show_system("Saving embeddings...");
-            let progress_tx = state.session.embedding_tx.clone();
-            command_handlers::flush_pending_embeddings(
-                Arc::clone(db),
-                Arc::clone(client),
-                true, // suppress_spinner — avoid corrupting alternate screen
-                progress_tx,
-            )
-            .await;
-            crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
-        }
     }
 }
 
@@ -362,7 +335,9 @@ pub fn handle_llm_event(
             *llm_rx = None;
         }
         LlmEvent::Error(error) => {
-            view.app_mut().add_message(ChatMessage::error(error));
+            // Strip ANSI codes — the TUI renderer applies its own styling.
+            let clean = strip_ansi_codes(&error);
+            view.app_mut().add_message(ChatMessage::error(clean));
             view.set_llm_state(LlmState::Idle);
             drain_and_add_tool_messages(view);
             *cancel_token = None;
