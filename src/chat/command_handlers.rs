@@ -201,6 +201,14 @@ pub async fn handle_command(
 /// Embedding recovery is NOT performed on exit — it runs on next startup
 /// via the background recovery pipeline. This avoids blocking exit while
 /// hundreds of embeddings are generated synchronously.
+///
+/// No embedding flush is needed on exit because:
+/// - Insert-time embedding generation is fire-and-forget (`tokio::spawn`).
+///   If Ollama is online during the chat, embeddings are generated eagerly.
+/// - If Ollama was offline during insertion, `has_embedding` stays 0 and the
+///   startup recovery pipeline retries on next boot.
+/// - The previous synchronous flush could block exit for minutes with hundreds
+///   of pending embeddings, which was the bug this design change fixed.
 async fn handle_quit(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),

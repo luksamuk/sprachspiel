@@ -141,7 +141,22 @@ pub async fn run_chat_repl_tui(
         view.show_recent_context(&state.session);
     }
 
-    // Show database recovery messages — run in background so the TUI is responsive
+    // Show database recovery messages — run in background so the TUI is responsive.
+    //
+    // Design decision: recovery runs as a tokio::spawn background task instead of
+    // blocking the TUI before the event loop. This was changed from synchronous to
+    // background because (1) schema migration v11→v12 resets all has_embedding flags,
+    // causing minutes of blocking; (2) the TUI was unusable during recovery.
+    //
+    // Concurrency safety: the Database struct uses Arc<Mutex<Connection>>, which
+    // serializes all SQLite accesses. Concurrent RAG queries during recovery will not
+    // cause "database is locked" errors — they are simply serialized. Items with
+    // has_embedding = 0 are excluded from vector search results, so partial recovery
+    // does not produce incorrect results, only temporarily incomplete ones.
+    //
+    // On exit (/quit, Ctrl+D), no embedding flush is performed. This is intentional:
+    // the flush used to block exit for minutes. Missing embeddings are recovered on
+    // next startup by this same background pipeline.
     if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
         // Show indexing indicator while regenerating embeddings
         view.app_mut().set_embedding_progress(0, 1);

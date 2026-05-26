@@ -262,6 +262,11 @@ pub fn handle_interrupt(
 /// via the background recovery pipeline (see `repl_tui.rs`). This avoids
 /// blocking the application exit while hundreds of embeddings are generated.
 ///
+/// Handle Ctrl+D (EOF) — save session and exit.
+///
+/// No embedding flush on exit — see `handle_quit()` for rationale.
+/// Missing embeddings are recovered by the background pipeline on next startup.
+///
 /// Note: The caller is responsible for calling `view.restore()` after
 /// this function returns, since `restore()` consumes `self`.
 pub async fn handle_eof(state: &mut ReplState, view: &mut RatatuiView) {

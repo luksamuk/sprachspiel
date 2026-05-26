@@ -18,6 +18,20 @@
 //! On app restart, recovery manager finds any saved content_items/chunks without
 //! embeddings and generates them in the background.
 //!
+//! ## Background recovery and concurrency safety
+//!
+//! Since v0.44.0, the recovery pipeline runs as a background `tokio::spawn` task
+//! in the TUI, allowing the event loop to start immediately. The `Database` struct
+//! uses `Arc<Mutex<Connection>>`, which serializes all SQLite accesses. This means:
+//!
+//! - **No "database is locked" errors** — the Mutex ensures recovery and RAG queries
+//!   are serialized, not concurrent.
+//! - **No incorrect results** — items with `has_embedding = 0` are excluded from
+//!   vector search results, so partial recovery only yields temporarily incomplete
+//!   (never incorrect) search results.
+//! - **No exit flush needed** — missing embeddings are recovered on next startup.
+//!   The previous synchronous flush on `/quit` could block exit for minutes.
+//!
 //! # Output modes
 //!
 //! - `quiet = false` (terminal mode): prints progress and errors to stdout/stderr,
