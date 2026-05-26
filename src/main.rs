@@ -797,7 +797,12 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
     // Phase 1: Open database and collect vectors (fast — spinner only)
     let spinner = create_spinner("Loading embeddings...");
 
-    let db_path: Option<std::path::PathBuf> = cli.db.as_ref().map(std::path::PathBuf::from);
+    // Local --db flag takes precedence over global --db flag
+    let db_path: Option<std::path::PathBuf> = args
+        .db
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .or_else(|| cli.db.as_ref().map(std::path::PathBuf::from));
     let db = match db_path {
         Some(ref path) => Database::with_path(path),
         None => Database::new(),
@@ -855,7 +860,7 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
         indicatif::ProgressBar::hidden()
     } else {
         let pb = indicatif::ProgressBar::new(100);
-        #[expect(clippy::expect_used)] // hardcoded template string is always valid
+        #[expect(clippy::expect_used)] // compile-time literal template
         let style = indicatif::ProgressStyle::with_template("  {msg} [{bar:20}] {percent}%")
             .expect("Invalid progress template")
             .progress_chars("█▓░");

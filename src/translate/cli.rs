@@ -134,10 +134,15 @@ similarity thresholds.
 By default, combines vectors from all sources (content, chunks, facts).
 Use --source to analyze a specific source only.
 
+The --db flag can be used before or after the subcommand:
+  sprach --db /path/to/db diagnostics
+  sprach diagnostics --db /path/to/db
+
 EXAMPLES:
   sprach diagnostics
-  sprach diag --source facts
-  sprach diag --source content --db /path/to/sprachspiel.db
+  sprach diagnostics --source facts
+  sprach diagnostics --db /path/to/sprachspiel.db
+  sprach --db /path/to/sprachspiel.db diagnostics
 "#
 )]
 pub struct DiagArgs {
@@ -146,6 +151,13 @@ pub struct DiagArgs {
     /// If not specified, combines all sources (content, chunks, facts).
     #[arg(long, value_name = "SOURCE")]
     pub source: Option<EmbeddingSource>,
+
+    /// Database path (overrides global --db)
+    ///
+    /// Use a specific SQLite database file for the embedding vectors.
+    /// Overrides the global --db flag if both are specified.
+    #[arg(long, value_name = "PATH")]
+    pub db: Option<String>,
 }
 
 impl DiagArgs {
