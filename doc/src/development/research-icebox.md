@@ -600,3 +600,20 @@
 - **Information routing reframing note:** Quality metric measures how much "V" (information value) is preserved vs discarded by the compaction Gate. Currently the Gate uses recency-only (binary: keep/discard), making quality = kept/total. Multi-signal Gate produces continuous g_i values, enabling weighted quality scores.
 - **Milestone:** M1 (Phase A, with TAP-1) / M3 (Phase B, after multi-signal gate)
 - **Revisit when:** Phase A can start immediately with TAP-1; Phase B after B1.5
+
+---
+
+### R-31: System Prompt Architecture Documentation
+
+- **Source:** Auto-diagnosis of Sprach system prompt (system-prompt-analysis.md)
+- **Current state:** Prompt architecture (SOUL → OPERATION → CONTEXT → CAPABILITY) is implicit in code but not documented. Auto-diagnosis flagged "redundancy" between layers, but analysis confirmed this is intentional layering — each layer serves a different purpose (identity, behavior, semantics, syntax).
+- **Why deferred to M2:** TUI (#16) will require prompt restructuring for interactive modes (different views need different prompt compositions). Documenting now and changing later wastes effort.
+- **Implementation:** `doc/src/development/prompt-architecture.md` — explains the four layers, why "redundancy" is intentional, and how to add new sections correctly.
+- **Key insight from triage:** The auto-diagnosis identified 3x "redundancy" in Behavior instructions, Memory instructions, and File Operations. Analysis confirmed these are NOT redundant — they are different layers serving different purposes:
+  - SOUL.md "Search first" = behavioral motivation (WHY use memory)
+  - MEMORY section = semantic instruction (WHAT retrieved_context means)
+  - MEMORY TOOLS = syntactic guide (HOW to use remember tool)
+  - Consolidating these would lose the ability to disable SOUL.md independently with `--soulless`.
+- **Cross-refs:** #182 (prompt clarifications — first formalization of hierarchy); #16 (TUI will change prompt structure); #180 (MCP Client Phase 1 — tool discovery will change how tool descriptions are delivered)
+- **Milestone:** M2 (documentation, no code)
+- **Revisit when:** TUI implementation starts and prompt structure needs redesign

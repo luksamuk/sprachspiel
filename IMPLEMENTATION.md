@@ -134,7 +134,7 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153, #157, #182 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict, T3-Phase3 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
@@ -145,7 +145,7 @@
 
 **M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience.
 
-**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) is a P0-CRITICAL bug fix (preserving thinking content) and shares a migration PR with #136 (geometry-aware dimensions). W7 is a new wave for Thinking Trace Pipeline and Retrieval.
+**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) is a P0-CRITICAL bug fix (preserving thinking content) and shares a migration PR with #136 (geometry-aware dimensions). W7 is a new wave for Thinking Trace Pipeline and Retrieval. #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind. T3-Phase3 (Semantic/Reflect + Facts Integration) added to M3 — depends on W7.1 (Thinking-Aware Retrieval) completion.
 
@@ -164,7 +164,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional; #126 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
-| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation | #133, #134, #106, #135, #107, #151, #136, #138 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; thinking content preserved in DB; geometry-aware dimensions formula |
+| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; thinking content preserved in DB; geometry-aware dimensions formula; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
 | **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 | **W7** | Thinking Trace Pipeline & Retrieval | Preserve thinking content, T3 Struct pipeline, thinking-aware retrieval | #152, #153, #137 | Thinking traces preserved and transformable; retrieval includes thinking context; RRF adapts to d_eff with trace awareness |
@@ -339,6 +339,58 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 3. **`strip_thinking_tags()` remains for display:** The function is still used by views and query mode to strip thinking from displayed content. Only the storage path changes.
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
+
+---
+
+### 🔴 PRIORITY: Norm Correction in Embedding Tables — #157 [M1]
+
+**Status:** 📋 NOT STARTED
+**Issue:** #157
+**Depends on:** #133 (Embedding Diagnostics) — need d_eff measurement to confirm bias
+
+**Goal:** Add `norm_correction REAL` column to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). One float per vector corrects the bias at zero query-time cost.
+
+**Background:** TurboQuant (Zandieh et al., ICLR 2026) and RaBitQ (Gao & Long, SIGMOD 2024) show that scalar quantization introduces systematic underestimation of cosine similarity, amplified when effective dimensionality (d_eff) is low. This directly impacts TAP-2 (#153, thinking-aware retrieval), fact dedup, and all semantic retrieval.
+
+**Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.
+
+**Effort:** ~20 lines of Rust, 1 SQL migration
+
+**Cross-refs:** R-25 (research-icebox.md), #133 (diagnostics), #153 (TAP-2)
+
+---
+
+### 🔴 PRIORITY: System Prompt Clarifications — #182 [M1]
+
+**Status:** 📋 NOT STARTED
+**Issue:** #182
+**No dependencies** — prompt-only changes, can be done in any wave
+
+**Goal:** Fix three issues identified in the system prompt auto-diagnosis:
+
+1. **Instruction Hierarchy** (P0-HIGH) — Without explicit priority, the model may prioritize SOUL.md behavioral defaults over USER FACTS constraints (e.g., "confirm before rm" vs "rm is not authorized")
+2. **Language Note** (Medium) — Language convention only in SOUL.md, disappears with `--soulless`
+3. **TOOL USAGE Reformulation** (Medium) — Generic 3-step process partially conflicts with SOUL.md's "Search first"
+4. **Token Optimization** (Low) — Reduce TODO (10→3 lines) and Notes (30→8 lines) tool descriptions
+
+**Design Decisions:**
+- Instruction Hierarchy order: USER FACTS > SOUL > TOOL DESCRIPTIONS > BASE INSTRUCTIONS
+- Language note in base prompt (not SOUL.md) so it persists with `--soulless`
+- Architectural layers (SOUL/OPERATION/CAPABILITY) are intentional and will NOT be consolidated
+- "Redundancy" in auto-diagnosis (Behavior 3x, Memory 3x, File Safety 2x) is intentional layering
+
+**Implementation Phases:**
+
+| Phase | Description | Effort | Priority |
+|-------|-------------|--------|----------|
+| A | Add `### INSTRUCTION HIERARCHY` to `SYSTEM_PROMPT_BASE` | ~10 lines | P0-HIGH |
+| B | Add `### LANGUAGE` note in prompt builder | ~5 lines | Medium |
+| C | Reformulate `### TOOL USAGE` — concise behavioral instruction | ~5 lines | Medium |
+| D | Reduce TODO and Notes tool descriptions | ~25 lines | Low |
+
+**Files to Modify:** `src/prompts/base.rs` (A, C), `src/prompts/builder.rs` (B), `src/prompts/tools.rs` (D)
+
+**Cross-refs:** R-31 (research-icebox.md), #16 (TUI), #180 (MCP Client Phase 1)
 
 ---
 
@@ -3049,6 +3101,62 @@ pub fn get_all_fact_embedding_vectors(&self) -> Result<Vec<Vec<f32>>>
 ```
 
 **Key insight:** The codebase currently NEVER reads embedding vectors back from vec0 tables — only KNN distances are queried. These new methods are the first to perform bulk SELECT + BLOB deserialization.
+
+**Bug Fix: Schema Migration Forward-Reference (discovered during DB upgrade testing)**
+
+When opening a database at schema version ≤ 8, the `init_connection()` function executes `SCHEMA_SQL` before running incremental migrations. `SCHEMA_SQL` contained `CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding)` — but the `has_embedding` column is only added by `migrate_v10_to_v11()`. For databases at v8, this index creation failed with `no such column: has_embedding`, preventing the database from opening at all. The error was logged at `log::debug!` (silenced by default) and surfaced as a generic "DATABASE INITIALIZATION FAILED" with no actionable detail.
+
+**Fix (4 files):**
+- `src/db/schema.rs` — Removed `idx_facts_embedding` from `SCHEMA_SQL` (already created in `migrate_v10_to_v11()`)
+- `src/db/init.rs` — Changed `log::debug!` → `log::error!`; replaced tuple return with `DatabaseInitResult` struct that includes the original error message
+- `src/chat/repl.rs` — Use `DatabaseInitResult.error_detail` instead of generic message
+- `src/query/context.rs` — Adapted to `DatabaseInitResult`
+
+**Verified:** Database at `user_version=8` now migrates successfully to `user_version=12` with all columns, indexes, and vec0 tables intact.
+
+**Bug Fix: TUI Hang During Startup Embedding Recovery (discovered after migration fix)**
+
+After the migration v11→v12 fix, databases upgrading from v8 now have all `has_embedding` flags reset to 0, causing the startup embedding recovery pipeline to process 1700+ items. The pipeline (`regenerate_all_embeddings`, `recover_missing_embeddings`, `recover_missing_fact_embeddings`, `verify_and_dedup_facts`) ran synchronously via `.await` before the event loop in `run_chat_repl_tui()`, freezing the TUI for minutes. The `⚙ 0/1` indicator appeared but the prompt was unreachable.
+
+**Fix:** Moved the entire embedding recovery pipeline to `tokio::spawn` in `src/chat/repl_tui.rs`. The TUI event loop starts immediately and is fully interactive. Progress is reported via the existing `EmbeddingProgressTx` channel (e.g., `⚙ 12/1741`). The indicator clears automatically when `poll_embedding_progress()` receives `current >= total`. Removed dead `clear_embedding_progress()` method from `App`.
+
+**Verified:** TUI is interactive from the first frame; `⚙ N/M` indicator updates in real time during background embedding generation.
+
+**Bug Fix: Application Blocks on Exit During Embedding Flush**
+
+`/quit` and Ctrl+D called `flush_pending_embeddings()` and `flush_pending_fact_embeddings()` synchronously before exiting. After schema migration v11→v12 resets all `has_embedding` flags, this could block for minutes. The startup recovery pipeline already handles missing embeddings on next boot, making the exit flush redundant.
+
+**Fix:** Removed the synchronous embedding flush from both exit paths (`handle_eof` and `handle_quit`). Exit is now instantaneous. Removed dead code: `flush_pending_embeddings()`, `flush_pending_fact_embeddings()`, `recover_missing_embeddings_with_progress()`, `clear_embedding_progress()`.
+
+**Verified:** `/quit` exits immediately; next boot recovers pending embeddings via the background pipeline.
+
+**Bug Fix: Embedding Progress Indicator Shows `current > total`**
+
+The `⚙ N/M` indicator in the TUI status bar could show `processed` exceeding `total` (e.g., `⚙ 1800/1743`). Root causes:
+
+1. **`regenerate_all_embeddings`**: `total = items.len() + chunks.len()` was calculated once at startup. When an item was split into N chunks, the original `total` only counted the item as 1 unit of work, but each chunk was processed independently. Similarly, `embed_item_with_fallback` could trigger recursive fallback chunking, creating more work.
+2. **`recover_missing_embeddings`**: `total_missing = items.len()` only counted items, ignoring pre-existing chunks. When items were split into chunks, the total didn't grow. Skipped items (empty content, already-chunked) didn't increment `processed`, causing `processed < total` at completion.
+3. **`recover_missing_fact_embeddings` and `verify_and_dedup_facts`**: Did not report progress via the `EmbeddingProgressTx` channel, leaving the indicator stale or invisible during these phases.
+
+**Fix:**
+1. `total` is now a mutable value that grows dynamically when items are split into chunks (`total += num_chunks - 1`).
+2. Each chunk within a multi-chunk item increments `processed` individually (no longer relying on `progress.position()` which only counts `.inc()` calls).
+3. Skipped items now increment `processed` so it always converges to `total`.
+4. All four recovery functions (`regenerate_all_embeddings`, `recover_missing_embeddings`, `recover_missing_fact_embeddings`, `verify_and_dedup_facts`) now report progress via the `EmbeddingProgressTx` channel.
+
+**Verified:** TUI shows `⚙ 50/1807` → `⚙ 161/1875` → ... → `⚙ 9205/11442` → indicator cleared. `current ≤ total` invariant holds throughout.
+
+**Bug Fix: ANSI Escape Codes Appearing as Literal Text in TUI Error Messages**
+
+Error messages like `✗ ␛[31mError:␛[0m Internal Server Error (ref: ...)` displayed raw ANSI escape codes instead of being rendered as colors. The TUI already applies red styling via `Span::styled(line, error_style())`, but `format_tool_error()` generated ANSI codes (e.g., `\x1B[31m` for red) when `is_plain_mode()` was false. In TUI mode, these codes appeared as garbled text.
+
+**Root cause:** Double coloring — ratatui applies `error_style()` (bold red), and `format_error_with_ansi()` also wraps the text with `\x1B[31m...\x1B[0m`. The ANSI codes are not interpreted by ratatui widgets and appear as literal characters.
+
+**Fix (2 layers):**
+1. **Layer 1:** `format_error_with_status()` now uses `format_error_plain()` when `is_tui_mode()` is true, since the TUI renderer handles styling via `Span::styled()`.
+2. **Layer 2 (defense-in-depth):** `show_error()`, `CommandOutput::Error`, `LlmEvent::Error`, and all other `ChatMessage::error()` call sites in `ratatui_view.rs` strip ANSI codes via `strip_ansi_codes()`. This catches ANSI from any source, not just `format_tool_error()`.
+
+**Tests:** Added `test_format_error_tui_mode_no_ansi` and `test_format_tool_error_no_ansi_in_tui` to verify TUI mode produces no ANSI codes.
 
 **Related:** Issue #133
 
