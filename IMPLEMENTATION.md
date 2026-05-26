@@ -2939,7 +2939,7 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 These criteria extend the original validation with geometry metrics discovered in the embedding audit (d_eff=7, d̄=0.353, SPREAD system):
 
-- [ ] `sprach diag embeddings` reports d_eff, average magnitude, threshold pass rate (#133)
+- [x] `sprach diag embeddings` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
 - [ ] Fact semantic threshold decision is data-driven: measure recall@k at 0.70 and 0.80 before changing (#134)
 - [ ] Alternative models are benchmarked by d_eff, retrieval quality, and multilingual support (#135)
 - [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` (#136)
@@ -2985,7 +2985,7 @@ These criteria extend the original validation with geometry metrics discovered i
 
 ### Embedding Diagnostics Subcommand — #133 [M1/W4.0]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (PR #181 merged)
 **Issue:** #133
 **Branch:** `feat/embedding-diagnostics`
 **Depends on:** None
@@ -3007,9 +3007,9 @@ These criteria extend the original validation with geometry metrics discovered i
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | New module `src/diagnostics/` + DB read functions + CLI subcommand | 📋 |
-| 2 | Spectral analysis: d_eff, d̄, eigenvalues, regime classification | 📋 |
-| 3 | Terminal display formatting + warnings + tests | 📋 |
+| 1 | New module `src/diagnostics/` + DB read functions + CLI subcommand | ✅ |
+| 2 | Spectral analysis: d_eff, d̄, eigenvalues, regime classification | ✅ |
+| 3 | Terminal display formatting + warnings + tests | ✅ |
 
 **Files to Create:**
 
