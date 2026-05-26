@@ -362,8 +362,9 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY: System Prompt Clarifications — #182 [M1]
 
-**Status:** 📋 NOT STARTED
+**Status:** 🔄 IN PROGRESS
 **Issue:** #182
+**Branch:** `fix/system-prompt-clarifications`
 **No dependencies** — prompt-only changes, can be done in any wave
 
 **Goal:** Fix three issues identified in the system prompt auto-diagnosis:
@@ -381,12 +382,12 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 **Implementation Phases:**
 
-| Phase | Description | Effort | Priority |
-|-------|-------------|--------|----------|
-| A | Add `### INSTRUCTION HIERARCHY` to `SYSTEM_PROMPT_BASE` | ~10 lines | P0-HIGH |
-| B | Add `### LANGUAGE` note in prompt builder | ~5 lines | Medium |
-| C | Reformulate `### TOOL USAGE` — concise behavioral instruction | ~5 lines | Medium |
-| D | Reduce TODO and Notes tool descriptions | ~25 lines | Low |
+| Phase | Description | Effort | Priority | Status |
+|-------|-------------|--------|----------|--------|
+| A | Add `### INSTRUCTION HIERARCHY` to `SYSTEM_PROMPT_BASE` | ~10 lines | P0-HIGH | ✅ Done |
+| B | Add `### LANGUAGE` note in prompt builder | ~5 lines | Medium | ✅ Done |
+| C | Reformulate `### TOOL USAGE` — concise behavioral instruction | ~5 lines | Medium | ✅ Done |
+| D | Reduce TODO and Notes tool descriptions | ~25 lines | Low | ✅ Done |
 
 **Files to Modify:** `src/prompts/base.rs` (A, C), `src/prompts/builder.rs` (B), `src/prompts/tools.rs` (D)
 

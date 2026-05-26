@@ -249,7 +249,11 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             prompt.push_str(facts);
         }
 
-        // 3e. Active tasks section (from TodoState)
+        // 3e. Language convention (persists even with --soulless)
+        prompt.push_str("\n### LANGUAGE\n");
+        prompt.push_str("Respond in the user's language. If the user writes in Portuguese, reply in Portuguese. If ambiguous, follow the language of the most recent message.\n");
+
+        // 3f. Active tasks section (from TodoState)
         if let Some(todos) = config.todos
             && !todos.is_empty()
         {
@@ -258,7 +262,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         }
     }
 
-    // 3e. Anonymous session warning
+    // 3g. Anonymous session warning
     if config.is_anonymous {
         prompt.push_str("\n### ANONYMOUS SESSION\n");
         prompt.push_str("**Important:** You are in an anonymous session.\n");
