@@ -1275,6 +1275,9 @@ pub async fn handle_fact_add(
 
     // Delegate to centralized dedup pipeline
     let config = DedupConfig::user();
+    let semantic_threshold = crate::settings::Settings::load()
+        .facts
+        .semantic_threshold;
     let result = deduplicate_and_insert(
         &db,
         &content,
@@ -1283,6 +1286,7 @@ pub async fn handle_fact_add(
         project_id.as_deref(),
         &config,
         state.embedding_client.as_ref(),
+        semantic_threshold,
     )
     .await;
 

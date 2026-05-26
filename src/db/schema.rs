@@ -9,7 +9,7 @@
 //! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 12;
+pub const SCHEMA_VERSION: i32 = 13;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -115,13 +115,14 @@ CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidat
 CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 
--- Vector embeddings for facts (256-dim Matryoshka, v12 with distance_metric=cosine)
+-- Vector embeddings for facts (256-dim Matryoshka, v13 with distance_metric=cosine and norm_correction)
 CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
     fact_id INTEGER PRIMARY KEY,
     embedding FLOAT[256] distance_metric=cosine,
     +scope TEXT,
     +category TEXT,
-    +project_id TEXT
+    +project_id TEXT,
+    +norm_correction TEXT
 );
 
 -- Content items table (unified storage for messages, notes, documents, v8)
@@ -188,24 +189,37 @@ CREATE TABLE IF NOT EXISTS content_chunks (
 CREATE INDEX IF NOT EXISTS idx_content_chunks_item ON content_chunks(item_id);
 CREATE INDEX IF NOT EXISTS idx_content_chunks_order ON content_chunks(item_id, chunk_index);
 
--- Vector embeddings for content items (256-dim Matryoshka, v12 with distance_metric=cosine)
+-- Vector embeddings for content items (256-dim Matryoshka, v13 with distance_metric=cosine and norm_correction)
 CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
     item_id INTEGER PRIMARY KEY,
     embedding FLOAT[256] distance_metric=cosine,
     +content_type TEXT,
     +conversation_id TEXT,
     +project_id TEXT,
-    +timestamp INTEGER
+    +timestamp INTEGER,
+    +norm_correction TEXT
 );
 
--- Vector embeddings for content chunks (v12 with distance_metric=cosine)
+-- Vector embeddings for content items (256-dim Matryoshka, v13 with distance_metric=cosine and norm_correction)
+CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+    item_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256] distance_metric=cosine,
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT,
+    +timestamp INTEGER,
+    +norm_correction TEXT
+);
+
+-- Vector embeddings for content chunks (v13 with distance_metric=cosine and norm_correction)
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
     chunk_id INTEGER PRIMARY KEY,
     embedding FLOAT[256] distance_metric=cosine,
     +content_type TEXT,
     +conversation_id TEXT,
     +project_id TEXT,
-    +timestamp INTEGER
+    +timestamp INTEGER,
+    +norm_correction TEXT
 );
 
 -- Full-text search for content items (v7)

@@ -28,12 +28,6 @@ pub const RECENT_MESSAGES_COUNT: usize = 10;
 /// Minimum interval between retrievals in seconds
 pub const MIN_RETRIEVAL_INTERVAL_SECS: u64 = 5;
 
-/// Keyword weight for RRF (BM25)
-pub const KEYWORD_WEIGHT: f32 = 0.4;
-
-/// Semantic weight for RRF (vector similarity)
-pub const SEMANTIC_WEIGHT: f32 = 0.6;
-
 /// Format timestamp for human-readable display
 fn format_timestamp(timestamp: i64) -> String {
     use chrono::{Datelike, TimeZone, Utc};
@@ -143,14 +137,15 @@ pub struct RetrievalConfig {
 
 impl Default for RetrievalConfig {
     fn default() -> Self {
+        let settings = crate::settings::Settings::default();
         Self {
             enabled: true,
             min_messages: MIN_MESSAGES_FOR_RETRIEVAL,
             relevant_count: RELEVANT_MESSAGES_COUNT,
             recent_count: RECENT_MESSAGES_COUNT,
             min_query_interval_secs: MIN_RETRIEVAL_INTERVAL_SECS,
-            keyword_weight: KEYWORD_WEIGHT,
-            semantic_weight: SEMANTIC_WEIGHT,
+            keyword_weight: settings.retrieval.keyword_weight,
+            semantic_weight: settings.retrieval.semantic_weight,
         }
     }
 }
@@ -189,7 +184,8 @@ async fn perform_retrieval(
 ) -> Option<RetrievalResult> {
     log::debug!("Generating embedding for query...");
 
-    let embedding = client.embed(query).await.ok()?;
+    let result = client.embed(query).await.ok()?;
+    let embedding = result.vector;
 
     log::debug!(
         "Searching for relevant messages (conversation: {:?}, project: {:?})",

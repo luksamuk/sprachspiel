@@ -623,6 +623,11 @@ impl Database {
     /// Inserts the embedding into content_embeddings and marks the item as having embedding.
     /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
     /// (UNIQUE constraint on item_id PRIMARY KEY). This makes re-embedding safe.
+    ///
+    /// `norm_correction` is stored as a FLOAT auxiliary column in the vec0 table.
+    /// It represents `1/(norm²)` for the truncated embedding, used to correct
+    /// cosine similarity at query time.
+    #[expect(clippy::too_many_arguments)] // All parameters needed for vec0 auxiliary columns
     pub fn update_content_item_embedding(
         &self,
         item_id: i64,
@@ -631,10 +636,12 @@ impl Database {
         conversation_id: Option<&str>,
         project_id: Option<&str>,
         timestamp: chrono::DateTime<chrono::Utc>,
+        norm_correction: f32,
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+            let norm_correction_str = norm_correction.to_string();
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the item already has an embedding, the old row must be removed
@@ -646,8 +653,8 @@ impl Database {
             )?;
 
             conn.execute(
-                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp, norm_correction)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     item_id,
                     embedding_bytes.as_slice(),
@@ -655,6 +662,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
+                    norm_correction_str,
                 ],
             )?;
 
@@ -672,6 +680,11 @@ impl Database {
     /// Inserts the embedding into chunk_embeddings_v2 and marks the chunk as having embedding.
     /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
     /// (UNIQUE constraint on chunk_id PRIMARY KEY). This makes re-embedding safe.
+    ///
+    /// `norm_correction` is stored as a FLOAT auxiliary column in the vec0 table.
+    /// It represents `1/(norm²)` for the truncated embedding, used to correct
+    /// cosine similarity at query time.
+    #[expect(clippy::too_many_arguments)] // All parameters needed for vec0 auxiliary columns
     pub fn update_content_chunk_embedding(
         &self,
         chunk_id: i64,
@@ -680,10 +693,12 @@ impl Database {
         conversation_id: Option<&str>,
         project_id: Option<&str>,
         timestamp: chrono::DateTime<chrono::Utc>,
+        norm_correction: f32,
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+            let norm_correction_str = norm_correction.to_string();
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the chunk already has an embedding, the old row must be removed
@@ -695,8 +710,8 @@ impl Database {
             )?;
 
             conn.execute(
-                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp, norm_correction)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     chunk_id,
                     embedding_bytes.as_slice(),
@@ -704,6 +719,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
+                    norm_correction_str,
                 ],
             )?;
 

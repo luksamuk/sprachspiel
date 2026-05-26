@@ -177,26 +177,30 @@ pub async fn run_search(
     let embedding_client = EmbeddingClient::new(ollama.clone());
 
     log::debug!("Generating embedding for query...");
-    let embedding = match embedding_client.embed(query).await {
-        Ok(emb) => {
-            log::debug!("Embedding generated ({} dimensions)", emb.len());
-            emb
+    let query_result = match embedding_client.embed(query).await {
+        Ok(result) => {
+            log::debug!("Embedding generated ({} dimensions)", result.vector.len());
+            result
         }
         Err(e) => {
             return SearchOutcome::EmbeddingError(format!("Failed to generate embedding: {}", e));
         }
     };
+    let embedding = query_result.vector;
 
     // Perform hybrid search using content_items (V7)
     log::debug!("Running hybrid search on content_items...");
+    let settings = crate::settings::Settings::load();
+    let keyword_weight = settings.retrieval.keyword_weight;
+    let semantic_weight = settings.retrieval.semantic_weight;
     let results = match db.search_messages_hybrid(
         query,
         &embedding,
         conversation_id,
         None,
         limit * 2,
-        0.4,
-        0.6,
+        keyword_weight,
+        semantic_weight,
     ) {
         Ok(r) => {
             log::debug!("Hybrid search found {} results", r.len());

@@ -12,7 +12,7 @@
 //! 1. **Layer 1**: Exact content match (case-insensitive, trimmed)
 //! 2. **Layer 2**: Normalized content match (strips pronouns/subjects)
 //! 3. **Layer 3.5**: Semantic embedding similarity (requires embedding client
-//!    + extractable triple, cosine ≥ `SEMANTIC_SEARCH_THRESHOLD`)
+//!    + extractable triple, cosine ≥ `semantic_threshold` from config)
 //!    - Triple-based disambiguation: same predicate + different object → contradiction
 //!    - Same triple → duplicate
 //!    - Different predicates → polarity opposition fallback (`is_contradiction`)
@@ -26,14 +26,14 @@
 //! - **Bug #1** (LLM tool): Layer 3.5 ran AFTER Layer 3 instead of before,
 //!   causing FTS5 to catch contradictions and skip the preferred semantic path.
 //! - **Bug #2** (LLM tool): Used `SEMANTIC_DEDUP_THRESHOLD` (0.90) instead of
-//!   `SEMANTIC_SEARCH_THRESHOLD` (0.70), making semantic search unreachable.
+//!   `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (0.70), making semantic search unreachable.
 //! - **Bug #3** (LLM tool): No triple-based disambiguation in Layer 3.5 — only
 //!   `is_contradiction()` was used, causing false positives.
 //! - **Bug #4** (LLM tool): Fire-and-forget embedding (`tokio::spawn`) instead
 //!   of synchronous (`await`), causing missing embeddings for subsequent facts.
 
 use super::conflict::{
-    CONFLICT_THRESHOLD, Conflict, ConflictType, ResolutionAction, SEMANTIC_SEARCH_THRESHOLD,
+    CONFLICT_THRESHOLD, Conflict, ConflictType, ResolutionAction,
     detect_conflicts, extract_fact_triple, is_contradiction, resolve_conflict,
 };
 use super::lang;
@@ -186,6 +186,9 @@ struct DedupContext<'a> {
     project_id: Option<&'a str>,
     config: &'a DedupConfig,
     embedding_client: Option<&'a Arc<EmbeddingClient>>,
+    /// Semantic similarity threshold for Layer 3.5 (cosine ≥ threshold triggers disambiguation).
+    /// Defaults to `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (0.70).
+    semantic_threshold: f32,
 }
 
 // === Layer functions ===
@@ -290,7 +293,8 @@ async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
     let _triple = extract_fact_triple(ctx.content)?;
 
     match super::embedding::generate_fact_embedding(ctx.content, client).await {
-        Ok(candidate_embedding) => {
+        Ok(result) => {
+            let candidate_embedding = result.vector;
             match ctx.db.search_facts_semantic(&candidate_embedding, None, 5) {
                 Ok(semantic_results) => resolve_semantic_results(ctx, &semantic_results).await,
                 Err(e) => {
@@ -316,7 +320,7 @@ async fn resolve_semantic_results(
     results: &[crate::facts::db::FactSearchResult],
 ) -> Option<DedupResult> {
     for result in results {
-        if result.score < SEMANTIC_SEARCH_THRESHOLD {
+        if result.score < ctx.semantic_threshold {
             continue;
         }
 
@@ -567,6 +571,7 @@ pub async fn deduplicate_and_insert(
     project_id: Option<&str>,
     config: &DedupConfig,
     embedding_client: Option<&Arc<EmbeddingClient>>,
+    semantic_threshold: f32,
 ) -> DedupResult {
     let content_trimmed = content.trim().to_lowercase();
     let normalized_query = lang::normalize_for_comparison(content);
@@ -581,6 +586,7 @@ pub async fn deduplicate_and_insert(
         project_id,
         config,
         embedding_client,
+        semantic_threshold,
     };
 
     // Layer 1: Exact content match (case-insensitive, trimmed)
@@ -667,13 +673,14 @@ async fn do_insert(ctx: &DedupContext<'_>) -> DedupResult {
         && let Some(client) = ctx.embedding_client
     {
         match super::embedding::generate_fact_embedding(ctx.content, client).await {
-            Ok(emb) => {
+            Ok(result) => {
                 if let Err(e) = ctx.db.update_fact_embedding(
                     id,
-                    &emb,
+                    &result.vector,
                     &ctx.scope.to_string(),
                     &ctx.category.to_string(),
                     ctx.project_id,
+                    result.norm_correction,
                 ) {
                     log::debug!("dedup: Failed to store embedding: {}", e);
                 }

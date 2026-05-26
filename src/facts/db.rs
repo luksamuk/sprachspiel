@@ -371,6 +371,10 @@ impl Database {
     /// tables do not support INSERT OR REPLACE (UNIQUE constraint violation).
     /// This makes re-embedding safe: if a fact already has an embedding, the
     /// old row is deleted before the new one is inserted.
+    ///
+    /// `norm_correction` is stored as a FLOAT auxiliary column in the vec0 table.
+    /// It represents `1/(norm²)` for the truncated embedding, used to correct
+    /// cosine similarity at query time.
     pub fn update_fact_embedding(
         &self,
         fact_id: i64,
@@ -378,9 +382,11 @@ impl Database {
         scope: &str,
         category: &str,
         project_id: Option<&str>,
+        norm_correction: f32,
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
+            let norm_correction_str = norm_correction.to_string();
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the fact already has an embedding, the old row must be removed
@@ -392,14 +398,15 @@ impl Database {
             )?;
 
             conn.execute(
-                "INSERT INTO fact_embeddings (fact_id, embedding, scope, category, project_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO fact_embeddings (fact_id, embedding, scope, category, project_id, norm_correction)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     fact_id,
                     embedding_bytes.as_slice(),
                     scope,
                     category,
-                    project_id
+                    project_id,
+                    norm_correction_str,
                 ],
             )?;
 
