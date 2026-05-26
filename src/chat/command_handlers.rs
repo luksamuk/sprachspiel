@@ -38,43 +38,11 @@ use super::session::ToolOutputLevel;
 const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::embeddings::{
-    DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback,
-    recover_missing_embeddings_with_progress,
-};
+use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 
 pub use super::session::ChatSession;
-
-/// Flush pending embeddings before exit.
-///
-/// This ensures that any embeddings that were being generated
-/// asynchronously are completed before the application exits.
-pub(crate) async fn flush_pending_embeddings(
-    db: Arc<crate::db::Database>,
-    client: Arc<crate::embeddings::EmbeddingClient>,
-    quiet: bool,
-    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
-) {
-    // Check for pending items
-    let pending_items = match db.get_content_items_for_reindex() {
-        Ok(items) => items.len(),
-        Err(_) => 0,
-    };
-
-    let pending_chunks = match db.get_content_chunks_for_reindex() {
-        Ok(chunks) => chunks.len(),
-        Err(_) => 0,
-    };
-
-    if pending_items + pending_chunks == 0 {
-        return;
-    }
-
-    // Complete pending embeddings
-    let _ = recover_missing_embeddings_with_progress(&db, &client, quiet, progress_tx).await;
-}
 
 /// Handle a chat command in the REPL loop.
 ///
@@ -228,30 +196,27 @@ pub async fn handle_command(
     }
 }
 
-/// Handle /quit command — save session, flush embeddings, and exit.
+/// Handle /quit command — save session and exit.
+///
+/// Embedding recovery is NOT performed on exit — it runs on next startup
+/// via the background recovery pipeline. This avoids blocking exit while
+/// hundreds of embeddings are generated synchronously.
+///
+/// No embedding flush is needed on exit because:
+/// - Insert-time embedding generation is fire-and-forget (`tokio::spawn`).
+///   If Ollama is online during the chat, embeddings are generated eagerly.
+/// - If Ollama was offline during insertion, `has_embedding` stays 0 and the
+///   startup recovery pipeline retries on next boot.
+/// - The previous synchronous flush could block exit for minutes with hundreds
+///   of pending embeddings, which was the bug this design change fixed.
 async fn handle_quit(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
-    suppress_spinner: bool,
+    _suppress_spinner: bool,
 ) -> Vec<CommandOutput> {
     let _ = input.save_history();
     if !state.session.anonymous {
         let _ = state.session.save_sqlite();
-
-        // Flush pending embeddings before exit.
-        // In TUI mode, suppress output to avoid corrupting the alternate screen buffer.
-        if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-            let progress_tx = state.session.embedding_tx.clone();
-            flush_pending_embeddings(
-                Arc::clone(db),
-                Arc::clone(client),
-                suppress_spinner,
-                progress_tx,
-            )
-            .await;
-            // Flush pending fact embeddings
-            crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
-        }
     }
     vec![CommandOutput::info("Goodbye!"), CommandOutput::quit()]
 }

@@ -16,6 +16,7 @@
   - [vision](./commands/vision.md)
   - [summarize](./commands/summarize.md)
 - [Models](./models.md)
+- [Evaluated Models](./evaluated-models.md)
 - [Prompts](./prompts.md)
 - [SOUL.md](./soul.md)
 - [Tools](./tools.md)

@@ -18,6 +18,20 @@
 //! On app restart, recovery manager finds any saved content_items/chunks without
 //! embeddings and generates them in the background.
 //!
+//! ## Background recovery and concurrency safety
+//!
+//! Since v0.44.0, the recovery pipeline runs as a background `tokio::spawn` task
+//! in the TUI, allowing the event loop to start immediately. The `Database` struct
+//! uses `Arc<Mutex<Connection>>`, which serializes all SQLite accesses. This means:
+//!
+//! - **No "database is locked" errors** — the Mutex ensures recovery and RAG queries
+//!   are serialized, not concurrent.
+//! - **No incorrect results** — items with `has_embedding = 0` are excluded from
+//!   vector search results, so partial recovery only yields temporarily incomplete
+//!   (never incorrect) search results.
+//! - **No exit flush needed** — missing embeddings are recovered on next startup.
+//!   The previous synchronous flush on `/quit` could block exit for minutes.
+//!
 //! # Output modes
 //!
 //! - `quiet = false` (terminal mode): prints progress and errors to stdout/stderr,
@@ -29,7 +43,6 @@
 #![expect(clippy::print_stdout)] // Terminal-mode output (guarded by `quiet` flag)
 #![expect(clippy::print_stderr)] // Terminal-mode output (guarded by `quiet` flag)
 use chrono::Utc;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 
 use crate::db::Database;
@@ -110,7 +123,14 @@ pub async fn recover_missing_embeddings(
         Err(_) => return 0,
     };
 
-    let total_missing = items.len();
+    // Also count pre-existing chunks without embeddings
+    let preexisting_chunks = match db.get_content_chunks_for_reindex() {
+        Ok(c) => c.len(),
+        _ => 0,
+    };
+
+    // Dynamic total: items + pre-existing chunks, grows when chunking splits items.
+    let mut total_missing = items.len() + preexisting_chunks;
 
     if total_missing == 0 {
         return 0;
@@ -120,13 +140,15 @@ pub async fn recover_missing_embeddings(
         println!("Recovering {} missing embedding(s)...", total_missing);
     }
 
+    // Track processed count manually for accurate progress.
+    let mut processed: usize = 0;
+
     // Report initial progress so the status bar shows total count
     if let Some(ref tx) = progress_tx {
         let _ = tx.send((0, total_missing));
     }
 
     let mut recovered = 0;
-    let mut processed = 0usize;
     let now = Utc::now();
 
     // Generate embeddings for content items (and their chunks)
@@ -135,12 +157,20 @@ pub async fn recover_missing_embeddings(
 
         // Skip if content is empty or too short for meaningful embedding
         if content.trim().is_empty() || content.len() < 10 {
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total_missing));
+            }
             continue;
         }
 
         // Check if item already has chunks (long content that was partially processed)
         // If so, skip item embedding - chunks are handled separately
         if db.content_item_has_chunks(*item_id).unwrap_or(false) {
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total_missing));
+            }
             continue;
         }
 
@@ -152,8 +182,14 @@ pub async fn recover_missing_embeddings(
 
         // Check if content needs chunking using dynamic threshold
         if content.len() > max_chars {
-            // Long content - create chunks and embed each chunk with fallback
+            // Long content - create chunks and embed each chunk with fallback.
+            // Each chunk is a separate unit of work, so we expand the total.
             let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
+            let num_chunks = chunks_list.len();
+            let extra_work = num_chunks.saturating_sub(1); // item already counted as 1
+            if extra_work > 0 {
+                total_missing += extra_work;
+            }
 
             for chunk in &chunks_list {
                 // Insert chunk into database
@@ -210,6 +246,10 @@ pub async fn recover_missing_embeddings(
                         }
                     }
                 }
+                processed += 1;
+                if let Some(ref tx) = progress_tx {
+                    let _ = tx.send((processed, total_missing));
+                }
             }
 
             // Mark item as having embeddings ONLY if all chunks are complete
@@ -228,8 +268,12 @@ pub async fn recover_missing_embeddings(
             match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
                 Ok(result) => {
                     if result.chunks_created > 0 {
-                        // Item was chunked due to fallback
+                        // Item was chunked due to fallback — each extra chunk is a unit of work
                         recovered += result.chunks_created;
+                        let extra_work = result.chunks_created.saturating_sub(1);
+                        if extra_work > 0 {
+                            total_missing += extra_work;
+                        }
                     } else {
                         recovered += 1;
                     }
@@ -245,10 +289,10 @@ pub async fn recover_missing_embeddings(
                     }
                 }
             }
-        }
-        processed += 1;
-        if let Some(ref tx) = progress_tx {
-            let _ = tx.send((processed, total_missing));
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total_missing));
+            }
         }
     }
 
@@ -289,6 +333,10 @@ pub async fn recover_missing_embeddings(
                             "Warning: Newly created chunk {} has no parent item",
                             chunk_id
                         );
+                    }
+                    processed += 1;
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send((processed, total_missing));
                     }
                     continue;
                 }
@@ -347,66 +395,6 @@ pub async fn recover_missing_embeddings(
     }
 
     recovered
-}
-
-/// Recover missing embeddings for all content (with progress bar).
-///
-/// Same as `recover_missing_embeddings` but shows a progress bar.
-/// Called on /exit to complete pending embeddings before shutting down.
-///
-/// # Arguments
-/// * `db` - Database connection
-/// * `embedding_client` - Embedding client for generating embeddings
-/// * `quiet` - When `true`, suppresses terminal output and uses hidden progress bar (TUI mode)
-/// * `progress_tx` - Optional channel sender for TUI progress updates
-pub async fn recover_missing_embeddings_with_progress(
-    db: &Arc<Database>,
-    embedding_client: &Arc<EmbeddingClient>,
-    quiet: bool,
-    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
-) -> usize {
-    // Get counts first
-    let items = match db.get_content_items_for_reindex() {
-        Ok(items) if !items.is_empty() => items,
-        Ok(_) => vec![],
-        Err(_) => return 0,
-    };
-
-    let chunks = match db.get_content_chunks_for_reindex() {
-        Ok(chunks) if !chunks.is_empty() => chunks,
-        Ok(_) => vec![],
-        Err(_) => vec![],
-    };
-
-    let total = items.len() + chunks.len();
-
-    if total == 0 {
-        return 0;
-    }
-
-    if !quiet {
-        println!("Completing {} pending embedding(s)...", total);
-    }
-
-    // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
-    let progress = if quiet {
-        ProgressBar::hidden()
-    } else {
-        let pb = ProgressBar::new(total as u64);
-        #[expect(clippy::expect_used)] // hardcoded template string is always valid
-        let style = ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
-            .expect("Invalid progress template")
-            .progress_chars("█▓░");
-        pb.set_style(style);
-        pb
-    };
-
-    // Call the main recovery function but with progress tracking
-    let result = recover_missing_embeddings(db, embedding_client, quiet, progress_tx).await;
-
-    progress.finish_and_clear();
-
-    result
 }
 
 #[cfg(test)]

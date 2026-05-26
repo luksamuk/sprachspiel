@@ -106,11 +106,14 @@ CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
 END;
 
 -- Indexes for facts
+-- NOTE: idx_facts_embedding is NOT created here because the 'has_embedding'
+-- column is added by migration v10->v11. Creating this index before the
+-- column exists would fail for databases upgrading from older versions.
+-- The index is created in migrate_v10_to_v11() instead.
 CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
 CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidated_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
-CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL;
 
 -- Vector embeddings for facts (256-dim Matryoshka, v12 with distance_metric=cosine)
 CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(

@@ -10,7 +10,7 @@ pub mod prompt;
 pub mod style;
 
 // Re-export commonly used items
-pub use cli::{Commands, CompletionArgs, QueryArgs, Shell, TranslateArgs};
+pub use cli::{Commands, CompletionArgs, DiagArgs, QueryArgs, Shell, TranslateArgs};
 pub use language::{LanguageError, LanguageMapper, parse_language_pair};
 pub use prompt::build_translation_prompt;
 pub use style::TranslationStyle;

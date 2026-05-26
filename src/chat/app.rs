@@ -782,11 +782,6 @@ impl App {
         };
     }
 
-    /// Clear the embedding progress indicator.
-    pub fn clear_embedding_progress(&mut self) {
-        self.status_bar.embedding_progress = None;
-    }
-
     /// Poll for async system messages from background tasks.
     ///
     /// Background tasks (e.g., /reindex) send system message strings through

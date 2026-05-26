@@ -27,11 +27,13 @@
 //!
 //! - `handle_key_line()`: processes user input (slash commands and LLM queries)
 //! - `handle_interrupt()`: handles Ctrl+C cancellation
-//! - `handle_eof()`: handles Ctrl+D quit with embedding flush
+//! - `handle_eof()`: handles Ctrl+D quit (saves session, exits immediately)
 //! - `handle_llm_event()`: processes streaming tokens, completion, errors
 //! - `apply_view_action()`: translates `ViewAction` into `RatatuiView` calls
 //! - `spawn_llm_task()`: spawns background LLM task with streaming
 //! - `spawn_compact_task()`: spawns background compaction task
+
+use std::sync::Arc;
 
 use crossterm::event::{self, Event as CrosstermEvent};
 use tokio_util::sync::CancellationToken;
@@ -139,7 +141,22 @@ pub async fn run_chat_repl_tui(
         view.show_recent_context(&state.session);
     }
 
-    // Show database recovery messages
+    // Show database recovery messages — run in background so the TUI is responsive.
+    //
+    // Design decision: recovery runs as a tokio::spawn background task instead of
+    // blocking the TUI before the event loop. This was changed from synchronous to
+    // background because (1) schema migration v11→v12 resets all has_embedding flags,
+    // causing minutes of blocking; (2) the TUI was unusable during recovery.
+    //
+    // Concurrency safety: the Database struct uses Arc<Mutex<Connection>>, which
+    // serializes all SQLite accesses. Concurrent RAG queries during recovery will not
+    // cause "database is locked" errors — they are simply serialized. Items with
+    // has_embedding = 0 are excluded from vector search results, so partial recovery
+    // does not produce incorrect results, only temporarily incomplete ones.
+    //
+    // On exit (/quit, Ctrl+D), no embedding flush is performed. This is intentional:
+    // the flush used to block exit for minutes. Missing embeddings are recovered on
+    // next startup by this same background pipeline.
     if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
         // Show indexing indicator while regenerating embeddings
         view.app_mut().set_embedding_progress(0, 1);
@@ -148,56 +165,86 @@ pub async fn run_chat_repl_tui(
         // Embedding progress channel — reports current/total to the TUI status bar
         let tx = Some(view.embedding_tx());
 
-        // Regenerate embeddings if needed (after schema migration)
-        let stats =
-            crate::embeddings::regenerate_all_embeddings(db_ref, client, true, tx.clone()).await;
-        if stats.total_processed() > 0 {
-            view.show_system(&format!(
-                "Regenerated {} embedding(s) ({} items, {} chunks)",
-                stats.total_processed(),
-                stats.items_processed,
-                stats.chunks_processed
-            ));
-            if stats.has_errors() {
-                view.show_warning(&format!(
-                    "{} embedding(s) failed to generate. They will be retried on next startup.",
-                    stats.total_failed()
-                ));
+        let db_clone = Arc::clone(db_ref);
+        let client_clone = Arc::clone(client);
+
+        // Spawn embedding recovery as a background task.
+        // Previously this ran synchronously before the event loop, which blocked
+        // the TUI for minutes when hundreds of embeddings needed regeneration
+        // (e.g., after schema migration v11→v12 that resets all has_embedding flags).
+        tokio::spawn(async move {
+            // Regenerate embeddings if needed (after schema migration)
+            let stats = crate::embeddings::regenerate_all_embeddings(
+                &db_clone,
+                &client_clone,
+                true,
+                tx.clone(),
+            )
+            .await;
+            if stats.total_processed() > 0 {
+                log::debug!(
+                    "Regenerated {} embedding(s) ({} items, {} chunks)",
+                    stats.total_processed(),
+                    stats.items_processed,
+                    stats.chunks_processed
+                );
+                if stats.has_errors() {
+                    log::warn!(
+                        "{} embedding(s) failed to generate. They will be retried on next startup.",
+                        stats.total_failed()
+                    );
+                }
             }
-        }
 
-        // Recover any missing embeddings from previous session
-        let recovered =
-            crate::embeddings::recover_missing_embeddings(db_ref, client, true, tx.clone()).await;
-        if recovered > 0 {
-            view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
-        }
+            // Recover any missing embeddings from previous session
+            let recovered = crate::embeddings::recover_missing_embeddings(
+                &db_clone,
+                &client_clone,
+                true,
+                tx.clone(),
+            )
+            .await;
+            if recovered > 0 {
+                log::debug!("Recovered {} missing embedding(s)", recovered);
+            }
 
-        // Recover missing fact embeddings and verify semantic dedup
-        let fact_recovered =
-            crate::facts::recovery::recover_missing_fact_embeddings(db_ref, client).await;
-        if fact_recovered > 0 {
-            log::debug!("Recovered {} fact embedding(s)", fact_recovered);
-        }
+            // Recover missing fact embeddings and verify semantic dedup
+            let fact_recovered = crate::facts::recovery::recover_missing_fact_embeddings(
+                &db_clone,
+                &client_clone,
+                tx.clone(),
+            )
+            .await;
+            if fact_recovered > 0 {
+                log::debug!("Recovered {} fact embedding(s)", fact_recovered);
+            }
 
-        let stats = crate::facts::verify::verify_and_dedup_facts(db_ref, client).await;
-        if stats.facts_checked > 0
-            && (stats.duplicates_removed > 0
-                || stats.contradictions_resolved > 0
-                || stats.global_wins > 0)
-        {
-            log::debug!(
-                "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
-                stats.facts_checked,
-                stats.duplicates_removed,
-                stats.contradictions_resolved,
-                stats.global_wins
-            );
-        }
+            let stats =
+                crate::facts::verify::verify_and_dedup_facts(&db_clone, &client_clone, tx.clone())
+                    .await;
+            if stats.facts_checked > 0
+                && (stats.duplicates_removed > 0
+                    || stats.contradictions_resolved > 0
+                    || stats.global_wins > 0)
+            {
+                log::debug!(
+                    "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
+                    stats.facts_checked,
+                    stats.duplicates_removed,
+                    stats.contradictions_resolved,
+                    stats.global_wins
+                );
+            }
 
-        // Clear embedding indicator
-        view.app_mut().clear_embedding_progress();
-        view.render();
+            // Signal completion to the TUI status bar.
+            // All recovery functions now send their own progress via the channel,
+            // but send a guaranteed final (MAX, MAX) to ensure the indicator
+            // is cleared even if any function returned early due to an error
+            // without signaling completion.
+            if let Some(ref tx) = tx {
+                let _ = tx.send((usize::MAX, usize::MAX));
+            }
+        });
     }
 
     // AGENTS.md loaded message

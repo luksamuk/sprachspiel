@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use super::conflict::is_contradiction;
 use super::types::Scope;
+use crate::chat::app::EmbeddingProgressTx;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::embeddings::cosine_similarity;
@@ -60,10 +61,12 @@ pub struct VerifyStats {
 pub async fn verify_and_dedup_facts(
     db: &Arc<Database>,
     client: &Arc<EmbeddingClient>,
+    progress_tx: Option<EmbeddingProgressTx>,
 ) -> VerifyStats {
     // Step 1: Ensure all facts have embeddings (recovery handles this,
     // but we do it here too in case verification is called independently)
-    let recovered = super::recovery::recover_missing_fact_embeddings(db, client).await;
+    let recovered =
+        super::recovery::recover_missing_fact_embeddings(db, client, progress_tx.clone()).await;
 
     let mut stats = VerifyStats {
         embeddings_generated: recovered,
@@ -81,12 +84,21 @@ pub async fn verify_and_dedup_facts(
 
     stats.facts_checked = all_facts.len();
     if all_facts.len() < 2 {
+        // Signal completion even when skipping
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((0, 0));
+        }
         return stats;
+    }
+
+    // Report progress for fact embedding generation phase
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((0, all_facts.len()));
     }
 
     // Step 3: Generate embeddings for all facts
     let mut fact_embeddings: Vec<(i64, Vec<f32>, Scope)> = Vec::new();
-    for fact in &all_facts {
+    for (idx, fact) in all_facts.iter().enumerate() {
         match super::embedding::generate_fact_embedding(&fact.content, client).await {
             Ok(emb) => {
                 fact_embeddings.push((fact.id, emb, fact.scope));
@@ -95,6 +107,9 @@ pub async fn verify_and_dedup_facts(
                 log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);
                 continue;
             }
+        }
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((idx + 1, all_facts.len()));
         }
     }
 

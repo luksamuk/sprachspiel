@@ -5,12 +5,12 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::str::FromStr;
-use zerocopy::IntoBytes;
 
 use super::decay::should_prune;
 use super::types::{Category, Fact, Scope, Source};
 use crate::db::Database;
 use crate::db::WhereBuilder;
+use crate::db::blob_to_f32_vec;
 
 /// Escape a string for FTS5 MATCH queries.
 fn fts5_escape(query: &str) -> String {
@@ -378,12 +378,18 @@ impl Database {
         project_id: Option<&str>,
     ) -> Result<()> {
         self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
+            let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
 
             conn.execute(
                 "INSERT INTO fact_embeddings (fact_id, embedding, scope, category, project_id)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![fact_id, embedding_bytes, scope, category, project_id],
+                params![
+                    fact_id,
+                    embedding_bytes.as_slice(),
+                    scope,
+                    category,
+                    project_id
+                ],
             )?;
 
             conn.execute(
@@ -408,7 +414,7 @@ impl Database {
         limit: usize,
     ) -> Result<Vec<FactSearchResult>> {
         self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
+            let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let mut results = Vec::new();
 
             let sql = match scope {
@@ -434,7 +440,7 @@ impl Database {
 
             let mut stmt = conn.prepare(sql)?;
 
-            let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row| {
+            let rows = stmt.query_map(params![embedding_bytes.as_slice(), limit as i32], |row| {
                 let _fact_id: i64 = row.get(0)?;
                 let distance: f32 = row.get(1)?;
                 // Convert cosine distance to cosine similarity.
@@ -501,6 +507,26 @@ impl Database {
                 let id: i64 = row.get(0)?;
                 let content: String = row.get(1)?;
                 Ok((id, content))
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Get all fact embedding vectors from the vec0 table
+    ///
+    /// Returns (fact_id, embedding) pairs for all facts that have
+    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// deserialized into Vec<f32>.
+    pub fn get_all_fact_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT fact_id, embedding FROM fact_embeddings")?;
+
+            let rows = stmt.query_map([], |row| {
+                let fact_id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                let embedding = blob_to_f32_vec(&blob);
+                Ok((fact_id, embedding))
             })?;
 
             rows.collect::<Result<Vec<_>, _>>()

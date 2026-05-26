@@ -6,6 +6,7 @@
 use clap::{Args, Subcommand};
 
 use crate::chat::ChatArgs;
+use crate::diagnostics::embeddings::EmbeddingSource;
 use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 use crate::vision::VisionArgs;
@@ -36,6 +37,10 @@ pub enum Commands {
     /// Analyze and describe images using vision models
     #[command(visible_alias = "v")]
     Vision(VisionArgs),
+
+    /// Diagnose embedding geometry and retrieval health
+    #[command(visible_alias = "diag")]
+    Diagnostics(DiagArgs),
 
     /// Generate shell completions
     #[command(about = "Generate shell completions for sprach")]
@@ -114,15 +119,63 @@ pub struct QueryArgs {
     pub query: Option<String>,
 }
 
+/// Arguments for the diagnostics subcommand
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Diagnose embedding geometry and retrieval health",
+    long_about = r#"
+Analyze stored embedding vectors to assess retrieval quality.
+
+Computes spectral metrics (d_eff, d̄, regime classification, variance
+distribution) on all embedding vectors in the database. Reports whether
+the embedding geometry supports effective vector search at standard
+similarity thresholds.
+
+By default, combines vectors from all sources (content, chunks, facts).
+Use --source to analyze a specific source only.
+
+The --db flag can be used before or after the subcommand:
+  sprach --db /path/to/db diagnostics
+  sprach diagnostics --db /path/to/db
+
+EXAMPLES:
+  sprach diagnostics
+  sprach diagnostics --source facts
+  sprach diagnostics --db /path/to/sprachspiel.db
+  sprach --db /path/to/sprachspiel.db diagnostics
+"#
+)]
+pub struct DiagArgs {
+    /// Which embedding source to analyze
+    ///
+    /// If not specified, combines all sources (content, chunks, facts).
+    #[arg(long, value_name = "SOURCE")]
+    pub source: Option<EmbeddingSource>,
+
+    /// Database path (overrides global --db)
+    ///
+    /// Use a specific SQLite database file for the embedding vectors.
+    /// Overrides the global --db flag if both are specified.
+    #[arg(long, value_name = "PATH")]
+    pub db: Option<String>,
+}
+
+impl DiagArgs {
+    /// Get the source filter, or None for all sources
+    pub fn source_filter(&self) -> Option<EmbeddingSource> {
+        self.source
+    }
+}
+
 impl TranslateArgs {
     /// Check if this is a list-only operation
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_list_only(&self) -> bool {
         self.list.is_some() && self.language.is_none()
     }
 
     /// Get the list filter if provided
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn list_filter(&self) -> Option<&str> {
         self.list
             .as_ref()

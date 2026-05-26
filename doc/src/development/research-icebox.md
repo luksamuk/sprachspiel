@@ -600,3 +600,101 @@
 - **Information routing reframing note:** Quality metric measures how much "V" (information value) is preserved vs discarded by the compaction Gate. Currently the Gate uses recency-only (binary: keep/discard), making quality = kept/total. Multi-signal Gate produces continuous g_i values, enabling weighted quality scores.
 - **Milestone:** M1 (Phase A, with TAP-1) / M3 (Phase B, after multi-signal gate)
 - **Revisit when:** Phase A can start immediately with TAP-1; Phase B after B1.5
+
+---
+
+### R-31: System Prompt Architecture Documentation
+
+- **Source:** Auto-diagnosis of Sprach system prompt (system-prompt-analysis.md)
+- **Current state:** Prompt architecture (SOUL → OPERATION → CONTEXT → CAPABILITY) is implicit in code but not documented. Auto-diagnosis flagged "redundancy" between layers, but analysis confirmed this is intentional layering — each layer serves a different purpose (identity, behavior, semantics, syntax).
+- **Why deferred to M2:** TUI (#16) will require prompt restructuring for interactive modes (different views need different prompt compositions). Documenting now and changing later wastes effort.
+- **Implementation:** `doc/src/development/prompt-architecture.md` — explains the four layers, why "redundancy" is intentional, and how to add new sections correctly.
+- **Key insight from triage:** The auto-diagnosis identified 3x "redundancy" in Behavior instructions, Memory instructions, and File Operations. Analysis confirmed these are NOT redundant — they are different layers serving different purposes:
+  - SOUL.md "Search first" = behavioral motivation (WHY use memory)
+  - MEMORY section = semantic instruction (WHAT retrieved_context means)
+  - MEMORY TOOLS = syntactic guide (HOW to use remember tool)
+  - Consolidating these would lose the ability to disable SOUL.md independently with `--soulless`.
+- **Cross-refs:** #182 (prompt clarifications — first formalization of hierarchy); #16 (TUI will change prompt structure); #180 (MCP Client Phase 1 — tool discovery will change how tool descriptions are delivered)
+- **Milestone:** M2 (documentation, no code)
+- **Revisit when:** TUI implementation starts and prompt structure needs redesign
+
+---
+
+### R-32: ratatui-cheese Widget Adoption (M2 TUI Components)
+
+- **Source:** M2 TUI library evaluation (ratatui-cheese v0.7.0, MIT license, ratatui 0.30)
+- **Current state:** W6 (Responsive Chat Rebuild) provides Ratatui foundation — `RatatuiView`, `CrosstermInput`, `tui-markdown`, `rattles` spinner, `StatusBar` widget. M2 TUI (#16) needs panel system, selection widgets, help display, and theming.
+- **Why significant:** ratatui-cheese provides 9 widgets + Palette system that cover 4-5 of the TUI widget needs at low integration cost. Minimal dependency depth (ratatui + unicode-width only). Compatible version (ratatui 0.30 matches Sprachspiel).
+- **Component assessment:**
+  - ✅ **Adopt — Help:** Drop-in keybinding display with short mode (1-line) and full mode (multi-column). Replaces ad-hoc keybinding display. Wired to `?` key. Effort: Low — no overlap with existing code.
+  - ✅ **Adopt — Fieldset:** Container with decorated borders (`── Title ──`) and 7 fill styles. Essential for sidebar/panel visual sectioning in multipane layout. Replaces manual `Block::bordered()` styling. Effort: Low.
+  - ✅ **Adopt — Select / MultiSelect:** Single/multi selection pickers with cursor, disabled options, validation. Needed for `/steer` (model picker), `/queue` (session list), tool selection, config menus. Effort: Medium — needs integration with event loop and state management.
+  - ✅ **Adopt — List + Paginator:** Paginated list with custom headers, selection indicators, item spacing. Natural fit for `/queue` (conversation history), tool list, context window display. Paginator provides `get_slice_bounds()` helper for clean pagination UX. Effort: Medium — state management + Paginator integration.
+  - ⏸️ **Evaluate — Palette:** 5 presets (Dark, Light, Charm, Ocean, Sunset). Need comparison against existing Catppuccin-based styles in `src/chat/tui/styles.rs`. Decision depends on whether Palette simplifies or fragments the theming layer. Added as sub-item of #16.
+  - ❌ **Skip — Spinner:** Sprachspiel uses `rattles 0.2` for spinner animation. Switching to cheese-spinner is a lateral move (12 presets vs rattles' presets, no functional gain). Keep rattles.
+  - ❌ **Skip — Input:** Sprachspiel uses `ratatui-textarea 0.9.1` which supports multi-line editing, undo/redo, selection, clipboard. The cheese Input is single-line only — a downgrade. Keep ratatui-textarea.
+  - ❌ **Skip — Tree:** No tree-structured data in M2 scope. Niche use case for M3+. Revisit if file/document trees are needed.
+- **Risk assessment:**
+  - **Maturity:** Young (1 month), single maintainer, 27 stars, 0 forks — but MIT licensed so forkable
+  - **Breaking changes:** Rapid release cadence (7 versions in 5 weeks) — API may shift
+  - **Mitigation:** Pin exact version in `Cargo.toml` (`ratatui-cheese = "0.7"`). Widgets are simple enough to vendor if the library stagnates.
+- **Adoption plan:**
+  1. Add `ratatui-cheese = "0.7"` to `Cargo.toml` as direct dependency (no feature flag)
+  2. Help widget — replace ad-hoc keybinding display, wire to `?` key
+  3. Fieldset — use for sidebar/panel borders in multipane layout
+  4. Select / MultiSelect — implement for `/steer` and config menus
+  5. List + Paginator — implement for `/queue` and conversation display
+  6. Evaluate Palette against existing Catppuccin styles — adopt if it simplifies theming
+  7. Skip Spinner, Input, Tree (rattles, ratatui-textarea, and no use case)
+- **Dependencies:** ratatui 0.30 — compatible with Sprachspiel stack
+- **Cross-refs:** #16 (TUI — primary consumer), #117 (Interaction Modes — Select/MultiSelect for `/steer`), R-33 (Onboarding Mode — uses Help, Fieldset, Select, Paginator)
+- **Milestone:** M2 (with #16)
+- **Revisit when:** M2 TUI implementation starts
+
+---
+
+### R-33: First-Run Onboarding Mode (OnboardingWizard)
+
+- **Source:** M2 UX design evaluation — discoverability analysis of Sprachspiel's 30+ slash commands, feature-gated tools, 3 config files, and invisible capabilities
+- **Current state:** Zero onboarding. `Settings::default()` provides sensible defaults (qwen3.5:4b, localhost:11434, dark skin, all features on). Only mechanism: `--init-config` creates a commented sample config, and a banner hint "Type /help for commands". The following features are invisible to new users:
+  - 30+ slash commands (discoverable only via `/help`)
+  - Keybindings (Ctrl+C copy/cancel, Ctrl+U undo, etc.) — undocumented in TUI
+  - Tool system (weather, file, calc, etc.) — shown in banner as ✅/❌ but not explained
+  - Thinking mode (`/think`) — not prompted
+  - Model switching (`/model`) — not prompted
+  - Facts system (auto-extraction) — invisible until it fires
+  - Notes, documents, skills, feedback — only via `/help`
+  - Per-project session auto-save, `models.toml`, `tools.toml` — not communicated
+  - Anonymous mode (`--anonymous`) — CLI flag only
+- **Why significant:** Discoverability is a core UX gap. Sprachspiel has significant functionality that users never find without prior knowledge. An onboarding flow that respects the "zero-config works" principle (app launches immediately even without config) while progressively revealing features would dramatically improve first-run experience.
+- **Architecture:** `OnboardingWizard` state machine composing ratatui-cheese widgets, invoked when `config.toml` is missing or via `/setup` command at any time.
+- **OnboardingStep enum:**
+  - `Welcome` — Intro text + Help widget (navigation keys) + Paginator (step 1/N)
+  - `Connection` — Fieldset("Connection") + Input(Ollama host/port) + Select(protocol)
+  - `Model` — Fieldset("Model") + Select(default model) + List(available models)
+  - `Preferences` — Fieldset("Preferences") + Select(skin: dark/light/mono) + MultiSelect(enable features) + Select(thinking mode)
+  - `Commands` — Interactive Help showing essential keycommands + `/` commands
+  - `Confirm` — Fieldset("Review") + summary display + Select(confirm/edit/start)
+- **Design principles:**
+  1. **Never block the user** — onboarding is optional, skippable at every step, and re-invocable via `/setup`
+  2. **Zero-config works** — smart defaults mean the app launches immediately even without config
+  3. **Progressive disclosure** — show minimal UI first, reveal complexity via `?` and commands
+  4. **Auto-detect over ask** — check if Ollama is running, detect available models, test connectivity before asking
+  5. **Persist progress** — if user quits mid-wizard, save partial config so they can resume
+- **Config surface covered:** 3 TOML files (~30 settings with defaults): `config.toml` (connection, skin, features), `models.toml` (custom models), `tools.toml` (external tools, timeouts)
+- **Integration points:** `Settings::load()` for first-run detection (config.toml missing), `/setup` command for re-invocation, `show_welcome()` hook
+- **ratatui-cheese widget mapping by step:**
+  | Step | Widgets Used |
+  |------|-------------|
+  | Welcome | `Help` (short mode) + `Paginator` |
+  | Connection | `Fieldset` + `Input` + `Select` |
+  | Model | `Fieldset` + `Select` + `List` + `Paginator` |
+  | Preferences | `Fieldset` + `Select` + `MultiSelect` |
+  | Commands | `Help` (full mode) |
+  | Confirm | `Fieldset` + summary display |
+- **Note:** Also evaluated `ratatui-form` (v0.1.1) for field validation within each wizard step. Single-screen only, immature — not recommended for adoption at this time. Could complement cheese for field validation later.
+- **Issue tracking:** Sub-item of #16 (TUI), not a separate issue. Added as checklist item within the TUI issue.
+- **Prerequisite:** #16 (TUI with panel system and ratatui-cheese integration)
+- **Cross-refs:** #16 (TUI — parent issue), #117 (Interaction Modes — uses Select/MultiSelect), R-32 (ratatui-cheese widgets)
+- **Milestone:** M2 (design phase; implementation in parallel with TUI)
+- **Revisit when:** TUI panel system (#16) has basic layout working

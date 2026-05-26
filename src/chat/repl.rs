@@ -56,37 +56,21 @@ fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, false, db_path);
+    let result = crate::db::init_database_core(ollama.clone(), false, false, db_path);
 
-    let error_detail = if db.is_none() {
-        let storage_path = crate::db::Database::get_storage_path();
-        let error_msg = format!(
-            "DATABASE INITIALIZATION FAILED\n\
-             \n\
-             Storage path: {}\n\
-             \n\
-             Possible causes:\n\
-             1. sqlite-vec extension not loaded (check your installation)\n\
-             2. Permission denied for storage directory\n\
-             3. Corrupted database file (try deleting and restarting)\n\
-             4. Disk full or I/O error\n\
-             \n\
-             To diagnose:\n\
-             - Check if the LLM server is running\n\
-             - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
-             - Run with -v for more information\n\
-             \n\
-             Use --anonymous for anonymous mode without database persistence.",
-            storage_path.display()
-        );
-        log::error!("Database initialization failed: {}", error_msg);
-        eprintln!("\x1B[31m{}\x1B[0m", error_msg);
-        Some(error_msg)
+    let error_detail = if result.db.is_none() {
+        // Error already logged and formatted in init_database_core
+        if let Some(ref detail) = result.error_detail {
+            eprintln!("\x1B[31m{}\x1B[0m", detail);
+            Some(detail.clone())
+        } else {
+            None
+        }
     } else {
         None
     };
 
-    (db, embedding, ollama, error_detail)
+    (result.db, result.embedding, ollama, error_detail)
 }
 
 /// Run startup tasks (decay cycles).
@@ -364,7 +348,8 @@ async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState, view: 
         let db_clone = Arc::clone(db_ref);
         let client_clone = Arc::clone(client);
         tokio::spawn(async move {
-            crate::facts::recovery::recover_missing_fact_embeddings(&db_clone, &client_clone).await;
+            crate::facts::recovery::recover_missing_fact_embeddings(&db_clone, &client_clone, None)
+                .await;
         });
     }
 }
