@@ -559,6 +559,11 @@ impl Database {
     /// The `norm_correction` column stores `1/(|truncated_vec|^2)` so that at query
     /// time, `true_cosine ≈ measured_cosine * sqrt(query_nc * result_nc)`.
     ///
+    /// NOTE: `norm_correction` is stored as TEXT (not REAL) because sqlite-vec
+    /// only supports INTEGER and TEXT auxiliary column types. REAL causes:
+    /// "vec0 constructor error: chunk_size must be a non-zero positive integer".
+    /// Stored as decimal string, parsed back to f32 at query time.
+    ///
     /// Since sqlite-vec does not support ALTER TABLE on virtual tables, we must
     /// DROP and re-CREATE all three vec0 tables. This loses all embeddings, but
     /// startup recovery regenerates them (has_embedding flags are reset below).
