@@ -6,6 +6,7 @@
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::settings::{DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT};
 use crate::tools::context::{get_db, get_embedding, get_settings};
 
 /// Number of chunks to show in preview for large documents
@@ -677,7 +678,7 @@ async fn remember_by_query(
     let (keyword_weight, semantic_weight) = settings
         .as_ref()
         .map(|s| (s.retrieval.keyword_weight, s.retrieval.semantic_weight))
-        .unwrap_or((0.4, 0.6));
+        .unwrap_or((DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT));
     // Search for notes using unified content search
     let note_params = crate::content::ContentSearchParams {
         query,

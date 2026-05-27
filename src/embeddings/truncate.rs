@@ -39,9 +39,9 @@ pub struct TruncateResult {
 /// Truncate and normalize a 768-dimensional embedding to 256 dimensions.
 ///
 /// Convenience wrapper around [`truncate_and_normalize_with_correction`] that
-/// discards the norm correction factor. Use the `_with_correction` variant
-/// when storing embeddings to database for accurate cosine similarity at
-/// query time.
+/// discards the norm correction factor. Production code should use the
+/// `_with_correction` variant when storing embeddings to database for accurate
+/// cosine similarity at query time.
 ///
 /// # Arguments
 /// * `embedding` - Full 768-dimensional embedding
@@ -51,7 +51,7 @@ pub struct TruncateResult {
 ///
 /// # Panics
 /// * If embedding has fewer than 256 dimensions
-#[allow(dead_code)] // Convenience wrapper — callers should prefer truncate_and_normalize_with_correction
+#[cfg(test)]
 pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
     truncate_and_normalize_with_correction(embedding).vector
 }

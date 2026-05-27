@@ -26,7 +26,7 @@
 //! - **Bug #1** (LLM tool): Layer 3.5 ran AFTER Layer 3 instead of before,
 //!   causing FTS5 to catch contradictions and skip the preferred semantic path.
 //! - **Bug #2** (LLM tool): Used `SEMANTIC_DEDUP_THRESHOLD` (0.90) instead of
-//!   `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (0.70), making semantic search unreachable.
+//!   `DEFAULT_SEMANTIC_THRESHOLD` (0.70), making semantic search unreachable.
 //! - **Bug #3** (LLM tool): No triple-based disambiguation in Layer 3.5 — only
 //!   `is_contradiction()` was used, causing false positives.
 //! - **Bug #4** (LLM tool): Fire-and-forget embedding (`tokio::spawn`) instead
@@ -187,7 +187,7 @@ struct DedupContext<'a> {
     config: &'a DedupConfig,
     embedding_client: Option<&'a Arc<EmbeddingClient>>,
     /// Semantic similarity threshold for Layer 3.5 (cosine ≥ threshold triggers disambiguation).
-    /// Defaults to `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (0.70).
+    /// Defaults to `DEFAULT_SEMANTIC_THRESHOLD` (0.70) via `FactSettings::semantic_threshold`.
     semantic_threshold: f32,
 }
 

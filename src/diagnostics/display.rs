@@ -6,6 +6,7 @@
 //! text (pipe-delimited tables, no ANSI codes).
 
 use super::embeddings::{EmbeddingDiagnostics, Regime};
+use crate::settings::{DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT};
 
 /// Maximum content width for blockquote lines before wrapping.
 ///
@@ -284,10 +285,11 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
         md.push_str(&blockquote(&rec.weight_rationale));
         md.push('\n');
     } else {
-        md.push_str(&blockquote(
-            "Default weights (keyword=0.4, semantic=0.6) are appropriate \
+        md.push_str(&blockquote(&format!(
+            "Default weights (keyword={:.1}, semantic={:.1}) are appropriate \
              for the current embedding geometry.",
-        ));
+            DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT
+        )));
         md.push('\n');
     }
 

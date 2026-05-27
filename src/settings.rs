@@ -36,6 +36,19 @@ pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 /// Default LLM server port
 pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
 
+/// Default semantic search threshold for fact deduplication (cosine similarity).
+///
+/// Used by Layer 3.5 in the dedup pipeline. Intentionally broad (0.70) to catch
+/// contradictions that normalized match and FTS5 miss.
+/// Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs (startup pairwise dedup).
+pub const DEFAULT_SEMANTIC_THRESHOLD: f32 = 0.70;
+
+/// Default keyword weight for hybrid RRF retrieval (BM25).
+pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.4;
+
+/// Default semantic weight for hybrid RRF retrieval (vector similarity).
+pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.6;
+
 /// Normalize host string to ensure it has a scheme (http:// or https://)
 /// This handles cases where users configure just an IP address like "192.168.1.100"
 pub fn normalize_host(host: &str) -> String {
@@ -299,7 +312,7 @@ impl Default for FactSettings {
             auto_extract: true,
             max_facts: 3,
             auto_extract_notify: true,
-            semantic_threshold: 0.70,
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD,
         }
     }
 }
@@ -309,7 +322,7 @@ fn default_max_facts() -> u32 {
 }
 
 fn default_semantic_threshold() -> f32 {
-    0.70
+    DEFAULT_SEMANTIC_THRESHOLD
 }
 
 /// Retrieval configuration for hybrid search (Reciprocal Rank Fusion).
@@ -337,18 +350,18 @@ pub struct RetrievalSettings {
 impl Default for RetrievalSettings {
     fn default() -> Self {
         RetrievalSettings {
-            keyword_weight: 0.4,
-            semantic_weight: 0.6,
+            keyword_weight: DEFAULT_KEYWORD_WEIGHT,
+            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
         }
     }
 }
 
 fn default_keyword_weight() -> f32 {
-    0.4
+    DEFAULT_KEYWORD_WEIGHT
 }
 
 fn default_semantic_weight() -> f32 {
-    0.6
+    DEFAULT_SEMANTIC_WEIGHT
 }
 
 fn default_led_port() -> u16 {

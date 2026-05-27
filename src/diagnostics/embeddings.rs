@@ -24,6 +24,10 @@ use std::fmt;
 
 use clap::ValueEnum;
 
+use crate::settings::{
+    DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_THRESHOLD, DEFAULT_SEMANTIC_WEIGHT,
+};
+
 /// Source of embedding vectors for diagnostics
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum EmbeddingSource {
@@ -87,8 +91,7 @@ pub struct ThresholdRecommendation {
     pub semantic_threshold: f64,
     /// Rationale for the recommendation
     pub rationale: String,
-    /// Whether default weights (0.4 keyword / 0.6 semantic) are appropriate,
-    /// or if the user should adjust them
+    /// Whether default weights are appropriate, or if the user should adjust them
     pub adjust_weights: bool,
     /// Suggested `keyword_weight` (only meaningful if `adjust_weights` is true)
     pub suggested_keyword_weight: f64,
@@ -216,12 +219,12 @@ pub fn analyze_embeddings_with_progress(
             },
             model_name: model_name.to_string(),
             threshold_recommendation: ThresholdRecommendation {
-                semantic_threshold: 0.70,
+                semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
                 rationale: "No vectors available for analysis. Using default threshold."
                     .to_string(),
                 adjust_weights: false,
-                suggested_keyword_weight: 0.4,
-                suggested_semantic_weight: 0.6,
+                suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+                suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
                 weight_rationale: String::new(),
             },
         };
@@ -733,13 +736,13 @@ pub fn recommend_threshold(
     // nearly identical — threshold doesn't matter much
     if mean_cosine_distance < 0.15 {
         return ThresholdRecommendation {
-            semantic_threshold: 0.70,
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
             rationale: "Vectors are nearly identical (d̄ < 0.15). Default threshold \
                 works but corpus may be too small or homogeneous for meaningful analysis."
                 .to_string(),
             adjust_weights: false,
-            suggested_keyword_weight: 0.4,
-            suggested_semantic_weight: 0.6,
+            suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+            suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
             weight_rationale: String::new(),
         };
     }
@@ -747,13 +750,13 @@ pub fn recommend_threshold(
     // Case 1: TIGHT at 0.70 — geometry works well at default threshold
     if tight_at_070 {
         ThresholdRecommendation {
-            semantic_threshold: 0.70,
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
             rationale: "Embedding geometry is TIGHT at θ=0.70 — semantic search \
                 discriminates well. Default threshold is appropriate."
                 .to_string(),
             adjust_weights: false,
-            suggested_keyword_weight: 0.4,
-            suggested_semantic_weight: 0.6,
+            suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+            suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
             weight_rationale: String::new(),
         }
     }
@@ -1143,76 +1146,44 @@ mod tests {
         );
     }
 
-    /// Test: SPREAD at θ=0.70 but TIGHT at θ=0.80 → recommend θ=0.80
+    /// Test: TIGHT at θ=0.70 but SPREAD at θ≥0.75 → still recommend θ=0.70
+    ///
+    /// With d̄=0.28: TIGHT at 0.70 (θ'=0.30), SPREAD at 0.75+ (θ'≤0.25).
+    /// Because d̄ < 0.30 at θ=0.70, `tight_at_070=true` → default 0.70 is appropriate.
     #[test]
-    fn test_recommend_threshold_spread_070_tight_080() {
-        // d̄ = 0.35, so:
-        // θ=0.70 → θ'=0.30, 0.35 ≥ 0.30 → SPREAD
-        // θ=0.80 → θ'=0.20, 0.35 ≥ 0.20 → SPREAD
-        // θ=0.85 → θ'=0.15, 0.35 ≥ 0.15 → SPREAD
-        // Actually all are SPREAD. Let me use d̄=0.25:
-        // θ=0.70 → θ'=0.30, 0.25 < 0.30 → TIGHT
-        // Hmm, need d̄ ≥ 0.30 for SPREAD at 0.70 and d̄ < 0.20 for TIGHT at 0.80
-        // That's contradictory since d̄ < 0.20 < 0.30 always means TIGHT at 0.70.
-        // For SPREAD at 0.70 and TIGHT at 0.80:
-        // d̄ ≥ 0.30 (SPREAD at 0.70) AND d̄ < 0.20 (TIGHT at 0.80)
-        // Contradictory! So SPREAD at 0.70 but TIGHT at 0.80 requires d̄ ∈ [0.20, 0.30)
-        // θ=0.70 → θ'=0.30 and d̄ < 0.30 means TIGHT at 0.70.
-        // Actually: SPREAD at 0.70 means d̄ ≥ 0.30.
-        // TIGHT at 0.80 means d̄ < 0.20.
-        // 0.30 ≤ d̄ < 0.20 is impossible.
-        // The real condition is: SPREAD at 0.70 (d̄ ≥ 0.30) and TIGHT at 0.80 (d̄ < 0.20)
-        // is impossible, but SPREAD at 0.70 (d̄ ≥ 0.30) and SPREAD at 0.80 (d̄ ≥ 0.20)
-        // but TIGHT at 0.85 (d̄ < 0.15) is possible... no.
-        // Actually the thresholds go: 0.70, 0.75, 0.80, 0.85
-        // SPREAD at 0.70 requires d̄ ≥ 0.30
-        // TIGHT at 0.80 requires d̄ < 0.20
-        // These are contradictory. So we can never be SPREAD at 0.70 but TIGHT at 0.80.
-        // The only possible cases are:
-        // 1. TIGHT at 0.70 (d̄ < 0.30) → all higher thresholds also TIGHT
-        // 2. SPREAD at 0.70, TIGHT at 0.75 → d̄ ∈ [0.25, 0.30) — impossible since 0.25 < 0.30
-        // Wait: θ=0.75 → θ'=0.25, TIGHT at 0.75 means d̄ < 0.25
-        // SPREAD at 0.70 means d̄ ≥ 0.30... but d̄ < 0.25 contradicts d̄ ≥ 0.30
-        // Actually this means monotonically: if SPREAD at θ₁ then SPREAD at all θ₂ < θ₁
-        // (since θ'₂ < θ'₁ and if d̄ ≥ θ'₁ then d̄ ≥ θ'₂)
-        // So the regimes are always: TIGHT from above, transitioning to SPREAD at some threshold.
-        // The test should use d̄ = 0.22 → TIGHT at 0.70, SPREAD at 0.75 is impossible.
-        // Let me rethink: regime goes from TIGHT to SPREAD as threshold increases (θ' decreases)
-        // d̄=0.22: θ=0.70→θ'=0.30→TIGHT(0.22<0.30), θ=0.75→θ'=0.25→TIGHT(0.22<0.25)
-        // d̄=0.28: θ=0.70→θ'=0.30→TIGHT(0.28<0.30), θ=0.75→θ'=0.25→SPREAD(0.28≥0.25)
-        // That's the pattern: TIGHT at 0.70 but SPREAD at 0.75 and above
-        // In the code: tight_at_070=true, tight_at_080=false → falls into else branch
-        // Let's test with d̄=0.28 → TIGHT at 0.70 but SPREAD at everything else
+    fn test_recommend_threshold_tight_at_070_spread_above() {
         let regimes = compute_regimes(0.28);
         assert_eq!(
             regimes[0].regime,
             Regime::Tight,
-            "0.28 < 0.30 → TIGHT at 0.70"
+            "d̄=0.28 < θ'=0.30 at θ=0.70"
         );
         assert_eq!(
             regimes[1].regime,
             Regime::Spread,
-            "0.28 ≥ 0.25 → SPREAD at 0.75"
+            "d̄=0.28 ≥ θ'=0.25 at θ=0.75"
         );
         assert_eq!(
             regimes[2].regime,
             Regime::Spread,
-            "0.28 ≥ 0.20 → SPREAD at 0.80"
+            "d̄=0.28 ≥ θ'=0.20 at θ=0.80"
         );
         assert_eq!(
             regimes[3].regime,
             Regime::Spread,
-            "0.28 ≥ 0.15 → SPREAD at 0.85"
+            "d̄=0.28 ≥ θ'=0.15 at θ=0.85"
         );
 
-        // With TIGHT at 0.70, recommend_threshold should return θ=0.70
         let rec = recommend_threshold(10.0, 0.28, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
             rec.semantic_threshold
         );
-        assert!(!rec.adjust_weights);
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
     }
 
     /// Test: SPREAD at all thresholds → recommend θ=0.85 with keyword-heavy weights
@@ -1301,34 +1272,46 @@ mod tests {
         assert!(!rec.adjust_weights);
     }
 
-    /// Test: SPREAD at 0.70-0.75, TIGHT at 0.80 (the "middle case")
+    /// Test: TIGHT at θ≤0.80 but SPREAD at θ=0.85 → default θ=0.70 still appropriate
+    ///
+    /// With d̄=0.18: TIGHT at 0.70/0.75/0.80, SPREAD only at 0.85.
+    /// Since `tight_at_070=true`, the default threshold 0.70 is still the
+    /// best choice — vectors discriminate well at this threshold.
     #[test]
-    fn test_recommend_threshold_mixed_middle() {
-        // Need d̄ ∈ [0.20, 0.25) for SPREAD at 0.80 but TIGHT at 0.75
-        // But that gives TIGHT at 0.70 too since d̄ < 0.30.
-        // The actual "mixed" case is: SPREAD at 0.70, TIGHT at 0.80
-        // which requires d̄ ≥ 0.30 AND d̄ < 0.20 → impossible
-        // So the only interesting case is where TIGHT at 0.70 gives
-        // default threshold. SPREAD at 0.75+ gives higher threshold.
-        // Let me test d̄ = 0.18 (TIGHT at all):
-        // θ=0.70→θ'=0.30→0.18<0.30→TIGHT
-        // θ=0.75→θ'=0.25→0.18<0.25→TIGHT
-        // θ=0.80→θ'=0.20→0.18<0.20→TIGHT
-        // θ=0.85→θ'=0.15→0.18≥0.15→SPREAD
+    fn test_recommend_threshold_tight_low_spread_at_085() {
         let regimes = compute_regimes(0.18);
-        assert_eq!(regimes[0].regime, Regime::Tight); // 0.70
-        assert_eq!(regimes[1].regime, Regime::Tight); // 0.75
-        assert_eq!(regimes[2].regime, Regime::Tight); // 0.80
-        assert_eq!(regimes[3].regime, Regime::Spread); // 0.85
+        assert_eq!(
+            regimes[0].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.30 at θ=0.70"
+        );
+        assert_eq!(
+            regimes[1].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.25 at θ=0.75"
+        );
+        assert_eq!(
+            regimes[2].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.20 at θ=0.80"
+        );
+        assert_eq!(
+            regimes[3].regime,
+            Regime::Spread,
+            "d̄=0.18 ≥ θ'=0.15 at θ=0.85"
+        );
 
-        // TIGHT at 0.70 → default 0.70
+        // tight_at_070=true → recommend θ=0.70 (default)
         let rec = recommend_threshold(10.0, 0.18, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
             rec.semantic_threshold
         );
-        assert!(!rec.adjust_weights);
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
     }
 
     /// Test: analyze_embeddings produces threshold_recommendation
