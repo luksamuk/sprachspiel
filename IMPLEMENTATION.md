@@ -3175,9 +3175,9 @@ Two interrelated bugs discovered via production database investigation (12 items
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Prevent empty assistant messages: `add_assistant_message()` validation + `process_send_result()` skip | ❌ NOT STARTED |
-| 2 | Filter by content length in recovery/reindex queries + `MIN_EMBED_CONTENT_LEN` constant | ❌ NOT STARTED |
-| 3 | `/gc` command: ChatCommand::Gc, parser, handler, DB method, help text | ❌ NOT STARTED |
+| 1 | Prevent empty assistant messages: `add_assistant_message()` validation + `process_send_result()` skip | ✅ COMPLETED |
+| 2 | Filter by content length in recovery/reindex queries + `MIN_EMBED_CONTENT_LEN` constant | ✅ COMPLETED |
+| 3 | `/gc` command: ChatCommand::Gc, parser, handler, DB method, help text | ✅ COMPLETED |
 
 **Deferred to Later Milestones:**
 
