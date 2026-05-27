@@ -3161,15 +3161,19 @@ Error messages like `✗ ␛[31mError:␛[0m Internal Server Error (ref: ...)` d
 
 **Related:** Issue #133
 
-**Bug Fix: Empty Assistant Messages from Ctrl+C Cancellation (Issue #185)** — 🔄 IN PROGRESS
+**Bug Fix: Empty Assistant Messages from Ctrl+C Cancellation (Issue #185)** — ✅ COMPLETED
 
-Two interrelated bugs discovered via production database investigation (12 items with `has_embedding = 0`):
+Three interrelated bugs discovered via production database investigation (12 items with `has_embedding = 0`):
 
 1. **Empty assistant messages from Ctrl+C:** When the user pressed Ctrl+C during LLM streaming, `chat_stream()` in `custom_coordinator.rs` broke the streaming loop but returned `Ok(ChatMessageResponse)` with `full_content = ""`. This propagated as success through `process_send_result()` → `add_assistant_message("")`, persisting empty assistant messages. These messages: have no semantic value, confuse the LLM with empty turns, and can never receive embeddings (permanently stuck at `has_embedding = 0`). Evidence: 5 empty assistant messages (id 123, 232, 239, 278, 326) in production DB.
 
 2. **Short content infinite recovery loop:** Items with `content.len() < 10` or `content.trim().is_empty()` were skipped by recovery/regenerate code but left with `has_embedding = 0`. On every startup, recovery queries `WHERE has_embedding = 0`, found these items, skipped them, and left them as `has_embedding = 0` — forever. Evidence: 7 short user messages ("Vai." at 4 chars, "Prossiga." at 9 chars × 6). Fix: filter by content length in recovery/reindex SQL queries (`AND length(content) >= 10 AND content != ''`), extract `MIN_EMBED_CONTENT_LEN` constant.
 
-3. **No cleanup command:** Added `/gc` command for on-demand database garbage collection (empty messages, orphans). Not automatic — user decides when to clean.
+3. **No cleanup command:** Added `/gc` command for on-demand database garbage collection (empty messages, orphan chunks, orphan embeddings). Not automatic — user decides when to clean.
+
+4. **Fact embedding regeneration on every startup:** `verify_and_dedup_facts()` called `generate_fact_embedding()` for ALL active facts on every startup, making N Ollama API calls even when all facts already had embeddings in the vec0 table. This caused the "indexing N facts" progress message on every boot. Fix: Verification now reads existing embeddings from DB via `get_all_fact_embedding_vectors()` and only generates new embeddings for facts with missing vec0 rows.
+
+5. **vec0 re-embedding UNIQUE constraint failure:** `update_fact_embedding()`, `update_content_item_embedding()`, and `update_content_chunk_embedding()` used bare `INSERT INTO` for vec0 tables. If called for an entity that already had an embedding, the INSERT would fail with `UNIQUE constraint failed` because vec0 virtual tables use the entity ID as PRIMARY KEY and do not support `INSERT OR REPLACE`. Fix: All three methods now use `DELETE + INSERT` pattern.
 
 **Implementation phases:**
 
@@ -3178,6 +3182,9 @@ Two interrelated bugs discovered via production database investigation (12 items
 | 1 | Prevent empty assistant messages: `add_assistant_message()` validation + `process_send_result()` skip | ✅ COMPLETED |
 | 2 | Filter by content length in recovery/reindex queries + `MIN_EMBED_CONTENT_LEN` constant | ✅ COMPLETED |
 | 3 | `/gc` command: ChatCommand::Gc, parser, handler, DB method, help text | ✅ COMPLETED |
+| 4 | Read existing fact embeddings from DB instead of regenerating on every startup | ✅ COMPLETED |
+| 5 | `DELETE + INSERT` pattern for all vec0 embedding update methods | ✅ COMPLETED |
+| 6 | Orphan embedding cleanup in `/gc` (content, chunk, and fact embeddings) | ✅ COMPLETED |
 
 **Deferred to Later Milestones:**
 

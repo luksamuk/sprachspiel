@@ -402,6 +402,12 @@ pub struct GcData {
     pub empty_messages_removed: usize,
     /// Number of orphan chunks removed
     pub orphan_chunks_removed: usize,
+    /// Number of orphan content embeddings removed (vec0 rows without parent item)
+    pub orphan_item_embeddings_removed: usize,
+    /// Number of orphan chunk embeddings removed (vec0 rows without parent chunk)
+    pub orphan_chunk_embeddings_removed: usize,
+    /// Number of orphan fact embeddings removed (vec0 rows without parent fact)
+    pub orphan_fact_embeddings_removed: usize,
     /// Whether GC succeeded
     pub success: bool,
     /// Error message (if failed)

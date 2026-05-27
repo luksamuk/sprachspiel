@@ -367,8 +367,10 @@ impl Database {
     /// Store a fact embedding and mark has_embedding = 1.
     ///
     /// Inserts the embedding into the fact_embeddings vec0 table and updates
-    /// the fact's has_embedding flag. This follows the same pattern as
-    /// `update_content_item_embedding()`.
+    /// the fact's has_embedding flag. Uses DELETE + INSERT because vec0 virtual
+    /// tables do not support INSERT OR REPLACE (UNIQUE constraint violation).
+    /// This makes re-embedding safe: if a fact already has an embedding, the
+    /// old row is deleted before the new one is inserted.
     pub fn update_fact_embedding(
         &self,
         fact_id: i64,
@@ -379,6 +381,15 @@ impl Database {
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
+
+            // DELETE first: vec0 does not support INSERT OR REPLACE.
+            // If the fact already has an embedding, the old row must be removed
+            // before inserting the new one, otherwise the UNIQUE constraint on
+            // fact_id (PRIMARY KEY) would cause the INSERT to fail.
+            conn.execute(
+                "DELETE FROM fact_embeddings WHERE fact_id = ?1",
+                params![fact_id],
+            )?;
 
             conn.execute(
                 "INSERT INTO fact_embeddings (fact_id, embedding, scope, category, project_id)

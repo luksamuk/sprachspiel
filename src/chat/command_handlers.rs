@@ -1175,13 +1175,20 @@ pub fn handle_gc(state: &ReplState) -> Vec<CommandOutput> {
     match db.garbage_collect() {
         Ok(stats) => {
             log::debug!(
-                "Garbage collection: {} empty message(s), {} orphan chunk(s)",
+                "Garbage collection: {} empty message(s), {} orphan chunk(s), \
+                 {} orphan item embedding(s), {} orphan chunk embedding(s), {} orphan fact embedding(s)",
                 stats.empty_messages_removed,
                 stats.orphan_chunks_removed,
+                stats.orphan_item_embeddings_removed,
+                stats.orphan_chunk_embeddings_removed,
+                stats.orphan_fact_embeddings_removed,
             );
             vec![CommandOutput::GcResult(GcData {
                 empty_messages_removed: stats.empty_messages_removed,
                 orphan_chunks_removed: stats.orphan_chunks_removed,
+                orphan_item_embeddings_removed: stats.orphan_item_embeddings_removed,
+                orphan_chunk_embeddings_removed: stats.orphan_chunk_embeddings_removed,
+                orphan_fact_embeddings_removed: stats.orphan_fact_embeddings_removed,
                 success: true,
                 error: None,
             })]
@@ -1191,6 +1198,9 @@ pub fn handle_gc(state: &ReplState) -> Vec<CommandOutput> {
             vec![CommandOutput::GcResult(GcData {
                 empty_messages_removed: 0,
                 orphan_chunks_removed: 0,
+                orphan_item_embeddings_removed: 0,
+                orphan_chunk_embeddings_removed: 0,
+                orphan_fact_embeddings_removed: 0,
                 success: false,
                 error: Some(e.to_string()),
             })]

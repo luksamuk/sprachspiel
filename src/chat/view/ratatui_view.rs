@@ -817,7 +817,12 @@ impl RatatuiView {
 
     fn render_gc(&mut self, data: &GcData) {
         if data.success {
-            if data.empty_messages_removed == 0 && data.orphan_chunks_removed == 0 {
+            let total = data.empty_messages_removed
+                + data.orphan_chunks_removed
+                + data.orphan_item_embeddings_removed
+                + data.orphan_chunk_embeddings_removed
+                + data.orphan_fact_embeddings_removed;
+            if total == 0 {
                 self.add_system_message("✓ Database clean — no artifacts found.");
             } else {
                 let mut parts = Vec::new();
@@ -826,6 +831,24 @@ impl RatatuiView {
                 }
                 if data.orphan_chunks_removed > 0 {
                     parts.push(format!("{} orphan chunk(s)", data.orphan_chunks_removed));
+                }
+                if data.orphan_item_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan item embedding(s)",
+                        data.orphan_item_embeddings_removed
+                    ));
+                }
+                if data.orphan_chunk_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan chunk embedding(s)",
+                        data.orphan_chunk_embeddings_removed
+                    ));
+                }
+                if data.orphan_fact_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan fact embedding(s)",
+                        data.orphan_fact_embeddings_removed
+                    ));
                 }
                 let msg = format!("✓ Garbage collected: {}", parts.join(", "));
                 self.add_system_message(&msg);
