@@ -33,8 +33,8 @@
 //!   of synchronous (`await`), causing missing embeddings for subsequent facts.
 
 use super::conflict::{
-    CONFLICT_THRESHOLD, Conflict, ConflictType, ResolutionAction,
-    detect_conflicts, extract_fact_triple, is_contradiction, resolve_conflict,
+    CONFLICT_THRESHOLD, Conflict, ConflictType, ResolutionAction, detect_conflicts,
+    extract_fact_triple, is_contradiction, resolve_conflict,
 };
 use super::lang;
 use super::types::{Category, Fact, Scope, Source};
@@ -296,7 +296,10 @@ async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
         Ok(result) => {
             let candidate_embedding = result.vector;
             let query_norm_correction = result.norm_correction;
-            match ctx.db.search_facts_semantic(&candidate_embedding, query_norm_correction, None, 5) {
+            match ctx
+                .db
+                .search_facts_semantic(&candidate_embedding, query_norm_correction, None, 5)
+            {
                 Ok(semantic_results) => resolve_semantic_results(ctx, &semantic_results).await,
                 Err(e) => {
                     log::debug!("dedup: Semantic search failed: {}", e);

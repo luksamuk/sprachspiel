@@ -732,9 +732,13 @@ async fn remember_by_query(
 
     // Search for messages using V7 search
     let message_results = match db.search_messages_hybrid(
-        query, &embedding, query_norm_correction, None, // conversation_id
+        query,
+        &embedding,
+        query_norm_correction,
+        None, // conversation_id
         None, // project_id
-        limit, keyword_weight,
+        limit,
+        keyword_weight,
         semantic_weight,
     ) {
         Ok(r) => r,

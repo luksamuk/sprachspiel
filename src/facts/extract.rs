@@ -356,9 +356,7 @@ async fn insert_fact_with_dedup(
     embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> InsertAction {
     let config = DedupConfig::llm();
-    let semantic_threshold = crate::settings::Settings::load()
-        .facts
-        .semantic_threshold;
+    let semantic_threshold = crate::settings::Settings::load().facts.semantic_threshold;
     let result = deduplicate_and_insert(
         db,
         &candidate.content,

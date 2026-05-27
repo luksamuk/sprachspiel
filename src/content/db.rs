@@ -974,7 +974,8 @@ impl Database {
                 // then apply norm correction for truncated embeddings.
                 // corrected = (1 - distance) * sqrt(nc_query * nc_result)
                 let raw_similarity = 1.0 - distance;
-                let corrected_similarity = raw_similarity * (query_norm_correction * result_nc).sqrt();
+                let corrected_similarity =
+                    raw_similarity * (query_norm_correction * result_nc).sqrt();
                 results.push(ContentSearchResult {
                     item,
                     score: corrected_similarity,
@@ -1050,7 +1051,8 @@ impl Database {
                 // Convert cosine distance to cosine similarity,
                 // then apply norm correction for truncated embeddings.
                 let raw_similarity = 1.0 - distance;
-                let corrected_similarity = raw_similarity * (query_norm_correction * result_nc).sqrt();
+                let corrected_similarity =
+                    raw_similarity * (query_norm_correction * result_nc).sqrt();
                 results.push(ContentSearchResult {
                     item,
                     score: corrected_similarity,

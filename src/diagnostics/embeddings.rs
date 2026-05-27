@@ -706,7 +706,11 @@ fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
 /// - **Edge case — very low d̄ (< 0.15):** Vectors are nearly identical.
 ///   This usually means the corpus is too small or too homogeneous. Threshold
 ///   doesn't matter much; suggest 0.70 with a warning.
-pub fn recommend_threshold(_d_eff: f64, mean_cosine_distance: f64, regimes: &[RegimeAtThreshold]) -> ThresholdRecommendation {
+pub fn recommend_threshold(
+    _d_eff: f64,
+    mean_cosine_distance: f64,
+    regimes: &[RegimeAtThreshold],
+) -> ThresholdRecommendation {
     let tight_at_070 = regimes
         .iter()
         .find(|r| (r.theta - 0.70).abs() < 0.01)
@@ -1133,7 +1137,10 @@ mod tests {
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
             rec.semantic_threshold
         );
-        assert!(!rec.adjust_weights, "Should not adjust weights when TIGHT at 0.70");
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
     }
 
     /// Test: SPREAD at θ=0.70 but TIGHT at θ=0.80 → recommend θ=0.80
@@ -1177,10 +1184,26 @@ mod tests {
         // In the code: tight_at_070=true, tight_at_080=false → falls into else branch
         // Let's test with d̄=0.28 → TIGHT at 0.70 but SPREAD at everything else
         let regimes = compute_regimes(0.28);
-        assert_eq!(regimes[0].regime, Regime::Tight, "0.28 < 0.30 → TIGHT at 0.70");
-        assert_eq!(regimes[1].regime, Regime::Spread, "0.28 ≥ 0.25 → SPREAD at 0.75");
-        assert_eq!(regimes[2].regime, Regime::Spread, "0.28 ≥ 0.20 → SPREAD at 0.80");
-        assert_eq!(regimes[3].regime, Regime::Spread, "0.28 ≥ 0.15 → SPREAD at 0.85");
+        assert_eq!(
+            regimes[0].regime,
+            Regime::Tight,
+            "0.28 < 0.30 → TIGHT at 0.70"
+        );
+        assert_eq!(
+            regimes[1].regime,
+            Regime::Spread,
+            "0.28 ≥ 0.25 → SPREAD at 0.75"
+        );
+        assert_eq!(
+            regimes[2].regime,
+            Regime::Spread,
+            "0.28 ≥ 0.20 → SPREAD at 0.80"
+        );
+        assert_eq!(
+            regimes[3].regime,
+            Regime::Spread,
+            "0.28 ≥ 0.15 → SPREAD at 0.85"
+        );
 
         // With TIGHT at 0.70, recommend_threshold should return θ=0.70
         let rec = recommend_threshold(10.0, 0.28, &regimes);
@@ -1202,7 +1225,12 @@ mod tests {
         // θ=0.85→θ'=0.15, 0.65≥0.15→SPREAD
         let regimes = compute_regimes(0.65);
         for r in &regimes {
-            assert_eq!(r.regime, Regime::Spread, "Should be SPREAD at θ={}", r.theta);
+            assert_eq!(
+                r.regime,
+                Regime::Spread,
+                "Should be SPREAD at θ={}",
+                r.theta
+            );
         }
 
         let rec = recommend_threshold(10.0, 0.65, &regimes);
@@ -1211,7 +1239,10 @@ mod tests {
             "SPREAD everywhere should recommend θ=0.85, got {}",
             rec.semantic_threshold
         );
-        assert!(rec.adjust_weights, "Should adjust weights for SPREAD geometry");
+        assert!(
+            rec.adjust_weights,
+            "Should adjust weights for SPREAD geometry"
+        );
         assert!(
             (rec.suggested_keyword_weight - 0.7).abs() < 0.01,
             "Should suggest keyword_weight=0.7, got {}",
@@ -1235,7 +1266,10 @@ mod tests {
             "Very low d̄ should recommend default θ=0.70, got {}",
             rec.semantic_threshold
         );
-        assert!(!rec.adjust_weights, "Should not adjust weights for very low d̄");
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights for very low d̄"
+        );
         assert!(
             rec.rationale.contains("nearly identical"),
             "Rationale should mention low distance, got: {}",

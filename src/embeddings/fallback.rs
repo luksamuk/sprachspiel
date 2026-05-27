@@ -464,20 +464,20 @@ pub async fn embed_item_with_fallback(
     )?;
 
     // Try direct embed first
-        match client.embed(ctx.content).await {
-            Ok(result) => {
-                // Success - save embedding to item
-                db.update_content_item_embedding(
-                    ctx.item_id,
-                    &result.vector,
-                    ctx.content_type,
-                    ctx.conversation_id,
-                    ctx.project_id,
-                    ctx.timestamp,
-                    result.norm_correction,
-                )?;
-                Ok(EmbedResult { chunks_created: 0 })
-            }
+    match client.embed(ctx.content).await {
+        Ok(result) => {
+            // Success - save embedding to item
+            db.update_content_item_embedding(
+                ctx.item_id,
+                &result.vector,
+                ctx.content_type,
+                ctx.conversation_id,
+                ctx.project_id,
+                ctx.timestamp,
+                result.norm_correction,
+            )?;
+            Ok(EmbedResult { chunks_created: 0 })
+        }
         Err(EmbeddingError::ContextExceeded { .. }) => {
             // Context exceeded (proactive check or API response) - need to create chunks first
             handle_item_context_exceeded(ctx, db, client, context_length).await

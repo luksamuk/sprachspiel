@@ -27,8 +27,7 @@ use ollama_rs::models::ModelInfo;
 use tokio::sync::{OnceCell, Semaphore};
 
 use super::truncate::{
-    FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult,
-    truncate_and_normalize_with_correction,
+    FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
 };
 
 /// Default embedding model (nomic-embed-text-v2-moe)

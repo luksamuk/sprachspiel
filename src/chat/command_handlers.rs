@@ -1275,9 +1275,7 @@ pub async fn handle_fact_add(
 
     // Delegate to centralized dedup pipeline
     let config = DedupConfig::user();
-    let semantic_threshold = crate::settings::Settings::load()
-        .facts
-        .semantic_threshold;
+    let semantic_threshold = crate::settings::Settings::load().facts.semantic_threshold;
     let result = deduplicate_and_insert(
         &db,
         &content,
