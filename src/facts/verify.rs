@@ -91,7 +91,17 @@ pub async fn verify_and_dedup_facts(
         return stats;
     }
 
+    // Report initial progress for fact dedup phase
     let facts_total = all_facts.len();
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::FactDedup,
+            0,
+            facts_total,
+            0,
+            facts_total,
+        ));
+    }
 
     // Step 3: Load existing embeddings from DB; generate only for missing
     //
