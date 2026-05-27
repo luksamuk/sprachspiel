@@ -386,7 +386,7 @@ impl Database {
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
-            let norm_correction_str = norm_correction.to_string();
+            let norm_correction_f64 = f64::from(norm_correction);
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the fact already has an embedding, the old row must be removed
@@ -406,7 +406,7 @@ impl Database {
                     scope,
                     category,
                     project_id,
-                    norm_correction_str,
+                    norm_correction_f64,
                 ],
             )?;
 
@@ -466,8 +466,7 @@ impl Database {
             let rows = stmt.query_map(params![embedding_bytes.as_slice(), limit as i32], |row| {
                 let _fact_id: i64 = row.get(0)?;
                 let distance: f32 = row.get(1)?;
-                let norm_correction_str: String = row.get(2)?;
-                let result_nc: f32 = norm_correction_str.parse().unwrap_or(1.0);
+                let result_nc: f32 = row.get::<_, f64>(2)? as f32;
 
                 // Convert cosine distance to corrected cosine similarity.
                 // Apply norm correction for truncated embeddings:

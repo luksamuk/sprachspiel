@@ -644,7 +644,7 @@ impl Database {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
-            let norm_correction_str = norm_correction.to_string();
+            let norm_correction_f64 = f64::from(norm_correction);
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the item already has an embedding, the old row must be removed
@@ -665,7 +665,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
-                    norm_correction_str,
+                    norm_correction_f64,
                 ],
             )?;
 
@@ -701,7 +701,7 @@ impl Database {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
-            let norm_correction_str = norm_correction.to_string();
+            let norm_correction_f64 = f64::from(norm_correction);
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the chunk already has an embedding, the old row must be removed
@@ -722,7 +722,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
-                    norm_correction_str,
+                    norm_correction_f64,
                 ],
             )?;
 
@@ -929,8 +929,7 @@ impl Database {
                     |row| {
                         let item_id: i64 = row.get(0)?;
                         let distance: f32 = row.get(1)?;
-                        let norm_correction_str: String = row.get(2)?;
-                        let norm_correction: f32 = norm_correction_str.parse().unwrap_or(1.0);
+                        let norm_correction: f32 = row.get::<_, f64>(2)? as f32;
                         let item = ContentItem {
                             id: row.get(3)?,
                             content_type: ContentType::from_str(&row.get::<_, String>(4)?)
@@ -993,8 +992,7 @@ impl Database {
                     |row| {
                         let _chunk_id: i64 = row.get(0)?;
                         let distance: f32 = row.get(1)?;
-                        let norm_correction_str: String = row.get(2)?;
-                        let norm_correction: f32 = norm_correction_str.parse().unwrap_or(1.0);
+                        let norm_correction: f32 = row.get::<_, f64>(2)? as f32;
                         let item_id: i64 = row.get(3)?;
                         let _chunk_index: i32 = row.get(4)?;
                         let chunk_content: String = row.get(5)?;

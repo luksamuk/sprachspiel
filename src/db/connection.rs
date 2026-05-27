@@ -559,10 +559,10 @@ impl Database {
     /// The `norm_correction` column stores `1/(|truncated_vec|^2)` so that at query
     /// time, `true_cosine ≈ measured_cosine * sqrt(query_nc * result_nc)`.
     ///
-    /// NOTE: `norm_correction` is stored as TEXT (not REAL) because sqlite-vec
-    /// only supports INTEGER and TEXT auxiliary column types. REAL causes:
-    /// "vec0 constructor error: chunk_size must be a non-zero positive integer".
-    /// Stored as decimal string, parsed back to f32 at query time.
+    /// `norm_correction` is stored as FLOAT (f64 in SQLite, cast from f32 on insert).
+    /// sqlite-vec supports FLOAT as an auxiliary column type (alongside INTEGER,
+    /// TEXT, and BLOB). Note: REAL (the standard SQLite float type name) does NOT
+    /// work — the sqlite-vec parser requires the exact type name FLOAT.
     ///
     /// Since sqlite-vec does not support ALTER TABLE on virtual tables, we must
     /// DROP and re-CREATE all three vec0 tables. This loses all embeddings, but
@@ -579,7 +579,7 @@ impl Database {
                 +scope TEXT,
                 +category TEXT,
                 +project_id TEXT,
-                +norm_correction TEXT
+                +norm_correction FLOAT
             );",
         )?;
         conn.execute_batch(
@@ -590,7 +590,7 @@ impl Database {
                 +conversation_id TEXT,
                 +project_id TEXT,
                 +timestamp INTEGER,
-                +norm_correction TEXT
+                +norm_correction FLOAT
             );",
         )?;
         conn.execute_batch(
@@ -601,7 +601,7 @@ impl Database {
                 +conversation_id TEXT,
                 +project_id TEXT,
                 +timestamp INTEGER,
-                +norm_correction TEXT
+                +norm_correction FLOAT
             );",
         )?;
 

@@ -116,16 +116,14 @@ CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 
 -- Vector embeddings for facts (256-dim Matryoshka, v13 with distance_metric=cosine and norm_correction)
--- NOTE: norm_correction is TEXT, not REAL, because sqlite-vec only supports INTEGER and TEXT
--- as auxiliary column types. Stored as a decimal string (e.g. "1.0234567"), parsed back to f32 at query time.
--- REAL columns cause: "vec0 constructor error: chunk_size must be a non-zero positive integer"
+-- norm_correction is FLOAT (sqlite-vec supports INTEGER, FLOAT, TEXT, BLOB as auxiliary column types)
 CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
     fact_id INTEGER PRIMARY KEY,
     embedding FLOAT[256] distance_metric=cosine,
     +scope TEXT,
     +category TEXT,
     +project_id TEXT,
-    +norm_correction TEXT
+    +norm_correction FLOAT
 );
 
 -- Content items table (unified storage for messages, notes, documents, v8)
@@ -200,23 +198,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
     +conversation_id TEXT,
     +project_id TEXT,
     +timestamp INTEGER,
-    +norm_correction TEXT
-);
-
--- Vector embeddings for content items (256-dim Matryoshka, v13 with distance_metric=cosine and norm_correction)
--- NOTE: norm_correction is TEXT (not REAL) because sqlite-vec only supports INTEGER and TEXT auxiliary columns.
-CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
-    item_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256] distance_metric=cosine,
-    +content_type TEXT,
-    +conversation_id TEXT,
-    +project_id TEXT,
-    +timestamp INTEGER,
-    +norm_correction TEXT
+    +norm_correction FLOAT
 );
 
 -- Vector embeddings for content chunks (v13 with distance_metric=cosine and norm_correction)
--- NOTE: norm_correction is TEXT (not REAL) because sqlite-vec only supports INTEGER and TEXT auxiliary columns.
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
     chunk_id INTEGER PRIMARY KEY,
     embedding FLOAT[256] distance_metric=cosine,
@@ -224,7 +209,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
     +conversation_id TEXT,
     +project_id TEXT,
     +timestamp INTEGER,
-    +norm_correction TEXT
+    +norm_correction FLOAT
 );
 
 -- Full-text search for content items (v7)
