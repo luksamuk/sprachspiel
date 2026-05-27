@@ -328,6 +328,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         arg_type: ArgCompletion::None,
     },
     SlashCommand {
+        trigger: "/gc",
+        description: "Clean up database artifacts",
+        arg_type: ArgCompletion::None,
+    },
+    SlashCommand {
         trigger: "/ocr",
         description: "Extract text from an image",
         arg_type: ArgCompletion::None,
