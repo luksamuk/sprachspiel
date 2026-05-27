@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::conflict::is_contradiction;
 use super::types::Scope;
-use crate::chat::app::EmbeddingProgressTx;
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::embeddings::cosine_similarity;
@@ -86,14 +86,22 @@ pub async fn verify_and_dedup_facts(
     if all_facts.len() < 2 {
         // Signal completion even when skipping
         if let Some(ref tx) = progress_tx {
-            let _ = tx.send((0, 0));
+            let _ = tx.send(EmbeddingProgress::completed());
         }
         return stats;
     }
 
+    let facts_total = all_facts.len();
+
     // Report progress for fact embedding generation phase
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((0, all_facts.len()));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::FactDedup,
+            0,
+            facts_total,
+            0,
+            facts_total,
+        ));
     }
 
     // Step 3: Generate embeddings for all facts
@@ -109,7 +117,13 @@ pub async fn verify_and_dedup_facts(
             }
         }
         if let Some(ref tx) = progress_tx {
-            let _ = tx.send((idx + 1, all_facts.len()));
+            let _ = tx.send(EmbeddingProgress::new(
+                EmbeddingPhase::FactDedup,
+                idx + 1,
+                facts_total,
+                idx + 1,
+                facts_total,
+            ));
         }
     }
 

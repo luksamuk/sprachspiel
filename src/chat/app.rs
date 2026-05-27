@@ -32,11 +32,69 @@ use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
 
-/// Type alias for embedding progress channel sender.
+/// Each phase shows a different emoji in the status bar to indicate
+/// what type of entity is being indexed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddingPhase {
+    /// Indexing content items (messages, notes, documents). Shows 📄.
+    Content,
+    /// Indexing fact embeddings. Shows 💡.
+    Facts,
+    /// Verifying/deduplicating facts. Shows 🔍.
+    FactDedup,
+}
+
+/// Progress of the embedding indexing pipeline.
 ///
-/// Sends `(current, total)` tuples to update the TUI status bar progress
-/// indicator (⚙ current/total) during embedding generation.
-pub type EmbeddingProgressTx = mpsc::UnboundedSender<(usize, usize)>;
+/// Tracks entity-level and embedding-level progress separately.
+/// Display format: `⚙ 60/100 📄 · 65/105↗`
+///
+/// - `60/100` — entities processed/total (yellow, bold)
+/// - `📄` — phase emoji (plain)
+/// - `65/105↗` — embeddings processed/total (cyan, bold); `↗` when embeddings > entities
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmbeddingProgress {
+    pub phase: EmbeddingPhase,
+    pub entities_current: usize,
+    pub entities_total: usize,
+    pub embeddings_current: usize,
+    pub embeddings_total: usize,
+}
+
+impl EmbeddingProgress {
+    pub fn completed() -> Self {
+        Self {
+            phase: EmbeddingPhase::Content,
+            entities_current: usize::MAX,
+            entities_total: usize::MAX,
+            embeddings_current: usize::MAX,
+            embeddings_total: usize::MAX,
+        }
+    }
+
+    pub fn new(
+        phase: EmbeddingPhase,
+        entities_current: usize,
+        entities_total: usize,
+        embeddings_current: usize,
+        embeddings_total: usize,
+    ) -> Self {
+        Self {
+            phase,
+            entities_current,
+            entities_total,
+            embeddings_current,
+            embeddings_total,
+        }
+    }
+
+    pub fn is_completed(&self) -> bool {
+        self.entities_current >= self.entities_total
+            && self.embeddings_current >= self.embeddings_total
+    }
+}
+
+pub type EmbeddingProgressTx = mpsc::UnboundedSender<EmbeddingProgress>;
 
 /// Type alias for async system message channel sender.
 ///
@@ -237,8 +295,7 @@ pub struct App {
     /// decide whether content is "already shown" or needs adding.
     pub block_finalized: bool,
     /// Channel receiver for embedding progress updates from background tasks.
-    /// Each message is (current, total) — current embeddings generated out of total.
-    embedding_progress_rx: mpsc::UnboundedReceiver<(usize, usize)>,
+    embedding_progress_rx: mpsc::UnboundedReceiver<EmbeddingProgress>,
     /// Channel receiver for asynchronous system messages from background tasks
     /// (e.g., reindex completion notification).
     async_message_rx: mpsc::UnboundedReceiver<String>,
@@ -753,32 +810,24 @@ impl App {
     /// Poll the embedding progress channel and update the status bar.
     ///
     /// Drains all messages from the channel, keeping only the latest
-    /// progress update. Sets `embedding_progress` to `Some((current, total))`
-    /// while embeddings are being generated, and `None` when complete.
+    /// progress update. Clears `embedding_progress` when the progress
+    /// indicates completion.
     pub fn poll_embedding_progress(&mut self) {
-        // Drain the channel, keeping only the latest progress
-        let mut latest: Option<(usize, usize)> = None;
         while let Ok(progress) = self.embedding_progress_rx.try_recv() {
-            latest = Some(progress);
-        }
-
-        if let Some((current, total)) = latest {
-            self.status_bar.embedding_progress = if current >= total {
-                // Embedding complete — clear the indicator
+            self.status_bar.embedding_progress = if progress.is_completed() {
                 None
             } else {
-                Some((current, total))
+                Some(progress)
             };
         }
-        // If no messages received, keep the existing state (embedding might still be in progress)
     }
 
     /// Set the embedding progress indicator directly (for synchronous embedding operations).
-    pub fn set_embedding_progress(&mut self, current: usize, total: usize) {
-        self.status_bar.embedding_progress = if current >= total {
+    pub fn set_embedding_progress(&mut self, progress: EmbeddingProgress) {
+        self.status_bar.embedding_progress = if progress.is_completed() {
             None
         } else {
-            Some((current, total))
+            Some(progress)
         };
     }
 
@@ -2682,15 +2731,26 @@ mod tests {
     fn test_poll_embedding_progress_receives_progress() {
         let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
-        // Send progress update (3 of 10 items processed)
-        let _ = tx.send((3, 10));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            3,
+            10,
+            5,
+            10,
+        ));
         app.poll_embedding_progress();
 
         let state = app.status_bar();
         assert_eq!(
             state.embedding_progress,
-            Some((3, 10)),
-            "Should show progress 3/10"
+            Some(EmbeddingProgress::new(
+                EmbeddingPhase::Content,
+                3,
+                10,
+                5,
+                10
+            )),
+            "Should show progress 3/10 entities, 5/10 embeddings"
         );
     }
 
@@ -2698,14 +2758,13 @@ mod tests {
     fn test_poll_embedding_progress_completion_clears_indicator() {
         let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
-        // Send completion (10 of 10 items processed)
-        let _ = tx.send((10, 10));
+        let _ = tx.send(EmbeddingProgress::completed());
         app.poll_embedding_progress();
 
         let state = app.status_bar();
         assert_eq!(
             state.embedding_progress, None,
-            "Completion (current >= total) should clear indicator"
+            "Completion should clear indicator"
         );
     }
 
@@ -2713,16 +2772,39 @@ mod tests {
     fn test_poll_embedding_progress_drains_multiple() {
         let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
-        // Send multiple progress updates — poll keeps only the latest
-        let _ = tx.send((1, 10));
-        let _ = tx.send((5, 10));
-        let _ = tx.send((8, 10));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            1,
+            10,
+            1,
+            10,
+        ));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            5,
+            10,
+            5,
+            10,
+        ));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            8,
+            10,
+            8,
+            10,
+        ));
         app.poll_embedding_progress();
 
         let state = app.status_bar();
         assert_eq!(
             state.embedding_progress,
-            Some((8, 10)),
+            Some(EmbeddingProgress::new(
+                EmbeddingPhase::Content,
+                8,
+                10,
+                8,
+                10
+            )),
             "Should keep latest progress update"
         );
     }

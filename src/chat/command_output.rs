@@ -136,6 +136,11 @@ pub enum CommandOutput {
     /// Contains statistics from `/content prune`.
     ContentPruneResult(ContentPruneData),
 
+    /// Garbage collection result.
+    ///
+    /// Contains statistics from `/gc`.
+    GcResult(GcData),
+
     /// Search results display.
     ///
     /// Contains semantic search results for the `/search` command.
@@ -385,6 +390,19 @@ pub struct ContentPruneData {
     /// Number of items checked
     pub total_count: usize,
     /// Whether pruning succeeded
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+}
+
+/// Data for garbage collection result (`/gc`).
+#[derive(Debug, Clone)]
+pub struct GcData {
+    /// Number of empty assistant messages removed
+    pub empty_messages_removed: usize,
+    /// Number of orphan chunks removed
+    pub orphan_chunks_removed: usize,
+    /// Whether GC succeeded
     pub success: bool,
     /// Error message (if failed)
     pub error: Option<String>,

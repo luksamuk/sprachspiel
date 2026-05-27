@@ -410,15 +410,26 @@ impl Database {
     ///
     /// Returns (item_id, content_type, content) for items that need embedding generation.
     /// Used during migration to regenerate embeddings from content.
+    ///
+    /// Filters out items with content shorter than `MIN_EMBED_CONTENT_LEN`
+    /// (10 bytes) or empty content — these produce embeddings with too
+    /// little semantic signal and were previously stuck in an infinite
+    /// recovery loop (found by `has_embedding = 0`, skipped, left at
+    /// `has_embedding = 0` on every startup).
     pub fn get_content_items_for_reindex(&self) -> Result<Vec<(i64, String, String)>> {
         self.with_connection(|conn| {
+            let min_len = crate::embeddings::MIN_EMBED_CONTENT_LEN as i64;
             let mut stmt = conn.prepare(
                 "SELECT id, content_type, content FROM content_items 
                  WHERE has_embedding = 0 
+                 AND length(content) >= ?1 
+                 AND content != ''
                  ORDER BY created_at ASC",
             )?;
 
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            let rows = stmt.query_map(params![min_len], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?;
 
             rows.collect::<Result<Vec<_>, _>>()
         })
@@ -428,19 +439,73 @@ impl Database {
     ///
     /// Returns (chunk_id, content) for chunks that need embedding generation.
     /// Used during migration to regenerate embeddings from chunk content.
+    ///
+    /// Filters out chunks with content shorter than `MIN_EMBED_CONTENT_LEN`
+    /// (10 bytes) or empty content — same rationale as `get_content_items_for_reindex`.
     pub fn get_content_chunks_for_reindex(&self) -> Result<Vec<(i64, String)>> {
         self.with_connection(|conn| {
+            let min_len = crate::embeddings::MIN_EMBED_CONTENT_LEN as i64;
             let mut stmt = conn.prepare(
                 "SELECT id, content FROM content_chunks 
                  WHERE has_embedding = 0 
+                 AND length(content) >= ?1 
+                 AND content != ''
                  ORDER BY created_at ASC",
             )?;
 
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            let rows = stmt.query_map(params![min_len], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
             rows.collect::<Result<Vec<_>, _>>()
         })
     }
+
+    /// Garbage-collect database artifacts.
+    ///
+    /// Removes:
+    /// - Empty assistant messages (artifacts from Ctrl+C cancellation)
+    /// - Orphan chunks (chunks whose parent item no longer exists)
+    ///
+    /// Returns counts of removed items for reporting.
+    pub fn garbage_collect(&self) -> Result<GcStats> {
+        self.with_connection(|conn| {
+            // 1. Delete empty assistant messages.
+            // These are artifacts from Ctrl+C cancellation where the stream
+            // was interrupted before any tokens were generated. They have no
+            // semantic value, confuse the LLM with empty turns, and can never
+            // receive embeddings.
+            let empty_messages: usize = conn.execute(
+                "DELETE FROM content_items
+                 WHERE role = 'assistant'
+                 AND content = ''
+                 AND content_type = 'message'",
+                [],
+            )?;
+
+            // 2. Delete orphan chunks (no matching parent item).
+            // These can appear if an item was deleted but its chunks weren't
+            // cleaned up, or if chunk insertion succeeded but the parent item
+            // insertion failed.
+            let orphan_chunks: usize = conn.execute(
+                "DELETE FROM content_chunks
+                 WHERE item_id NOT IN (SELECT id FROM content_items)",
+                [],
+            )?;
+
+            Ok(GcStats {
+                empty_messages_removed: empty_messages,
+                orphan_chunks_removed: orphan_chunks,
+            })
+        })
+    }
+}
+
+/// Statistics returned by [`Database::garbage_collect`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GcStats {
+    /// Number of empty assistant messages removed
+    pub empty_messages_removed: usize,
+    /// Number of orphan chunks removed
+    pub orphan_chunks_removed: usize,
 }
 
 /// Statistics returned by [`Database::reset_all_embedding_flags`].

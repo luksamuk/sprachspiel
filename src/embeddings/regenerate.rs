@@ -21,9 +21,11 @@ use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::{
-    ChunkConfig, DynamicChunkConfig, EmbeddingClient, chunk_text_with_config,
+    ChunkConfig, DynamicChunkConfig, EmbeddingClient, MIN_EMBED_CONTENT_LEN,
+    chunk_text_with_config,
     fallback::{
         EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
     },
@@ -87,7 +89,7 @@ pub async fn regenerate_all_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     quiet: bool,
-    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
+    progress_tx: Option<EmbeddingProgressTx>,
 ) -> RegenerationStats {
     // Note: V2 orphan chunks are cleaned by recover_missing_embeddings(), not here.
     // We don't clean ALL chunks because items with successful embeddings have has_embedding=1.
@@ -172,10 +174,17 @@ pub async fn regenerate_all_embeddings(
     // Track processed count manually (not via progress.position()) so
     // that each chunk within a multi-chunk item increments the counter.
     let mut processed: usize = 0;
+    let mut entities_current: usize = 0;
 
     // Report initial progress (0 of total) so the status bar shows total count
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((0, total));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            0,
+            items.len(),
+            0,
+            total,
+        ));
     }
 
     // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
@@ -201,23 +210,38 @@ pub async fn regenerate_all_embeddings(
     };
 
     // Report embedding progress to the TUI status bar.
-    // Sends (processed, total) where total may grow dynamically
+    // Sends EmbeddingProgress where total may grow dynamically
     // as items are split into chunks during processing.
-    let report_progress = |processed: usize, total: usize, progress: &ProgressBar| {
-        progress.set_position(processed as u64);
-        progress.set_length(total as u64);
-        if let Some(ref tx) = progress_tx {
-            let _ = tx.send((processed, total));
-        }
-    };
+    let report_progress =
+        |processed: usize, total: usize, entities_current: usize, progress: &ProgressBar| {
+            progress.set_position(processed as u64);
+            progress.set_length(total as u64);
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Content,
+                    entities_current,
+                    items.len(),
+                    processed,
+                    total,
+                ));
+            }
+        };
 
     // Process content items
     for (item_id, content_type, content) in &items {
-        // Skip if content is empty or too short
-        if content.trim().is_empty() || content.len() < 10 {
+        // Skip if content is empty or too short for meaningful embedding.
+        // The SQL query already filters by MIN_EMBED_CONTENT_LEN, but this
+        // check is a defense-in-depth in case the query changes.
+        if content.trim().is_empty() || content.len() < MIN_EMBED_CONTENT_LEN {
+            log::debug!(
+                "Skipping item {}: content too short for embedding ({} bytes)",
+                item_id,
+                content.len()
+            );
             stats.items_failed += 1;
             processed += 1;
-            report_progress(processed, total, &progress);
+            entities_current += 1;
+            report_progress(processed, total, entities_current, &progress);
             continue;
         }
 
@@ -294,13 +318,14 @@ pub async fn regenerate_all_embeddings(
                     }
                 }
                 processed += 1;
-                report_progress(processed, total, &progress);
+                report_progress(processed, total, entities_current, &progress);
             }
 
             // Mark item as having embeddings ONLY if all chunks are complete
             // This prevents re-processing items with incomplete chunks on next startup
             let _ = db.mark_item_embedding_if_complete(*item_id);
             stats.items_processed += 1;
+            entities_current += 1;
         } else {
             // Short content - embed directly (with fallback for oversized content)
             let ctx = EmbedItemContext::new(
@@ -365,9 +390,13 @@ pub async fn regenerate_all_embeddings(
 
         // For long items, processed was already incremented per-chunk above.
         // For short items (or skipped items), increment here.
-        if content.len() <= max_chars || content.trim().is_empty() || content.len() < 10 {
+        if content.len() <= max_chars
+            || content.trim().is_empty()
+            || content.len() < MIN_EMBED_CONTENT_LEN
+        {
             processed += 1;
-            report_progress(processed, total, &progress);
+            entities_current += 1;
+            report_progress(processed, total, entities_current, &progress);
         }
     }
 
@@ -377,7 +406,7 @@ pub async fn regenerate_all_embeddings(
         if content.trim().is_empty() {
             stats.chunks_failed += 1;
             processed += 1;
-            report_progress(processed, total, &progress);
+            report_progress(processed, total, entities_current, &progress);
             continue;
         }
 
@@ -404,7 +433,7 @@ pub async fn regenerate_all_embeddings(
                 // Chunk has no parent item - shouldn't happen
                 stats.chunks_failed += 1;
                 processed += 1;
-                report_progress(processed, total, &progress);
+                report_progress(processed, total, entities_current, &progress);
                 continue;
             }
         };
@@ -425,7 +454,7 @@ pub async fn regenerate_all_embeddings(
             None => {
                 stats.chunks_failed += 1;
                 processed += 1;
-                report_progress(processed, total, &progress);
+                report_progress(processed, total, entities_current, &progress);
                 continue;
             }
         };
@@ -492,15 +521,15 @@ pub async fn regenerate_all_embeddings(
         }
 
         processed += 1;
-        report_progress(processed, total, &progress);
+        report_progress(processed, total, entities_current, &progress);
     }
 
     progress.finish_and_clear();
 
-    // Signal completion to the TUI status bar (progress = total means done)
-    // poll_embedding_progress() clears the indicator when current >= total.
+    // Signal completion to the TUI status bar
+    // poll_embedding_progress() clears the indicator when is_completed() returns true.
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((total, total));
+        let _ = tx.send(EmbeddingProgress::completed());
     }
 
     // Report any failures
