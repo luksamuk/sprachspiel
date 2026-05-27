@@ -187,6 +187,7 @@ pub async fn run_search(
         }
     };
     let embedding = query_result.vector;
+    let query_norm_correction = query_result.norm_correction;
 
     // Perform hybrid search using content_items (V7)
     log::debug!("Running hybrid search on content_items...");
@@ -196,6 +197,7 @@ pub async fn run_search(
     let results = match db.search_messages_hybrid(
         query,
         &embedding,
+        query_norm_correction,
         conversation_id,
         None,
         limit * 2,

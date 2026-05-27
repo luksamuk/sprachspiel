@@ -419,15 +419,20 @@ impl Database {
         })
     }
 
-    /// Search facts by embedding similarity (semantic search).
+    /// Search facts by embedding similarity (semantic search) with norm correction.
     ///
     /// Uses vec0 KNN search to find facts with the most similar embeddings.
     /// Returns results sorted by cosine similarity (highest first).
     /// The `scope` parameter filters by scope using a WHERE clause.
+    ///
+    /// When embeddings are truncated from higher dimensions, cosine similarity
+    /// underestimates true similarity. `query_norm_correction` compensates:
+    /// `corrected = (1 - distance) * sqrt(query_nc * result_nc)`.
     #[allow(dead_code)] // Used by future semantic search features
     pub fn search_facts_semantic(
         &self,
         embedding: &[f32],
+        query_norm_correction: f32,
         scope: Option<Scope>,
         limit: usize,
     ) -> Result<Vec<FactSearchResult>> {
@@ -437,7 +442,7 @@ impl Database {
 
             let sql = match scope {
                 Some(_) => {
-                    "SELECT fe.fact_id, fe.distance, f.id, f.scope, f.category, f.content, f.importance,
+                    "SELECT fe.fact_id, fe.distance, fe.norm_correction, f.id, f.scope, f.category, f.content, f.importance,
                             f.access_count, f.decay_score, f.created_at, f.last_accessed, f.source,
                             f.invalidated_at, f.project_id, f.has_embedding
                      FROM fact_embeddings fe
@@ -446,7 +451,7 @@ impl Database {
                      AND f.invalidated_at IS NULL"
                 }
                 None => {
-                    "SELECT fe.fact_id, fe.distance, f.id, f.scope, f.category, f.content, f.importance,
+                    "SELECT fe.fact_id, fe.distance, fe.norm_correction, f.id, f.scope, f.category, f.content, f.importance,
                             f.access_count, f.decay_score, f.created_at, f.last_accessed, f.source,
                             f.invalidated_at, f.project_id, f.has_embedding
                      FROM fact_embeddings fe
@@ -461,38 +466,42 @@ impl Database {
             let rows = stmt.query_map(params![embedding_bytes.as_slice(), limit as i32], |row| {
                 let _fact_id: i64 = row.get(0)?;
                 let distance: f32 = row.get(1)?;
-                // Convert cosine distance to cosine similarity.
-                // With distance_metric=cosine (schema v12), sqlite-vec returns
-                // cosine distance directly: similarity = 1.0 - distance.
-                let similarity = 1.0 - distance;
+                let norm_correction_str: String = row.get(2)?;
+                let result_nc: f32 = norm_correction_str.parse().unwrap_or(1.0);
 
-                // Read the fact columns starting from column 2
+                // Convert cosine distance to corrected cosine similarity.
+                // Apply norm correction for truncated embeddings:
+                // corrected = (1 - distance) * sqrt(query_nc * result_nc)
+                let raw_similarity = 1.0 - distance;
+                let corrected_similarity = raw_similarity * (query_norm_correction * result_nc).sqrt();
+
+                // Read the fact columns starting from column 3 (shifted by norm_correction)
                 let fact = Fact {
-                    id: row.get(2)?,
-                    scope: Scope::from_str(&row.get::<_, String>(3)?)
+                    id: row.get(3)?,
+                    scope: Scope::from_str(&row.get::<_, String>(4)?)
                         .map_err(rusqlite::Error::InvalidParameterName)?,
-                    category: Category::from_str(&row.get::<_, String>(4)?)
+                    category: Category::from_str(&row.get::<_, String>(5)?)
                         .map_err(rusqlite::Error::InvalidParameterName)?,
-                    content: row.get(5)?,
-                    importance: row.get(6)?,
-                    access_count: row.get::<_, i32>(7)? as u32,
-                    decay_score: row.get(8)?,
-                    created_at: DateTime::from_timestamp(row.get::<_, i64>(9)?, 0)
+                    content: row.get(6)?,
+                    importance: row.get(7)?,
+                    access_count: row.get::<_, i32>(8)? as u32,
+                    decay_score: row.get(9)?,
+                    created_at: DateTime::from_timestamp(row.get::<_, i64>(10)?, 0)
                         .unwrap_or_else(Utc::now),
-                    last_accessed: DateTime::from_timestamp(row.get::<_, i64>(10)?, 0)
+                    last_accessed: DateTime::from_timestamp(row.get::<_, i64>(11)?, 0)
                         .unwrap_or_else(Utc::now),
-                    source: Source::from_str(&row.get::<_, String>(11)?)
+                    source: Source::from_str(&row.get::<_, String>(12)?)
                         .map_err(rusqlite::Error::InvalidParameterName)?,
                     invalidated_at: row
-                        .get::<_, Option<i64>>(12)?
+                        .get::<_, Option<i64>>(13)?
                         .map(|t| DateTime::from_timestamp(t, 0).unwrap_or_else(Utc::now)),
-                    project_id: row.get(13)?,
-                    has_embedding: row.get::<_, i32>(14)? != 0,
+                    project_id: row.get(14)?,
+                    has_embedding: row.get::<_, i32>(15)? != 0,
                 };
 
                 Ok(FactSearchResult {
                     fact,
-                    score: similarity,
+                    score: corrected_similarity,
                 })
             })?;
 

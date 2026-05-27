@@ -186,6 +186,7 @@ async fn perform_retrieval(
 
     let result = client.embed(query).await.ok()?;
     let embedding = result.vector;
+    let query_norm_correction = result.norm_correction;
 
     log::debug!(
         "Searching for relevant messages (conversation: {:?}, project: {:?})",
@@ -197,6 +198,7 @@ async fn perform_retrieval(
         .search_messages_hybrid(
             query,
             &embedding,
+            query_norm_correction,
             conversation_id,
             project_id,
             config.relevant_count,

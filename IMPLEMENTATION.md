@@ -344,28 +344,35 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY: Norm Correction in Embedding Tables — #157 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #157
+**PR:** #184
 **Branch:** `feat/norm-correction-and-threshold-validation`
 **Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
 **Prerequisite of:** #153 (TAP-2 — thinking-aware retrieval)
 
-**Goal:** Add `norm_correction REAL` column to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). One float per vector corrects the bias at zero query-time cost.
+**Goal:** Add norm correction to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). Applied as multiplicative correction at query time: `corrected_similarity = (1 - distance) * sqrt(nc_query * nc_result)`.
 
 **Background:** TurboQuant (Zandieh et al., ICLR 2026) and RaBitQ (Gao & Long, SIGMOD 2024) show that scalar quantization introduces systematic underestimation of cosine similarity, amplified when effective dimensionality (d_eff) is low. This directly impacts TAP-2 (#153, thinking-aware retrieval), fact dedup, and all semantic retrieval.
 
-**Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.
+**Implementation Summary:**
+- Schema v12→v13: added `+norm_correction TEXT` auxiliary column to all three vec0 tables (sqlite-vec only supports INTEGER and TEXT auxiliary columns)
+- `TruncateResult` struct in `embeddings/truncate.rs` carries both normalized vector and `norm_correction = 1/(|truncated_vec|²)`
+- `embed()` and `embed_batch()` return `TruncateResult`; all DB insertion functions accept `norm_correction: f32`
+- All semantic search functions (`search_content_semantic`, `search_facts_semantic`) read `norm_correction` from vec0 auxiliary columns and apply `sqrt(nc_query * nc_result)` correction
+- `ContentSearchParams` and `search_messages_hybrid` accept `query_norm_correction: f32` parameter
+- Migration v12→v13: DROP+re-CREATE vec0 tables, reset `has_embedding` flags (recovery pipeline regenerates embeddings with norm_correction)
 
 **Implementation Phases:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Schema migration v12→v13: add `norm_correction REAL` to vec0 tables | 📋 |
-| 2 | Calculate norm_correction on embedding insert (1/sqrt(Σvᵢ² for truncated dims)) | 📋 |
-| 3 | Apply norm correction in cosine similarity scoring (search, dedup) | 📋 |
-| 4 | Enhance diagnostics report with norm correction awareness | 📋 |
-| 5 | Add threshold validation recommendation to diagnostics (joint with #134) | 📋 |
-| 6 | Tests: migration, norm calculation, search quality | 📋 |
+| 1 | Schema migration v12→v13: add `+norm_correction TEXT` to vec0 tables | ✅ |
+| 2 | Calculate norm_correction on embedding insert (`1/(|truncated_vec|²)`) | ✅ |
+| 3 | Apply norm correction in scoring (search, dedup) | ✅ |
+| 4 | Enhance diagnostics report with norm correction awareness | ✅ |
+| 5 | Add threshold validation recommendation to diagnostics (joint with #134) | ✅ |
+| 6 | Tests: migration, norm calculation, threshold recommendation | ✅ |
 
 **Effort:** ~1.5 days (20+ lines Rust, 1 SQL migration, diagnostics enhancement)
 
@@ -2989,8 +2996,8 @@ These criteria extend the original validation with geometry metrics discovered i
 | Phase | Issue | Description | Priority | Milestone |
 |-------|-------|-------------|----------|-----------|
 | W4.0 | #133 | `sprach diagnostics embeddings` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
-| W4.1 | #134 | Validate fact semantic threshold 0.70 vs 0.80 before changing | High | M1 |
-| W4.0b | #157 | Norm correction in embedding tables | High | M1 |
+| W4.1 | #134 | ✅ COMPLETED Validate fact semantic threshold 0.70 vs 0.80 — PR #184 | High | M1 |
+| W4.0b | #157 | ✅ COMPLETED Norm correction in embedding tables — PR #184 | High | M1 |
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
 | W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
 | W4.4 | #107 | Embedding provider abstraction — multi-provider support | High | M1 |
@@ -3202,29 +3209,36 @@ Three interrelated bugs discovered via production database investigation (12 ite
 
 ### Threshold Validation — #134 [M1/W4.1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #134
+**PR:** #184
 **Branch:** `feat/norm-correction-and-threshold-validation`
 **Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
 **Joint PR with:** #157 (Norm Correction)
 
 **Goal:** Data-driven validation of `SEMANTIC_SEARCH_THRESHOLD` (currently 0.70 in `src/facts/conflict.rs:230`) before potentially changing to 0.80. Use `sprach diag embeddings` to measure whether the current threshold is appropriate given the measured d_eff and d̄.
 
-**Background:** The embedding geometry audit revealed d_eff=7 and d̄=0.353. At θ=0.70, θ'=0.30, and d̄=0.353 ≥ 0.30 → SPREAD regime. This means at the current 0.70 threshold, a large fraction of random vector pairs will be accepted as semantically similar. The risk is that fact dedup (`src/facts/dedup.rs:319`) may accept near-random matches as semantically similar, causing false dedup matches.
-
-**Implementation approach:** Rather than arbitrarily changing the constant, enhance the diagnostics report to produce a concrete recommendation with measured data. The diagnostics report now includes a "Threshold Recommendation" section that evaluates:
-- Whether the current `SEMANTIC_SEARCH_THRESHOLD` produces SPREAD or TIGHT regime
-- The false acceptance rate at the current threshold
-- Whether 0.80 would be more appropriate (and at what cost to recall)
+**Implementation Summary:**
+- `SEMANTIC_SEARCH_THRESHOLD` renamed to `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (kept as canonical default)
+- Configurable `[facts].semantic_threshold` in `FactSettings` (default: 0.70, serde default)
+- Threaded through `DedupContext.semantic_threshold` → `deduplicate_and_insert()` (8 args, `#[allow(clippy::too_many_arguments)]`)
+- All 3 callers updated: `command_handlers.rs`, `fact_tools.rs`, `extract.rs`
+- New `[retrieval]` config section with `keyword_weight` (default: 0.4) and `semantic_weight` (default: 0.6)
+- Hardcoded `KEYWORD_WEIGHT`/`SEMANTIC_WEIGHT` constants removed from `context_builder.rs`
+- `ThresholdRecommendation` struct in `diagnostics/embeddings.rs` with `recommend_threshold()` function
+- Diagnostics report now includes **Recommended configuration** section with data-driven threshold and weight suggestions
+- 6 new tests for threshold recommendation logic
 
 **Implementation Phases:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add threshold recommendation section to diagnostics report | 📋 |
-| 2 | Add `recommend_threshold()` function to embeddings.rs | 📋 |
-| 3 | Include norm correction status in recommendation | 📋 |
-| 4 | Tests for threshold recommendation logic | 📋 |
+| 1 | Add `[facts].semantic_threshold` to config | ✅ |
+| 2 | Thread through dedup pipeline | ✅ |
+| 3 | Add `[retrieval]` section with keyword_weight/semantic_weight | ✅ |
+| 4 | Add `ThresholdRecommendation` struct and `recommend_threshold()` | ✅ |
+| 5 | Add recommendation section to diagnostics display | ✅ |
+| 6 | Tests for threshold recommendation logic | ✅ |
 
 **Files to Modify:**
 - `src/diagnostics/embeddings.rs` — Add `ThresholdRecommendation` struct, `recommend_threshold()` function, extend `EmbeddingDiagnostics`

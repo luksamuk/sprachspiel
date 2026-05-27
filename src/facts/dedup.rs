@@ -295,7 +295,8 @@ async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
     match super::embedding::generate_fact_embedding(ctx.content, client).await {
         Ok(result) => {
             let candidate_embedding = result.vector;
-            match ctx.db.search_facts_semantic(&candidate_embedding, None, 5) {
+            let query_norm_correction = result.norm_correction;
+            match ctx.db.search_facts_semantic(&candidate_embedding, query_norm_correction, None, 5) {
                 Ok(semantic_results) => resolve_semantic_results(ctx, &semantic_results).await,
                 Err(e) => {
                     log::debug!("dedup: Semantic search failed: {}", e);

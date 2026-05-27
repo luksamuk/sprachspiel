@@ -669,6 +669,7 @@ async fn remember_by_query(
         }
     };
     let embedding = query_result.vector;
+    let query_norm_correction = query_result.norm_correction;
 
     // Get feedback settings for boost and access tracking
     let settings = get_settings();
@@ -681,6 +682,7 @@ async fn remember_by_query(
     let note_params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
+        query_norm_correction,
         content_type: Some(crate::content::ContentType::Note),
         conversation_id: None,
         project_id: None,
@@ -706,6 +708,7 @@ async fn remember_by_query(
     let doc_params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
+        query_norm_correction,
         content_type: Some(crate::content::ContentType::Document),
         conversation_id: None,
         project_id: None,
@@ -729,7 +732,7 @@ async fn remember_by_query(
 
     // Search for messages using V7 search
     let message_results = match db.search_messages_hybrid(
-        query, &embedding, None, // conversation_id
+        query, &embedding, query_norm_correction, None, // conversation_id
         None, // project_id
         limit, keyword_weight,
         semantic_weight,

@@ -262,6 +262,42 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
         )));
     }
 
+    // Threshold recommendations
+    let rec = &diag.threshold_recommendation;
+    md.push_str("## Recommended configuration\n\n");
+    md.push_str(&format!(
+        "**[facts].semantic_threshold:** {:.2}\n\n",
+        rec.semantic_threshold
+    ));
+    md.push_str(&blockquote(&rec.rationale));
+    md.push('\n');
+
+    if rec.adjust_weights {
+        md.push_str(&format!(
+            "**[retrieval].keyword_weight:** {:.1}\n\n",
+            rec.suggested_keyword_weight
+        ));
+        md.push_str(&format!(
+            "**[retrieval].semantic_weight:** {:.1}\n\n",
+            rec.suggested_semantic_weight
+        ));
+        md.push_str(&blockquote(&rec.weight_rationale));
+        md.push('\n');
+    } else {
+        md.push_str(&blockquote(
+            "Default weights (keyword=0.4, semantic=0.6) are appropriate \
+             for the current embedding geometry.",
+        ));
+        md.push('\n');
+    }
+
+    md.push_str(&blockquote(
+        "To apply these recommendations, update your config.toml \
+         or run `sprach config edit`. These are informational \
+         suggestions based on observed embedding geometry.",
+    ));
+    md.push('\n');
+
     // Small corpus warning
     if diag.vector_count < 100 {
         md.push_str(&format!(
