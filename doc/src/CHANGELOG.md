@@ -6,6 +6,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Fixed
 
+- **User message duplication in LLM prompt** — Every user message appeared twice in the prompt sent to the LLM. The root cause was that `add_user_message()` (called in `handle_user_message_stream()`) added the user message to `session.messages`, and then `build_context()` included it via `session.messages[start_idx..]` while `prepare_messages()` also explicitly added `ChatMessage::user(user_input)` at the end. Fix: `build_context()` now excludes the last user message from `session.messages[start_idx..]` since `prepare_messages()` always adds the current query at the end. This ensures the user message appears exactly once in the LLM prompt. This also saves tokens (each duplicated message cost the full message + overhead per turn) and eliminates confused responses where the LLM addressed the user message twice.
+
 - **System Prompt Clarifications (Issue #182)** — Fix behavioral bug where instruction hierarchy was missing, causing USER FACTS constraints (e.g., "rm is not authorized") to lose to SOUL.md behavioral defaults (e.g., "confirm before rm"). Added `### INSTRUCTION HIERARCHY` section specifying priority order: USER FACTS > SOUL > TOOL DESCRIPTIONS > BASE INSTRUCTIONS. Added `### LANGUAGE` note in prompt builder (persists with `--soulless`, unlike SOUL.md). Reformulated `### TOOL USAGE` to concise behavioral instruction replacing the generic 3-step process that partially conflicted with SOUL.md "Search first" behavior. Reduced TODO and Notes tool description verbosity (token optimization).
 
 ### Added
