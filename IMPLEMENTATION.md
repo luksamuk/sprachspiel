@@ -6497,4 +6497,63 @@ The original detailed implementation notes have been moved to:
 2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
 2026-05-07 - M1 implementation waves formalized (W1-W5) with themes, cards, and completion criteria. Board TODO column reordered by implementation priority. #90 Scrum Status moved to Ready (decay_score fix merged).
 2026-05-07 - New board drafts from idea triage: M3 (Privacy Filter, ADR: Empathy, meta_cognize tool, Behavioral Conflict) and M4 (Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF). Added R-13 through R-18, C-11 through C-14, D-06 to research icebox. ONNX for Privacy Filter explicitly rejected (D-06).
+2026-05-29 - Bug Fix: Compaction Overflow (Issue #187). 3-layer progressive compaction strategy to handle context exceeding model window during summarization.
+
+## Bug Fix: Compaction Overflow (Issue #187) — 📋 IN PROGRESS
+
+When a conversation's context exceeds the model's context window, `/compact` fails with `"The prompt is too long"` because the compaction prompt itself exceeds the window. This is a chicken-and-egg problem: you need compaction to reduce context, but compaction requires sending the full context to the model.
+
+**Root Cause:** `compact_conversation()` in `src/chat/core.rs` constructs a single prompt with ALL middle messages and sends it to the model. If the middle section exceeds the model's context window, the API call fails. There is NO handling for this case.
+
+**Research:** Claude Code implements a 5-tier cascade (microcompact → snip → context collapse → auto compact → reactive compact with PTL retry). OpenCode has aggressive pre-pruning of tool outputs before summarization. Academic literature (arXiv:2308.15022) validates recursive summarization for long dialogue memory.
+
+**3-Layer Strategy:**
+
+| Layer | Name | Mechanism | Status |
+|-------|------|-----------|--------|
+| 1 | Pre-pruning | Strip long tool outputs (>500 chars) before sending to LLM | ✅ COMPLETED |
+| 2 | Fallback truncation | Drop oldest middle messages until prompt fits in 50% of window | ✅ COMPLETED |
+| 3 | Chunked recursive summarization | Split into chunks, summarize each, combine summaries | 📋 IN PROGRESS (constants/functions defined, not yet connected) |
+
+**Implementation phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Pre-pruning: `pre_prune_messages()` truncates tool outputs > `PRUNE_TOOL_RESULT_THRESHOLD` | ✅ COMPLETED |
+| 2 | Fallback truncation: `fallback_truncate()` drops oldest middle messages to fit window | ✅ COMPLETED |
+| 3 | Integration: `compact_conversation()` uses Layer 1 then Layer 2 before LLM call | ✅ COMPLETED |
+| 4 | Chunked recursive summarization: `split_into_chunks()` + `compact_recursive()` | 📋 IN PROGRESS (code exists, not connected) |
+| 5 | Tests for all 3 layers | ✅ COMPLETED (14 new tests) |
+| 6 | Documentation (CHANGELOG, IMPLEMENTATION, context-anatomy.md, architecture.md, ADR) | 📋 IN PROGRESS |
+
+**New constants (`src/context_overflow.rs`):**
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `PRUNE_TOOL_RESULT_THRESHOLD` | 500 | Min chars before truncating tool outputs |
+| `PRUNE_TOOL_RESULT_KEEP_CHARS` | 100 | Chars to keep from truncated tool output |
+| `COMPACTION_MAX_CONTEXT_RATIO` | 0.60 | Max ratio of context window per chunk |
+| `MAX_RECURSION_DEPTH` | 3 | Max recursion levels for chunked summarization |
+| `TRUNCATION_TARGET_RATIO` | 0.50 | Target ratio after fallback truncation |
+| `CHUNK_OVERLAP_RATIO` | 0.10 | Overlap between chunks for coherence |
+| `COMPACTION_PROMPT_OVERHEAD` | 2500 | Reserved tokens for prompt + response |
+
+**New functions (`src/context_overflow.rs`):**
+
+| Function | Purpose |
+|----------|---------|
+| `pre_prune_messages()` | Strip long tool outputs, keep first 100 chars + notice |
+| `estimate_messages_tokens()` | Token estimation for SavedMessage list |
+| `fits_in_context()` | Check if messages fit within context window |
+| `max_chunk_tokens()` | Calculate chunk size for recursive summarization |
+| `split_into_chunks()` | Split messages into token-bounded chunks with overlap |
+| `fallback_truncate()` | Drop oldest middle messages to fit context window |
+
+**Affected Code:**
+
+| File | Change |
+|------|--------|
+| `src/context_overflow.rs` | Module docs updated, 6 new constants, 6 new functions, 14 new tests |
+| `src/chat/core.rs` | `compact_conversation()` refactored: extracted `build_conversation_text()` and `compact_with_llm()`, added Layer 1 (pre-pruning) and Layer 2 (fallback truncation) logic |
+| `doc/src/CHANGELOG.md` | Added 3-Layer Compaction Overflow Strategy entry |
 2026-05-07 - #126 created: Rename ask-ai → Sprachspiel (priority:critical). Full codebase audit: ~60 source files + 82 doc files + config/data directory paths + man page + DB filename. 2-4 days estimated.

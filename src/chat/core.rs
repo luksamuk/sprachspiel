@@ -29,7 +29,10 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::check_context_overflow;
+use crate::context_overflow::{
+    DEFAULT_KEEP_FIRST, check_context_overflow, estimate_messages_tokens, fallback_truncate,
+    fits_in_context, pre_prune_messages,
+};
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
@@ -922,13 +925,28 @@ pub async fn send_message_stream(
 
 /// Compact conversation by summarizing old messages with streaming.
 ///
-/// Uses `coordinator.chat_stream()` to stream summary tokens in real time
-/// through the `llm_tx` channel. The TUI event loop receives
-/// `LlmEvent::CompactStreamToken` and `LlmEvent::CompactStreamDone`
-/// events, rendering the summary as it arrives.
+/// Uses a 3-layer progressive overflow strategy:
+///
+/// **Layer 1: Pre-pruning** — Strips long tool outputs from the middle
+/// section before constructing the compaction prompt. Tool results exceeding
+/// `PRUNE_TOOL_RESULT_THRESHOLD` characters are truncated to their first
+/// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a truncation notice.
+/// This often reduces the prompt enough to fit the model's window.
+///
+/// **Layer 2: Fallback truncation** — If the pre-pruned prompt still exceeds
+/// the model's context window, drops oldest middle messages until the
+/// estimated tokens fit within `context_window * TRUNCATION_TARGET_RATIO`.
+/// Always preserves first `DEFAULT_KEEP_FIRST` and last `DEFAULT_KEEP_LAST`
+/// messages. Logs a warning that context was forcibly truncated.
+///
+/// **Future: Layer 3** — Chunked recursive summarization will split the
+/// middle section into chunks, summarize each independently, and combine
+/// the summaries. This will handle cases where truncation loses too much
+/// context. Currently not implemented; truncation is the fallback.
 ///
 /// No token/character limits are imposed on the summary. The LLM is
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
+// #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
     ollama: &ollama_rs::Ollama,
@@ -963,9 +981,82 @@ pub async fn compact_conversation(
         }
     };
 
-    // Build conversation text for summarization
+    // ── Layer 1: Pre-Compaction Pruning ─────────────────────────────
+    //
+    // Strip long tool outputs before sending to the LLM. Tool results
+    // (file reads, shell outputs, search results) are often verbose and
+    // low-information-density for summarization purposes.
+    let pruned_messages = pre_prune_messages(&messages_to_summarize);
+    let pruned_count = messages_to_summarize
+        .iter()
+        .zip(pruned_messages.iter())
+        .filter(|(orig, pruned)| orig.content.len() != pruned.content.len())
+        .count();
+
+    if pruned_count > 0 {
+        log::debug!(
+            "Layer 1 (pre-pruning): truncated {}/{} tool results",
+            pruned_count,
+            messages_to_summarize.len()
+        );
+    }
+
+    // ── Layer 2: Fallback truncation (if prompt exceeds model window) ─
+    //
+    // Estimate whether the pre-pruned messages fit in the model's context
+    // window. If not, truncate oldest middle messages as a fallback.
+    // Reserve tokens for the compaction prompt template (~500 tokens)
+    // and the model's response (~2000 tokens).
+    const COMPACTION_PROMPT_OVERHEAD: usize = 2500;
+    let context_window = model_config.num_ctx as usize;
+
+    if !fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
+        log::warn!(
+            "Pre-pruned messages still exceed context window ({} tokens > {} available). \
+             Applying fallback truncation.",
+            estimate_messages_tokens(&pruned_messages),
+            context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
+        );
+
+        let truncation = fallback_truncate(
+            &pruned_messages,
+            context_window,
+            DEFAULT_KEEP_FIRST.min(DEFAULT_KEEP_FIRST), // keep_first within middle
+            0, // don't preserve last within middle (they're in the "keep_last" section)
+        );
+
+        if truncation.dropped_count > 0 {
+            log::warn!(
+                "Layer 3 (fallback truncation): dropped {} oldest middle messages \
+                 to fit context window ({}/{:.0}% remaining).",
+                truncation.dropped_count,
+                truncation.remaining_tokens,
+                (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
+            );
+        }
+
+        // Build conversation text from truncated messages
+        let conversation_text = build_conversation_text(&truncation.remaining_messages);
+        let compact_prompt = build_compaction_prompt(&conversation_text);
+        let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
+        return Ok((summary, range));
+    }
+
+    // Build conversation text from pre-pruned messages and send to LLM
+    let conversation_text = build_conversation_text(&pruned_messages);
+    let compact_prompt = build_compaction_prompt(&conversation_text);
+    let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
+    Ok((summary, range))
+}
+
+/// Build formatted conversation text from messages for the compaction prompt.
+///
+/// Formats messages as "User: ...\n", "Assistant: ...\n", etc.
+/// System messages are skipped (they don't contain conversation content
+/// relevant for summarization).
+fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String {
     let mut conversation_text = String::new();
-    for msg in &messages_to_summarize {
+    for msg in messages {
         match msg.role {
             super::session::MessageRole::User => {
                 conversation_text.push_str(&format!("User: {}\n", msg.content));
@@ -979,9 +1070,20 @@ pub async fn compact_conversation(
             }
         }
     }
+    conversation_text
+}
 
-    let compact_prompt = build_compaction_prompt(&conversation_text);
-
+/// Send a compaction prompt to the LLM and stream the summary back.
+///
+/// This is the core LLM call shared by all compaction paths (single-pass,
+/// pre-pruned, truncated, and each chunk in recursive summarization).
+/// Returns only the summary text; the range is determined by the caller.
+async fn compact_with_llm(
+    ollama: &ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    compact_prompt: String,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+) -> AppResult<String> {
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
@@ -1016,7 +1118,7 @@ pub async fn compact_conversation(
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.message.content);
-            Ok((summary, range))
+            Ok(summary)
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
     }
