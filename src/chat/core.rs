@@ -30,8 +30,8 @@ use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
-    DEFAULT_KEEP_FIRST, check_context_overflow, estimate_messages_tokens, fallback_truncate,
-    fits_in_context, pre_prune_messages,
+    DEFAULT_KEEP_FIRST, MAX_RECURSION_DEPTH, check_context_overflow, estimate_messages_tokens,
+    fallback_truncate, fits_in_context, max_chunk_tokens, pre_prune_messages, split_into_chunks,
 };
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
@@ -933,20 +933,22 @@ pub async fn send_message_stream(
 /// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a truncation notice.
 /// This often reduces the prompt enough to fit the model's window.
 ///
-/// **Layer 2: Fallback truncation** — If the pre-pruned prompt still exceeds
-/// the model's context window, drops oldest middle messages until the
-/// estimated tokens fit within `context_window * TRUNCATION_TARGET_RATIO`.
-/// Always preserves first `DEFAULT_KEEP_FIRST` and last `DEFAULT_KEEP_LAST`
-/// messages. Logs a warning that context was forcibly truncated.
+/// **Layer 2: Chunked recursive summarization** — If the pre-pruned prompt
+/// still exceeds the model's context window, splits the middle section into
+/// chunks that each fit within `COMPACTION_MAX_CONTEXT_RATIO * context_window`.
+/// Summarizes each chunk independently, then combines the summaries. If the
+/// combined summaries still exceed the window, recurses (up to
+/// `MAX_RECURSION_DEPTH`). Each chunk has a small overlap with the previous
+/// one for coherence at boundaries.
 ///
-/// **Future: Layer 3** — Chunked recursive summarization will split the
-/// middle section into chunks, summarize each independently, and combine
-/// the summaries. This will handle cases where truncation loses too much
-/// context. Currently not implemented; truncation is the fallback.
+/// **Layer 3: Fallback truncation** — If recursive summarization fails
+/// (model unavailable, max recursion exceeded, etc.), hard-truncates oldest
+/// middle messages to `context_window * TRUNCATION_TARGET_RATIO`. Always
+/// preserves first `DEFAULT_KEEP_FIRST` and last `DEFAULT_KEEP_LAST`
+/// messages. Logs a warning that context was forcibly truncated.
 ///
 /// No token/character limits are imposed on the summary. The LLM is
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
-// #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
     ollama: &ollama_rs::Ollama,
@@ -1001,52 +1003,194 @@ pub async fn compact_conversation(
         );
     }
 
-    // ── Layer 2: Fallback truncation (if prompt exceeds model window) ─
-    //
-    // Estimate whether the pre-pruned messages fit in the model's context
-    // window. If not, truncate oldest middle messages as a fallback.
     // Reserve tokens for the compaction prompt template (~500 tokens)
     // and the model's response (~2000 tokens).
     const COMPACTION_PROMPT_OVERHEAD: usize = 2500;
     let context_window = model_config.num_ctx as usize;
 
-    if !fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
-        log::warn!(
-            "Pre-pruned messages still exceed context window ({} tokens > {} available). \
-             Applying fallback truncation.",
-            estimate_messages_tokens(&pruned_messages),
-            context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
-        );
-
-        let truncation = fallback_truncate(
-            &pruned_messages,
-            context_window,
-            DEFAULT_KEEP_FIRST.min(DEFAULT_KEEP_FIRST), // keep_first within middle
-            0, // don't preserve last within middle (they're in the "keep_last" section)
-        );
-
-        if truncation.dropped_count > 0 {
-            log::warn!(
-                "Layer 3 (fallback truncation): dropped {} oldest middle messages \
-                 to fit context window ({}/{:.0}% remaining).",
-                truncation.dropped_count,
-                truncation.remaining_tokens,
-                (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
-            );
-        }
-
-        // Build conversation text from truncated messages
-        let conversation_text = build_conversation_text(&truncation.remaining_messages);
+    // Check if pre-pruned messages fit in context — if yes, single-pass compaction
+    if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
+        let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
         let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
         return Ok((summary, range));
     }
 
-    // Build conversation text from pre-pruned messages and send to LLM
-    let conversation_text = build_conversation_text(&pruned_messages);
+    // ── Layer 2: Chunked Recursive Summarization ─────────────────────
+    //
+    // The pre-pruned messages don't fit in a single LLM call.
+    // Split them into chunks that each fit, summarize each chunk,
+    // and combine the summaries.
+    log::info!(
+        "Pre-pruned messages exceed context window ({} tokens > {} available). \
+         Attempting chunked recursive summarization.",
+        estimate_messages_tokens(&pruned_messages),
+        context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
+    );
+
+    let chunk_budget = max_chunk_tokens(context_window);
+    let chunks = split_into_chunks(&pruned_messages, chunk_budget);
+
+    log::debug!(
+        "Layer 2 (chunked summarization): split into {} chunk(s), budget {} tokens/chunk",
+        chunks.len(),
+        chunk_budget,
+    );
+
+    // Report progress to the TUI
+    let _ = llm_tx.try_send(LlmEvent::CompactStreamToken(format!(
+        "\n⚙ Compacting in {} chunk(s)...\n",
+        chunks.len()
+    )));
+
+    match compact_recursive(ollama, model_config, &chunks, llm_tx.clone(), 0).await {
+        Ok(summary) => {
+            log::info!(
+                "Layer 2 (chunked summarization): succeeded with {} chunks",
+                chunks.len()
+            );
+            return Ok((summary, range));
+        }
+        Err(e) => {
+            log::warn!(
+                "Layer 2 (chunked summarization) failed: {}. Falling back to truncation.",
+                e
+            );
+        }
+    }
+
+    // ── Layer 3: Fallback Truncation ────────────────────────────────
+    //
+    // Chunked summarization failed (model unavailable, max recursion
+    // exceeded, etc.). Hard-truncate oldest middle messages to fit
+    // within context_window * TRUNCATION_TARGET_RATIO.
+    let truncation = fallback_truncate(
+        &pruned_messages,
+        context_window,
+        DEFAULT_KEEP_FIRST.min(DEFAULT_KEEP_FIRST),
+        0, // don't preserve last within middle (they're in "keep_last")
+    );
+
+    if truncation.dropped_count > 0 {
+        log::warn!(
+            "Layer 3 (fallback truncation): dropped {} oldest middle messages \
+             to fit context window ({}/{:.0}% remaining).",
+            truncation.dropped_count,
+            truncation.remaining_tokens,
+            (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
+        );
+    }
+
+    let conversation_text = build_conversation_text(&truncation.remaining_messages);
     let compact_prompt = build_compaction_prompt(&conversation_text);
     let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
     Ok((summary, range))
+}
+
+/// Recursively summarize message chunks.
+///
+/// Summarizes each chunk independently, then combines the summaries.
+/// If the combined summaries still exceed the context window, recurses
+/// (up to `MAX_RECURSION_DEPTH`). If recursion fails, returns an error
+/// and the caller falls back to truncation.
+///
+/// Uses `Box::pin` for the recursive call because Rust requires
+/// indirection for recursive async functions (the future size would
+/// otherwise be infinite).
+fn compact_recursive<'a>(
+    ollama: &'a ollama_rs::Ollama,
+    model_config: &'a ModelConfig,
+    chunks: &'a [crate::context_overflow::MessageChunk],
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    depth: usize,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<String>> + Send + 'a>> {
+    Box::pin(async move {
+        if depth >= MAX_RECURSION_DEPTH {
+            return Err(format!(
+                "Max recursion depth ({}) reached in chunked summarization",
+                MAX_RECURSION_DEPTH
+            )
+            .into());
+        }
+
+        let mut summaries = Vec::with_capacity(chunks.len());
+
+        for (i, chunk) in chunks.iter().enumerate() {
+            let conversation_text = build_conversation_text(&chunk.messages);
+
+            // Use a slightly different prompt for sub-summaries to encourage conciseness
+            let chunk_prompt = if chunks.len() > 1 {
+                format!(
+                    "This is part {}/{} of a longer conversation. Summarize this section concisely.\n\n{}",
+                    i + 1,
+                    chunks.len(),
+                    build_compaction_prompt(&conversation_text)
+                )
+            } else {
+                build_compaction_prompt(&conversation_text)
+            };
+
+            log::debug!(
+                "Layer 2: summarizing chunk {}/{} ({} tokens)",
+                i + 1,
+                chunks.len(),
+                chunk.token_count
+            );
+
+            match compact_with_llm(ollama, model_config, chunk_prompt, llm_tx.clone()).await {
+                Ok(summary) => summaries.push(summary),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to summarize chunk {}/{}: {}",
+                        i + 1,
+                        chunks.len(),
+                        e
+                    );
+                    return Err(e);
+                }
+            }
+        }
+
+        // If we only had one chunk, return its summary directly
+        if summaries.len() == 1 {
+            return Ok(summaries.swap_remove(0));
+        }
+
+        // Combine summaries and check if they fit in context
+        let combined = summaries.join("\n\n---\n\n");
+        let combined_tokens = crate::tokens::estimate_tokens(&combined);
+        let context_window = model_config.num_ctx as usize;
+        const COMPACTION_PROMPT_OVERHEAD: usize = 2500;
+
+        if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
+            // Combined summaries fit — do a final summarization pass
+            let final_prompt = build_compaction_prompt(&combined);
+            compact_with_llm(ollama, model_config, final_prompt, llm_tx).await
+        } else {
+            // Combined summaries still too large — recurse
+            log::debug!(
+                "Layer 2: combined summaries ({} tokens) still exceed context window, recursing (depth {})",
+                combined_tokens,
+                depth + 1
+            );
+
+            // Create synthetic messages from summaries for next recursion level
+            let summary_messages: Vec<super::session::SavedMessage> = summaries
+                .iter()
+                .map(|s| super::session::SavedMessage {
+                    role: super::session::MessageRole::Assistant,
+                    content: s.clone(),
+                    timestamp: chrono::Utc::now(),
+                    ..Default::default()
+                })
+                .collect();
+
+            let chunk_budget = max_chunk_tokens(context_window);
+            let sub_chunks = split_into_chunks(&summary_messages, chunk_budget);
+
+            compact_recursive(ollama, model_config, &sub_chunks, llm_tx, depth + 1).await
+        }
+    })
 }
 
 /// Build formatted conversation text from messages for the compaction prompt.

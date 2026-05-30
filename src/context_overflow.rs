@@ -69,14 +69,10 @@ pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
 
 /// Ratio of context window used as maximum size for a single compaction prompt.
 /// At 60%, we leave 40% for system prompt + compaction instructions + model response.
-// Layer 2: Used by chunked recursive summarization (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
 pub const COMPACTION_MAX_CONTEXT_RATIO: f32 = 0.60;
 
 /// Maximum recursion depth for chunked recursive summarization.
 /// Prevents infinite loops if summaries keep exceeding the window.
-// Layer 2: Used by chunked recursive summarization (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
 pub const MAX_RECURSION_DEPTH: usize = 3;
 
 /// Minimum number of characters a tool result must have before pre-pruning
@@ -90,13 +86,6 @@ pub const PRUNE_TOOL_RESULT_KEEP_CHARS: usize = 100;
 /// Ratio of context window targeted after fallback truncation.
 /// Targets 50% of the window so there's plenty of room for the response.
 pub const TRUNCATION_TARGET_RATIO: f32 = 0.50;
-
-/// Overlap ratio between chunks for recursive summarization.
-/// Each chunk includes 10% of the previous chunk's content at the start
-/// to maintain coherence at chunk boundaries.
-// Layer 2: Used by split_into_chunks (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
-pub const CHUNK_OVERLAP_RATIO: f32 = 0.10;
 
 /// Calculate threshold values for a given context window
 /// Returns (pre_tool, compaction, inter_tool, emergency) buffers
@@ -509,8 +498,6 @@ pub fn fits_in_context(
 /// - The model's response (~2000 tokens)
 ///
 /// Uses `COMPACTION_MAX_CONTEXT_RATIO` (60%) as the target ratio.
-// Layer 2: Used by chunked recursive summarization (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
 pub fn max_chunk_tokens(context_window: usize) -> usize {
     ((context_window as f32) * COMPACTION_MAX_CONTEXT_RATIO) as usize
 }
@@ -523,8 +510,6 @@ pub fn max_chunk_tokens(context_window: usize) -> usize {
 // still exceed the window, we recurse.
 
 /// A chunk of messages created by `split_into_chunks`.
-// Layer 2: Used by split_into_chunks (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
 #[derive(Debug, Clone)]
 pub struct MessageChunk {
     /// Messages in this chunk
@@ -538,14 +523,11 @@ pub struct MessageChunk {
 /// Each chunk contains consecutive messages whose combined token count
 /// does not exceed `max_tokens`. Messages are never split mid-message.
 ///
-/// Adjacent chunks have a small overlap (controlled by `CHUNK_OVERLAP_RATIO`)
-/// at the message level to maintain coherence: the last message of chunk N
-/// is also the first message of chunk N+1. This prevents losing context at
-/// chunk boundaries.
+/// Adjacent chunks overlap by one message: the last message of chunk N
+/// is also the first message of chunk N+1. This maintains coherence at
+/// chunk boundaries and prevents losing context between chunks.
 ///
 /// Returns at least one chunk (even if it exceeds `max_tokens`).
-// Layer 2: Used by chunked recursive summarization (not yet connected in core.rs)
-#[allow(dead_code)] // Layer 2: Will be used when recursive summarization is connected
 pub fn split_into_chunks(messages: &[SavedMessage], max_tokens: usize) -> Vec<MessageChunk> {
     if messages.is_empty() {
         return vec![];
