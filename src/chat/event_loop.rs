@@ -405,20 +405,23 @@ pub fn handle_llm_event(
                 .session
                 .set_compacted_summary_with_range(summary.clone(), range);
 
-            // Add a horizontal-rule separator before the summary for visual clarity
-            view.app_mut().add_message(ChatMessage::system(
-                "────────────────────────────────────────".to_string(),
-            ));
+            // Add a horizontal-rule separator before the summary for visual clarity.
+            // This must go BEFORE the streaming zone so the separator appears
+            // between progress messages and the summary, not after the summary.
+            // Separator fills the full terminal width responsively.
+            view.app_mut()
+                .insert_before_streaming_zone(ChatMessage::separator());
 
             // Finalize the streaming content — just the summary, no artificial header/footer
             view.stream_done(&summary, None, None);
 
-            // Add completion message after the summary
+            // Add completion message after the summary, with a closing separator
             if compacted_count > 0 {
                 view.app_mut().add_message(ChatMessage::system(format!(
                     "✓ Compacted {} messages (preserved {} first, {} last).",
                     compacted_count, first_preserved, preserved_last
                 )));
+                view.app_mut().add_message(ChatMessage::separator());
             }
 
             // Update status bar with new token count after compaction

@@ -220,6 +220,8 @@ graph TB
 
 **Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
 
+**Embedding preservation:** Compaction does not remove, modify, or invalidate any embeddings. All original messages remain in `content_items` with their embeddings intact in `vec0` tables. The compacted summary has no embedding of its own — it's purely LLM context. RAG searches the original messages, which are still fully searchable after compaction.
+
 ### Percentage-Based Triggers (v0.37.0+)
 
 Compaction uses **percentage-based thresholds** that scale with context window size:

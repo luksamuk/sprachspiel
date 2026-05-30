@@ -814,7 +814,18 @@ sprachspiel/
 - Embeddings generated asynchronously
 - Chunked for messages > 1000 chars
 - Cached in database for retrieval
-- Batch operations during compaction
+- Missing embeddings recovered on next startup via background pipeline
+
+### Compaction and Embedding Independence
+
+Compaction and embeddings are **completely independent** systems:
+
+- **Compaction does not delete `content_items`, `content_chunks`, or embeddings from the database.** It only modifies in-memory session state (`compacted_summary`, `compacted_range`, `messages_sent_to_llm`) and persists the summary text in `conversations.compacted_summary`.
+- **All original messages remain searchable via RAG** after compaction. Their embeddings in `vec0` tables and `content_items` rows are untouched — `has_embedding` flags are not modified.
+- **The compacted summary does not have its own embedding.** It serves as context for the LLM, not as a searchable document. Since the summary is a condensation of the original messages, RAG can find the originals directly.
+- After compaction, `clear_conversation_prompt_tokens()` resets stale token counts in the database, but does not touch embedding data.
+
+This design ensures that compaction is purely a **context window optimization** — it reduces what's sent to the LLM while preserving all historical data for semantic search.
 
 ### Database Operations
 

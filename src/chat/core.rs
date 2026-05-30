@@ -1014,7 +1014,7 @@ pub async fn compact_conversation(
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
-        match compact_with_llm(ollama, model_config, compact_prompt, llm_tx.clone()).await {
+        match compact_with_llm(ollama, model_config, compact_prompt, llm_tx.clone(), true).await {
             Ok(summary) => return Ok((summary, range)),
             Err(e) if is_prompt_too_long_error(&e.to_string()) => {
                 log::warn!(
@@ -1106,7 +1106,7 @@ pub async fn compact_conversation(
 
     // Layer 3 is the last resort. If even truncation fails to fit the prompt,
     // compaction is truly impossible — return a clear error with diagnostics.
-    match compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await {
+    match compact_with_llm(ollama, model_config, compact_prompt, llm_tx, true).await {
         Ok(summary) => Ok((summary, range)),
         Err(e) if is_prompt_too_long_error(&e.to_string()) => {
             log::error!(
@@ -1186,7 +1186,15 @@ fn compact_recursive<'a>(
                 chunk.token_count
             );
 
-            match compact_with_llm(ollama, model_config, chunk_prompt, llm_tx.clone()).await {
+            // Report per-chunk progress to the TUI
+            let _ = llm_tx.try_send(LlmEvent::CompactInfo {
+                message: format!("⚙ Compacting chunk {}/{}...", i + 1, chunks.len()),
+            });
+
+            // Intermediate chunk summaries are processed silently (stream=false).
+            // Only the final consolidation pass streams to the TUI.
+            match compact_with_llm(ollama, model_config, chunk_prompt, llm_tx.clone(), false).await
+            {
                 Ok(summary) => summaries.push(summary),
                 Err(e) => {
                     log::warn!(
@@ -1200,7 +1208,10 @@ fn compact_recursive<'a>(
             }
         }
 
-        // If we only had one chunk, return its summary directly
+        // If we only had one chunk, return its summary directly.
+        // The summary was obtained silently (stream=false); the caller
+        // (compact_conversation) will send it via CompactStreamDone
+        // which renders the final text via stream_done().
         if summaries.len() == 1 {
             return Ok(summaries.swap_remove(0));
         }
@@ -1211,9 +1222,10 @@ fn compact_recursive<'a>(
         let context_window = model_config.num_ctx as usize;
 
         if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
-            // Combined summaries fit — do a final summarization pass
+            // Combined summaries fit — do a final summarization pass.
+            // Stream the final consolidation so the user sees progress.
             let final_prompt = build_compaction_prompt(&combined);
-            compact_with_llm(ollama, model_config, final_prompt, llm_tx).await
+            compact_with_llm(ollama, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
             log::debug!(
@@ -1270,11 +1282,19 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// This is the core LLM call shared by all compaction paths (single-pass,
 /// pre-pruned, truncated, and each chunk in recursive summarization).
 /// Returns only the summary text; the range is determined by the caller.
+/// Send a compaction prompt to the LLM and optionally stream the summary.
+///
+/// When `stream` is true, tokens are streamed to the TUI via `CompactStreamToken`
+/// events (used for the final consolidation pass that the user sees).
+/// When `stream` is false, tokens are silently discarded — the LLM still runs
+/// and the summary is returned, but the TUI shows no intermediate content
+/// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    stream: bool,
 ) -> AppResult<String> {
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
@@ -1290,13 +1310,18 @@ async fn compact_with_llm(
         ChatMessage::user(compact_prompt),
     ];
 
-    // Stream summary tokens through the LlmEvent channel
+    // Only stream tokens to TUI for the final consolidaton pass.
+    // Intermediate chunk summaries are processed silently.
     let llm_tx_token = llm_tx.clone();
     let result = coordinator
         .chat_stream(
             messages,
             move |token| {
-                let _ = llm_tx_token.try_send(LlmEvent::CompactStreamToken(token));
+                if stream {
+                    let _ = llm_tx_token.try_send(LlmEvent::CompactStreamToken(token));
+                }
+                // If !stream, tokens are silently discarded — the summary
+                // is still returned via Ok(summary) below.
             },
             |_thinking_token| {
                 // Thinking tokens from compaction are not displayed in the chat area.

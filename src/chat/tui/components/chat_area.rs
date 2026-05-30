@@ -63,6 +63,8 @@ pub enum MessageType {
     System,
     /// Error — `✗` prefix, bold red text.
     Error,
+    /// Responsive horizontal rule — fills available chat width with `─`.
+    Separator,
     /// Welcome banner — responsive braille art layout.
     Banner,
 }
@@ -130,6 +132,17 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Error,
             content,
+        }
+    }
+
+    /// Create a separator message (responsive horizontal rule).
+    ///
+    /// Renders as a full-width `─` line in dim style. The width adapts
+    /// to the terminal width at render time.
+    pub fn separator() -> Self {
+        Self {
+            msg_type: MessageType::Separator,
+            content: String::new(),
         }
     }
 
@@ -567,6 +580,13 @@ fn build_lines(
                     ]));
                 }
             }
+            MessageType::Separator => {
+                // Responsive horizontal rule that fills available chat width
+                lines.push(Line::from(Span::styled(
+                    "─".repeat(available_width),
+                    styles::dim(),
+                )));
+            }
             MessageType::Banner => {
                 // Banner: responsive layout (braille art)
                 // Note: banners don't support selection (art layout is complex)
@@ -839,10 +859,32 @@ mod tests {
             ChatMessage::error("err".into()).msg_type,
             MessageType::Error
         );
+        assert_eq!(ChatMessage::separator().msg_type, MessageType::Separator);
         assert_eq!(
             ChatMessage::banner("banner".into()).msg_type,
             MessageType::Banner
         );
+    }
+
+    #[test]
+    fn test_separator_renders_full_width() {
+        // Separator message renders as a single line of "─" repeated to fill width
+        let messages = vec![ChatMessage::separator()];
+        let lines = build_lines(&messages, MarkdownTheme::Dark, true, 40);
+        assert_eq!(lines.len(), 1);
+        // The line should contain 40 "─" characters (available_width = 40)
+        let line_content: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(line_content, "─".repeat(40));
+    }
+
+    #[test]
+    fn test_separator_renders_narrow_width() {
+        // Separator adapts to narrow terminals
+        let messages = vec![ChatMessage::separator()];
+        let lines = build_lines(&messages, MarkdownTheme::Dark, true, 10);
+        assert_eq!(lines.len(), 1);
+        let line_content: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(line_content, "─".repeat(10));
     }
 
     // --- count_ratatui_wrapped_lines tests ---
