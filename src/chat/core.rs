@@ -291,7 +291,14 @@ pub async fn prepare_messages(
     }
 
     let mut messages = context_result.messages;
-    messages.push(ChatMessage::user(user_input.to_string()));
+
+    // Only add a user message if there is actual content.
+    // The continuation path passes user_input="" and injects its own
+    // ephemeral user message via coordinator.push_ephemeral() below.
+    // Adding an empty user message confuses the LLM and wastes tokens.
+    if !user_input.is_empty() {
+        messages.push(ChatMessage::user(user_input.to_string()));
+    }
 
     if let Some(tag) = continuation_tag {
         let continuation_prompt = build_continuation_prompt(&tag.paused_at, &tag.next_step);
