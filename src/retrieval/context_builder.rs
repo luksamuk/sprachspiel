@@ -362,7 +362,25 @@ pub async fn build_context(
         None => session.messages_sent_to_llm.min(session.messages.len()),
     };
 
-    let recent_messages: Vec<_> = session.messages[start_idx..]
+    // Exclude the last user message from recent messages, since
+    // prepare_messages() always adds the current user query at the end
+    // of the prompt. Without this exclusion, the user's message appears
+    // twice in the LLM prompt — once from session.messages (added by
+    // add_user_message() before the LLM call) and once from
+    // prepare_messages() line 294. This is the "user message duplication"
+    // bug: build_context() includes the just-added user message via
+    // session.messages[start_idx..], and prepare_messages() adds it again.
+    let end_exclusive = if session
+        .messages
+        .last()
+        .is_some_and(|m| m.role == MessageRole::User)
+    {
+        session.messages.len().saturating_sub(1)
+    } else {
+        session.messages.len()
+    };
+
+    let recent_messages: Vec<_> = session.messages[start_idx..end_exclusive]
         .iter()
         .rev()
         .take(config.recent_count)
@@ -772,5 +790,118 @@ mod tests {
         push_messages_as_chat_messages(&mut messages, source.iter());
 
         assert!(messages.is_empty());
+    }
+
+    // ── User message exclusion tests (bug: message duplication) ───────────
+
+    /// Verify the end_exclusive calculation for the user message exclusion
+    /// in build_context(). When the last message in session.messages is a
+    /// User message, end_exclusive = len - 1 (exclude it). Otherwise,
+    /// end_exclusive = len (include all).
+    #[test]
+    fn test_end_exclusive_excludes_last_user_message() {
+        let session = ChatSession::new("test-model".to_string(), None, false);
+        // Simulate: [User("hello"), Assistant("hi"), User("current query")]
+        let messages: Vec<SavedMessage> = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "hello".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "hi".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::User,
+                content: "current query".to_string(),
+                ..Default::default()
+            },
+        ];
+        // Last message is User → end_exclusive = 2 (exclude index 2)
+        let end_exclusive = if messages.last().is_some_and(|m| m.role == MessageRole::User) {
+            messages.len().saturating_sub(1)
+        } else {
+            messages.len()
+        };
+        assert_eq!(end_exclusive, 2);
+        // messages[0..2] = [User("hello"), Assistant("hi")] — current query excluded
+    }
+
+    #[test]
+    fn test_end_exclusive_includes_all_when_last_is_assistant() {
+        let messages: Vec<SavedMessage> = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "hello".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "hi there".to_string(),
+                ..Default::default()
+            },
+        ];
+        // Last message is Assistant → end_exclusive = 2 (include all)
+        let end_exclusive = if messages.last().is_some_and(|m| m.role == MessageRole::User) {
+            messages.len().saturating_sub(1)
+        } else {
+            messages.len()
+        };
+        assert_eq!(end_exclusive, 2);
+    }
+
+    #[test]
+    fn test_end_exclusive_empty_messages() {
+        let messages: Vec<SavedMessage> = vec![];
+        // Empty → last() is None → end_exclusive = 0
+        let end_exclusive = if messages.last().is_some_and(|m| m.role == MessageRole::User) {
+            messages.len().saturating_sub(1)
+        } else {
+            messages.len()
+        };
+        assert_eq!(end_exclusive, 0);
+    }
+
+    #[test]
+    fn test_end_exclusive_single_user_message() {
+        let messages: Vec<SavedMessage> = vec![SavedMessage {
+            role: MessageRole::User,
+            content: "only message".to_string(),
+            ..Default::default()
+        }];
+        // Single User message → end_exclusive = 0 (exclude it entirely)
+        let end_exclusive = if messages.last().is_some_and(|m| m.role == MessageRole::User) {
+            messages.len().saturating_sub(1)
+        } else {
+            messages.len()
+        };
+        assert_eq!(end_exclusive, 0);
+        // messages[0..0] = empty — the user message is fully excluded,
+        // prepare_messages() will add it at the end
+    }
+
+    #[test]
+    fn test_end_exclusive_last_is_tool_message() {
+        let messages: Vec<SavedMessage> = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "hello".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Tool,
+                content: "tool output".to_string(),
+                ..Default::default()
+            },
+        ];
+        // Last message is Tool → end_exclusive = 2 (include all)
+        let end_exclusive = if messages.last().is_some_and(|m| m.role == MessageRole::User) {
+            messages.len().saturating_sub(1)
+        } else {
+            messages.len()
+        };
+        assert_eq!(end_exclusive, 2);
     }
 }

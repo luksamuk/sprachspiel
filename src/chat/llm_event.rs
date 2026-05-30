@@ -133,6 +133,16 @@ pub enum LlmEvent {
     /// regular user message.
     CompactStreamToken(String),
 
+    /// System-level information during compaction (chunk count, truncation warning).
+    ///
+    /// Displayed as a dim `System` message in the chat area, separate from the
+    /// streaming summary content. Used for progress info like "⚙ Compacting in 3 chunks..."
+    /// and warnings like "⚠ Truncation applied, dropped 150 oldest messages."
+    CompactInfo {
+        /// Informational message to display
+        message: String,
+    },
+
     /// Compaction streaming completed.
     ///
     /// Contains the full compacted summary and the range of messages
@@ -204,6 +214,7 @@ impl std::fmt::Debug for LlmEvent {
                 .debug_tuple("CompactStreamToken")
                 .field(&token.len())
                 .finish(),
+            Self::CompactInfo { message } => f.debug_tuple("CompactInfo").field(message).finish(),
             Self::CompactStreamDone { summary, range } => f
                 .debug_struct("CompactStreamDone")
                 .field("summary_len", &summary.len())
@@ -293,5 +304,15 @@ mod tests {
         // Debug should show length, not the full token
         assert!(debug.contains("500"));
         assert!(debug.len() < 100); // Truncated in debug output
+    }
+
+    #[test]
+    fn test_compact_info_debug_format() {
+        let event = LlmEvent::CompactInfo {
+            message: "⚙ Compacting in 3 chunks...".to_string(),
+        };
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("CompactInfo"));
+        assert!(debug.contains("Compacting in 3 chunks"));
     }
 }

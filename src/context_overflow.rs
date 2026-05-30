@@ -1,6 +1,10 @@
-//! Context overflow detection and handling
+//! Context overflow detection and 3-layer compaction handling
 //!
-//! Implements auto-compaction when context reaches threshold.
+//! Implements progressive compaction when context reaches threshold:
+//! - Layer 1: Pre-pruning (strip long tool outputs before summarization)
+//! - Layer 2: Chunked recursive summarization (split into chunks if too large)
+//! - Layer 3: Fallback truncation (hard truncate as last resort)
+//!
 //! Uses percentage-based thresholds that scale with context window size,
 //! with absolute minimum buffers for small contexts.
 //!
@@ -24,7 +28,7 @@
 //! - INTER_TOOL_MIN: 512 tokens
 //! - EMERGENCY_MIN: 256 tokens
 
-use crate::chat::session::ChatSession;
+use crate::chat::session::{ChatSession, MessageRole, SavedMessage};
 use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
 use ollama_rs::generation::chat::ChatMessage;
 
@@ -56,6 +60,66 @@ pub const DEFAULT_KEEP_LAST: usize = 5;
 /// Shows "OK" below 75%, "MODERATE" 75-88%, "CRITICAL" above 88%
 #[allow(dead_code)]
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
+
+// ── 3-Layer Compaction Constants ───────────────────────────────────
+//
+// Layer 1: Pre-pruning — strip long tool outputs before summarization
+// Layer 2: Chunked recursive summarization — split oversized middle sections
+// Layer 3: Fallback truncation — hard truncate as last resort
+
+/// Ratio of context window used as maximum size for a single compaction prompt.
+/// At 60%, we leave 40% for system prompt + compaction instructions + model response.
+pub const COMPACTION_MAX_CONTEXT_RATIO: f32 = 0.60;
+
+/// Maximum recursion depth for chunked recursive summarization.
+/// Prevents infinite loops if summaries keep exceeding the window.
+pub const MAX_RECURSION_DEPTH: usize = 3;
+
+/// Minimum number of characters a tool result must have before pre-pruning
+/// will truncate it. Shorter tool results are kept as-is.
+pub const PRUNE_TOOL_RESULT_THRESHOLD: usize = 500;
+
+/// Number of characters to keep from the beginning of a truncated tool result.
+/// The rest is replaced with a truncation notice.
+pub const PRUNE_TOOL_RESULT_KEEP_CHARS: usize = 100;
+
+/// Ratio of context window targeted after fallback truncation.
+/// Targets 50% of the window so there's plenty of room for the response.
+pub const TRUNCATION_TARGET_RATIO: f32 = 0.50;
+
+/// Overhead per message during compaction.
+///
+/// Compaction uses `build_conversation_text()` which formats messages as
+/// `"User: {content}\n"`, `"Assistant: {content}\n"`, etc. The real overhead
+/// per message includes: role tags, newlines, JSON formatting from Ollama's
+/// chat API, and special tokens. We use 10 tokens per message (vs.
+/// `MESSAGE_OVERHEAD = 4` used elsewhere) to account for the additional
+/// formatting in compaction prompts.
+pub const COMPACT_MSG_OVERHEAD: usize = 10;
+
+/// Token overhead for compaction prompts.
+///
+/// Includes:
+///
+/// - System message in `compact_with_llm()` (~50 tokens)
+/// - `SYSTEM_PROMPT_SUMMARIZE` in user message (~40 tokens)
+/// - `COMPACTION_PROMPT` instructions (~120 tokens)
+/// - `"Conversation:"` label + formatting (~30 tokens)
+/// - Response allowance (~2000 tokens)
+/// - Safety buffer for tokenization variance (~760 tokens)
+///
+/// Total: ~3000
+pub const COMPACTION_PROMPT_OVERHEAD: usize = 3000;
+
+/// Safety margin for token estimation during compaction.
+///
+/// Our word-based heuristic (`estimate_tokens`) underestimates by 10-40%
+/// for mixed content (code, non-English text, tool JSON). A 20% buffer
+/// ensures we don't send prompts that exceed the model's context window.
+///
+/// Applied multiplicatively: `estimated_total * ESTIMATION_SAFETY_MARGIN`.
+/// If `estimate_tokens` says 160K tokens, we treat it as 192K tokens.
+pub const ESTIMATION_SAFETY_MARGIN: f32 = 1.20;
 
 /// Calculate threshold values for a given context window
 /// Returns (pre_tool, compaction, inter_tool, emergency) buffers
@@ -387,6 +451,329 @@ pub fn should_position_summary_after_system(session: &ChatSession) -> bool {
     // Summary should go after system prompt (beginning) to avoid being lost.
 
     session.compacted_summary.is_some()
+}
+
+// ── Layer 1: Pre-Compaction Pruning ────────────────────────────────
+//
+// Strips long tool outputs from messages before sending them to the
+// compaction LLM. This reduces the compaction prompt size, often
+// bringing it below the model's context window without losing important
+// context (tool outputs are typically verbose and low-information-density).
+
+/// Prune long tool results from a list of messages.
+///
+/// Replaces tool message content exceeding `PRUNE_TOOL_RESULT_THRESHOLD`
+/// characters with a truncated version that preserves the first
+/// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a notice of how many
+/// characters were removed.
+///
+/// User and Assistant messages are NEVER pruned — only Tool role messages.
+/// This preserved critical context (user instructions, assistant decisions)
+/// while dramatically reducing verbose tool output (file reads, shell
+/// outputs, search results).
+///
+/// Returns a new `Vec<SavedMessage>` with pruned content.
+pub fn pre_prune_messages(messages: &[SavedMessage]) -> Vec<SavedMessage> {
+    messages
+        .iter()
+        .map(|msg| {
+            if msg.role == MessageRole::Tool && msg.content.len() > PRUNE_TOOL_RESULT_THRESHOLD {
+                let truncated_len = msg.content.len() - PRUNE_TOOL_RESULT_KEEP_CHARS;
+                let kept = msg
+                    .content
+                    .chars()
+                    .take(PRUNE_TOOL_RESULT_KEEP_CHARS)
+                    .collect::<String>();
+                let pruned_content = format!(
+                    "{}…\n[{} characters truncated — tool output pruned for compaction]",
+                    kept, truncated_len
+                );
+                SavedMessage {
+                    content: pruned_content,
+                    ..msg.clone()
+                }
+            } else {
+                msg.clone()
+            }
+        })
+        .collect()
+}
+
+/// Estimate the total tokens in a list of messages.
+///
+/// Uses word-based heuristic (0.75 words per token) plus `MESSAGE_OVERHEAD`
+/// per message. This is the same estimation used by `check_context_overflow`.
+pub fn estimate_messages_tokens(messages: &[SavedMessage]) -> usize {
+    messages
+        .iter()
+        .map(|msg| estimate_tokens(&msg.content) + MESSAGE_OVERHEAD)
+        .sum()
+}
+
+/// Estimate tokens for compaction purposes with safety margin.
+///
+/// Uses `COMPACT_MSG_OVERHEAD` (10 tokens per message) instead of the
+/// default `MESSAGE_OVERHEAD` (4 tokens) to account for role prefixes
+/// and formatting in `build_conversation_text()`. Applies a 20% safety
+/// margin (`ESTIMATION_SAFETY_MARGIN`) to compensate for underestimation
+/// in mixed-content scenarios (code, non-English text, tool JSON).
+///
+/// This function should be used instead of `estimate_messages_tokens()`
+/// in all compaction-related token calculations where accuracy is critical
+/// for avoiding context window overflow.
+pub fn estimate_compaction_tokens(messages: &[SavedMessage]) -> usize {
+    let raw: usize = messages
+        .iter()
+        .map(|msg| estimate_tokens(&msg.content) + COMPACT_MSG_OVERHEAD)
+        .sum();
+    ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize
+}
+
+/// Check if a list of messages fits within a token budget.
+///
+/// Returns `true` if the estimated tokens in `messages` (with safety margin)
+/// plus `overhead_tokens` fit within `context_window`.
+///
+/// Uses `estimate_compaction_tokens()` which applies a 20% safety margin
+/// and higher per-message overhead to account for tokenization variance.
+pub fn fits_in_context(
+    messages: &[SavedMessage],
+    context_window: usize,
+    overhead_tokens: usize,
+) -> bool {
+    let msg_tokens = estimate_compaction_tokens(messages);
+    msg_tokens + overhead_tokens <= context_window
+}
+
+/// Check if an error from the LLM indicates a context/prompt overflow.
+///
+/// Matches common error patterns from Ollama and other LLM backends
+/// when the prompt exceeds the model's context window. Used by
+/// `compact_conversation()` to detect overflow and fall back to the
+/// next compaction layer.
+///
+/// # Examples
+///
+/// ```
+/// use sprachspiel::context_overflow::is_prompt_too_long_error;
+///
+/// assert!(is_prompt_too_long_error(
+///     "The prompt is too long: 240047, model maximum context length: 202752"
+/// ));
+/// assert!(is_prompt_too_long_error("context_length_exceeded"));
+/// assert!(!is_prompt_too_long_error("connection refused"));
+/// ```
+pub fn is_prompt_too_long_error(error: &str) -> bool {
+    let error_lower = error.to_lowercase();
+    error_lower.contains("prompt is too long")
+        || error_lower.contains("context length")
+        || error_lower.contains("maximum context length")
+        || error_lower.contains("exceeds context")
+        || error_lower.contains("context_length_exceeded")
+}
+
+/// Calculate the maximum chunk size in tokens for recursive summarization.
+///
+/// Each chunk must leave room for:
+/// - The system prompt for summarization (~200 tokens)
+/// - The compaction prompt instructions (~300 tokens)
+/// - The model's response (~2000 tokens)
+///
+/// Uses `COMPACTION_MAX_CONTEXT_RATIO` (60%) as the target ratio.
+pub fn max_chunk_tokens(context_window: usize) -> usize {
+    ((context_window as f32) * COMPACTION_MAX_CONTEXT_RATIO) as usize
+}
+
+// ── Layer 2: Chunked Recursive Summarization ──────────────────────
+//
+// When the pruned messages still exceed the model's context window,
+// we split them into chunks that each fit, summarize each chunk
+// independently, then combine the summaries. If the combined summaries
+// still exceed the window, we recurse.
+
+/// A chunk of messages created by `split_into_chunks`.
+#[derive(Debug, Clone)]
+pub struct MessageChunk {
+    /// Messages in this chunk
+    pub messages: Vec<SavedMessage>,
+    /// Estimated tokens in this chunk
+    pub token_count: usize,
+}
+
+/// Split messages into chunks that each fit within a token budget.
+///
+/// Each chunk contains consecutive messages whose combined token count
+/// does not exceed `max_tokens`. Messages are never split mid-message.
+///
+/// Adjacent chunks overlap by one message: the last message of chunk N
+/// is also the first message of chunk N+1. This maintains coherence at
+/// chunk boundaries and prevents losing context between chunks.
+///
+/// Returns at least one chunk (even if it exceeds `max_tokens`).
+pub fn split_into_chunks(messages: &[SavedMessage], max_tokens: usize) -> Vec<MessageChunk> {
+    if messages.is_empty() {
+        return vec![];
+    }
+
+    // If total tokens fit in one chunk, return as-is
+    let total_tokens = estimate_messages_tokens(messages);
+    if total_tokens <= max_tokens {
+        return vec![MessageChunk {
+            messages: messages.to_vec(),
+            token_count: total_tokens,
+        }];
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_messages: Vec<SavedMessage> = Vec::new();
+    let mut current_tokens = 0usize;
+
+    for msg in messages {
+        let msg_tokens = estimate_tokens(&msg.content) + MESSAGE_OVERHEAD;
+
+        // If adding this message would exceed the budget AND we already have
+        // messages in the current chunk, start a new chunk
+        if !current_messages.is_empty() && current_tokens + msg_tokens > max_tokens {
+            chunks.push(MessageChunk {
+                messages: current_messages.clone(),
+                token_count: current_tokens,
+            });
+
+            // Overlap: include the last message of the current chunk as the
+            // first message of the next chunk for coherence
+            if let Some(last_msg) = current_messages.last() {
+                let overlap_msg = last_msg.clone();
+                let overlap_tokens = estimate_tokens(&overlap_msg.content) + MESSAGE_OVERHEAD;
+                current_messages.clear();
+                current_messages.push(overlap_msg);
+                current_tokens = overlap_tokens;
+            }
+        }
+
+        current_messages.push(msg.clone());
+        current_tokens += msg_tokens;
+    }
+
+    // Don't forget the last chunk
+    if !current_messages.is_empty() {
+        chunks.push(MessageChunk {
+            messages: current_messages,
+            token_count: current_tokens,
+        });
+    }
+
+    // Edge case: if we ended up with zero chunks (shouldn't happen with
+    // non-empty input), return the original messages as a single chunk
+    if chunks.is_empty() && !messages.is_empty() {
+        chunks.push(MessageChunk {
+            messages: messages.to_vec(),
+            token_count: total_tokens,
+        });
+    }
+
+    chunks
+}
+
+// ── Layer 3: Fallback Truncation ───────────────────────────────────
+//
+// When pre-pruning and recursive summarization both fail (model
+// unavailable, timeout, max recursion exceeded), hard-truncate the
+// oldest messages from the middle section to fit within the context window.
+
+/// Result of fallback truncation.
+#[derive(Debug)]
+pub struct TruncationResult {
+    /// The truncated messages (may be empty if all middle messages were dropped)
+    pub remaining_messages: Vec<SavedMessage>,
+    /// Number of messages that were dropped
+    pub dropped_count: usize,
+    /// Estimated tokens in remaining messages
+    pub remaining_tokens: usize,
+}
+
+/// Truncate messages from the beginning to fit within a token budget.
+///
+/// Drops oldest messages first (preserving the most recent context)
+/// until the total tokens fit within `context_window * TRUNCATION_TARGET_RATIO`.
+///
+/// This is the last resort when pre-pruning and recursive summarization
+/// have both failed. It sacrifices the oldest context to ensure the
+/// compaction prompt fits the model's window.
+///
+/// NEVER drops messages from the first `keep_first` or last `keep_last`
+/// messages — these contain the user's original request and the most
+/// recent context, which are critical for continuation.
+pub fn fallback_truncate(
+    messages: &[SavedMessage],
+    context_window: usize,
+    keep_first: usize,
+    keep_last: usize,
+) -> TruncationResult {
+    let target_tokens = ((context_window as f32) * TRUNCATION_TARGET_RATIO) as usize;
+    let total_tokens = estimate_messages_tokens(messages);
+    let total = messages.len();
+
+    // If messages already fit, nothing to do
+    if total_tokens <= target_tokens || total <= keep_first + keep_last {
+        return TruncationResult {
+            remaining_messages: messages.to_vec(),
+            dropped_count: 0,
+            remaining_tokens: total_tokens,
+        };
+    }
+
+    // Drop messages from the middle, starting from `keep_first`
+    // and working towards the end, preserving the last `keep_last` messages.
+    // We drop oldest-middle messages first (they contain the least
+    // relevant context — "lost in the middle" research confirms this).
+    let max_drop = total.saturating_sub(keep_first + keep_last);
+    let mut dropped = 0;
+
+    for drop_count in 1..=max_drop {
+        // Build the remaining message list: first `keep_first` + messages
+        // from `keep_first + drop_count` to end minus last `keep_last`
+        let middle_start = keep_first + drop_count;
+        let middle_end = total.saturating_sub(keep_last);
+
+        if middle_start >= middle_end {
+            // Can't drop any more from the middle
+            break;
+        }
+
+        let remaining: Vec<SavedMessage> = messages[0..keep_first]
+            .iter()
+            .chain(messages[middle_start..middle_end].iter())
+            .chain(messages[total - keep_last..total].iter())
+            .cloned()
+            .collect();
+
+        let remaining_tokens = estimate_messages_tokens(&remaining);
+
+        if remaining_tokens <= target_tokens {
+            return TruncationResult {
+                remaining_messages: remaining,
+                dropped_count: drop_count,
+                remaining_tokens,
+            };
+        }
+
+        dropped = drop_count;
+    }
+
+    // If we couldn't reach the target even dropping all middle messages,
+    // return just the kept messages
+    let kept: Vec<SavedMessage> = messages[0..keep_first]
+        .iter()
+        .chain(messages[total - keep_last..total].iter())
+        .cloned()
+        .collect();
+    let kept_tokens = estimate_messages_tokens(&kept);
+
+    TruncationResult {
+        remaining_messages: kept,
+        dropped_count: dropped.max(1),
+        remaining_tokens: kept_tokens,
+    }
 }
 
 #[cfg(test)]
@@ -778,5 +1165,404 @@ mod tests {
         // architectural decision — see COMPACTION_PROMPT doc comment.
         assert!(COMPACTION_MIN > 0, "COMPACTION_MIN must be positive");
         assert!(PRE_TOOL_MIN > 0, "PRE_TOOL_MIN must be positive");
+    }
+
+    // ── Layer 1: Pre-Compaction Pruning Tests ──────────────────
+
+    #[test]
+    fn test_pre_prune_short_tool_result_unchanged() {
+        // Tool results shorter than the threshold should be kept as-is
+        let msg = SavedMessage {
+            role: MessageRole::Tool,
+            content: "Short tool result".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let pruned = pre_prune_messages(&[msg]);
+        assert_eq!(pruned[0].content, "Short tool result");
+    }
+
+    #[test]
+    fn test_pre_prune_long_tool_result_truncated() {
+        // Tool results longer than the threshold should be truncated
+        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let msg = SavedMessage {
+            role: MessageRole::Tool,
+            content: long_content.clone(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let pruned = pre_prune_messages(&[msg]);
+        assert!(pruned[0].content.len() < long_content.len());
+        assert!(
+            pruned[0].content.contains("truncated"),
+            "Pruned content should mention truncation"
+        );
+        assert!(
+            pruned[0]
+                .content
+                .contains(&long_content[..PRUNE_TOOL_RESULT_KEEP_CHARS]),
+            "Pruned content should preserve the beginning"
+        );
+    }
+
+    #[test]
+    fn test_pre_prune_user_message_unchanged() {
+        // User messages should NEVER be pruned, regardless of length
+        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let msg = SavedMessage {
+            role: MessageRole::User,
+            content: long_content.clone(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let pruned = pre_prune_messages(&[msg]);
+        assert_eq!(pruned[0].content, long_content);
+    }
+
+    #[test]
+    fn test_pre_prune_assistant_message_unchanged() {
+        // Assistant messages should NEVER be pruned, regardless of length
+        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let msg = SavedMessage {
+            role: MessageRole::Assistant,
+            content: long_content.clone(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let pruned = pre_prune_messages(&[msg]);
+        assert_eq!(pruned[0].content, long_content);
+    }
+
+    #[test]
+    fn test_pre_prune_preserves_message_metadata() {
+        // Pruning should preserve all metadata fields (timestamp, prompt_tokens, etc.)
+        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let msg = SavedMessage {
+            role: MessageRole::Tool,
+            content: long_content,
+            timestamp: Utc::now(),
+            prompt_tokens: Some(42),
+            message_type: Some("normal".to_string()),
+            ..Default::default()
+        };
+        let pruned = pre_prune_messages(&[msg]);
+        assert_eq!(pruned[0].prompt_tokens, Some(42));
+        assert_eq!(pruned[0].message_type, Some("normal".to_string()));
+    }
+
+    // ── Layer 2: Chunked Recursive Summarization Tests ──────────
+
+    #[test]
+    fn test_estimate_messages_tokens() {
+        let messages = vec![SavedMessage {
+            role: MessageRole::User,
+            content: "Hello world this is a test".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        }];
+        let tokens = estimate_messages_tokens(&messages);
+        // Should be MESSAGE_OVERHEAD + estimated tokens for content
+        assert!(tokens > MESSAGE_OVERHEAD, "Should include overhead");
+        assert!(tokens < 100, "Should be small for short content");
+    }
+
+    #[test]
+    fn test_split_into_chunks_single_chunk() {
+        // Messages that fit in one chunk should return a single chunk
+        let messages: Vec<SavedMessage> = (0..3)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        let chunks = split_into_chunks(&messages, 10_000);
+        assert_eq!(chunks.len(), 1, "Should fit in a single chunk");
+        assert_eq!(chunks[0].messages.len(), 3);
+    }
+
+    #[test]
+    fn test_split_into_chunks_multiple_chunks() {
+        // Messages that exceed a small budget should be split
+        let messages: Vec<SavedMessage> = (0..10)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                content: format!(
+                    "This is message number {} with enough content to have some tokens",
+                    i
+                ),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        // Set a small budget that forces multiple chunks
+        let chunks = split_into_chunks(&messages, 50);
+        assert!(chunks.len() > 1, "Should split into multiple chunks");
+    }
+
+    #[test]
+    fn test_split_into_chunks_overlapping() {
+        // Each chunk should overlap with the previous one (sharing the last message)
+        let messages: Vec<SavedMessage> = (0..6)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {} with enough text to have tokens", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        let chunks = split_into_chunks(&messages, 50);
+
+        if chunks.len() > 1 {
+            // The last message of chunk N should be the first message of chunk N+1
+            for i in 0..chunks.len() - 1 {
+                let last_of_current = &chunks[i].messages.last().unwrap().content;
+                let first_of_next = &chunks[i + 1].messages.first().unwrap().content;
+                assert_eq!(
+                    last_of_current, first_of_next,
+                    "Adjacent chunks should overlap by one message"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_max_chunk_tokens() {
+        // Verify chunk size is 60% of context window
+        let chunk_size = max_chunk_tokens(200_000);
+        assert_eq!(chunk_size, 120_000, "Should be 60% of context window");
+    }
+
+    #[test]
+    fn test_fits_in_context() {
+        let short_msg = SavedMessage {
+            role: MessageRole::User,
+            content: "Hi".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        assert!(
+            fits_in_context(&[short_msg], 100_000, 0),
+            "Short content should fit in context"
+        );
+    }
+
+    // ── Layer 3: Fallback Truncation Tests ──────────────────────
+
+    #[test]
+    fn test_fallback_truncate_no_truncation_needed() {
+        // Messages that fit in budget should not be truncated
+        let messages: Vec<SavedMessage> = (0..5)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                content: format!("Short msg {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        let result = fallback_truncate(&messages, 100_000, 1, 1);
+        assert_eq!(result.dropped_count, 0, "Should not drop any messages");
+        assert_eq!(
+            result.remaining_messages.len(),
+            5,
+            "Should keep all messages"
+        );
+    }
+
+    #[test]
+    fn test_fallback_truncate_drops_middle_messages() {
+        // Should drop messages from the middle, preserving first and last
+        let messages: Vec<SavedMessage> = (0..20)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                // Each message is ~200 tokens to force truncation
+                content: format!(
+                    "Message number {} with lots of content words here to make it longer",
+                    i
+                ),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        let result = fallback_truncate(&messages, 500, 2, 2);
+        assert!(result.dropped_count > 0, "Should drop some messages");
+        // Should still preserve first 2 and last 2
+        let first_content = &result.remaining_messages[0].content;
+        assert!(
+            first_content.starts_with("Message number 0"),
+            "First preserved msg should be msg 0"
+        );
+    }
+
+    #[test]
+    fn test_fallback_truncate_preserves_boundaries() {
+        // With only keep_first + keep_last messages, nothing to truncate
+        let messages: Vec<SavedMessage> = (0..4)
+            .map(|i| SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+
+        // With keep_first=2 and keep_last=2, there are 0 middle messages
+        let result = fallback_truncate(&messages, 100, 2, 2);
+        assert_eq!(
+            result.dropped_count, 0,
+            "Should not drop when total == boundaries"
+        );
+    }
+
+    // ── Compaction safety margin and error detection tests ─────────────
+
+    #[test]
+    fn test_estimate_compaction_tokens_empty() {
+        assert_eq!(estimate_compaction_tokens(&[]), 0);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_with_margin() {
+        // COMPACT_MSG_OVERHEAD (10) per message + safety margin (1.20x)
+        // "hello world" = 2 words → estimate_tokens = ceil(2/0.75) = 3
+        // raw = 10 + 3 = 13, with 1.20x = ceil(15.6) = 16
+        let msg = SavedMessage {
+            role: MessageRole::User,
+            content: "hello world".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let tokens = estimate_compaction_tokens(&[msg]);
+        let raw = COMPACT_MSG_OVERHEAD + 3; // 10 + 3 = 13
+        let expected = ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize; // ceil(15.6) = 16
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_multiple_messages() {
+        // 2 messages: (10 + 3) + (10 + 8) = 31, with 1.20x = ceil(37.2) = 38
+        let msg1 = SavedMessage {
+            role: MessageRole::User,
+            content: "hello world".to_string(), // 2 words → 3 tokens
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let msg2 = SavedMessage {
+            role: MessageRole::Assistant,
+            content: "The quick brown fox jumps over the lazy dog".to_string(), // 9 words → 12 tokens
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let tokens = estimate_compaction_tokens(&[msg1, msg2]);
+        let raw = (COMPACT_MSG_OVERHEAD + 3) + (COMPACT_MSG_OVERHEAD + 12); // 13 + 22 = 35
+        let expected = ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize; // ceil(42.0) = 42
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_is_more_conservative_than_messages_tokens() {
+        // estimate_compaction_tokens should always be >= estimate_messages_tokens
+        // because it uses COMPACT_MSG_OVERHEAD (10) instead of MESSAGE_OVERHEAD (4)
+        // and applies ESTIMATION_SAFETY_MARGIN (1.20x)
+        let msg = SavedMessage {
+            role: MessageRole::User,
+            content: "This is a test message with some content for estimation".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let standard = estimate_messages_tokens(&[msg.clone()]);
+        let compaction = estimate_compaction_tokens(&[msg]);
+        assert!(
+            compaction > standard,
+            "Compaction estimate ({}) should be more conservative than standard ({})",
+            compaction,
+            standard
+        );
+    }
+
+    #[test]
+    fn test_fits_in_context_uses_safety_margin() {
+        // fits_in_context should now use estimate_compaction_tokens
+        // which includes COMPACT_MSG_OVERHEAD (10) and ESTIMATION_SAFETY_MARGIN (1.20)
+        let short_msg = SavedMessage {
+            role: MessageRole::User,
+            content: "hello".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+
+        // With a very small context window and no overhead, it should not fit
+        // because COMPACT_MSG_OVERHEAD (10) * 1.20 = 12 even for "hello" (2 tokens)
+        assert!(
+            !fits_in_context(&[short_msg.clone()], 5, 0),
+            "Should not fit in tiny context window"
+        );
+
+        // With a large context window, it should fit
+        assert!(
+            fits_in_context(&[short_msg], 100_000, 0),
+            "Should fit in large context window"
+        );
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_ollama() {
+        assert!(is_prompt_too_long_error(
+            "The prompt is too long: 240047, model maximum context length: 202752"
+        ));
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_variants() {
+        assert!(is_prompt_too_long_error("context length exceeded"));
+        assert!(is_prompt_too_long_error("maximum context length: 4096"));
+        assert!(is_prompt_too_long_error("exceeds context window"));
+        assert!(is_prompt_too_long_error("context_length_exceeded"));
+        assert!(is_prompt_too_long_error(
+            "Error: The prompt exceeds context length of 8192"
+        ));
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_non_overflow() {
+        assert!(!is_prompt_too_long_error("connection refused"));
+        assert!(!is_prompt_too_long_error("model not found"));
+        assert!(!is_prompt_too_long_error("timeout expired"));
+        assert!(!is_prompt_too_long_error("internal server error"));
+        assert!(!is_prompt_too_long_error(""));
+    }
+
+    #[test]
+    fn test_compaction_prompt_overhead_value() {
+        // COMPACTION_PROMPT_OVERHEAD should be 3000 (increased from 2500)
+        assert_eq!(COMPACTION_PROMPT_OVERHEAD, 3000);
+    }
+
+    #[test]
+    fn test_compact_msg_overhead_greater_than_message_overhead() {
+        // COMPACT_MSG_OVERHEAD (10) should be greater than MESSAGE_OVERHEAD (4)
+        assert!(
+            COMPACT_MSG_OVERHEAD > MESSAGE_OVERHEAD,
+            "COMPACT_MSG_OVERHEAD ({}) should be > MESSAGE_OVERHEAD ({})",
+            COMPACT_MSG_OVERHEAD,
+            MESSAGE_OVERHEAD
+        );
+    }
+
+    #[test]
+    fn test_estimation_safety_margin_applied() {
+        // Verify the safety margin is 1.20
+        assert!(
+            (ESTIMATION_SAFETY_MARGIN - 1.20).abs() < 0.01,
+            "ESTIMATION_SAFETY_MARGIN should be 1.20, got {}",
+            ESTIMATION_SAFETY_MARGIN
+        );
     }
 }

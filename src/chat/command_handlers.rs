@@ -918,11 +918,8 @@ pub async fn handle_compact(
                 }));
             }
 
-            // Render summary via markdown
-            outputs.push(CommandOutput::MarkdownContent(format!(
-                "--- Summary ---\n{}\n---------------",
-                summary
-            )));
+            // Render summary as markdown (no artificial header/footer)
+            outputs.push(CommandOutput::MarkdownContent(summary));
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
@@ -944,6 +941,15 @@ pub async fn handle_compact(
 /// Handle retry command (async)
 ///
 /// Removes last assistant messages and regenerates the response.
+///
+/// # Bug fix: user message restoration
+///
+/// Previously, `get_last_user_message()` was called AFTER removing the assistant
+/// messages (which also removes the preceding user message). This returned the
+/// WRONG user message (the one before the last exchange, not the one being retried).
+///
+/// Now we capture the user content BEFORE removal, then restore it with
+/// `add_user_message()` so the session history remains intact for the retry.
 pub async fn handle_retry(
     state: &mut ReplState,
     view: &mut dyn super::view::ChatView,
@@ -953,7 +959,15 @@ pub async fn handle_retry(
 
     let mut outputs = Vec::new();
 
-    // Remove last assistant messages
+    // Capture the user message BEFORE removing anything.
+    // remove_last_assistant_messages_with_content() removes assistant messages
+    // AND the preceding user message, so we must read it first.
+    let user_content = state
+        .session
+        .get_last_user_message()
+        .map(|m| m.content.clone());
+
+    // Remove last assistant messages (and the preceding user message)
     let removed = state.session.remove_last_assistant_messages();
     if removed > 0 {
         outputs.push(CommandOutput::info(format!(
@@ -962,73 +976,82 @@ pub async fn handle_retry(
         )));
     } else {
         outputs.push(CommandOutput::info("No assistant messages to remove."));
+        return outputs;
     }
 
-    // Get the last user message
-    if let Some(user_msg) = state.session.get_last_user_message() {
-        let user_content = user_msg.content.clone();
-        outputs.push(CommandOutput::info(format!("Retrying: {}", user_content)));
+    // Restore the user message to session history so the LLM sees the correct
+    // context and build_context() can include it properly.
+    let Some(user_content) = user_content else {
+        outputs.push(CommandOutput::info("No user message to retry."));
+        return outputs;
+    };
 
-        // Send the message again
-        let think_enabled = state.session.think;
-        match super::core::send_message(
-            &state.ollama,
-            &state.model_config,
-            &mut state.session,
-            &user_content,
-            state.tools_active,
-            think_enabled,
-            false, // cli_code: false for retry (use existing config)
-            &state.settings,
-            state.agents_md.as_deref(),
-            state.db.as_ref(),
-            state.embedding_client.as_ref(),
-            state.cli_soulless,
-            None,
-            view,
-        )
-        .await
-        {
-            Ok(result) => {
-                state.last_assistant_message_id = state
-                    .session
-                    .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
+    state.session.add_user_message(user_content.clone());
+    if !state.session.anonymous
+        && let Err(e) = state.session.save_sqlite()
+    {
+        log::debug!("Warning: Could not save session: {}", e);
+    }
 
-                if result.metrics.total_tokens > 0 {
-                    outputs.push(CommandOutput::TokenDisplay {
-                        prompt_tokens: result.metrics.prompt_tokens,
-                        response_tokens: result.metrics.response_tokens,
-                        total_tokens: result.metrics.total_tokens,
-                    });
-                }
+    outputs.push(CommandOutput::info(format!("Retrying: {}", user_content)));
 
-                // Auto-compact if needed (after response, before next input)
-                super::compaction::CompactionContext {
-                    ollama: &state.ollama,
-                    model_config: &state.model_config,
-                    session: &mut state.session,
-                    settings: &state.settings,
-                    agents_md: state.agents_md.as_deref(),
-                    context_window: result.context_window,
-                    view,
-                    llm_tx: llm_tx.clone(),
-                }
-                .compact_if_needed()
-                .await;
+    // Send the message again with the correct user content
+    let think_enabled = state.session.think;
+    match super::core::send_message(
+        &state.ollama,
+        &state.model_config,
+        &mut state.session,
+        &user_content,
+        state.tools_active,
+        think_enabled,
+        false, // cli_code: false for retry (use existing config)
+        &state.settings,
+        state.agents_md.as_deref(),
+        state.db.as_ref(),
+        state.embedding_client.as_ref(),
+        state.cli_soulless,
+        None,
+        view,
+    )
+    .await
+    {
+        Ok(result) => {
+            state.last_assistant_message_id = state
+                .session
+                .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
-                if !state.session.anonymous
-                    && let Err(e) = state.session.save_sqlite()
-                {
-                    log::debug!("Warning: Could not save session: {}", e);
-                }
+            if result.metrics.total_tokens > 0 {
+                outputs.push(CommandOutput::TokenDisplay {
+                    prompt_tokens: result.metrics.prompt_tokens,
+                    response_tokens: result.metrics.response_tokens,
+                    total_tokens: result.metrics.total_tokens,
+                });
             }
-            Err(e) => {
-                let error_str = e.to_string();
-                outputs.push(CommandOutput::error(format_tool_error(&error_str)));
+
+            // Auto-compact if needed (after response, before next input)
+            super::compaction::CompactionContext {
+                ollama: &state.ollama,
+                model_config: &state.model_config,
+                session: &mut state.session,
+                settings: &state.settings,
+                agents_md: state.agents_md.as_deref(),
+                context_window: result.context_window,
+                view,
+                llm_tx: llm_tx.clone(),
+            }
+            .compact_if_needed()
+            .await;
+
+            if !state.session.anonymous
+                && let Err(e) = state.session.save_sqlite()
+            {
+                log::debug!("Warning: Could not save session: {}", e);
             }
         }
-    } else {
-        outputs.push(CommandOutput::info("No user message to retry."));
+        Err(e) => {
+            let error_str = e.to_string();
+            outputs.push(CommandOutput::error(format_tool_error(&error_str)));
+        }
     }
 
     outputs

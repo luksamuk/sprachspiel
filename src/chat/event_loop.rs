@@ -387,6 +387,11 @@ pub fn handle_llm_event(
             // Compaction is streaming — display as assistant streaming
             view.stream_token(&token);
         }
+        LlmEvent::CompactInfo { message } => {
+            // System-level info during compaction (chunk count, truncation warnings)
+            // Display as a dim system message, separate from the streaming summary
+            view.app_mut().add_message(ChatMessage::system(message));
+        }
         LlmEvent::CompactStreamDone { summary, range } => {
             // Compaction finished — apply the summary to the session
             let first_preserved = range.map(|(f, _)| f).unwrap_or(0);
@@ -394,23 +399,40 @@ pub fn handle_llm_event(
                 .map(|(_, l)| l)
                 .unwrap_or(state.session.messages.len());
             let compacted_count = last_preserved_start - first_preserved;
+            let preserved_last = state.session.messages.len() - last_preserved_start;
 
             state
                 .session
                 .set_compacted_summary_with_range(summary.clone(), range);
 
-            view.stream_done(
-                &format!("--- Compaction Summary ---\n{}\n---------------", summary),
-                None,
-                None,
-            );
+            // Add a horizontal-rule separator before the summary for visual clarity.
+            // This must go BEFORE the streaming zone so the separator appears
+            // between progress messages and the summary, not after the summary.
+            // Separator fills the full terminal width responsively.
+            view.app_mut()
+                .insert_before_streaming_zone(ChatMessage::separator());
 
+            // Finalize the streaming content — just the summary, no artificial header/footer
+            view.stream_done(&summary, None, None);
+
+            // Add completion message after the summary, with a closing separator
             if compacted_count > 0 {
                 view.app_mut().add_message(ChatMessage::system(format!(
-                    "Compacted {} messages.",
-                    compacted_count
+                    "✓ Compacted {} messages (preserved {} first, {} last).",
+                    compacted_count, first_preserved, preserved_last
                 )));
+                view.app_mut().add_message(ChatMessage::separator());
             }
+
+            // Update status bar with new token count after compaction
+            let used_tokens = state.session.history_real_tokens();
+            let max_tokens = state.model_config.num_ctx as usize;
+            let percent = if max_tokens > 0 {
+                ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            view.update_status_tokens(used_tokens, max_tokens, percent);
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();

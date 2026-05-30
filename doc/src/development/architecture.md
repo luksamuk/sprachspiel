@@ -391,6 +391,17 @@ Percentage-based triggers **scale proportionally** with larger context windows, 
 4. Emergency (97% usage) → Truncate results
 ```
 
+**3-Layer Compaction Strategy** (for `/compact` and auto-compaction):
+
+The compaction flow implements defense in depth — prevention and recovery:
+
+1. **Layer 1 (Pre-pruning):** Strip long tool outputs (>500 chars) before constructing the compaction prompt
+2. **Layer 1.5 (Error-retry):** If `fits_in_context()` underestimates and the LLM rejects the prompt as "too long", detect the error with `is_prompt_too_long_error()` and fall through to Layer 2
+3. **Layer 2 (Chunked recursive summarization):** Split into chunks that each fit within 60% of the context window, summarize each independently, combine summaries
+4. **Layer 3 (Fallback truncation):** Hard-truncate oldest middle messages to 50% of the context window. If even this fails with "prompt too long", return a detailed diagnostic error
+
+Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and higher per-message overhead (`COMPACT_MSG_OVERHEAD = 10` vs. `MESSAGE_OVERHEAD = 4`) to reduce the likelihood of underestimation.
+
 **Key Files:**
 - `src/context_overflow.rs` - Percentage thresholds, compaction functions
 - `src/tokens.rs` - Token calculation with the backend's `prompt_eval_count`
@@ -803,7 +814,18 @@ sprachspiel/
 - Embeddings generated asynchronously
 - Chunked for messages > 1000 chars
 - Cached in database for retrieval
-- Batch operations during compaction
+- Missing embeddings recovered on next startup via background pipeline
+
+### Compaction and Embedding Independence
+
+Compaction and embeddings are **completely independent** systems:
+
+- **Compaction does not delete `content_items`, `content_chunks`, or embeddings from the database.** It only modifies in-memory session state (`compacted_summary`, `compacted_range`, `messages_sent_to_llm`) and persists the summary text in `conversations.compacted_summary`.
+- **All original messages remain searchable via RAG** after compaction. Their embeddings in `vec0` tables and `content_items` rows are untouched — `has_embedding` flags are not modified.
+- **The compacted summary does not have its own embedding.** It serves as context for the LLM, not as a searchable document. Since the summary is a condensation of the original messages, RAG can find the originals directly.
+- After compaction, `clear_conversation_prompt_tokens()` resets stale token counts in the database, but does not touch embedding data.
+
+This design ensures that compaction is purely a **context window optimization** — it reduces what's sent to the LLM while preserving all historical data for semantic search.
 
 ### Database Operations
 

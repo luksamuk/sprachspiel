@@ -102,6 +102,12 @@ graph TB
 
 **Current Query** — User's question. Always at very end for best comprehension.
 
+**User Message Deduplication:** `build_context()` excludes the last User message from recent messages (via `end_exclusive`) because `prepare_messages()` always adds the current query at position 6. Without this exclusion, every user message would appear twice in the LLM prompt — once from `session.messages` (added by `add_user_message()`) and once from `prepare_messages()` (line 294). The `end_exclusive` calculation uses `len.saturating_sub(1)` when the last message is a User message, and `len` otherwise.
+
+**Continuation Path:** When resuming after context compaction, `user_input` is empty and `prepare_messages()` skips adding `ChatMessage::user("")`. The actual continuation prompt is injected as an ephemeral message via `coordinator.push_ephemeral()`. This prevents an empty user message from confusing the LLM.
+
+**`/retry` Path:** After `remove_last_assistant_messages()` removes the last exchange (assistant + user messages), `handle_retry()` captures the user content *before* removal and restores it with `add_user_message()`. This ensures the LLM receives the correct retry query and the session history remains intact.
+
 ---
 
 ## User Facts Section
@@ -116,16 +122,37 @@ When the Factual Memory system is active, facts are injected after AGENTS.md:
 
 **Format:**
 ```markdown
-## User Facts
+### USER FACTS
 
-### Preferences
-- prefiro respostas em português
-- gosto de respostas curtas
+The following are persistent facts and preferences about the user/project.
 
-### Facts
-- o projeto usa SQLite para armazenamento
-- a API está na porta 8080
+**Preferences** → Apply to personalize tone and style.
+**Facts** → Reference when relevant to the topic.
+
+### Global Preferences
+- User prefers respostas curtas
+- User likes dark mode
+
+### Global Facts
+- User's name is Lucas
+- The project uses Rust
+
+### Project Preferences
+- User prefers respostas em português
+
+### Project Facts
+- The project uses SQLite for storage
+- The API is on port 8080
 ```
+
+**Staleness labels:** Facts may display staleness indicators:
+- `(stale)` — decay_score < 0.3 (badly decayed)
+- `(N days ago)` — last_accessed > 30 days (not recently used)
+- `(unused)` — access_count == 0 and age > 7 days (never retrieved)
+
+These labels are excluded from compaction summaries (they become inaccurate over time) but appear in the real-time system prompt to help the LLM assess fact relevance.
+
+**Mixed language:** PT→EN normalization only translates prefixes, leaving objects in Portuguese. For example, `"Eu prefiro respostas curtas"` becomes `"User prefers respostas curtas"`. The `### LANGUAGE` section in the prompt notes this: "USER FACTS may contain mixed language (English subject, Portuguese object) due to automatic normalization. Interpret them semantically, not literally."
 
 **Limits:**
 - Hard limit: 500 characters per fact (rejected at insert)
@@ -220,6 +247,8 @@ graph TB
 
 **Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
 
+**Embedding preservation:** Compaction does not remove, modify, or invalidate any embeddings. All original messages remain in `content_items` with their embeddings intact in `vec0` tables. The compacted summary has no embedding of its own — it's purely LLM context. RAG searches the original messages, which are still fully searchable after compaction.
+
 ### Percentage-Based Triggers (v0.37.0+)
 
 Compaction uses **percentage-based thresholds** that scale with context window size:
@@ -254,6 +283,8 @@ Compacted summaries are limited to **3,000 tokens** to prevent infinite compacti
 - Previous issue: Summaries could grow to 18K+ tokens
 - Solution: Hard limit with automatic truncation
 - Template: Structured format (Goal, Instructions, Progress, Discoveries, Files)
+
+**Compaction Token Estimation:** Token estimation during compaction uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN = 1.20`) to compensate for heuristic underestimation in mixed-content conversations (code, non-English text, tool JSON). Per-message overhead is `COMPACT_MSG_OVERHEAD = 10` tokens (vs. `MESSAGE_OVERHEAD = 4` used elsewhere) to account for role prefixes and formatting in `build_conversation_text()`. If `fits_in_context()` still underestimates and the LLM rejects the prompt as "too long", compaction automatically falls back from single-pass to chunked summarization, and from truncation to a detailed error message.
 
 ---
 
