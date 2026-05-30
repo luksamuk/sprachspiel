@@ -391,6 +391,17 @@ Percentage-based triggers **scale proportionally** with larger context windows, 
 4. Emergency (97% usage) → Truncate results
 ```
 
+**3-Layer Compaction Strategy** (for `/compact` and auto-compaction):
+
+The compaction flow implements defense in depth — prevention and recovery:
+
+1. **Layer 1 (Pre-pruning):** Strip long tool outputs (>500 chars) before constructing the compaction prompt
+2. **Layer 1.5 (Error-retry):** If `fits_in_context()` underestimates and the LLM rejects the prompt as "too long", detect the error with `is_prompt_too_long_error()` and fall through to Layer 2
+3. **Layer 2 (Chunked recursive summarization):** Split into chunks that each fit within 60% of the context window, summarize each independently, combine summaries
+4. **Layer 3 (Fallback truncation):** Hard-truncate oldest middle messages to 50% of the context window. If even this fails with "prompt too long", return a detailed diagnostic error
+
+Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and higher per-message overhead (`COMPACT_MSG_OVERHEAD = 10` vs. `MESSAGE_OVERHEAD = 4`) to reduce the likelihood of underestimation.
+
 **Key Files:**
 - `src/context_overflow.rs` - Percentage thresholds, compaction functions
 - `src/tokens.rs` - Token calculation with the backend's `prompt_eval_count`

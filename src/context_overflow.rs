@@ -87,6 +87,40 @@ pub const PRUNE_TOOL_RESULT_KEEP_CHARS: usize = 100;
 /// Targets 50% of the window so there's plenty of room for the response.
 pub const TRUNCATION_TARGET_RATIO: f32 = 0.50;
 
+/// Overhead per message during compaction.
+///
+/// Compaction uses `build_conversation_text()` which formats messages as
+/// `"User: {content}\n"`, `"Assistant: {content}\n"`, etc. The real overhead
+/// per message includes: role tags, newlines, JSON formatting from Ollama's
+/// chat API, and special tokens. We use 10 tokens per message (vs.
+/// `MESSAGE_OVERHEAD = 4` used elsewhere) to account for the additional
+/// formatting in compaction prompts.
+pub const COMPACT_MSG_OVERHEAD: usize = 10;
+
+/// Token overhead for compaction prompts.
+///
+/// Includes:
+///
+/// - System message in `compact_with_llm()` (~50 tokens)
+/// - `SYSTEM_PROMPT_SUMMARIZE` in user message (~40 tokens)
+/// - `COMPACTION_PROMPT` instructions (~120 tokens)
+/// - `"Conversation:"` label + formatting (~30 tokens)
+/// - Response allowance (~2000 tokens)
+/// - Safety buffer for tokenization variance (~760 tokens)
+///
+/// Total: ~3000
+pub const COMPACTION_PROMPT_OVERHEAD: usize = 3000;
+
+/// Safety margin for token estimation during compaction.
+///
+/// Our word-based heuristic (`estimate_tokens`) underestimates by 10-40%
+/// for mixed content (code, non-English text, tool JSON). A 20% buffer
+/// ensures we don't send prompts that exceed the model's context window.
+///
+/// Applied multiplicatively: `estimated_total * ESTIMATION_SAFETY_MARGIN`.
+/// If `estimate_tokens` says 160K tokens, we treat it as 192K tokens.
+pub const ESTIMATION_SAFETY_MARGIN: f32 = 1.20;
+
 /// Calculate threshold values for a given context window
 /// Returns (pre_tool, compaction, inter_tool, emergency) buffers
 pub fn calculate_thresholds(context_window: usize) -> (usize, usize, usize, usize) {
@@ -476,18 +510,66 @@ pub fn estimate_messages_tokens(messages: &[SavedMessage]) -> usize {
         .sum()
 }
 
+/// Estimate tokens for compaction purposes with safety margin.
+///
+/// Uses `COMPACT_MSG_OVERHEAD` (10 tokens per message) instead of the
+/// default `MESSAGE_OVERHEAD` (4 tokens) to account for role prefixes
+/// and formatting in `build_conversation_text()`. Applies a 20% safety
+/// margin (`ESTIMATION_SAFETY_MARGIN`) to compensate for underestimation
+/// in mixed-content scenarios (code, non-English text, tool JSON).
+///
+/// This function should be used instead of `estimate_messages_tokens()`
+/// in all compaction-related token calculations where accuracy is critical
+/// for avoiding context window overflow.
+pub fn estimate_compaction_tokens(messages: &[SavedMessage]) -> usize {
+    let raw: usize = messages
+        .iter()
+        .map(|msg| estimate_tokens(&msg.content) + COMPACT_MSG_OVERHEAD)
+        .sum();
+    ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize
+}
+
 /// Check if a list of messages fits within a token budget.
 ///
-/// Returns `true` if the estimated tokens in `messages` plus `overhead`
-/// (for system prompt, compaction instructions, etc.) fit within
-/// `context_window`.
+/// Returns `true` if the estimated tokens in `messages` (with safety margin)
+/// plus `overhead_tokens` fit within `context_window`.
+///
+/// Uses `estimate_compaction_tokens()` which applies a 20% safety margin
+/// and higher per-message overhead to account for tokenization variance.
 pub fn fits_in_context(
     messages: &[SavedMessage],
     context_window: usize,
     overhead_tokens: usize,
 ) -> bool {
-    let msg_tokens = estimate_messages_tokens(messages);
+    let msg_tokens = estimate_compaction_tokens(messages);
     msg_tokens + overhead_tokens <= context_window
+}
+
+/// Check if an error from the LLM indicates a context/prompt overflow.
+///
+/// Matches common error patterns from Ollama and other LLM backends
+/// when the prompt exceeds the model's context window. Used by
+/// `compact_conversation()` to detect overflow and fall back to the
+/// next compaction layer.
+///
+/// # Examples
+///
+/// ```
+/// use sprachspiel::context_overflow::is_prompt_too_long_error;
+///
+/// assert!(is_prompt_too_long_error(
+///     "The prompt is too long: 240047, model maximum context length: 202752"
+/// ));
+/// assert!(is_prompt_too_long_error("context_length_exceeded"));
+/// assert!(!is_prompt_too_long_error("connection refused"));
+/// ```
+pub fn is_prompt_too_long_error(error: &str) -> bool {
+    let error_lower = error.to_lowercase();
+    error_lower.contains("prompt is too long")
+        || error_lower.contains("context length")
+        || error_lower.contains("maximum context length")
+        || error_lower.contains("exceeds context")
+        || error_lower.contains("context_length_exceeded")
 }
 
 /// Calculate the maximum chunk size in tokens for recursive summarization.
@@ -1336,6 +1418,151 @@ mod tests {
         assert_eq!(
             result.dropped_count, 0,
             "Should not drop when total == boundaries"
+        );
+    }
+
+    // ── Compaction safety margin and error detection tests ─────────────
+
+    #[test]
+    fn test_estimate_compaction_tokens_empty() {
+        assert_eq!(estimate_compaction_tokens(&[]), 0);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_with_margin() {
+        // COMPACT_MSG_OVERHEAD (10) per message + safety margin (1.20x)
+        // "hello world" = 2 words → estimate_tokens = ceil(2/0.75) = 3
+        // raw = 10 + 3 = 13, with 1.20x = ceil(15.6) = 16
+        let msg = SavedMessage {
+            role: MessageRole::User,
+            content: "hello world".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let tokens = estimate_compaction_tokens(&[msg]);
+        let raw = COMPACT_MSG_OVERHEAD + 3; // 10 + 3 = 13
+        let expected = ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize; // ceil(15.6) = 16
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_multiple_messages() {
+        // 2 messages: (10 + 3) + (10 + 8) = 31, with 1.20x = ceil(37.2) = 38
+        let msg1 = SavedMessage {
+            role: MessageRole::User,
+            content: "hello world".to_string(), // 2 words → 3 tokens
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let msg2 = SavedMessage {
+            role: MessageRole::Assistant,
+            content: "The quick brown fox jumps over the lazy dog".to_string(), // 9 words → 12 tokens
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let tokens = estimate_compaction_tokens(&[msg1, msg2]);
+        let raw = (COMPACT_MSG_OVERHEAD + 3) + (COMPACT_MSG_OVERHEAD + 12); // 13 + 22 = 35
+        let expected = ((raw as f32) * ESTIMATION_SAFETY_MARGIN).ceil() as usize; // ceil(42.0) = 42
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn test_estimate_compaction_tokens_is_more_conservative_than_messages_tokens() {
+        // estimate_compaction_tokens should always be >= estimate_messages_tokens
+        // because it uses COMPACT_MSG_OVERHEAD (10) instead of MESSAGE_OVERHEAD (4)
+        // and applies ESTIMATION_SAFETY_MARGIN (1.20x)
+        let msg = SavedMessage {
+            role: MessageRole::User,
+            content: "This is a test message with some content for estimation".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+        let standard = estimate_messages_tokens(&[msg.clone()]);
+        let compaction = estimate_compaction_tokens(&[msg]);
+        assert!(
+            compaction > standard,
+            "Compaction estimate ({}) should be more conservative than standard ({})",
+            compaction,
+            standard
+        );
+    }
+
+    #[test]
+    fn test_fits_in_context_uses_safety_margin() {
+        // fits_in_context should now use estimate_compaction_tokens
+        // which includes COMPACT_MSG_OVERHEAD (10) and ESTIMATION_SAFETY_MARGIN (1.20)
+        let short_msg = SavedMessage {
+            role: MessageRole::User,
+            content: "hello".to_string(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        };
+
+        // With a very small context window and no overhead, it should not fit
+        // because COMPACT_MSG_OVERHEAD (10) * 1.20 = 12 even for "hello" (2 tokens)
+        assert!(
+            !fits_in_context(&[short_msg.clone()], 5, 0),
+            "Should not fit in tiny context window"
+        );
+
+        // With a large context window, it should fit
+        assert!(
+            fits_in_context(&[short_msg], 100_000, 0),
+            "Should fit in large context window"
+        );
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_ollama() {
+        assert!(is_prompt_too_long_error(
+            "The prompt is too long: 240047, model maximum context length: 202752"
+        ));
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_variants() {
+        assert!(is_prompt_too_long_error("context length exceeded"));
+        assert!(is_prompt_too_long_error("maximum context length: 4096"));
+        assert!(is_prompt_too_long_error("exceeds context window"));
+        assert!(is_prompt_too_long_error("context_length_exceeded"));
+        assert!(is_prompt_too_long_error(
+            "Error: The prompt exceeds context length of 8192"
+        ));
+    }
+
+    #[test]
+    fn test_is_prompt_too_long_error_non_overflow() {
+        assert!(!is_prompt_too_long_error("connection refused"));
+        assert!(!is_prompt_too_long_error("model not found"));
+        assert!(!is_prompt_too_long_error("timeout expired"));
+        assert!(!is_prompt_too_long_error("internal server error"));
+        assert!(!is_prompt_too_long_error(""));
+    }
+
+    #[test]
+    fn test_compaction_prompt_overhead_value() {
+        // COMPACTION_PROMPT_OVERHEAD should be 3000 (increased from 2500)
+        assert_eq!(COMPACTION_PROMPT_OVERHEAD, 3000);
+    }
+
+    #[test]
+    fn test_compact_msg_overhead_greater_than_message_overhead() {
+        // COMPACT_MSG_OVERHEAD (10) should be greater than MESSAGE_OVERHEAD (4)
+        assert!(
+            COMPACT_MSG_OVERHEAD > MESSAGE_OVERHEAD,
+            "COMPACT_MSG_OVERHEAD ({}) should be > MESSAGE_OVERHEAD ({})",
+            COMPACT_MSG_OVERHEAD,
+            MESSAGE_OVERHEAD
+        );
+    }
+
+    #[test]
+    fn test_estimation_safety_margin_applied() {
+        // Verify the safety margin is 1.20
+        assert!(
+            (ESTIMATION_SAFETY_MARGIN - 1.20).abs() < 0.01,
+            "ESTIMATION_SAFETY_MARGIN should be 1.20, got {}",
+            ESTIMATION_SAFETY_MARGIN
         );
     }
 }

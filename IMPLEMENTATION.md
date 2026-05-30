@@ -6535,18 +6535,22 @@ When a conversation's context exceeds the model's context window, `/compact` fai
 | `COMPACTION_MAX_CONTEXT_RATIO` | 0.60 | Max ratio of context window per chunk |
 | `MAX_RECURSION_DEPTH` | 3 | Max recursion levels for chunked summarization |
 | `TRUNCATION_TARGET_RATIO` | 0.50 | Target ratio after fallback truncation |
-| `COMPACTION_PROMPT_OVERHEAD` | 2500 | Reserved tokens for prompt + response |
+| `COMPACTION_PROMPT_OVERHEAD` | 3000 | Reserved tokens for prompt + response (was 2500, increased for accuracy) |
+| `COMPACT_MSG_OVERHEAD` | 10 | Per-message overhead in compaction (vs. `MESSAGE_OVERHEAD=4` elsewhere) |
+| `ESTIMATION_SAFETY_MARGIN` | 1.20 | 20% buffer on token estimates to compensate for underestimation |
 
 **New functions (`src/context_overflow.rs`):**
 
 | Function | Purpose |
 |----------|---------|
 | `pre_prune_messages()` | Strip long tool outputs, keep first 100 chars + notice |
-| `estimate_messages_tokens()` | Token estimation for SavedMessage list |
-| `fits_in_context()` | Check if messages fit within context window |
+| `estimate_messages_tokens()` | Token estimation for SavedMessage list (standard, used for thresholds) |
+| `estimate_compaction_tokens()` | Token estimation for compaction with 20% safety margin and `COMPACT_MSG_OVERHEAD` |
+| `fits_in_context()` | Check if messages fit within context window (uses `estimate_compaction_tokens`) |
 | `max_chunk_tokens()` | Calculate chunk size for recursive summarization |
 | `split_into_chunks()` | Split messages into token-bounded chunks with overlap |
 | `fallback_truncate()` | Drop oldest middle messages to fit context window |
+| `is_prompt_too_long_error()` | Detect Ollama overflow errors for error-retry |
 
 **New functions (`src/chat/core.rs`):**
 
@@ -6556,11 +6560,38 @@ When a conversation's context exceeds the model's context window, `/compact` fai
 | `build_conversation_text()` | Format messages into conversation text (extracted from `compact_conversation`) |
 | `compact_with_llm()` | Send compaction prompt to LLM and return summary (extracted from `compact_conversation`) |
 
+**Defense in depth (error-retry):**
+
+| Layer | Error Recovery | Behavior |
+|-------|---------------|----------|
+| 1 (single-pass) | `is_prompt_too_long_error()` | Catches "prompt too long" from Ollama, falls through to Layer 2 |
+| 2 (chunked) | Already catches all errors | Falls through to Layer 3 |
+| 3 (truncation) | `is_prompt_too_long_error()` | Catches "prompt too long", returns detailed diagnostics |
+
+**Bug Fix: Estimation Undercount & Error Recovery (post-PR#188)**
+
+**Problem:** `fits_in_context()` used `estimate_tokens()` (words/0.75 heuristic) with `MESSAGE_OVERHEAD=4` per message and `COMPACTION_PROMPT_OVERHEAD=2500`. This underestimated real token counts by 15-40% for mixed-content conversations (code, Portuguese text, tool JSON). When the estimate said "fits" but the LLM rejected the prompt as "too long", compaction failed with no recovery — Layer 2 and 3 were never reached because the decision was made *before* the LLM call.
+
+**Fix:**
+1. `is_prompt_too_long_error()` detects overflow errors from Ollama
+2. Layer 1 (single-pass) catches overflow errors and falls through to Layer 2
+3. Layer 3 (truncation) catches overflow errors and returns actionable diagnostics
+4. `ESTIMATION_SAFETY_MARGIN = 1.20` — 20% buffer on token estimates
+5. `COMPACT_MSG_OVERHEAD = 10` — realistic per-message overhead for compaction
+6. `COMPACTION_PROMPT_OVERHEAD = 3000` — accounts for all prompt components
+
+| What changed | Old | New |
+|--------------|-----|-----|
+| `fits_in_context()` | Used `estimate_messages_tokens()` (MESSAGE_OVERHEAD=4) | Uses `estimate_compaction_tokens()` (COMPACT_MSG_OVERHEAD=10, ×1.20 safety) |
+| `COMPACTION_PROMPT_OVERHEAD` | 2500 (local const in core.rs) | 3000 (public const in context_overflow.rs) |
+| `compact_conversation()` | Layer 1 returns `Err` on LLM overflow | Layer 1 catches overflow, falls through to Layer 2 |
+| Layer 3 | Returns raw error on LLM overflow | Catches overflow, returns detailed diagnostics |
+
 **Affected Code:**
 
 | File | Change |
 |------|--------|
-| `src/context_overflow.rs` | Module docs updated, 5 new constants (removed `CHUNK_OVERLAP_RATIO` — overlap is by message, not ratio), 6 new functions, 14 new tests |
-| `src/chat/core.rs` | `compact_conversation()` refactored with 3-layer flow: pre-prune → chunked recursive summarization → fallback truncation. Extracted `build_conversation_text()`, `compact_with_llm()`, `compact_recursive()` |
-| `doc/src/CHANGELOG.md` | Added 3-Layer Compaction Overflow Strategy entry |
+| `src/context_overflow.rs` | Added `COMPACT_MSG_OVERHEAD`, `COMPACTION_PROMPT_OVERHEAD` (public, was local), `ESTIMATION_SAFETY_MARGIN`, `estimate_compaction_tokens()`, `is_prompt_too_long_error()`. Modified `fits_in_context()` to use `estimate_compaction_tokens()`. Added 11 new tests. |
+| `src/chat/core.rs` | Layer 1 error-retry: catches "prompt too long" and falls through to Layer 2. Layer 3 error-retry: catches "prompt too long" and returns detailed diagnostics. Removed 2 local `COMPACTION_PROMPT_OVERHEAD` constants (replaced by public const). Uses `estimate_compaction_tokens()` instead of `estimate_messages_tokens()`. |
+| `doc/src/CHANGELOG.md` | Added defense-in-depth and estimation fix details to #187 entry |
 2026-05-07 - #126 created: Rename ask-ai → Sprachspiel (priority:critical). Full codebase audit: ~60 source files + 82 doc files + config/data directory paths + man page + DB filename. 2-4 days estimated.

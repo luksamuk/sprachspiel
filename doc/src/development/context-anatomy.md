@@ -255,6 +255,8 @@ Compacted summaries are limited to **3,000 tokens** to prevent infinite compacti
 - Solution: Hard limit with automatic truncation
 - Template: Structured format (Goal, Instructions, Progress, Discoveries, Files)
 
+**Compaction Token Estimation:** Token estimation during compaction uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN = 1.20`) to compensate for heuristic underestimation in mixed-content conversations (code, non-English text, tool JSON). Per-message overhead is `COMPACT_MSG_OVERHEAD = 10` tokens (vs. `MESSAGE_OVERHEAD = 4` used elsewhere) to account for role prefixes and formatting in `build_conversation_text()`. If `fits_in_context()` still underestimates and the LLM rejects the prompt as "too long", compaction automatically falls back from single-pass to chunked summarization, and from truncation to a detailed error message.
+
 ---
 
 ## Token Budget Example

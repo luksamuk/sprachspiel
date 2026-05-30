@@ -30,8 +30,9 @@ use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
-    DEFAULT_KEEP_FIRST, MAX_RECURSION_DEPTH, check_context_overflow, estimate_messages_tokens,
-    fallback_truncate, fits_in_context, max_chunk_tokens, pre_prune_messages, split_into_chunks,
+    COMPACTION_PROMPT_OVERHEAD, DEFAULT_KEEP_FIRST, MAX_RECURSION_DEPTH, TRUNCATION_TARGET_RATIO,
+    check_context_overflow, estimate_compaction_tokens, fallback_truncate, fits_in_context,
+    is_prompt_too_long_error, max_chunk_tokens, pre_prune_messages, split_into_chunks,
 };
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
@@ -1003,17 +1004,31 @@ pub async fn compact_conversation(
         );
     }
 
-    // Reserve tokens for the compaction prompt template (~500 tokens)
-    // and the model's response (~2000 tokens).
-    const COMPACTION_PROMPT_OVERHEAD: usize = 2500;
+    // Token overhead for compaction: system prompt, instructions, and response allowance.
+    // See COMPACTION_PROMPT_OVERHEAD in context_overflow.rs for the breakdown.
     let context_window = model_config.num_ctx as usize;
 
-    // Check if pre-pruned messages fit in context — if yes, single-pass compaction
+    // Check if pre-pruned messages fit in context — if yes, single-pass compaction.
+    // If the LLM rejects the prompt as "too long" despite our estimate, fall through
+    // to Layer 2 (chunked summarization) — defense in depth against estimation errors.
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
-        let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
-        return Ok((summary, range));
+        match compact_with_llm(ollama, model_config, compact_prompt, llm_tx.clone()).await {
+            Ok(summary) => return Ok((summary, range)),
+            Err(e) if is_prompt_too_long_error(&e.to_string()) => {
+                log::warn!(
+                    "Layer 1 single-pass compaction failed (prompt too long: {}). \
+                     Estimated {} tokens with overhead {} but model rejected. \
+                     Falling back to chunked summarization.",
+                    e,
+                    estimate_compaction_tokens(&pruned_messages),
+                    COMPACTION_PROMPT_OVERHEAD,
+                );
+                // Fall through to Layer 2
+            }
+            Err(e) => return Err(e), // Non-overflow errors propagate immediately
+        }
     }
 
     // ── Layer 2: Chunked Recursive Summarization ─────────────────────
@@ -1024,7 +1039,7 @@ pub async fn compact_conversation(
     log::info!(
         "Pre-pruned messages exceed context window ({} tokens > {} available). \
          Attempting chunked recursive summarization.",
-        estimate_messages_tokens(&pruned_messages),
+        estimate_compaction_tokens(&pruned_messages),
         context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
     );
 
@@ -1083,8 +1098,37 @@ pub async fn compact_conversation(
 
     let conversation_text = build_conversation_text(&truncation.remaining_messages);
     let compact_prompt = build_compaction_prompt(&conversation_text);
-    let summary = compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await?;
-    Ok((summary, range))
+
+    // Layer 3 is the last resort. If even truncation fails to fit the prompt,
+    // compaction is truly impossible — return a clear error with diagnostics.
+    match compact_with_llm(ollama, model_config, compact_prompt, llm_tx).await {
+        Ok(summary) => Ok((summary, range)),
+        Err(e) if is_prompt_too_long_error(&e.to_string()) => {
+            log::error!(
+                "Layer 3 fallback truncation STILL exceeded context window. \
+                 Estimated {} tokens (truncated from {}), context window {}, overhead {}. \
+                 This should never happen — truncation targets {:.0}% of the window.",
+                estimate_compaction_tokens(&truncation.remaining_messages),
+                estimate_compaction_tokens(&pruned_messages),
+                context_window,
+                COMPACTION_PROMPT_OVERHEAD,
+                TRUNCATION_TARGET_RATIO * 100.0,
+            );
+            Err(format!(
+                "Compaction failed: even after truncation to {:.0}% of context, \
+                 the prompt still exceeds the model's window. \
+                 Original estimate: {} tokens, truncated estimate: {} tokens, \
+                 context window: {} tokens. Error: {}",
+                TRUNCATION_TARGET_RATIO * 100.0,
+                estimate_compaction_tokens(&pruned_messages),
+                estimate_compaction_tokens(&truncation.remaining_messages),
+                context_window,
+                e
+            )
+            .into())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Recursively summarize message chunks.
@@ -1160,7 +1204,6 @@ fn compact_recursive<'a>(
         let combined = summaries.join("\n\n---\n\n");
         let combined_tokens = crate::tokens::estimate_tokens(&combined);
         let context_window = model_config.num_ctx as usize;
-        const COMPACTION_PROMPT_OVERHEAD: usize = 2500;
 
         if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
             // Combined summaries fit — do a final summarization pass
