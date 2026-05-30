@@ -1052,11 +1052,10 @@ pub async fn compact_conversation(
         chunk_budget,
     );
 
-    // Report progress to the TUI
-    let _ = llm_tx.try_send(LlmEvent::CompactStreamToken(format!(
-        "\n⚙ Compacting in {} chunk(s)...\n",
-        chunks.len()
-    )));
+    // Report progress to the TUI as a separate system message
+    let _ = llm_tx.try_send(LlmEvent::CompactInfo {
+        message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
+    });
 
     match compact_recursive(ollama, model_config, &chunks, llm_tx.clone(), 0).await {
         Ok(summary) => {
@@ -1094,6 +1093,12 @@ pub async fn compact_conversation(
             truncation.remaining_tokens,
             (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
         );
+        let _ = llm_tx.try_send(LlmEvent::CompactInfo {
+            message: format!(
+                "⚠ Truncation applied: dropped {} oldest messages to fit context window.",
+                truncation.dropped_count
+            ),
+        });
     }
 
     let conversation_text = build_conversation_text(&truncation.remaining_messages);

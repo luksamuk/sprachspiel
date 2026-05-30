@@ -918,11 +918,8 @@ pub async fn handle_compact(
                 }));
             }
 
-            // Render summary via markdown
-            outputs.push(CommandOutput::MarkdownContent(format!(
-                "--- Summary ---\n{}\n---------------",
-                summary
-            )));
+            // Render summary as markdown (no artificial header/footer)
+            outputs.push(CommandOutput::MarkdownContent(summary));
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
