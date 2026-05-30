@@ -1155,22 +1155,27 @@ pub fn handle_content_prune(state: &ReplState) -> Vec<CommandOutput> {
 /// Identifies and removes:
 /// - Empty assistant messages (artifacts from Ctrl+C cancellation)
 /// - Orphan chunks (chunks whose parent item no longer exists)
+/// - Orphan content/chunk/fact embeddings (vec0 rows without parent record)
 pub fn handle_gc(state: &ReplState) -> Vec<CommandOutput> {
-    let db = match &state.db {
-        Some(d) => Arc::clone(d),
-        None => {
-            log::warn!("Cannot run garbage collection: database not initialized (anonymous mode)");
-            return vec![CommandOutput::error(
-                "Database not initialized. Run chat without --anonymous.",
-            )];
-        }
-    };
-
+    // Check anonymous mode FIRST — the DB is never initialized in anonymous
+    // mode, so this check must come before the DB None check, otherwise the
+    // generic "Database not initialized" message hides the anonymous-specific
+    // explanation.
     if state.session.anonymous {
         return vec![CommandOutput::error(
             "Cannot run garbage collection in anonymous mode.",
         )];
     }
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            log::warn!("Cannot run garbage collection: database not initialized");
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
+        }
+    };
 
     match db.garbage_collect() {
         Ok(stats) => {
