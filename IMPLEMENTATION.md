@@ -6524,7 +6524,7 @@ When a conversation's context exceeds the model's context window, `/compact` fai
 | 3 | Integration: `compact_conversation()` uses Layer 1 then Layer 2 before LLM call | ✅ COMPLETED |
 | 4 | Chunked recursive summarization: `split_into_chunks()` + `compact_recursive()` | ✅ COMPLETED |
 | 5 | Tests for all 3 layers | ✅ COMPLETED (14 new tests) |
-| 6 | Documentation (CHANGELOG, IMPLEMENTATION, context-anatomy.md, architecture.md, ADR) | 📋 IN PROGRESS |
+| 6 | Documentation (CHANGELOG, IMPLEMENTATION, context-anatomy.md, architecture.md, ADR) | ✅ COMPLETED |
 
 **New constants (`src/context_overflow.rs`):**
 
@@ -6594,4 +6594,82 @@ When a conversation's context exceeds the model's context window, `/compact` fai
 | `src/context_overflow.rs` | Added `COMPACT_MSG_OVERHEAD`, `COMPACTION_PROMPT_OVERHEAD` (public, was local), `ESTIMATION_SAFETY_MARGIN`, `estimate_compaction_tokens()`, `is_prompt_too_long_error()`. Modified `fits_in_context()` to use `estimate_compaction_tokens()`. Added 11 new tests. |
 | `src/chat/core.rs` | Layer 1 error-retry: catches "prompt too long" and falls through to Layer 2. Layer 3 error-retry: catches "prompt too long" and returns detailed diagnostics. Removed 2 local `COMPACTION_PROMPT_OVERHEAD` constants (replaced by public const). Uses `estimate_compaction_tokens()` instead of `estimate_messages_tokens()`. |
 | `doc/src/CHANGELOG.md` | Added defense-in-depth and estimation fix details to #187 entry |
+
+2026-05-30 - Bug Fixes: Context Prompt Corrections (PR #188). User message duplication, /retry wrong message, continuation empty message, system prompt clarity improvements.
+
+ ## Bug Fixes: Context Prompt Corrections (PR #188) — ✅ COMPLETED
+
+Six fixes targeting LLM prompt construction bugs and system prompt clarity issues identified during compaction analysis.
+
+### Bug 1: User Message Duplication in LLM Prompt
+
+**Problem:** Every user message appeared twice in the prompt sent to the LLM. `add_user_message()` (called in `handle_user_message_stream()`) added the user message to `session.messages`. Then `build_context()` included it via `session.messages[start_idx..]`, AND `prepare_messages()` also added `ChatMessage::user(user_input)` at the end.
+
+**Root cause:** `build_context()` and `prepare_messages()` both added the current query — `build_context()` from session history, `prepare_messages()` as the explicit query position.
+
+**Fix:** `build_context()` now calculates `end_exclusive` that excludes the last User message from `session.messages[start_idx..end_exclusive]`. Since `prepare_messages()` always adds the current query at position 6 (after recent messages), the user message appears exactly once. Uses `saturating_sub(1)` for safety.
+
+**Edge cases tested:**
+- Last message is User → excluded (normal chat path)
+- Last message is Assistant → `end_exclusive = len` (retry path)
+- Last message is Tool → `end_exclusive = len` (tool response path)
+- Empty session → `end_exclusive = 0`
+- Single User message → `end_exclusive = 0` (fully excluded, added by prepare_messages)
+
+**Files:** `src/retrieval/context_builder.rs` (end_exclusive calculation + 5 new tests)
+
+### Bug 2: `/retry` Used Wrong User Message
+
+**Problem:** `handle_retry()` called `remove_last_assistant_messages()` which removes assistant messages AND the preceding user message. Then `get_last_user_message()` searched `session.messages` — but the correct message was already removed, returning the previous user message (or none).
+
+**Additional problem:** The user message was never restored to `session.messages`, leaving the session history broken after `/retry` (missing user message from the conversation).
+
+**Fix:** Capture user content BEFORE removal with `get_last_user_message()`. After removal, restore it with `add_user_message()` and `save_sqlite()`. Then send the correct content to `send_message()`. Early return when no user message exists or no assistant messages to remove.
+
+**Files:** `src/chat/command_handlers.rs` (handle_retry rewrite)
+
+### Bug 3: Continuation Injected Empty User Message
+
+**Problem:** The continuation path called `send_message()` with `user_input=""`. `prepare_messages()` unconditionally pushed `ChatMessage::user("")` into the prompt. The actual continuation prompt was already added as an ephemeral message by `coordinator.push_ephemeral()`, making the empty user message redundant and confusing for the LLM.
+
+**Fix:** `prepare_messages()` now skips adding `ChatMessage::user()` when `user_input.is_empty()`. Only affects the continuation path — normal chat never submits empty input.
+
+**Files:** `src/chat/core.rs` (prepare_messages conditional)
+
+### Fix 4: Compaction Prompt Staleness Labels
+
+**Problem:** `COMPACTION_PROMPT`'s "DO NOT include" list didn't mention staleness labels like `(stale)`, `(62 days ago)`, `(unused)`. When the LLM summarized facts with these labels, the relative dates became inaccurate over time (e.g., "62 days ago" in a summary is wrong days or weeks later).
+
+**Fix:** Added staleness labels to the "DO NOT include" list in `COMPACTION_PROMPT` with explanation that they become inaccurate.
+
+**Files:** `src/prompts/base.rs` (COMPACTION_PROMPT)
+
+### Fix 5: Instruction Hierarchy Examples Less Confusing
+
+**Problem:** The INSTRUCTION HIERARCHY examples used `"rm is not authorized"` (prohibition) for USER FACTS and `"confirm before destructive"` (overlapping behavior) for SOUL. This gave the false impression that USER FACTS and SOUL conflict, when they're actually complementary (USER FACTS > SOUL resolves any conflict).
+
+**Fix:** Changed examples to `"rm requires confirmation"` (preference) for USER FACTS and `"be concise"` (clearly different concern) for SOUL. Now the hierarchy examples show distinct, non-overlapping concerns.
+
+**Files:** `src/prompts/base.rs` (SYSTEM_PROMPT_BASE)
+
+### Fix 6: Language Note for Mixed-Language Facts
+
+**Problem:** PT→EN normalization only translates prefixes, leaving objects in Portuguese (e.g., "User prefers respostas curtas"). This mixed-language output confused the LLM, which saw it as a formatting error.
+
+**Fix:** Added a note in the `### LANGUAGE` section: "USER FACTS may contain mixed language (English subject, Portuguese object) due to automatic normalization. Interpret them semantically, not literally."
+
+**Files:** `src/prompts/builder.rs` (LANGUAGE section)
+
+**Affected Code:**
+
+| File | Change |
+|------|--------|
+| `src/retrieval/context_builder.rs` | `end_exclusive` calculation excludes last User message. 5 new tests covering edge cases. |
+| `src/chat/command_handlers.rs` | `handle_retry()` captures user content before removal, restores with `add_user_message()`, saves session. |
+| `src/chat/core.rs` | `prepare_messages()` skips `ChatMessage::user()` when `user_input.is_empty()`. |
+| `src/prompts/base.rs` | INSTRUCTION HIERARCHY examples updated. COMPACTION_PROMPT staleness label exclusion. |
+| `src/prompts/builder.rs` | LANGUAGE section: mixed-language note added. |
+| `doc/src/CHANGELOG.md` | All 6 entries documented. |
+| `doc/src/development/context-anatomy.md` | User message deduplication note, staleness label note, User Facts format updated. |
+
 2026-05-07 - #126 created: Rename ask-ai → Sprachspiel (priority:critical). Full codebase audit: ~60 source files + 82 doc files + config/data directory paths + man page + DB filename. 2-4 days estimated.
