@@ -252,6 +252,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         // 3e. Language convention (persists even with --soulless)
         prompt.push_str("\n### LANGUAGE\n");
         prompt.push_str("Respond in the user's language. If the user writes in Portuguese, reply in Portuguese. If ambiguous, follow the language of the most recent message.\n");
+        prompt.push_str("Note: USER FACTS may contain mixed language (English subject, Portuguese object) due to automatic normalization. Interpret them semantically, not literally.\n");
 
         // 3f. Active tasks section (from TodoState)
         if let Some(todos) = config.todos
