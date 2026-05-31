@@ -145,7 +145,7 @@
 
 **M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience. **Design inputs:** R-32 (ratatui-cheese widget adoption — Help, Fieldset, Select/MultiSelect, List+Paginator; Palette evaluation; direct dependency `ratatui-cheese = "0.7"`), R-33 (first-run onboarding wizard — OnboardingWizard state machine, sub-item of #16). Both evaluated in `doc/m2-ratatui-cheese-evaluation.md` (absorbed into research icebox).
 
-**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) is a P0-CRITICAL bug fix (preserving thinking content) and shares a migration PR with #136 (geometry-aware dimensions). W7 is a new wave for Thinking Trace Pipeline and Retrieval. #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
+**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 — re-embedding uses the existing `/reindex --yes` recovery pipeline (items with `has_embedding=0` are re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. W7 is a new wave for Thinking Trace Pipeline and Retrieval. #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind. T3-Phase3 (Semantic/Reflect + Facts Integration) added to M3 — depends on W7.1 (Thinking-Aware Retrieval) completion.
 
@@ -161,12 +161,12 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional; #126 IN PROGRESS |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 and #36 remaining |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
-| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; thinking content preserved in DB; geometry-aware dimensions formula; instruction hierarchy in prompt |
+| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB; geometry-aware dimensions formula; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
-| **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
+| **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | ✅ COMPLETED — All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 | **W7** | Thinking Trace Pipeline & Retrieval | Preserve thinking content, T3 Struct pipeline, thinking-aware retrieval | #152, #153, #137 | Thinking traces preserved and transformable; retrieval includes thinking context; RRF adapts to d_eff with trace awareness |
 
 **Wave dependencies:**
@@ -175,12 +175,12 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 - **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration). Expanded from original scope (config + provider) to include geometry-aware changes from embedding audit and T3-Phase0. Sub-phases:
-  - **W4.0** (#133): Diagnostics subcommand (`sprach diagnostics`) — measure d_eff, average magnitude, threshold pass rate
-  - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision
+  - **W4.0** (#133): Diagnostics subcommand (`sprach diagnostics`) — measure d_eff, average magnitude, threshold pass rate ✅ COMPLETED
+  - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision ✅ COMPLETED
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
   - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support
-  - **W4.5** (#151 + #136): T3-Phase0 (Preserve Thinking Content) + Geometry-Aware Default Dimensions — **joint PR with shared migration v12→v13**
+  - **W4.5** (#151 + #136): T3-Phase0 (Preserve Thinking Content) + Geometry-Aware Default Dimensions — **joint PR with shared migration v12→v13**. No dependency on #107 — re-embedding uses existing `/reindex --yes` recovery pipeline.
   - **W4.6** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 - **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandOutput → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
@@ -273,7 +273,7 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 **Status:** 📋 NOT STARTED
 **Issue:** #151
-**Depends on:** W4.4 (#107) — embedding provider must be in place for re-embedding
+**Depends on:** None (dependency on #107 was artificial — re-embedding uses existing `/reindex --yes` recovery pipeline)
 **Joint PR:** #136 (Geometry-Aware Default Dimensions) — shared migration v12→v13
 
 **Goal:** Fix the architectural bug where `strip_thinking_tags()` permanently deletes thinking content before storage. Preserve thinking traces as the most valuable RAG corpus for reasoning tasks (Arabzadeh et al. 2026, arXiv:2605.03344).
@@ -306,7 +306,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 | 3 | Replace storage-path callers of `strip_thinking_tags()` with `process_thinking()` — preserve thinking in `thinking_content` field | 📋 |
 | 4 | Normalize pre-tool messages — separate `<thinking>` from `content` field into `thinking_content` column | 📋 |
 | 5 | Add `[t3]` config section with `enabled = false` (feature flag only; transforms in Phase 1) | 📋 |
-| 6 | Re-embed existing content items that had thinking inline (migration script) | 📋 |
+| 6 | Re-embed existing content items that had thinking inline (uses existing `/reindex --yes` recovery pipeline — items with `has_embedding=0` are re-embedded on startup) | 📋 |
 | 7 | Update database operations (insert, query, search) for new columns | 📋 |
 | 8 | Tests: regression for existing search, embedding, retrieval | 📋 |
 
