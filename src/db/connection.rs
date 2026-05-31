@@ -1045,6 +1045,9 @@ mod tests {
         assert!(columns.contains(&"source".to_string()));
         assert!(columns.contains(&"title".to_string()));
 
+        // Thinking trace field (added in v14)
+        assert!(columns.contains(&"thinking_content".to_string()));
+
         // Check content_embeddings virtual table exists
         let vtables: Vec<String> = db
             .with_connection(|conn| {
@@ -1058,5 +1061,163 @@ mod tests {
 
         assert!(vtables.contains(&"content_embeddings".to_string()));
         assert!(vtables.contains(&"content_fts".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_content_column_in_content_items() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(
+            columns.contains(&"thinking_content".to_string()),
+            "thinking_content column must exist in content_items"
+        );
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_basic() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with inline thinking tags
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', '<thinking>Let me reason</thinking>The answer is 42', 'conv1', 'pre_tool', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        // Run normalize_inline_thinking with a simple split function
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    let start = content.find("<thinking>").unwrap();
+                    let end = content.find("</thinking>").unwrap() + "</thinking>".len();
+                    let thinking = content[start..end].to_string();
+                    let clean = content[..start].trim().to_string() + &content[end..];
+                    (Some(thinking), clean.trim().to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(count, 1, "Should normalize 1 row");
+
+        // Verify the row was updated
+        let (content, thinking): (String, Option<String>) = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT content, thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .expect("Failed to query updated row");
+
+        assert_eq!(content, "The answer is 42");
+        assert_eq!(thinking, Some("<thinking>Let me reason</thinking>".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_no_thinking_rows() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item without thinking tags
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'Just a regular message', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    (Some("thinking".to_string()), "clean".to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(count, 0, "Should normalize 0 rows when no thinking tags present");
+    }
+
+    #[test]
+    fn test_thinking_content_roundtrip() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with thinking_content
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, thinking_content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'The answer is 42', 'My reasoning process', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        // Read it back
+        let (content, thinking): (String, Option<String>) = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT content, thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .expect("Failed to query row");
+
+        assert_eq!(content, "The answer is 42");
+        assert_eq!(thinking, Some("My reasoning process".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_content_null_by_default() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item without thinking_content (should default to NULL)
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'Hello world', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let thinking: Option<String> = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query row");
+
+        assert_eq!(thinking, None, "thinking_content should be NULL by default");
     }
 }

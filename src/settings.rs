@@ -1299,4 +1299,23 @@ semantic_weight = 0.7
         assert!((settings.retrieval.keyword_weight - 0.3).abs() < f32::EPSILON);
         assert!((settings.retrieval.semantic_weight - 0.7).abs() < f32::EPSILON);
     }
+
+    #[test]
+    fn test_thinking_trace_settings_default_disabled() {
+        let settings = Settings::default();
+        assert!(
+            !settings.thinking_trace.enabled,
+            "thinking_trace should be disabled by default"
+        );
+    }
+
+    #[test]
+    fn test_thinking_trace_settings_parse_enabled() {
+        let sample = r#"
+[thinking_trace]
+enabled = true
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert!(settings.thinking_trace.enabled);
+    }
 }

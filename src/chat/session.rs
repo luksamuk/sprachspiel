@@ -1834,3 +1834,31 @@ fn test_get_recent_exchanges_tool_messages_between() {
     assert_eq!(exchanges[0].0.content, "What's the weather?");
     assert_eq!(exchanges[0].1.as_ref().unwrap().content, "It's sunny!");
 }
+
+#[test]
+fn test_saved_message_thinking_field() {
+    let mut session = ChatSession::new("test-model".into(), None, false);
+
+    // Add assistant message with thinking
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "The answer is 42".into(),
+        thinking: Some("I reasoned about the question".into()),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    // Add assistant message without thinking
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "Simple response".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        session.messages[0].thinking,
+        Some("I reasoned about the question".to_string())
+    );
+    assert_eq!(session.messages[1].thinking, None);
+}

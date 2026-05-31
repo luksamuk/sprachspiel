@@ -2077,4 +2077,91 @@ mod tests {
         );
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_thinking_content_stored_and_retrieved() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert an assistant message with thinking content
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                Some(ROLE_ASSISTANT),
+                Some("regular"),
+                None,
+                Some(10),
+                None,
+                None,
+                None,
+                "The answer is 42",
+                Some("I reasoned about the meaning of life"),
+                0.5,
+                None,
+                Utc::now(),
+            )
+            .expect("Failed to insert content item");
+
+        // Retrieve it back
+        let loaded = db
+            .get_content_item_by_id(item_id)
+            .expect("Failed to get content item")
+            .expect("Content item not found");
+
+        assert_eq!(loaded.content, "The answer is 42");
+        assert_eq!(
+            loaded.thinking_content,
+            Some("I reasoned about the meaning of life".to_string())
+        );
+    }
+
+    #[test]
+    fn test_thinking_content_not_in_search_results() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a note with "Rust" in content (should be found by search)
+        let note = Note::new(
+            "Rust programming language".to_string(),
+            ContentScope::Global,
+            None,
+            ContentSource::User,
+            Some("Test Note".to_string()),
+        )
+        .expect("Failed to create note");
+        db.insert_note(&note).expect("Failed to insert note");
+
+        // Insert an assistant message with thinking that mentions "Rust"
+        // (thinking_content is NOT indexed by FTS, so this should NOT be found)
+        db.insert_content_item(
+            "message",
+            None,
+            Some(ROLE_ASSISTANT),
+            Some("regular"),
+            None,
+            Some(10),
+            None,
+            None,
+            None,
+            "Python is great",
+            Some("I considered Rust but chose Python"),
+            0.5,
+            None,
+            Utc::now(),
+        )
+        .expect("Failed to insert content item");
+
+        // Search for "Rust" — should find the note but NOT the assistant message
+        // (thinking_content is not indexed by FTS)
+        let results = db
+            .search_notes_keyword("Rust", None, None, 10)
+            .expect("Failed to search");
+
+        // The note has "Rust" in its content, so it should be found
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find only the note, not the message with thinking about Rust"
+        );
+        assert_eq!(results[0].item.title, Some("Test Note".to_string()));
+    }
 }

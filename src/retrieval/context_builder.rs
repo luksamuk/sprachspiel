@@ -915,4 +915,45 @@ mod tests {
         };
         assert_eq!(end_exclusive, 2);
     }
+
+    #[test]
+    fn test_push_messages_injects_thinking_when_enabled() {
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "The answer is 42".to_string(),
+                thinking: Some("I reasoned about the question".to_string()),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "Simple response".to_string(),
+                thinking: None,
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter(), true);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].thinking, Some("I reasoned about the question".to_string()));
+        assert_eq!(messages[1].thinking, None);
+    }
+
+    #[test]
+    fn test_push_messages_omits_thinking_when_disabled() {
+        let mut messages = Vec::new();
+        let source = vec![SavedMessage {
+            role: MessageRole::Assistant,
+            content: "The answer is 42".to_string(),
+            thinking: Some("I reasoned about the question".to_string()),
+            ..Default::default()
+        }];
+
+        push_messages_as_chat_messages(&mut messages, source.iter(), false);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].thinking, None, "thinking should NOT be injected when include_thinking=false");
+    }
 }
