@@ -139,13 +139,13 @@
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict, T3-Phase3 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → W6 (Responsive Chat Rebuild: #145→#148) → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151, #136) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → W6 (Responsive Chat Rebuild: #145→#148) ✅ COMPLETED → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
 **M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience. **Design inputs:** R-32 (ratatui-cheese widget adoption — Help, Fieldset, Select/MultiSelect, List+Paginator; Palette evaluation; direct dependency `ratatui-cheese = "0.7"`), R-33 (first-run onboarding wizard — OnboardingWizard state machine, sub-item of #16). Both evaluated in `doc/m2-ratatui-cheese-evaluation.md` (absorbed into research icebox).
 
-**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 — re-embedding uses the existing `/reindex --yes` recovery pipeline (items with `has_embedding=0` are re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. W7 is a new wave for Thinking Trace Pipeline and Retrieval. #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
+**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 or #136 — re-embedding uses the existing `/reindex --yes` recovery pipeline (items with `has_embedding=0` are re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. The previous "Joint PR with #136" was decoupled (#136 now depends on #106 and #135, after which it becomes W4.7). T3-Phase0 also includes continuation thinking fix (5th data loss path). #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind. T3-Phase3 (Semantic/Reflect + Facts Integration) added to M3 — depends on W7.1 (Thinking-Aware Retrieval) completion.
 
@@ -164,7 +164,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 and #36 remaining |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
-| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB; geometry-aware dimensions formula; instruction hierarchy in prompt |
+| **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
 | **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | ✅ COMPLETED — All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 | **W7** | Thinking Trace Pipeline & Retrieval | Preserve thinking content, T3 Struct pipeline, thinking-aware retrieval | #152, #153, #137 | Thinking traces preserved and transformable; retrieval includes thinking context; RRF adapts to d_eff with trace awareness |
@@ -180,8 +180,9 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
   - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support
-  - **W4.5** (#151 + #136): T3-Phase0 (Preserve Thinking Content) + Geometry-Aware Default Dimensions — **joint PR with shared migration v12→v13**. No dependency on #107 — re-embedding uses existing `/reindex --yes` recovery pipeline.
+  - **W4.5** (#151): T3-Phase0 (Preserve Thinking Content) — standalone PR, no dependency on #107 or #136. Re-embedding uses existing `/reindex --yes` recovery pipeline. Includes continuation thinking fix.
   - **W4.6** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
+  - **W4.7** (#136): Geometry-Aware Embedding Configuration and Model Registry — depends on #106 (configurable model) and #135 (d_eff measurements). Rewritten scope: `embedding_models` table, diagnostics integration, `recommended_dimensions()`, dynamic vec0 dimensions. See Decision Record D-10 and D-11.
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 - **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandOutput → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
 - **W7**: starts after W6-PR3 (#147) is merged and W4.5 (T3-Phase0) is complete. Sub-phases:
@@ -273,8 +274,7 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 **Status:** 📋 NOT STARTED
 **Issue:** #151
-**Depends on:** None (dependency on #107 was artificial — re-embedding uses existing `/reindex --yes` recovery pipeline)
-**Joint PR:** #136 (Geometry-Aware Default Dimensions) — shared migration v12→v13
+**Depends on:** None (dependency on #107 was artificial — re-embedding uses existing `/reindex --yes` recovery pipeline; #136 decoupled — see D-11)
 
 **Goal:** Fix the architectural bug where `strip_thinking_tags()` permanently deletes thinking content before storage. Preserve thinking traces as the most valuable RAG corpus for reasoning tasks (Arabzadeh et al. 2026, arXiv:2605.03344).
 
@@ -301,42 +301,41 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add `thinking_content TEXT` and `t3_status TEXT DEFAULT 'none'` columns to `content_items` (migration v12→v13, joint with #136) | 📋 |
-| 2 | Update `ContentItem` struct to include `thinking_content` and `t3_status` | 📋 |
+| 1 | Add `thinking_content TEXT` column to `content_items` (migration v13→v14) | 📋 |
+| 2 | Update `ContentItem` struct to include `thinking_content: Option<String>` | 📋 |
 | 3 | Replace storage-path callers of `strip_thinking_tags()` with `process_thinking()` — preserve thinking in `thinking_content` field | 📋 |
 | 4 | Normalize pre-tool messages — separate `<thinking>` from `content` field into `thinking_content` column | 📋 |
 | 5 | Add `[t3]` config section with `enabled = false` (feature flag only; transforms in Phase 1) | 📋 |
-| 6 | Re-embed existing content items that had thinking inline (uses existing `/reindex --yes` recovery pipeline — items with `has_embedding=0` are re-embedded on startup) | 📋 |
-| 7 | Update database operations (insert, query, search) for new columns | 📋 |
-| 8 | Tests: regression for existing search, embedding, retrieval | 📋 |
+| 6 | Fix continuation thinking loss — `ContinuationResult` carries thinking, `handle_continuation()` accumulates, `add_pre_tool_message()` called with original `previous_message_id` | 📋 |
+| 7 | Re-embed existing content items that had thinking inline (uses existing `/reindex --yes` recovery pipeline — items with `has_embedding=0` are re-embedded on startup) | 📋 |
+| 8 | Update database operations (insert, query, search) for thinking_content column | 📋 |
+| 9 | Tests: regression for existing search, embedding, retrieval | 📋 |
 
-**`t3_status` values:**
-
-| Value | Meaning |
-|-------|---------|
-| `none` | Not a thinking message (user, system, tool) — no thinking content |
-| `pending` | Has thinking content, awaiting T3 transform (Phase 1) |
-| `done` | T3 transform completed, trace stored in `thinking_traces` table (Phase 1) |
+**`t3_status` deferred to T3-Phase1 (#152):** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking." Phase 1 introduces the T3 transform pipeline and needs `T3Status` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `t3_status INTEGER DEFAULT 0`. See Decision Record D-09.
 
 **Files to Create:**
 - `src/chat/thinking_preserve.rs` — Helper functions for preserving thinking in storage path
 
 **Files to Modify:**
-- `src/db/schema.rs` — Migration v12→v13 (thinking_content, t3_status + #136 d_eff columns)
+- `src/db/schema.rs` — Migration v13→v14 (thinking_content column in content_items)
 - `src/db/connection.rs` — Migration function
-- `src/db/operations.rs` — CRUD operations for thinking_content, t3_status
-- `src/content/types.rs` — Add `thinking_content: Option<String>` and `t3_status: String` to `ContentItem`
-- `src/chat/core.rs` — Use `process_thinking()` instead of `strip_thinking_tags()` for storage
-- `src/chat/session.rs` — Preserve thinking in pre-tool messages
+- `src/db/operations.rs` — CRUD operations for thinking_content
+- `src/content/types.rs` — Add `thinking_content: Option<String>` to `ContentItem`
+- `src/chat/core.rs` — Use `process_thinking()` instead of `strip_thinking_tags()` for storage; add `thinking` field to `SendMessageResult`
+- `src/chat/session.rs` — Preserve thinking in pre-tool messages; add `thinking` to `SavedMessage`; update `add_assistant_message()` and `add_pre_tool_message()`
+- `src/chat/continuation.rs` — Add `thinking` and `pre_tool_thinking` to `ContinuationResult`; accumulate in `handle_continuation()`; call `add_pre_tool_message()` for continuation turns using original `previous_message_id`
+- `src/content/db.rs` — Add `thinking_content` parameter to `insert_content_item()`
 - `src/settings.rs` — Add `[t3]` section with `enabled = false`
-- `src/embeddings/regenerate.rs` — Re-embed content items that had thinking inline
 - `src/retrieval/context_builder.rs` — Include thinking content in context when `[t3] enabled = true`
 
 **Design Decisions:**
 
 1. **Preserve always, transform later:** `thinking_content` is always saved regardless of `[t3] enabled`. This ensures no data loss. The flag only controls whether the T3 pipeline processes traces.
-2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. T3 transforms live in a separate `thinking_traces` table (Phase 1).
+2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. T3 transforms live in a separate `thinking_traces` table (Phase 1). See Decision Record D-07.
 3. **`strip_thinking_tags()` remains for display:** The function is still used by views and query mode to strip thinking from displayed content. Only the storage path changes.
+4. **No `t3_status` column in Phase 0:** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking content." The `T3Status` enum (`None=0, Raw=1, Pending=2, Done=3`) and `t3_status INTEGER DEFAULT 0` column are deferred to T3-Phase1 (#152) when the transform pipeline needs state tracking. See Decision Record D-09.
+5. **Continuation thinking uses original `previous_message_id`:** All pre-tool messages from continuation turns reference the same user message as the initial turn. This is semantically correct — all are "what the assistant thought before calling a tool, in the same response to the same user message." Multiple pre-tool messages with the same parent are expected and handled by the `previous_item_id` FK.
+6. **Compaction summary does NOT preserve thinking:** Compaction summaries are content generated by the LLM (not original thinking traces). T3 retrieves original traces from `thinking_content`, not from summaries. See Decision Record D-08.
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
@@ -2963,7 +2962,7 @@ These criteria extend the original validation with geometry metrics discovered i
 - [x] `sprach diagnostics` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
 - [ ] Fact semantic threshold decision is data-driven: measure recall@k at 0.70 and 0.80 before changing (#134)
 - [ ] Alternative models are benchmarked by d_eff, retrieval quality, and multilingual support (#135)
-- [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` (#136)
+- [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` — via `embedding_models` registry table (#136, after #106/#135)
 - [ ] RRF weights adapt to d_eff: d_eff≤10 → BM25=0.7/cosine=0.3; d_eff 11-25 → 0.5/0.5; d_eff>25 → 0.4/0.6 (#137)
 - [ ] Documentation explains model selection criteria (d_eff, SPREAD system, multilingual support) alongside provider config (#138)
 
@@ -3001,9 +3000,9 @@ These criteria extend the original validation with geometry metrics discovered i
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
 | W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
 | W4.4 | #107 | Embedding provider abstraction — multi-provider support | High | M1 |
-| W4.5 | #136 | Geometry-aware default dimensions formula (d_eff × 4, floor 64) | Medium | M1 |
-| W4.6 | #137 | Geometry-aware RRF weight adjustment based on d_eff | Medium | M1 |
-| W4.7 | #138 | Documentation rewrite — model selection, hybrid search, provider docs | Medium | M1 |
+| W4.5 | #151 | T3-Phase0 — Preserve Thinking Content + continuation thinking fix | Critical | M1 |
+| W4.6 | #138 | Documentation rewrite — model selection, hybrid search, provider docs | Medium | M1 |
+| W4.7 | #136 | Geometry-Aware Embedding Configuration and Model Registry (depends on #106, #135) | Medium | M1 |
 
 ### Embedding Diagnostics Subcommand — #133 [M1/W4.0]
 

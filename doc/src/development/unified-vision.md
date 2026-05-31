@@ -330,7 +330,7 @@ If specialized translation models (Hy-MT2, TranslateGemma) fail on pt-BR slang, 
 
 **Synergy 4: Norm Correction × d_eff × TAP-2 (RAG-Vector × T3 × #136)**
 
-`norm_correction` from TurboVec/TurboQuant improves TAP-2 (thinking-aware retrieval) directly. When `d_eff < 0.7` (768→256 Matryoshka truncation), cosine similarity is biased. One float per vector corrects this at zero query-time cost. This is a **prerequisite of TAP-2**.
+`norm_correction` from TurboVec/TurboQuant improves TAP-2 (thinking-aware retrieval) directly. When `d_eff < 0.7` (768→256 Matryoshka truncation), cosine similarity is biased. One float per vector corrects this at zero query-time cost. This is a **prerequisite of TAP-2**. Note: #136 (Geometry-Aware Dimensions) has been rewritten as "Embedding Configuration and Model Registry" (see D-10, D-11) and depends on #106 and #135. It is decoupled from T3-Phase0 (#151).
 
 **Synergy 5: Context-Offload × TAP × Compaction (RLM × TAP)**
 
