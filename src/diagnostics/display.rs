@@ -294,9 +294,9 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
     }
 
     md.push_str(&blockquote(
-        "To apply these recommendations, update your config.toml \
-         or run `sprach config edit`. These are informational \
-         suggestions based on observed embedding geometry.",
+        "To apply these recommendations, update your config.toml. \
+         These are informational suggestions based on observed \
+         embedding geometry.",
     ));
     md.push('\n');
 
