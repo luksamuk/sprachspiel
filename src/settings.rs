@@ -939,7 +939,7 @@ skin = "dark"
 # Higher = stricter matching (fewer false matches, may miss contradictions).
 # Lower = more permissive (catches more contradictions, risks false positives).
 # The default 0.70 is designed for nomic-embed-text-v2-moe at 256 dimensions.
-# Adjust based on "sprach diag embeddings" threshold recommendations.
+# Adjust based on "sprach diagnostics" threshold recommendations.
 # Default: 0.70
 # semantic_threshold = 0.70
 

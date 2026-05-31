@@ -1,6 +1,6 @@
 //! Diagnostics module for analyzing embedding geometry and retrieval health
 //!
-//! Provides the `sprach diagnostics embeddings` subcommand that performs spectral
+//! Provides the `sprach diagnostics` command that performs spectral
 //! analysis on stored embedding vectors, reporting:
 //!
 //! - **d_eff** (participation ratio): effective dimensionality of the embedding space

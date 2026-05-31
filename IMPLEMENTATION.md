@@ -175,7 +175,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 - **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration). Expanded from original scope (config + provider) to include geometry-aware changes from embedding audit and T3-Phase0. Sub-phases:
-  - **W4.0** (#133): Diagnostics subcommand (`sprach diag embeddings`) — measure d_eff, average magnitude, threshold pass rate
+  - **W4.0** (#133): Diagnostics subcommand (`sprach diagnostics`) — measure d_eff, average magnitude, threshold pass rate
   - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
@@ -2960,7 +2960,7 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 These criteria extend the original validation with geometry metrics discovered in the embedding audit (d_eff=7, d̄=0.353, SPREAD system):
 
-- [x] `sprach diag embeddings` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
+- [x] `sprach diagnostics` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
 - [ ] Fact semantic threshold decision is data-driven: measure recall@k at 0.70 and 0.80 before changing (#134)
 - [ ] Alternative models are benchmarked by d_eff, retrieval quality, and multilingual support (#135)
 - [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` (#136)
@@ -2995,7 +2995,7 @@ These criteria extend the original validation with geometry metrics discovered i
 
 | Phase | Issue | Description | Priority | Milestone |
 |-------|-------|-------------|----------|-----------|
-| W4.0 | #133 | `sprach diagnostics embeddings` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
+| W4.0 | #133 | `sprach diagnostics` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
 | W4.1 | #134 | ✅ COMPLETED Validate fact semantic threshold 0.70 vs 0.80 — PR #184 | High | M1 |
 | W4.0b | #157 | ✅ COMPLETED Norm correction in embedding tables — PR #184 | High | M1 |
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
@@ -3013,7 +3013,7 @@ These criteria extend the original validation with geometry metrics discovered i
 **Depends on:** None
 **Estimated effort:** 2-3 days
 
-**Goal:** Add `sprach diagnostics embeddings` subcommand that performs spectral analysis on stored embeddings, reporting d_eff, mean cosine distance (d̄), regime classification, and variance distribution. This is the W4.0 gateway card — foundational infrastructure for all subsequent W4 phases.
+**Goal:** Add `sprach diagnostics` command that performs spectral analysis on stored embeddings, reporting d_eff, mean cosine distance (d̄), regime classification, and variance distribution. This is the W4.0 gateway card — foundational infrastructure for all subsequent W4 phases.
 
 **Design Decisions:**
 
@@ -3089,11 +3089,11 @@ Vectors: 18
 **CLI Syntax:**
 
 ```bash
-sprach diagnostics embeddings              # All sources combined
-sprach diagnostics embeddings --source content   # content_embeddings only
-sprach diagnostics embeddings --source chunks    # chunk_embeddings_v2 only
-sprach diagnostics embeddings --source facts    # fact_embeddings only
-sprach diag embeddings                        # Shortcut
+sprach diagnostics                            # All sources combined
+sprach diagnostics --source content           # content_embeddings only
+sprach diagnostics --source chunks            # chunk_embeddings_v2 only
+sprach diagnostics --source facts             # fact_embeddings only
+sprach diag                                   # Shortcut (alias)
 ```
 
 **Algorithms (no external dependencies):**
@@ -3216,7 +3216,7 @@ Three interrelated bugs discovered via production database investigation (12 ite
 **Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
 **Joint PR with:** #157 (Norm Correction)
 
-**Goal:** Data-driven validation of `SEMANTIC_SEARCH_THRESHOLD` (currently 0.70 in `src/facts/conflict.rs:230`) before potentially changing to 0.80. Use `sprach diag embeddings` to measure whether the current threshold is appropriate given the measured d_eff and d̄.
+**Goal:** Data-driven validation of `SEMANTIC_SEARCH_THRESHOLD` (currently 0.70 in `src/facts/conflict.rs:230`) before potentially changing to 0.80. Use `sprach diagnostics` to measure whether the current threshold is appropriate given the measured d_eff and d̄.
 
 **Implementation Summary:**
 - `SEMANTIC_SEARCH_THRESHOLD` renamed to `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (kept as canonical default)
