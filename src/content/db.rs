@@ -32,7 +32,7 @@ const SEARCH_NOTES_FTS_SQL: &str = "
            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
            ci.content, ci.importance, ci.access_count, ci.decay_score,
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-           ci.project_id, bm25(content_fts) as score
+           ci.project_id, ci.thinking_content, bm25(content_fts) as score
     FROM content_fts fts
     JOIN content_items ci ON fts.rowid = ci.id";
 
@@ -40,7 +40,8 @@ const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
     SELECT ce.item_id, ce.distance, ce.norm_correction, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
-           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id,
+           ci.thinking_content
     FROM content_embeddings ce
     JOIN content_items ci ON ce.item_id = ci.id
     WHERE ce.embedding MATCH ? AND ce.k = ?";
@@ -50,7 +51,8 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
            cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
-           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id,
+           ci.thinking_content
     FROM chunk_embeddings_v2 ce
     JOIN content_chunks cc ON ce.chunk_id = cc.id
     JOIN content_items ci ON cc.item_id = ci.id
@@ -951,6 +953,7 @@ impl Database {
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             title: row.get(12)?,
                             content: row.get(13)?,
+                            thinking_content: row.get(22)?,
                             importance: row.get(14)?,
                             access_count: row.get::<_, i32>(15)? as u32,
                             decay_score: row.get(16)?,
@@ -1020,6 +1023,7 @@ impl Database {
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             title: row.get(17)?,
                             content: row.get(18)?,
+                            thinking_content: row.get(27)?,
                             importance: row.get(19)?,
                             access_count: row.get::<_, i32>(20)? as u32,
                             decay_score: row.get(21)?,
@@ -1216,6 +1220,7 @@ impl Database {
         source: Option<&str>,
         title: Option<&str>,
         content: &str,
+        thinking_content: Option<&str>,
         importance: f32,
         project_id: Option<&str>,
         timestamp: DateTime<Utc>,
@@ -1225,10 +1230,10 @@ impl Database {
             conn.execute(
                 "INSERT INTO content_items (
                     content_type, conversation_id, role, message_type, previous_item_id,
-                    prompt_tokens, scope, source, title, content, importance,
+                    prompt_tokens, scope, source, title, content, thinking_content, importance,
                     access_count, decay_score, created_at, updated_at, last_accessed,
                     has_embedding, project_id
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, 1.0, ?12, ?12, ?12, 0, ?13)",
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, 1.0, ?13, ?13, ?13, 0, ?14)",
                 params![
                     content_type,
                     conversation_id,
@@ -1240,6 +1245,7 @@ impl Database {
                     source,
                     title,
                     content,
+                    thinking_content,
                     importance,
                     now,
                     project_id,
@@ -1333,7 +1339,8 @@ impl Database {
                 "SELECT id, content_type, conversation_id, role, message_type,
                         previous_item_id, prompt_tokens, scope, source, title,
                         content, importance, access_count, decay_score,
-                        created_at, updated_at, last_accessed, has_embedding, project_id
+                        created_at, updated_at, last_accessed, has_embedding, project_id,
+                        thinking_content
                  FROM content_items
                  WHERE conversation_id = ?1
                  ORDER BY created_at ASC",
@@ -1520,7 +1527,8 @@ impl Database {
                 "SELECT id, content_type, conversation_id, role, message_type,
                         previous_item_id, prompt_tokens, scope, source, title,
                         content, importance, access_count, decay_score,
-                        created_at, updated_at, last_accessed, has_embedding, project_id
+                        created_at, updated_at, last_accessed, has_embedding, project_id,
+                        thinking_content
                  FROM content_items
                  WHERE id = ?1",
             )?;
@@ -1576,7 +1584,8 @@ impl Database {
                 SELECT id, content_type, conversation_id, role, message_type,
                        previous_item_id, prompt_tokens, scope, source, title,
                        content, importance, access_count, decay_score,
-                       created_at, updated_at, last_accessed, has_embedding, project_id
+                       created_at, updated_at, last_accessed, has_embedding, project_id,
+                       thinking_content
                 FROM content_items
                 WHERE conversation_id = ?1
                   AND role = 'assistant'
@@ -1688,6 +1697,7 @@ fn row_to_content_item(row: &rusqlite::Row) -> Result<ContentItem> {
             .map_err(rusqlite::Error::InvalidParameterName)?,
         title: row.get(9)?,
         content: row.get(10)?,
+        thinking_content: row.get(19)?,
         importance: row.get(11)?,
         access_count: row.get::<_, i32>(12)? as u32,
         decay_score: row.get(13)?,

@@ -616,6 +616,21 @@ impl Database {
         Ok(())
     }
 
+    /// Migration v13 -> v14: Add thinking_content column to content_items.
+    ///
+    /// Preserves thinking traces from LLM responses in a dedicated column.
+    /// Previously, thinking was either stripped before storage (normal messages)
+    /// or concatenated inline in the content field (pre-tool messages).
+    /// The `thinking_content` column stores the thinking separately, keeping
+    /// the `content` field clean for display and retrieval.
+    ///
+    /// Reference: Arabzadeh et al. 2026, arXiv:2605.03344
+    fn migrate_v13_to_v14(conn: &Connection) -> Result<()> {
+        conn.execute_batch("ALTER TABLE content_items ADD COLUMN thinking_content TEXT;")?;
+        log::info!("Migration v13→v14: Added thinking_content column to content_items");
+        Ok(())
+    }
+
     /// Apply incremental schema migrations (dispatcher)
     fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
         if from_version < 3 {
@@ -650,6 +665,9 @@ impl Database {
         }
         if from_version < 13 {
             Self::migrate_v12_to_v13(conn)?;
+        }
+        if from_version < 14 {
+            Self::migrate_v13_to_v14(conn)?;
         }
         Ok(())
     }
@@ -762,6 +780,54 @@ impl Database {
             )))
         })?;
         f(&mut conn)
+    }
+
+    /// Normalize inline thinking tags in existing content items.
+    ///
+    /// Prior to v14, pre-tool messages stored `<thinking>` content inline in the
+    /// `content` field. After v14, thinking is stored in a separate `thinking_content`
+    /// column. This method migrates existing rows by:
+    /// 1. Selecting rows where `content LIKE '%<thinking>%'`
+    /// 2. Calling the provided `split_fn` to separate thinking from content
+    /// 3. Updating the row: `content` = clean text, `thinking_content` = thinking text
+    ///
+    /// The `split_fn` parameter avoids a circular dependency: the `db` module does
+    /// not import `chat::thinking::process_thinking`. The caller (e.g., `repl.rs`)
+    /// passes `process_thinking` as the closure.
+    ///
+    /// Returns the number of rows normalized.
+    pub fn normalize_inline_thinking<F>(&self, split_fn: F) -> Result<u64>
+    where
+        F: Fn(&str) -> (Option<String>, String),
+    {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content FROM content_items WHERE content LIKE '%<thinking>%'",
+            )?;
+            let rows: Vec<(i64, String)> = stmt
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let count = rows.len();
+            if count == 0 {
+                log::debug!("No inline thinking rows to normalize");
+                return Ok(0u64);
+            }
+
+            for (id, content) in &rows {
+                let (thinking, clean_content) = split_fn(content);
+                conn.execute(
+                    "UPDATE content_items SET content = ?, thinking_content = ? WHERE id = ?",
+                    rusqlite::params![clean_content, thinking, id],
+                )?;
+            }
+
+            log::info!(
+                "Normalized {} content items with inline thinking tags",
+                count
+            );
+            Ok(count as u64)
+        })
     }
 }
 

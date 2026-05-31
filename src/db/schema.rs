@@ -9,7 +9,7 @@
 //! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 13;
+pub const SCHEMA_VERSION: i32 = 14;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS content_items (
     
     -- Common fields (all content types)
     content TEXT NOT NULL,
+    thinking_content TEXT,
     importance REAL DEFAULT 0.5,
     access_count INTEGER DEFAULT 0,
     decay_score REAL DEFAULT 1.0,

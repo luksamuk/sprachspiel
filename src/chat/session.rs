@@ -151,6 +151,9 @@ pub struct ActiveSkill {
 pub struct SavedMessage {
     pub role: MessageRole,
     pub content: String,
+    /// Thinking content from the LLM response (preserved for Thinking Trace Transform)
+    #[serde(default)]
+    pub thinking: Option<String>,
     pub timestamp: DateTime<Utc>,
     /// Prompt tokens used in this interaction (real count from Ollama)
     #[serde(default)]
@@ -168,6 +171,7 @@ impl Default for SavedMessage {
         Self {
             role: MessageRole::User,
             content: String::new(),
+            thinking: None,
             timestamp: Utc::now(),
             prompt_tokens: None,
             message_type: None,
@@ -248,6 +252,7 @@ impl ChatSession {
                         _ => MessageRole::Tool,
                     },
                     content: item.content,
+                    thinking: item.thinking_content,
                     timestamp: item.created_at,
                     prompt_tokens: item.prompt_tokens.map(|t| t as u64),
                     message_type: item.message_type,
@@ -363,6 +368,7 @@ impl ChatSession {
                 None,
                 None,
                 &content,
+                None, // thinking_content — user messages never have thinking
                 0.5,
                 self.project_id.as_deref(),
                 now,
@@ -504,6 +510,7 @@ impl ChatSession {
         self.messages.push(SavedMessage {
             role: MessageRole::Assistant,
             content: content.clone(),
+            thinking: None, // wired in Step 7
             timestamp: now,
             prompt_tokens,
             message_type: None,
@@ -531,6 +538,7 @@ impl ChatSession {
                 None,
                 None,
                 &content,
+                None, // thinking_content — will be wired in Step 7
                 0.5,
                 self.project_id.as_deref(),
                 now,
@@ -673,12 +681,8 @@ impl ChatSession {
         // Ensure conversation exists
         self.ensure_conversation_exists();
 
-        // Combine thinking and content for storage
-        let full_content = if let Some(thinking) = thinking_content {
-            format!("<thinking>\n{}\n</thinking>\n\n{}", thinking, content)
-        } else {
-            content
-        };
+        // Store thinking separately in thinking_content column, content stays clean
+        // (Previously, thinking was concatenated inline as <thinking> tags in content)
 
         // Insert with message_type = "pre_tool_content"
         match db.insert_content_item(
@@ -691,7 +695,8 @@ impl ChatSession {
             None,
             None,
             None,
-            &full_content,
+            &content,
+            thinking_content.as_deref(),
             0.5,
             self.project_id.as_deref(),
             now,
@@ -703,7 +708,7 @@ impl ChatSession {
                     let db = Arc::clone(db);
                     let conv_id = self.id.clone();
                     let timestamp = now;
-                    let content_clone = full_content.clone();
+                    let content_clone = content.clone();
                     let project_id = self.project_id.clone();
                     let progress_tx = self.embedding_tx.clone();
 
