@@ -2005,7 +2005,7 @@ pub fn format_context_info(
             .with_soulless(soulless),
     );
 
-    let history_messages = session.get_messages_for_llm(&system_prompt);
+    let history_messages = session.get_messages_for_llm(&system_prompt, settings.thinking_trace.enabled);
     let context_window = model_config.num_ctx as usize;
 
     let tool_count = if tools_enabled {

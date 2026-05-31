@@ -220,7 +220,9 @@ pub fn build_pre_tool_prompt(state: &ReplState) -> String {
 }
 
 /// Result of processing continuation(s) after context compaction
+/// Result of processing continuation(s) after context compaction
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // pre_tool_content/thinking: for TUI display in Phase 1
 pub struct ContinuationResult {
     pub response: String,
     /// Accumulated thinking content from all continuation turns

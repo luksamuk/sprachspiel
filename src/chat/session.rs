@@ -1054,7 +1054,10 @@ impl ChatSession {
     }
 
     /// Get messages to send to LLM (summary + recent messages)
-    pub fn get_messages_for_llm(&self, system_prompt: &str) -> Vec<ChatMessage> {
+    ///
+    /// When `include_thinking` is true, assistant messages with preserved thinking
+    /// content include their reasoning traces in the `ChatMessage.thinking` field.
+    pub fn get_messages_for_llm(&self, system_prompt: &str, include_thinking: bool) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
 
         // Add system message
@@ -1077,7 +1080,11 @@ impl ChatSession {
                     messages.push(ChatMessage::user(msg.content.clone()));
                 }
                 MessageRole::Assistant => {
-                    messages.push(ChatMessage::assistant(msg.content.clone()));
+                    let mut chat_msg = ChatMessage::assistant(msg.content.clone());
+                    if include_thinking {
+                        chat_msg.thinking = msg.thinking.clone();
+                    }
+                    messages.push(chat_msg);
                 }
                 MessageRole::System => {
                     // System messages are handled separately
@@ -1299,7 +1306,7 @@ mod tests {
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 3)));
 
         // get_messages_for_llm should return system + summary + messages 3,4
-        let messages = session.get_messages_for_llm("You are helpful.");
+        let messages = session.get_messages_for_llm("You are helpful.", false);
 
         // 1 system + 1 summary + 2 messages = 4
         assert_eq!(messages.len(), 4);
