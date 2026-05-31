@@ -13,7 +13,7 @@ use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
 };
-use crate::consts::roles::ROLE_USER;
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
 use crate::db::WhereBuilder;
 use crate::db::blob_to_f32_vec;
@@ -478,10 +478,10 @@ impl Database {
             // receive embeddings.
             let empty_messages: usize = conn.execute(
                 "DELETE FROM content_items
-                 WHERE role = 'assistant'
+                 WHERE role = ?1
                  AND content = ''
                  AND content_type = 'message'",
-                [],
+                params![ROLE_ASSISTANT],
             )?;
 
             // 2. Delete orphan chunks (no matching parent item).

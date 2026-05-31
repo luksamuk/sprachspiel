@@ -153,9 +153,9 @@ pub async fn verify_and_dedup_facts(
         let _ = tx.send(EmbeddingProgress::new(
             EmbeddingPhase::FactDedup,
             facts_processed, // entities_current: facts with embeddings (loaded or generated)
-            facts_total,    // entities_total: total facts checked
+            facts_total,     // entities_total: total facts checked
             facts_processed, // embeddings_current: same as entities (1:1 ratio)
-            facts_total,    // embeddings_total: same as entities_total (1:1 ratio)
+            facts_total,     // embeddings_total: same as entities_total (1:1 ratio)
         ));
     }
 

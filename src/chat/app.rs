@@ -52,6 +52,9 @@ pub enum EmbeddingPhase {
 /// - `60/100` — entities processed/total (yellow, bold)
 /// - `📄` — phase emoji (plain)
 /// - `65/105↗` — embeddings processed/total (cyan, bold); `↗` when embeddings > entities
+///
+/// Completion is signaled explicitly via `completed: true` rather than by
+/// comparing counter values to avoid sentinel values like `usize::MAX`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmbeddingProgress {
     pub phase: EmbeddingPhase,
@@ -59,16 +62,20 @@ pub struct EmbeddingProgress {
     pub entities_total: usize,
     pub embeddings_current: usize,
     pub embeddings_total: usize,
+    /// Explicit completion flag. When true, the indexing pipeline has finished
+    /// and the progress indicator should be cleared regardless of counter values.
+    pub completed: bool,
 }
 
 impl EmbeddingProgress {
     pub fn completed() -> Self {
         Self {
             phase: EmbeddingPhase::Content,
-            entities_current: usize::MAX,
-            entities_total: usize::MAX,
-            embeddings_current: usize::MAX,
-            embeddings_total: usize::MAX,
+            entities_current: 0,
+            entities_total: 0,
+            embeddings_current: 0,
+            embeddings_total: 0,
+            completed: true,
         }
     }
 
@@ -85,12 +92,12 @@ impl EmbeddingProgress {
             entities_total,
             embeddings_current,
             embeddings_total,
+            completed: false,
         }
     }
 
     pub fn is_completed(&self) -> bool {
-        self.entities_current >= self.entities_total
-            && self.embeddings_current >= self.embeddings_total
+        self.completed
     }
 }
 
