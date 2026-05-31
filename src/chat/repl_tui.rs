@@ -38,6 +38,7 @@ use std::sync::Arc;
 use crossterm::event::{self, Event as CrosstermEvent};
 use tokio_util::sync::CancellationToken;
 
+use super::app::{EmbeddingPhase, EmbeddingProgress};
 use super::event_loop::{self, LoopAction};
 use super::input::InputResult;
 use super::llm_event::LlmEvent;
@@ -159,7 +160,8 @@ pub async fn run_chat_repl_tui(
     // next startup by this same background pipeline.
     if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
         // Show indexing indicator while regenerating embeddings
-        view.app_mut().set_embedding_progress(0, 1);
+        view.app_mut()
+            .set_embedding_progress(EmbeddingProgress::new(EmbeddingPhase::Content, 0, 1, 0, 1));
         view.render();
 
         // Embedding progress channel — reports current/total to the TUI status bar
@@ -238,11 +240,11 @@ pub async fn run_chat_repl_tui(
 
             // Signal completion to the TUI status bar.
             // All recovery functions now send their own progress via the channel,
-            // but send a guaranteed final (MAX, MAX) to ensure the indicator
+            // but send a guaranteed final completion signal to ensure the indicator
             // is cleared even if any function returned early due to an error
             // without signaling completion.
             if let Some(ref tx) = tx {
-                let _ = tx.send((usize::MAX, usize::MAX));
+                let _ = tx.send(EmbeddingProgress::completed());
             }
         });
     }

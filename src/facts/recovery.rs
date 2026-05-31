@@ -19,7 +19,7 @@
 use std::sync::Arc;
 
 use super::embedding::generate_fact_embedding;
-use crate::chat::app::EmbeddingProgressTx;
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
@@ -58,7 +58,13 @@ pub async fn recover_missing_fact_embeddings(
 
     // Report initial progress so the status bar shows count
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((0, total));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Facts,
+            0,
+            total,
+            0,
+            total,
+        ));
     }
 
     let mut recovered = 0;
@@ -68,7 +74,13 @@ pub async fn recover_missing_fact_embeddings(
         if content.trim().is_empty() {
             processed += 1;
             if let Some(ref tx) = progress_tx {
-                let _ = tx.send((processed, total));
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Facts,
+                    processed,
+                    total,
+                    processed,
+                    total,
+                ));
             }
             continue;
         }
@@ -104,7 +116,13 @@ pub async fn recover_missing_fact_embeddings(
         }
         processed += 1;
         if let Some(ref tx) = progress_tx {
-            let _ = tx.send((processed, total));
+            let _ = tx.send(EmbeddingProgress::new(
+                EmbeddingPhase::Facts,
+                processed,
+                total,
+                processed,
+                total,
+            ));
         }
     }
 
@@ -114,7 +132,7 @@ pub async fn recover_missing_fact_embeddings(
 
     // Signal completion
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((total, total));
+        let _ = tx.send(EmbeddingProgress::completed());
     }
 
     // Post-recovery verification: check if any facts still lack embeddings

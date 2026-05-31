@@ -25,8 +25,8 @@
 
 use crate::chat::command_output::{
     CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactListData,
-    FactListScopeData, FactRemoveResult, FactSearchData, NoteAddResult, NoteListData, ReindexData,
-    SessionListData, SkillListData, TodoListData,
+    FactListScopeData, FactRemoveResult, FactSearchData, GcData, NoteAddResult, NoteListData,
+    ReindexData, SessionListData, SkillListData, TodoListData,
 };
 use crate::chat::session::ChatSession;
 use crate::chat::strip_thinking_tags;
@@ -344,6 +344,7 @@ impl ChatView for RatatuiView {
             CommandOutput::SkillList(data) => self.render_skill_list(data),
             CommandOutput::DocumentList(data) => self.render_document_list(data),
             CommandOutput::ContentPruneResult(data) => self.render_content_prune(data),
+            CommandOutput::GcResult(data) => self.render_gc(data),
             CommandOutput::SearchResults(data) => {
                 self.app
                     .add_message(ChatMessage::assistant_markdown(data.formatted.clone()));
@@ -809,6 +810,53 @@ impl RatatuiView {
             let clean = strip_ansi_codes(error);
             self.app.add_message(ChatMessage::error(format!(
                 "Failed to prune content: {}",
+                clean
+            )));
+        }
+    }
+
+    fn render_gc(&mut self, data: &GcData) {
+        if data.success {
+            let total = data.empty_messages_removed
+                + data.orphan_chunks_removed
+                + data.orphan_item_embeddings_removed
+                + data.orphan_chunk_embeddings_removed
+                + data.orphan_fact_embeddings_removed;
+            if total == 0 {
+                self.add_system_message("✓ Database clean — no artifacts found.");
+            } else {
+                let mut parts = Vec::new();
+                if data.empty_messages_removed > 0 {
+                    parts.push(format!("{} empty message(s)", data.empty_messages_removed));
+                }
+                if data.orphan_chunks_removed > 0 {
+                    parts.push(format!("{} orphan chunk(s)", data.orphan_chunks_removed));
+                }
+                if data.orphan_item_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan item embedding(s)",
+                        data.orphan_item_embeddings_removed
+                    ));
+                }
+                if data.orphan_chunk_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan chunk embedding(s)",
+                        data.orphan_chunk_embeddings_removed
+                    ));
+                }
+                if data.orphan_fact_embeddings_removed > 0 {
+                    parts.push(format!(
+                        "{} orphan fact embedding(s)",
+                        data.orphan_fact_embeddings_removed
+                    ));
+                }
+                let msg = format!("✓ Garbage collected: {}", parts.join(", "));
+                self.add_system_message(&msg);
+            }
+        } else if let Some(error) = &data.error {
+            let clean = strip_ansi_codes(error);
+            self.app.add_message(ChatMessage::error(format!(
+                "Failed to run garbage collection: {}",
                 clean
             )));
         }

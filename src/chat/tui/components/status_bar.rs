@@ -11,6 +11,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress};
+
 use super::super::styles;
 
 /// Status bar state for rendering
@@ -36,8 +38,8 @@ pub struct StatusBarState {
     pub spinner: Option<String>,
     /// Status label (e.g., "Thinking...", "Running tool...")
     pub status_label: Option<String>,
-    /// Embedding progress: (current, total) when embeddings are being generated
-    pub embedding_progress: Option<(usize, usize)>,
+    /// Embedding progress: current phase and counts when embeddings are being generated
+    pub embedding_progress: Option<EmbeddingProgress>,
 }
 
 impl StatusBarState {
@@ -167,14 +169,32 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
     }
 
     // Embedding progress — shown after indicators with separator
-    if let Some((current, total)) = state.embedding_progress {
+    if let Some(progress) = state.embedding_progress {
+        let phase_emoji = match progress.phase {
+            EmbeddingPhase::Content => "📄",
+            EmbeddingPhase::Facts => "💡",
+            EmbeddingPhase::FactDedup => "🔍",
+        };
+        let ahead = progress.embeddings_current > progress.entities_current;
         spans.push(Span::raw(" │ "));
         spans.push(Span::styled(
             "⚙ ",
             Style::default().add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
-            format!("{}/{}", current, total),
+            format!("{}/{}", progress.entities_current, progress.entities_total),
+            Style::default()
+                .fg(styles::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(format!(" {} · ", phase_emoji)));
+        spans.push(Span::styled(
+            format!(
+                "{}/{}{}",
+                progress.embeddings_current,
+                progress.embeddings_total,
+                if ahead { "↗" } else { "" }
+            ),
             Style::default()
                 .fg(styles::CYAN)
                 .add_modifier(Modifier::BOLD),

@@ -17,6 +17,20 @@ mod recovery;
 mod regenerate;
 mod truncate;
 
+/// Minimum content length (in bytes) for meaningful embedding generation.
+///
+/// Content shorter than this threshold produces embeddings with too little
+/// semantic signal to be useful in vector search. Items below this limit
+/// are excluded from recovery/reindex queries and will never receive
+/// embeddings. This prevents the infinite recovery loop where short items
+/// are found by `WHERE has_embedding = 0`, skipped, and left at `has_embedding = 0`
+/// on every startup.
+///
+/// This constant is used in:
+/// - SQL queries (`WHERE length(content) >= MIN_EMBED_CONTENT_LEN`)
+/// - Rust defenses in `regenerate.rs` and `recovery.rs`
+pub const MIN_EMBED_CONTENT_LEN: usize = 10;
+
 pub use chunk_config::DynamicChunkConfig;
 pub use chunker::{ChunkConfig, chunk_text, chunk_text_with_config, needs_chunking};
 pub use client::{

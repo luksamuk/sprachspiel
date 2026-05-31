@@ -6,20 +6,20 @@
 //! # Verification Pipeline
 //!
 //! 1. Ensure all facts have embeddings (delegate to recovery if needed)
-//! 2. Load all facts with embeddings
-//! 3. Generate embeddings for all facts (ensures fresh embeddings)
+//! 2. Load existing embeddings from DB (no Ollama calls for already-embedded facts)
+//! 3. Generate embeddings only for facts missing a vec0 row (rare edge case)
 //! 4. Compare all fact pairs with cosine similarity >= threshold
 //! 5. Resolve conflicts using same heuristics as FTS5 dedup:
 //!    - Duplicate → keep newer, remove older
 //!    - Contradiction → keep newer, remove older
 //!    - Global-wins-project → remove project fact
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::conflict::is_contradiction;
 use super::types::Scope;
-use crate::chat::app::EmbeddingProgressTx;
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::embeddings::cosine_similarity;
@@ -86,31 +86,77 @@ pub async fn verify_and_dedup_facts(
     if all_facts.len() < 2 {
         // Signal completion even when skipping
         if let Some(ref tx) = progress_tx {
-            let _ = tx.send((0, 0));
+            let _ = tx.send(EmbeddingProgress::completed());
         }
         return stats;
     }
 
-    // Report progress for fact embedding generation phase
-    if let Some(ref tx) = progress_tx {
-        let _ = tx.send((0, all_facts.len()));
+    let facts_total = all_facts.len();
+
+    // Step 3: Load existing embeddings from DB; generate only for missing
+    //
+    // Previously this step called generate_fact_embedding() for every fact on every
+    // startup, making N Ollama API calls even for facts that already had embeddings
+    // in the vec0 table. Now we read existing embeddings from the DB and only
+    // generate new ones for facts with missing vec0 rows (rare edge case — recovery
+    // should have caught them, but this handles the case where verification is
+    // called independently or recovery partially failed).
+    let existing_embeddings = match db.get_all_fact_embedding_vectors() {
+        Ok(vecs) => vecs,
+        Err(e) => {
+            log::warn!("Failed to load existing fact embeddings: {}", e);
+            // Fall through — we'll try generating for all facts
+            Vec::new()
+        }
+    };
+
+    let existing_map: HashMap<i64, Vec<f32>> = existing_embeddings.into_iter().collect();
+
+    let mut fact_embeddings: Vec<(i64, Vec<f32>, Scope)> = Vec::new();
+    let mut generated = 0usize;
+
+    for fact in &all_facts {
+        if let Some(emb) = existing_map.get(&fact.id) {
+            // Embedding exists in DB — reuse it (no Ollama call)
+            fact_embeddings.push((fact.id, emb.clone(), fact.scope));
+        } else {
+            // No vec0 row — generate embedding (rare: recovery should catch these)
+            match super::embedding::generate_fact_embedding(&fact.content, client).await {
+                Ok(emb) => {
+                    generated += 1;
+                    fact_embeddings.push((fact.id, emb, fact.scope));
+                }
+                Err(e) => {
+                    log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);
+                    continue;
+                }
+            }
+        }
     }
 
-    // Step 3: Generate embeddings for all facts
-    let mut fact_embeddings: Vec<(i64, Vec<f32>, Scope)> = Vec::new();
-    for (idx, fact) in all_facts.iter().enumerate() {
-        match super::embedding::generate_fact_embedding(&fact.content, client).await {
-            Ok(emb) => {
-                fact_embeddings.push((fact.id, emb, fact.scope));
-            }
-            Err(e) => {
-                log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);
-                continue;
-            }
-        }
-        if let Some(ref tx) = progress_tx {
-            let _ = tx.send((idx + 1, all_facts.len()));
-        }
+    if generated > 0 {
+        log::debug!(
+            "Generated {} new fact embedding(s) for verification (rest loaded from DB)",
+            generated
+        );
+    }
+
+    stats.embeddings_generated = recovered + generated;
+
+    // Signal completion for FactDedup phase.
+    // In the dedup phase, entities == embeddings: each fact has exactly one
+    // embedding. This differs from content indexing where 1 item may produce
+    // N chunks (entities_total != embeddings_total). Here, both counters
+    // equal facts_total because every fact gets one embedding.
+    if let Some(ref tx) = progress_tx {
+        let facts_processed = fact_embeddings.len();
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::FactDedup,
+            facts_processed, // entities_current: facts with embeddings (loaded or generated)
+            facts_total,     // entities_total: total facts checked
+            facts_processed, // embeddings_current: same as entities (1:1 ratio)
+            facts_total,     // embeddings_total: same as entities_total (1:1 ratio)
+        ));
     }
 
     // Step 4: Pair-wise comparison (O(n²) but n is typically < 100)

@@ -27,7 +27,7 @@ use std::sync::Arc;
 use super::command_output::{
     CommandOutput, CompactData, ContentPruneData, ContextData, DocumentEntry, DocumentListData,
     ExportData, ExportFormat, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
-    FactSearchResult, NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry,
+    FactSearchResult, GcData, NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry,
     SessionListData, SkillEntry, SkillListData, TodoListData,
 };
 use super::commands::{ChatCommand, FactListScope};
@@ -122,6 +122,7 @@ pub async fn handle_command(
             handle_retrieval_toggled(state, state.session.retrieval_enabled)
         }
         ChatCommand::FactPrune => handle_fact_prune(state),
+        ChatCommand::Gc => handle_gc(state),
         ChatCommand::FactAdd { content, global } => handle_fact_add(state, content, global).await,
         ChatCommand::FactList { scope } => handle_fact_list(state, scope),
         ChatCommand::FactRemove { id } => handle_fact_remove(state, id),
@@ -1142,6 +1143,69 @@ pub fn handle_content_prune(state: &ReplState) -> Vec<CommandOutput> {
             vec![CommandOutput::ContentPruneResult(ContentPruneData {
                 pruned_count: 0,
                 total_count: 0,
+                success: false,
+                error: Some(e.to_string()),
+            })]
+        }
+    }
+}
+
+/// Handle `/gc` command — garbage collect database artifacts.
+///
+/// Identifies and removes:
+/// - Empty assistant messages (artifacts from Ctrl+C cancellation)
+/// - Orphan chunks (chunks whose parent item no longer exists)
+/// - Orphan content/chunk/fact embeddings (vec0 rows without parent record)
+pub fn handle_gc(state: &ReplState) -> Vec<CommandOutput> {
+    // Check anonymous mode FIRST — the DB is never initialized in anonymous
+    // mode, so this check must come before the DB None check, otherwise the
+    // generic "Database not initialized" message hides the anonymous-specific
+    // explanation.
+    if state.session.anonymous {
+        return vec![CommandOutput::error(
+            "Cannot run garbage collection in anonymous mode.",
+        )];
+    }
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            log::warn!("Cannot run garbage collection: database not initialized");
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
+        }
+    };
+
+    match db.garbage_collect() {
+        Ok(stats) => {
+            log::debug!(
+                "Garbage collection: {} empty message(s), {} orphan chunk(s), \
+                 {} orphan item embedding(s), {} orphan chunk embedding(s), {} orphan fact embedding(s)",
+                stats.empty_messages_removed,
+                stats.orphan_chunks_removed,
+                stats.orphan_item_embeddings_removed,
+                stats.orphan_chunk_embeddings_removed,
+                stats.orphan_fact_embeddings_removed,
+            );
+            vec![CommandOutput::GcResult(GcData {
+                empty_messages_removed: stats.empty_messages_removed,
+                orphan_chunks_removed: stats.orphan_chunks_removed,
+                orphan_item_embeddings_removed: stats.orphan_item_embeddings_removed,
+                orphan_chunk_embeddings_removed: stats.orphan_chunk_embeddings_removed,
+                orphan_fact_embeddings_removed: stats.orphan_fact_embeddings_removed,
+                success: true,
+                error: None,
+            })]
+        }
+        Err(e) => {
+            log::warn!("Failed to run garbage collection: {}", e);
+            vec![CommandOutput::GcResult(GcData {
+                empty_messages_removed: 0,
+                orphan_chunks_removed: 0,
+                orphan_item_embeddings_removed: 0,
+                orphan_chunk_embeddings_removed: 0,
+                orphan_fact_embeddings_removed: 0,
                 success: false,
                 error: Some(e.to_string()),
             })]

@@ -189,6 +189,8 @@ pub enum ChatCommand {
     },
     /// Prune content based on decay/importance
     ContentPrune,
+    /// Garbage collect database artifacts (empty messages, orphans)
+    Gc,
 }
 
 /// Export format for /export command
@@ -1014,6 +1016,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             ChatCommand::Reindex { confirmed }
         }
         "retrieval" => ChatCommand::Retrieval,
+        "gc" => ChatCommand::Gc,
         "fact" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -1206,6 +1209,7 @@ Feedback:
 
 Content Management:
   /content prune   Prune low-retention content using decay cycle
+  /gc               Clean up database artifacts (empty messages, orphans)
 
 Notes:
   /note add <content> [--title <title>] [--global]   Add a note

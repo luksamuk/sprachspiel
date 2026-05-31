@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::app::{EmbeddingPhase, EmbeddingProgress};
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
@@ -122,7 +123,7 @@ pub struct ChatSession {
     #[serde(default)]
     pub active_skill: Option<ActiveSkill>,
     /// Channel sender for embedding progress updates.
-    /// Background embedding tasks send (current, total) tuples to update the status bar.
+    /// Background embedding tasks send `EmbeddingProgress` to update the status bar.
     #[serde(skip)]
     pub embedding_tx: Option<crate::chat::app::EmbeddingProgressTx>,
     /// Channel sender for async system messages from background tasks.
@@ -410,9 +411,15 @@ impl ChatSession {
                         };
 
                         // Generate embeddings asynchronously (can be interrupted, will be recovered)
-                        // Report progress to TUI status bar: (0,1) = starting
+                        // Report progress to TUI status bar
                         if let Some(ref tx) = progress_tx {
-                            let _ = tx.send((0, 1));
+                            let _ = tx.send(EmbeddingProgress::new(
+                                EmbeddingPhase::Content,
+                                0,
+                                1,
+                                0,
+                                1,
+                            ));
                         }
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
@@ -455,7 +462,7 @@ impl ChatSession {
                             }
                             // Signal completion to the TUI status bar
                             if let Some(ref tx) = progress_tx {
-                                let _ = tx.send((1, 1));
+                                let _ = tx.send(EmbeddingProgress::completed());
                             }
                         });
                     }
@@ -472,11 +479,25 @@ impl ChatSession {
     /// Add an assistant message to the session
     ///
     /// Returns the message ID if saved to database, None otherwise.
+    ///
+    /// Empty or whitespace-only content is rejected — this prevents
+    /// cancelled LLM streams from persisting empty assistant messages
+    /// that have no semantic value and can never receive embeddings.
     pub fn add_assistant_message(
         &mut self,
         content: String,
         prompt_tokens: Option<u64>,
     ) -> Option<i64> {
+        // Reject empty assistant messages — these are artifacts from
+        // Ctrl+C cancellation where the stream was interrupted before
+        // any tokens were generated. Empty messages have no semantic
+        // value, confuse the LLM with empty turns, and can never
+        // receive embeddings (permanently stuck at has_embedding = 0).
+        if content.trim().is_empty() {
+            log::debug!("Skipping empty assistant message — likely from stream cancellation");
+            return None;
+        }
+
         let now = Utc::now();
 
         // Add to memory (immediate)
@@ -558,9 +579,15 @@ impl ChatSession {
                         };
 
                         // Generate embeddings asynchronously (can be interrupted, will be recovered)
-                        // Report progress to TUI status bar: (0,1) = starting
+                        // Report progress to TUI status bar
                         if let Some(ref tx) = progress_tx {
-                            let _ = tx.send((0, 1));
+                            let _ = tx.send(EmbeddingProgress::new(
+                                EmbeddingPhase::Content,
+                                0,
+                                1,
+                                0,
+                                1,
+                            ));
                         }
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
@@ -603,13 +630,13 @@ impl ChatSession {
                             }
                             // Signal completion to the TUI status bar
                             if let Some(ref tx) = progress_tx {
-                                let _ = tx.send((1, 1));
+                                let _ = tx.send(EmbeddingProgress::completed());
                             }
                         });
                     }
                 }
                 Err(e) => {
-                    log::warn!("Could not save message to database: {}", e);
+                    log::warn!("Could not save assistant message to database: {}", e);
                 }
             }
         }
@@ -680,9 +707,10 @@ impl ChatSession {
                     let project_id = self.project_id.clone();
                     let progress_tx = self.embedding_tx.clone();
 
-                    // Report progress to TUI status bar: (0,1) = starting
+                    // Report progress to TUI status bar
                     if let Some(ref tx) = progress_tx {
-                        let _ = tx.send((0, 1));
+                        let _ =
+                            tx.send(EmbeddingProgress::new(EmbeddingPhase::Content, 0, 1, 0, 1));
                     }
                     tokio::spawn(async move {
                         if crate::embeddings::needs_chunking(&content_clone) {
@@ -731,7 +759,7 @@ impl ChatSession {
                         }
                         // Signal completion to the TUI status bar
                         if let Some(ref tx) = progress_tx {
-                            let _ = tx.send((1, 1));
+                            let _ = tx.send(EmbeddingProgress::completed());
                         }
                     });
                 }

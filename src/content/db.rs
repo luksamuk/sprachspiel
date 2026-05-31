@@ -13,7 +13,7 @@ use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
 };
-use crate::consts::roles::ROLE_USER;
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
 use crate::db::WhereBuilder;
 use crate::db::blob_to_f32_vec;
@@ -410,15 +410,26 @@ impl Database {
     ///
     /// Returns (item_id, content_type, content) for items that need embedding generation.
     /// Used during migration to regenerate embeddings from content.
+    ///
+    /// Filters out items with content shorter than `MIN_EMBED_CONTENT_LEN`
+    /// (10 bytes) or empty content — these produce embeddings with too
+    /// little semantic signal and were previously stuck in an infinite
+    /// recovery loop (found by `has_embedding = 0`, skipped, left at
+    /// `has_embedding = 0` on every startup).
     pub fn get_content_items_for_reindex(&self) -> Result<Vec<(i64, String, String)>> {
         self.with_connection(|conn| {
+            let min_len = crate::embeddings::MIN_EMBED_CONTENT_LEN as i64;
             let mut stmt = conn.prepare(
                 "SELECT id, content_type, content FROM content_items 
                  WHERE has_embedding = 0 
+                 AND length(content) >= ?1 
+                 AND content != ''
                  ORDER BY created_at ASC",
             )?;
 
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            let rows = stmt.query_map(params![min_len], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?;
 
             rows.collect::<Result<Vec<_>, _>>()
         })
@@ -428,19 +439,108 @@ impl Database {
     ///
     /// Returns (chunk_id, content) for chunks that need embedding generation.
     /// Used during migration to regenerate embeddings from chunk content.
+    ///
+    /// Filters out chunks with content shorter than `MIN_EMBED_CONTENT_LEN`
+    /// (10 bytes) or empty content — same rationale as `get_content_items_for_reindex`.
     pub fn get_content_chunks_for_reindex(&self) -> Result<Vec<(i64, String)>> {
         self.with_connection(|conn| {
+            let min_len = crate::embeddings::MIN_EMBED_CONTENT_LEN as i64;
             let mut stmt = conn.prepare(
                 "SELECT id, content FROM content_chunks 
                  WHERE has_embedding = 0 
+                 AND length(content) >= ?1 
+                 AND content != ''
                  ORDER BY created_at ASC",
             )?;
 
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            let rows = stmt.query_map(params![min_len], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
             rows.collect::<Result<Vec<_>, _>>()
         })
     }
+
+    /// Garbage-collect database artifacts.
+    ///
+    /// Removes:
+    /// - Empty assistant messages (artifacts from Ctrl+C cancellation)
+    /// - Orphan chunks (chunks whose parent item no longer exists)
+    /// - Orphan content embeddings (vec0 rows whose parent item was deleted)
+    /// - Orphan chunk embeddings (vec0 rows whose parent chunk was deleted)
+    /// - Orphan fact embeddings (vec0 rows whose parent fact was deleted)
+    ///
+    /// Returns counts of removed items for reporting.
+    pub fn garbage_collect(&self) -> Result<GcStats> {
+        self.with_connection(|conn| {
+            // 1. Delete empty assistant messages.
+            // These are artifacts from Ctrl+C cancellation where the stream
+            // was interrupted before any tokens were generated. They have no
+            // semantic value, confuse the LLM with empty turns, and can never
+            // receive embeddings.
+            let empty_messages: usize = conn.execute(
+                "DELETE FROM content_items
+                 WHERE role = ?1
+                 AND content = ''
+                 AND content_type = 'message'",
+                params![ROLE_ASSISTANT],
+            )?;
+
+            // 2. Delete orphan chunks (no matching parent item).
+            // These can appear if an item was deleted but its chunks weren't
+            // cleaned up, or if chunk insertion succeeded but the parent item
+            // insertion failed.
+            let orphan_chunks: usize = conn.execute(
+                "DELETE FROM content_chunks
+                 WHERE item_id NOT IN (SELECT id FROM content_items)",
+                [],
+            )?;
+
+            // 3. Delete orphan content embeddings (item deleted but vec0 row remains).
+            // Can happen if a content_item was hard-deleted (e.g. via /content prune)
+            // but the associated vec0 row wasn't cleaned up.
+            let orphan_item_embeddings: usize = conn.execute(
+                "DELETE FROM content_embeddings
+                 WHERE item_id NOT IN (SELECT id FROM content_items)",
+                [],
+            )?;
+
+            // 4. Delete orphan chunk embeddings (chunk deleted but vec0 row remains).
+            let orphan_chunk_embeddings: usize = conn.execute(
+                "DELETE FROM chunk_embeddings_v2
+                 WHERE chunk_id NOT IN (SELECT id FROM content_chunks)",
+                [],
+            )?;
+
+            // 5. Delete orphan fact embeddings (fact deleted but vec0 row remains).
+            let orphan_fact_embeddings: usize = conn.execute(
+                "DELETE FROM fact_embeddings
+                 WHERE fact_id NOT IN (SELECT id FROM facts)",
+                [],
+            )?;
+
+            Ok(GcStats {
+                empty_messages_removed: empty_messages,
+                orphan_chunks_removed: orphan_chunks,
+                orphan_item_embeddings_removed: orphan_item_embeddings,
+                orphan_chunk_embeddings_removed: orphan_chunk_embeddings,
+                orphan_fact_embeddings_removed: orphan_fact_embeddings,
+            })
+        })
+    }
+}
+
+/// Statistics returned by [`Database::garbage_collect`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GcStats {
+    /// Number of empty assistant messages removed
+    pub empty_messages_removed: usize,
+    /// Number of orphan chunks removed
+    pub orphan_chunks_removed: usize,
+    /// Number of orphan content embeddings removed (vec0 rows without parent item)
+    pub orphan_item_embeddings_removed: usize,
+    /// Number of orphan chunk embeddings removed (vec0 rows without parent chunk)
+    pub orphan_chunk_embeddings_removed: usize,
+    /// Number of orphan fact embeddings removed (vec0 rows without parent fact)
+    pub orphan_fact_embeddings_removed: usize,
 }
 
 /// Statistics returned by [`Database::reset_all_embedding_flags`].
@@ -521,6 +621,8 @@ impl Database {
     /// Update content item embedding after generation
     ///
     /// Inserts the embedding into content_embeddings and marks the item as having embedding.
+    /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
+    /// (UNIQUE constraint on item_id PRIMARY KEY). This makes re-embedding safe.
     pub fn update_content_item_embedding(
         &self,
         item_id: i64,
@@ -533,6 +635,15 @@ impl Database {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+
+            // DELETE first: vec0 does not support INSERT OR REPLACE.
+            // If the item already has an embedding, the old row must be removed
+            // before inserting the new one, otherwise the UNIQUE constraint on
+            // item_id (PRIMARY KEY) would cause the INSERT to fail.
+            conn.execute(
+                "DELETE FROM content_embeddings WHERE item_id = ?1",
+                params![item_id],
+            )?;
 
             conn.execute(
                 "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
@@ -559,6 +670,8 @@ impl Database {
     /// Update content chunk embedding after generation
     ///
     /// Inserts the embedding into chunk_embeddings_v2 and marks the chunk as having embedding.
+    /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
+    /// (UNIQUE constraint on chunk_id PRIMARY KEY). This makes re-embedding safe.
     pub fn update_content_chunk_embedding(
         &self,
         chunk_id: i64,
@@ -571,6 +684,15 @@ impl Database {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+
+            // DELETE first: vec0 does not support INSERT OR REPLACE.
+            // If the chunk already has an embedding, the old row must be removed
+            // before inserting the new one, otherwise the UNIQUE constraint on
+            // chunk_id (PRIMARY KEY) would cause the INSERT to fail.
+            conn.execute(
+                "DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ?1",
+                params![chunk_id],
+            )?;
 
             conn.execute(
                 "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp)

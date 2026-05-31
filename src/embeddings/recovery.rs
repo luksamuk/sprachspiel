@@ -45,9 +45,11 @@
 use chrono::Utc;
 use std::sync::Arc;
 
+use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::{
-    ChunkConfig, DynamicChunkConfig, EmbeddingClient, chunk_text_with_config,
+    ChunkConfig, DynamicChunkConfig, EmbeddingClient, MIN_EMBED_CONTENT_LEN,
+    chunk_text_with_config,
     fallback::{
         EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
     },
@@ -71,7 +73,7 @@ pub async fn recover_missing_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     quiet: bool,
-    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
+    progress_tx: Option<EmbeddingProgressTx>,
 ) -> usize {
     // Clean up V2 orphan chunks (those with wrong item_id mapping)
     let orphan_deleted = match db.with_connection(|conn| {
@@ -143,9 +145,20 @@ pub async fn recover_missing_embeddings(
     // Track processed count manually for accurate progress.
     let mut processed: usize = 0;
 
+    // Entity counts track items (documents/messages); embedding counts track
+    // individual vector index operations (may exceed entities when chunking).
+    let entities_total = items.len();
+    let mut entities_current: usize = 0;
+
     // Report initial progress so the status bar shows total count
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((0, total_missing));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            0,
+            entities_total,
+            0,
+            total_missing,
+        ));
     }
 
     let mut recovered = 0;
@@ -155,11 +168,25 @@ pub async fn recover_missing_embeddings(
     for (item_id, content_type, content) in &items {
         let timestamp = now;
 
-        // Skip if content is empty or too short for meaningful embedding
-        if content.trim().is_empty() || content.len() < 10 {
+        // Skip if content is empty or too short for meaningful embedding.
+        // The SQL query already filters by MIN_EMBED_CONTENT_LEN, but this
+        // check is a defense-in-depth in case the query changes.
+        if content.trim().is_empty() || content.len() < MIN_EMBED_CONTENT_LEN {
+            log::debug!(
+                "Skipping item {}: content too short for embedding ({} bytes)",
+                item_id,
+                content.len()
+            );
             processed += 1;
+            entities_current += 1;
             if let Some(ref tx) = progress_tx {
-                let _ = tx.send((processed, total_missing));
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Content,
+                    entities_current,
+                    entities_total,
+                    processed,
+                    total_missing,
+                ));
             }
             continue;
         }
@@ -168,8 +195,15 @@ pub async fn recover_missing_embeddings(
         // If so, skip item embedding - chunks are handled separately
         if db.content_item_has_chunks(*item_id).unwrap_or(false) {
             processed += 1;
+            entities_current += 1;
             if let Some(ref tx) = progress_tx {
-                let _ = tx.send((processed, total_missing));
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Content,
+                    entities_current,
+                    entities_total,
+                    processed,
+                    total_missing,
+                ));
             }
             continue;
         }
@@ -248,7 +282,13 @@ pub async fn recover_missing_embeddings(
                 }
                 processed += 1;
                 if let Some(ref tx) = progress_tx {
-                    let _ = tx.send((processed, total_missing));
+                    let _ = tx.send(EmbeddingProgress::new(
+                        EmbeddingPhase::Content,
+                        entities_current,
+                        entities_total,
+                        processed,
+                        total_missing,
+                    ));
                 }
             }
 
@@ -290,8 +330,15 @@ pub async fn recover_missing_embeddings(
                 }
             }
             processed += 1;
+            entities_current += 1;
             if let Some(ref tx) = progress_tx {
-                let _ = tx.send((processed, total_missing));
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Content,
+                    entities_current,
+                    entities_total,
+                    processed,
+                    total_missing,
+                ));
             }
         }
     }
@@ -335,8 +382,15 @@ pub async fn recover_missing_embeddings(
                         );
                     }
                     processed += 1;
+                    entities_current += 1;
                     if let Some(ref tx) = progress_tx {
-                        let _ = tx.send((processed, total_missing));
+                        let _ = tx.send(EmbeddingProgress::new(
+                            EmbeddingPhase::Content,
+                            entities_current,
+                            entities_total,
+                            processed,
+                            total_missing,
+                        ));
                     }
                     continue;
                 }
@@ -379,15 +433,22 @@ pub async fn recover_missing_embeddings(
                 }
             }
             processed += 1;
+            entities_current += 1;
             if let Some(ref tx) = progress_tx {
-                let _ = tx.send((processed, total_missing));
+                let _ = tx.send(EmbeddingProgress::new(
+                    EmbeddingPhase::Content,
+                    entities_current,
+                    entities_total,
+                    processed,
+                    total_missing,
+                ));
             }
         }
     }
 
     // Signal completion to the TUI status bar
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send((total_missing, total_missing));
+        let _ = tx.send(EmbeddingProgress::completed());
     }
 
     if recovered > 0 && !quiet {

@@ -97,10 +97,14 @@ pub async fn process_send_result(
             )
         };
 
-    // Save the final response (merged with continuations if any)
-    state.last_assistant_message_id = state
+    // Save the final response (merged with continuations if any).
+    // Empty responses (from Ctrl+C cancellation where no tokens were
+    // generated) are rejected by add_assistant_message() — no empty
+    // assistant messages are persisted.
+    let msg_id = state
         .session
         .add_assistant_message(final_response.clone(), Some(final_metrics.prompt_tokens));
+    state.last_assistant_message_id = msg_id;
 
     if final_metrics.total_tokens > 0 {
         view.show_token_metrics(&TokenMetrics {
