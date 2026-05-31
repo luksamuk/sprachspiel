@@ -453,15 +453,15 @@
 
 ---
 
-### D-09: t3_status Deferred from T3-Phase0 to T3-Phase1
+### D-09: thinking_trace_status Deferred from T3-Phase0 to T3-Phase1
 
-- **Decision:** `t3_status` column and `T3Status` enum are deferred to T3-Phase1 (2026-05-31)
+- **Decision:** `thinking_trace_status` column and `ThinkingTraceStatus` enum are deferred to T3-Phase1 (2026-05-31)
 - **Reasons:**
   1. In Phase 0, there are only 2 meaningful states: "has thinking" and "no thinking." This is equivalent to `thinking_content IS NOT NULL`, making a separate column redundant.
-  2. The 3+ state machine (`None` → `Raw` → `Pending` → `Done`) only becomes necessary in Phase 1 when the T3 transform pipeline needs to track processing state.
-  3. Adding the column now would be YAGNI — no code reads `t3_status` in Phase 0 because no pipeline exists to process it.
-  4. Adding later is cheap: `ALTER TABLE content_items ADD COLUMN t3_status INTEGER DEFAULT 0` (1 byte per row, backward compatible, no vec0 changes).
-- **Phase 1 scope:** Add `t3_status INTEGER DEFAULT 0` column. Implement `T3Status` enum: `None=0` (no thinking), `Raw=1` (thinking preserved, awaiting transform), `Pending=2` (transform in progress), `Done=3` (transform completed, trace in `thinking_traces` table).
+  2. The 3+ state machine (`None` → `Raw` → `Pending` → `Done`) only becomes necessary in Phase 1 when the Thinking Trace Transform pipeline needs to track processing state.
+  3. Adding the column now would be YAGNI — no code reads `thinking_trace_status` in Phase 0 because no pipeline exists to process it.
+  4. Adding later is cheap: `ALTER TABLE content_items ADD COLUMN thinking_trace_status INTEGER DEFAULT 0` (1 byte per row, backward compatible, no vec0 changes).
+- **Phase 1 scope:** Add `thinking_trace_status INTEGER DEFAULT 0` column. Implement `ThinkingTraceStatus` enum: `None=0` (no thinking), `Raw=1` (thinking preserved, awaiting transform), `Pending=2` (transform in progress), `Done=3` (transform completed, trace in `thinking_traces` table).
 - **Revisit when:** T3-Phase1 (#152) implementation begins
 
 ---

@@ -186,7 +186,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 - **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandOutput → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
 - **W7**: starts after W6-PR3 (#147) is merged and W4.5 (T3-Phase0) is complete. Sub-phases:
-  - **W7.0** (#152): T3-Phase1 — ThinkingTrace Pipeline + Struct Transform. Background job, same-model/CPU-fallback cascade, `[t3]` config section. **Do not start before #147 merged.**
+  - **W7.0** (#152): T3-Phase1 — ThinkingTrace Pipeline + Struct Transform. Background job, same-model/CPU-fallback cascade, `[thinking_trace]` config section (already created in Phase 0). **Do not start before #147 merged.**
   - **W7.1** (#153 + #137): T3-Phase2 (Thinking-Aware Retrieval + RRF Fusion) + Geometry-Aware RRF. RRF weights adapt to d_eff and are aware of thinking traces. #137 moved from W4.6 so RRF is designed with trace awareness from the start.
 
 ### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
@@ -272,7 +272,7 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 ### 🔴 PRIORITY 0: T3-Phase0 — Preserve Thinking Content + Schema Foundation [M1]
 
-**Status:** 📋 NOT STARTED
+**Status:** 🔄 IN PROGRESS
 **Issue:** #151
 **Depends on:** None (dependency on #107 was artificial — re-embedding uses existing `/reindex --yes` recovery pipeline; #136 decoupled — see D-11)
 
@@ -297,45 +297,59 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 **Key Insight:** `process_thinking()` already correctly splits thinking from content, but callers use `strip_thinking_tags()` for storage. The preservation path exists — we need to use it.
 
-**Implementation Phases:**
+**Implementation Phases (10 Steps):**
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Add `thinking_content TEXT` column to `content_items` (migration v13→v14) | 📋 |
-| 2 | Update `ContentItem` struct to include `thinking_content: Option<String>` | 📋 |
-| 3 | Replace storage-path callers of `strip_thinking_tags()` with `process_thinking()` — preserve thinking in `thinking_content` field | 📋 |
-| 4 | Normalize pre-tool messages — separate `<thinking>` from `content` field into `thinking_content` column | 📋 |
-| 5 | Add `[t3]` config section with `enabled = false` (feature flag only; transforms in Phase 1) | 📋 |
-| 6 | Fix continuation thinking loss — `ContinuationResult` carries thinking, `handle_continuation()` accumulates, `add_pre_tool_message()` called with original `previous_message_id` | 📋 |
-| 7 | Re-embed existing content items that had thinking inline (uses existing `/reindex --yes` recovery pipeline — items with `has_embedding=0` are re-embedded on startup) | 📋 |
-| 8 | Update database operations (insert, query, search) for thinking_content column | 📋 |
-| 9 | Tests: regression for existing search, embedding, retrieval | 📋 |
+| Step | Description | Status | Key Files |
+|------|-------------|--------|-----------|
+| 1 | Schema — Migration v13→v14: `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` | 📋 | `schema.rs`, `connection.rs` |
+| 2 | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | 📋 | `types.rs`, `db.rs` |
+| 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` + `load_sqlite()` mapping | 📋 | `core.rs`, `session.rs` |
+| 4 | Replace storage callers: `process_thinking()` instead of `strip_thinking_tags()` (2 call sites) | 📋 | `core.rs` |
+| 5 | Normalize `add_pre_tool_message()` — separate thinking from content | 📋 | `session.rs` |
+| 6 | `ContinuationResult` fields + `handle_continuation()` accumulation + `process_send_result()` | 📋 | `continuation.rs` |
+| 7 | `add_assistant_message()` accepts `thinking: Option<String>` — 6 callers | 📋 | `session.rs`, `command_handlers.rs` |
+| 8 | `ThinkingTraceSettings` + `[thinking_trace]` config + context builder | 📋 | `settings.rs`, `context_builder.rs` |
+| 9 | Tests: migration, roundtrip, continuation, retrocompat, search, compaction, pre-tool | 📋 | Test files |
+| 10 | Documentation — naming cleanup: `[t3]` → `[thinking_trace]`, `T3Status` → `ThinkingTraceStatus` | 📋 | Various docs |
 
-**`t3_status` deferred to T3-Phase1 (#152):** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking." Phase 1 introduces the T3 transform pipeline and needs `T3Status` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `t3_status INTEGER DEFAULT 0`. See Decision Record D-09.
+**`thinking_trace_status` deferred to T3-Phase1 (#152):** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking." Phase 1 introduces the Thinking Trace Transform pipeline and needs `ThinkingTraceStatus` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `thinking_trace_status INTEGER DEFAULT 0`. See Decision Record D-09.
+
+**Naming Convention:**
+
+| Context | Name |
+|---------|------|
+| Config section | `[thinking_trace]` |
+| Rust struct | `ThinkingTraceSettings` |
+| DB column (Phase 1) | `thinking_trace_status` |
+| Enum (Phase 1) | `ThinkingTraceStatus` |
+| Doc first mention | Thinking Trace Transform (T3) |
+| Doc subsequent | T3 (acceptable shorthand) |
 
 **Files to Create:**
 - `src/chat/thinking_preserve.rs` — Helper functions for preserving thinking in storage path
 
 **Files to Modify:**
-- `src/db/schema.rs` — Migration v13→v14 (thinking_content column in content_items)
-- `src/db/connection.rs` — Migration function
-- `src/db/operations.rs` — CRUD operations for thinking_content
-- `src/content/types.rs` — Add `thinking_content: Option<String>` to `ContentItem`
-- `src/chat/core.rs` — Use `process_thinking()` instead of `strip_thinking_tags()` for storage; add `thinking` field to `SendMessageResult`
-- `src/chat/session.rs` — Preserve thinking in pre-tool messages; add `thinking` to `SavedMessage`; update `add_assistant_message()` and `add_pre_tool_message()`
-- `src/chat/continuation.rs` — Add `thinking` and `pre_tool_thinking` to `ContinuationResult`; accumulate in `handle_continuation()`; call `add_pre_tool_message()` for continuation turns using original `previous_message_id`
-- `src/content/db.rs` — Add `thinking_content` parameter to `insert_content_item()`
-- `src/settings.rs` — Add `[t3]` section with `enabled = false`
-- `src/retrieval/context_builder.rs` — Include thinking content in context when `[t3] enabled = true`
+- `src/db/schema.rs` — `SCHEMA_VERSION = 14`, `thinking_content TEXT` in CREATE TABLE
+- `src/db/connection.rs` — `migrate_v13_to_v14()` + dispatcher
+- `src/content/types.rs` — `ContentItem.thinking_content: Option<String>`
+- `src/content/db.rs` — `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()`
+- `src/chat/core.rs` — `SendMessageResult.thinking`, 2× `process_thinking()` replacing `strip_thinking_tags()`
+- `src/chat/session.rs` — `SavedMessage.thinking`, `add_assistant_message()` param, `add_pre_tool_message()` storage, `load_sqlite()`
+- `src/chat/continuation.rs` — `ContinuationResult` fields, `handle_continuation()` accumulation, `process_send_result()` thinking
+- `src/settings.rs` — `ThinkingTraceSettings`, `Settings.thinking_trace`, sample config
+- `src/retrieval/context_builder.rs` — Conditional thinking injection
+- `IMPLEMENTATION.md` — Naming cleanup
+- `doc/src/development/architecture.md` — Naming update
+- `doc/src/development/research-icebox.md` — D-09 naming update
 
 **Design Decisions:**
 
-1. **Preserve always, transform later:** `thinking_content` is always saved regardless of `[t3] enabled`. This ensures no data loss. The flag only controls whether the T3 pipeline processes traces.
-2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. T3 transforms live in a separate `thinking_traces` table (Phase 1). See Decision Record D-07.
+1. **Preserve always, transform later:** `thinking_content` is always saved regardless of `[thinking_trace] enabled`. This ensures no data loss. The flag only controls whether the Thinking Trace Transform pipeline processes traces.
+2. **No `ContentType::ThinkingTrace` variant:** Thinking is an attribute of a message, not a separate content type. The `thinking_content` column in `content_items` is the correct approach. Transform outputs live in a separate `thinking_traces` table (Phase 1). See Decision Record D-07.
 3. **`strip_thinking_tags()` remains for display:** The function is still used by views and query mode to strip thinking from displayed content. Only the storage path changes.
-4. **No `t3_status` column in Phase 0:** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking content." The `T3Status` enum (`None=0, Raw=1, Pending=2, Done=3`) and `t3_status INTEGER DEFAULT 0` column are deferred to T3-Phase1 (#152) when the transform pipeline needs state tracking. See Decision Record D-09.
+4. **No `thinking_trace_status` column in Phase 0:** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking content." The `ThinkingTraceStatus` enum (`None=0, Raw=1, Pending=2, Done=3`) and `thinking_trace_status INTEGER DEFAULT 0` column are deferred to T3-Phase1 (#152) when the transform pipeline needs state tracking. See Decision Record D-09.
 5. **Continuation thinking uses original `previous_message_id`:** All pre-tool messages from continuation turns reference the same user message as the initial turn. This is semantically correct — all are "what the assistant thought before calling a tool, in the same response to the same user message." Multiple pre-tool messages with the same parent are expected and handled by the `previous_item_id` FK.
-6. **Compaction summary does NOT preserve thinking:** Compaction summaries are content generated by the LLM (not original thinking traces). T3 retrieves original traces from `thinking_content`, not from summaries. See Decision Record D-08.
+6. **Compaction summary does NOT preserve thinking:** Compaction summaries are content generated by the LLM (not original thinking traces). The retrieval path retrieves original traces from `thinking_content`, not from summaries. See Decision Record D-08.
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 

@@ -289,7 +289,7 @@ Planned Storage Path:
                                                │ thinking_content │ ← preserved reasoning
                                                └──────────────────┘
 
-(Phase 1 adds t3_status INTEGER: 0=none, 1=raw, 2=pending, 3=done)
+(Phase 1 adds thinking_trace_status INTEGER: 0=none, 1=raw, 2=pending, 3=done)
 ```
 
 **5 Data Loss Paths Identified (Phase 0 fixes 4):**
@@ -305,9 +305,9 @@ Planned Storage Path:
 **Key Design Decisions:**
 
 1. **`thinking_content` column in `content_items`** — Thinking is an attribute of a message, not a separate content type. No `ContentType::ThinkingTrace` variant needed.
-2. **`t3_status` deferred to Phase 1** — In Phase 0, `thinking_content IS NOT NULL` ≡ "has thinking." Phase 1 adds `T3Status` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `t3_status INTEGER DEFAULT 0`. See D-09.
+2. **`thinking_trace_status` deferred to Phase 1** — In Phase 0, `thinking_content IS NOT NULL` ≡ "has thinking." Phase 1 adds `ThinkingTraceStatus` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `thinking_trace_status INTEGER DEFAULT 0`. See D-09.
 3. **`process_thinking()` replaces `strip_thinking_tags()` for storage** — `strip_thinking_tags()` remains for display (views, query output).
-4. **`[t3] enabled = false` feature flag** — Default off; controls whether T3 pipeline processes traces. Thinking content is always preserved regardless of this flag.
+4. **`[thinking_trace] enabled = false` feature flag** — Default off; controls whether the Thinking Trace Transform pipeline processes traces. Thinking content is always preserved regardless of this flag.
 5. **No joint migration with #136** — #151 migration is `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` only. No vec0 changes. #136 is decoupled and depends on #106/#135. See D-10, D-11.
 6. **Continuation thinking uses original `previous_message_id`** — All pre-tool messages from continuation turns reference the same user message as the initial turn. Multiple pre-tool messages with the same parent are semantically correct.
 
