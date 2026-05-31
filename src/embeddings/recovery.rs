@@ -134,10 +134,6 @@ pub async fn recover_missing_embeddings(
     // Dynamic total: items + pre-existing chunks, grows when chunking splits items.
     let mut total_missing = items.len() + preexisting_chunks;
 
-    // Stable entity count: items + pre-existing chunks (doesn't grow with chunking).
-    let entities_total = items.len() + preexisting_chunks;
-    let mut entities_current: usize = 0;
-
     if total_missing == 0 {
         return 0;
     }

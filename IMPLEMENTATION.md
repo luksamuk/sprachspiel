@@ -356,7 +356,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 **Background:** TurboQuant (Zandieh et al., ICLR 2026) and RaBitQ (Gao & Long, SIGMOD 2024) show that scalar quantization introduces systematic underestimation of cosine similarity, amplified when effective dimensionality (d_eff) is low. This directly impacts TAP-2 (#153, thinking-aware retrieval), fact dedup, and all semantic retrieval.
 
 **Implementation Summary:**
-- Schema v12→v13: added `+norm_correction TEXT` auxiliary column to all three vec0 tables (sqlite-vec only supports INTEGER and TEXT auxiliary columns)
+- Schema v12→v13: added `+norm_correction FLOAT` auxiliary column to all three vec0 tables (sqlite-vec supports INTEGER, FLOAT, TEXT, and BLOB auxiliary column types; using FLOAT avoids string↔float conversion overhead)
 - `TruncateResult` struct in `embeddings/truncate.rs` carries both normalized vector and `norm_correction = 1/(|truncated_vec|²)`
 - `embed()` and `embed_batch()` return `TruncateResult`; all DB insertion functions accept `norm_correction: f32`
 - All semantic search functions (`search_content_semantic`, `search_facts_semantic`) read `norm_correction` from vec0 auxiliary columns and apply `sqrt(nc_query * nc_result)` correction
@@ -367,7 +367,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Schema migration v12→v13: add `+norm_correction TEXT` to vec0 tables | ✅ |
+| 1 | Schema migration v12→v13: add `+norm_correction FLOAT` to vec0 tables | ✅ |
 | 2 | Calculate norm_correction on embedding insert (`1/(|truncated_vec|²)`) | ✅ |
 | 3 | Apply norm correction in scoring (search, dedup) | ✅ |
 | 4 | Enhance diagnostics report with norm correction awareness | ✅ |

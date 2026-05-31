@@ -132,9 +132,9 @@ pub async fn verify_and_dedup_facts(
         } else {
             // No vec0 row — generate embedding (rare: recovery should catch these)
             match super::embedding::generate_fact_embedding(&fact.content, client).await {
-                Ok(emb) => {
+                Ok(result) => {
                     generated += 1;
-                    fact_embeddings.push((fact.id, emb, fact.scope));
+                    fact_embeddings.push((fact.id, result.vector, fact.scope));
                 }
                 Err(e) => {
                     log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);
