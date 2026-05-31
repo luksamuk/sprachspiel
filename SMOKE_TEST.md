@@ -301,12 +301,12 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (12 or higher)
+- [ ] Schema version correct (13 or higher)
 
 **Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 11 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 11"
+[ "$SCHEMA_VER" -ge 13 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 13"
 ```
 
 **Verify priority/tags columns in session_todos (v9):**
@@ -325,10 +325,32 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(content_ite
 
 **Verify v12 additions:**
 
+```bash
 # Verify has_embedding column in facts table
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(facts);" | grep -q "has_embedding" && echo "✓ has_embedding column" || echo "✗ has_embedding column missing"
 
 # Verify fact_embeddings vec0 table with distance_metric=cosine
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables" | grep -q "fact_embeddings" && echo "✓ fact_embeddings table" || echo "✗ fact_embeddings table missing"
+```
+
+**Verify v13 additions (norm_correction FLOAT — PR #184):**
+
+```bash
+# Verify norm_correction FLOAT column in content_embeddings auxiliary table
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
+  "SELECT typeof(norm_correction), norm_correction FROM content_embeddings_auxiliary LIMIT 1;" | grep -q "real" && echo "✓ norm_correction is FLOAT (real)" || echo "✗ norm_correction not FLOAT"
+
+# Verify norm_correction exists in chunk_embeddings_v2 auxiliary table
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
+  "SELECT COUNT(*) FROM chunk_embeddings_v2_auxiliary WHERE norm_correction IS NOT NULL;" | grep -qv "0" && echo "✓ chunk_embeddings_v2 has norm_correction values" || echo "✗ chunk_embeddings_v2 missing norm_correction values"
+
+# Verify norm_correction exists in fact_embeddings auxiliary table
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
+  "SELECT COUNT(*) FROM fact_embeddings_auxiliary WHERE norm_correction IS NOT NULL;" | grep -qv "0" && echo "✓ fact_embeddings has norm_correction values" || echo "✗ fact_embeddings missing norm_correction values"
+
+# Verify norm_correction values are > 1.0 (non-trivial correction factors)
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
+  "SELECT MIN(norm_correction) FROM content_embeddings_auxiliary;" | awk '{if ($1 > 1.0) print "✓ norm_correction MIN=" $1 " (> 1.0)"; else print "✗ norm_correction MIN=" $1 " (expected > 1.0)"}'
 ```
 
 ---
@@ -644,9 +666,9 @@ Test the feedback_submit LLM tool and configuration defaults.
 Verify `[feedback]` section in config.toml (or defaults work without it):
 
 ```bash
-# Check schema version (must be 12 or higher)
+# Check schema version (must be 13 or higher)
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
-# Expected: 10 or higher
+# Expected: 13 or higher
 
 # Check feedback_signals table exists
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables"
@@ -657,7 +679,7 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(content_ite
 # Expected: includes pruned column (INTEGER NOT NULL DEFAULT 0)
 ```
 
-- [ ] Schema version is 10 or higher
+- [ ] Schema version is 13 or higher
 - [ ] `feedback_signals` table exists in database
 - [ ] `pruned` column exists in `content_items` table
 
@@ -936,12 +958,14 @@ Verify that preference and identity facts are auto-extracted from user messages 
 > ```
 > This ensures a clean state for embedding and dedup tests.
 
-### 21.1 Schema Migration: v11 → v12
+### 21.1 Schema Migration: v12 → v13
 
 - [ ] Start a fresh chat session → no errors
-- [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"` → returns **12**
+- [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"` → returns **13**
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
+- [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
+- [ ] Verify norm_correction FLOAT column: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **+norm_correction FLOAT**
 - [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
 
 ### 21.2 Fact Insertion Generates Embedding (Synchronous)
@@ -1539,6 +1563,72 @@ rm -f /tmp/test_diag_empty.db
 - [ ] Error message (not panic)
 - [ ] Mentions valid values (content, chunks, facts)
 
+### 25.5 Recommended Configuration Section (PR #184)
+
+**Objective:** Verify that `sprach diagnostics` includes a data-driven threshold recommendation section with config.toml suggestions.
+
+```bash
+# Use a database with embeddings (the backup has ~11K)
+cp ~/.local/share/sprachspiel/sprachspiel.db.old ~/.local/share/sprachspiel/sprachspiel.db
+./target/release/sprach diagnostics
+```
+
+- [ ] Report includes a "## Recommended configuration" section
+- [ ] Shows `[facts].semantic_threshold:` with a numeric value (e.g., `0.70` or `0.80`)
+- [ ] If `adjust_weights` is true: shows `[retrieval].keyword_weight:` and `[retrieval].semantic_weight:` with numeric values
+- [ ] If `adjust_weights` is false: shows a message like "Default weights are appropriate"
+- [ ] Blockquote at the end says "update your config.toml" (NOT "sprach config edit" or any nonexistent command)
+
+```bash
+# Also test with --source filter
+./target/release/sprach diagnostics --source facts
+```
+
+- [ ] Report includes "## Recommended configuration" section even with single source
+- [ ] If vector count is small (< 100), shows a warning about d_eff reliability
+
+### 25.6 Config.toml Settings (PR #184)
+
+**Objective:** Verify that `[facts].semantic_threshold` and `[retrieval].keyword_weight`/`semantic_weight` settings work in config.toml.
+
+**Test default values (no config section):**
+
+```bash
+# Ensure [facts] and [retrieval] sections are commented out or absent
+cat ~/.config/sprachspiel/config.toml | grep -E "semantic_threshold|keyword_weight|semantic_weight"
+# Should be commented out or absent
+```
+
+- [ ] Application starts without errors with default settings
+- [ ] Default `semantic_threshold = 0.70` used when not configured
+
+**Test custom values:**
+
+```bash
+# Add to ~/.config/sprachspiel/config.toml:
+cat >> ~/.config/sprachspiel/config.toml << 'EOF'
+
+[facts]
+semantic_threshold = 0.80
+
+[retrieval]
+keyword_weight = 0.5
+semantic_weight = 0.5
+EOF
+```
+
+- [ ] Application starts without errors with custom settings
+- [ ] `/fact add Test fact for threshold` works normally
+- [ ] Conversations with retrieval work normally
+- [ ] `sprach diagnostics` shows updated recommendations that may differ from defaults
+
+**Reset config after test:**
+
+```bash
+# Remove the test settings from config.toml
+# (or comment them out, or restore from backup)
+```
+
 ---
 
 ## Results
@@ -1604,20 +1694,23 @@ The script above runs automated tests. The following tests must be run manually:
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
 6. **Section 6.6**: Command Safety (/forget, /search, skills)
-7. **Section 10**: File Tools (via LLM)
-8. **Section 10.5**: run_command Error Messages
-9. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
-10. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
-11. **Section 13**: Performance (verify response time)
-12. **Section 15**: Feedback Commands (interactive feedback tests)
-13. **Section 16**: Content Prune & Context Decay Stats (interactive tests)
-14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
-15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
-16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
-17. **Section 25**: Embedding Diagnostics (read-only subcommand, no LLM needed)
-17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
-19. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
-20. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
-21. **Section 23**: TUI Event Loop & Rendering (multi-line rendering, embedding exit hint, provider-agnostic errors, event loop regression)
+7. **Section 9**: Database (schema v13, norm_correction FLOAT verification)
+8. **Section 10**: File Tools (via LLM)
+9. **Section 10.5**: run_command Error Messages
+10. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
+11. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
+12. **Section 13**: Performance (verify response time)
+13. **Section 15**: Feedback Commands (interactive feedback tests)
+14. **Section 16**: Content Prune & Context Decay Stats (interactive tests)
+15. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
+16. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
+17. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
+18. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
+19. **Section 21**: Fact Embedding & Semantic Dedup (schema v13, norm_correction FLOAT, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, semantic threshold, end-to-end verification)
+20. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
+21. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
+22. **Section 23**: TUI Event Loop & Rendering (multi-line rendering, embedding exit hint, provider-agnostic errors, event loop regression)
+23. **Section 25**: Embedding Diagnostics (read-only subcommand, recommended configuration section, no LLM needed)
+24. **Section 25.5**: Recommended Configuration Output (threshold and weight suggestions from diagnostics)
+25. **Section 25.6**: Config.toml Settings (semantic_threshold, keyword_weight, semantic_weight)
 These tests require chat interaction and visual verification of results.
