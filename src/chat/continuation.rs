@@ -75,11 +75,12 @@ pub async fn process_send_result(
     }
 
     // Handle continuation if LLM paused for compaction
-    let (final_response, final_metrics, context_window, _system_prompt) =
+    let (final_response, final_thinking, final_metrics, context_window, _system_prompt) =
         if result.continuation_needed.is_some() {
-            match handle_continuation(state, result, view, llm_tx.clone()).await {
+            match handle_continuation(state, result, user_message_id, view, llm_tx.clone()).await {
                 Ok(cont_result) => (
                     cont_result.response,
+                    cont_result.thinking,
                     cont_result.metrics,
                     cont_result.context_window,
                     cont_result.system_prompt,
@@ -91,6 +92,7 @@ pub async fn process_send_result(
         } else {
             (
                 result.response.clone(),
+                result.thinking.clone(),
                 result.metrics.clone(),
                 result.context_window,
                 result.system_prompt.clone(),
@@ -101,9 +103,11 @@ pub async fn process_send_result(
     // Empty responses (from Ctrl+C cancellation where no tokens were
     // generated) are rejected by add_assistant_message() — no empty
     // assistant messages are persisted.
-    let msg_id = state
-        .session
-        .add_assistant_message(final_response.clone(), Some(final_metrics.prompt_tokens));
+    let msg_id = state.session.add_assistant_message(
+        final_response.clone(),
+        final_thinking,
+        Some(final_metrics.prompt_tokens),
+    );
     state.last_assistant_message_id = msg_id;
 
     if final_metrics.total_tokens > 0 {
@@ -219,6 +223,12 @@ pub fn build_pre_tool_prompt(state: &ReplState) -> String {
 #[derive(Debug, Clone)]
 pub struct ContinuationResult {
     pub response: String,
+    /// Accumulated thinking content from all continuation turns
+    pub thinking: Option<String>,
+    /// Pre-tool content from the last continuation turn (if any)
+    pub pre_tool_content: Option<String>,
+    /// Pre-tool thinking from the last continuation turn (if any)
+    pub pre_tool_thinking: Option<String>,
     pub metrics: TokenMetrics,
     pub context_window: usize,
     pub system_prompt: String,
@@ -233,19 +243,22 @@ pub struct ContinuationResult {
 ///
 /// * `state` - Mutable reference to REPL state (contains session, ollama client, etc.)
 /// * `initial_result` - The result from the initial `send_message` call that requested continuation
+/// * `user_message_id` - The ID of the original user message (for linking continuation pre-tool messages)
 /// * `view` - View for rendering output
 ///
 /// # Returns
 ///
-/// * `Ok(ContinuationResult)` - Contains accumulated response and metrics
+/// * `Ok(ContinuationResult)` - Contains accumulated response, thinking, and metrics
 /// * `Err(...)` - If any continuation fails
 pub async fn handle_continuation(
     state: &mut ReplState,
     initial_result: SendMessageResult,
+    user_message_id: Option<i64>,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> AppResult<ContinuationResult> {
     let mut final_response = initial_result.response.clone();
+    let mut final_thinking = initial_result.thinking.clone();
     let mut final_metrics = initial_result.metrics.clone();
     let mut continuation_count = 1; // Already counted first in repl.rs
 
@@ -304,6 +317,28 @@ pub async fn handle_continuation(
             final_metrics.response_tokens += cont_result.metrics.response_tokens;
             final_metrics.total_tokens += cont_result.metrics.total_tokens;
 
+            // Accumulate thinking from continuation turn
+            if let Some(cont_thinking) = &cont_result.thinking {
+                final_thinking = Some(match final_thinking {
+                    Some(t) => format!("{t}\n\n{cont_thinking}"),
+                    None => cont_thinking.clone(),
+                });
+            }
+
+            // Save pre-tool messages from continuation turns
+            // All continuation pre-tool messages reference the ORIGINAL user message
+            if let Some(pre_content) = &cont_result.pre_tool_content {
+                state.session.add_pre_tool_message(
+                    pre_content.clone(),
+                    cont_result.pre_tool_thinking.clone(),
+                    user_message_id,
+                );
+                log::debug!(
+                    "Saved continuation pre-tool content ({} chars)",
+                    pre_content.len()
+                );
+            }
+
             view.show_system("[Continuation complete]");
 
             // Handle nested continuations (max 3)
@@ -358,6 +393,27 @@ pub async fn handle_continuation(
                         final_metrics.response_tokens += n_result.metrics.response_tokens;
                         final_metrics.total_tokens += n_result.metrics.total_tokens;
 
+                        // Accumulate thinking from nested continuation
+                        if let Some(n_thinking) = &n_result.thinking {
+                            final_thinking = Some(match final_thinking {
+                                Some(t) => format!("{t}\n\n{n_thinking}"),
+                                None => n_thinking.clone(),
+                            });
+                        }
+
+                        // Save pre-tool messages from nested continuation
+                        if let Some(pre_content) = &n_result.pre_tool_content {
+                            state.session.add_pre_tool_message(
+                                pre_content.clone(),
+                                n_result.pre_tool_thinking.clone(),
+                                user_message_id,
+                            );
+                            log::debug!(
+                                "Saved nested continuation pre-tool content ({} chars)",
+                                pre_content.len()
+                            );
+                        }
+
                         view.show_system("[Continuation complete]");
 
                         // Update for next iteration
@@ -372,6 +428,9 @@ pub async fn handle_continuation(
 
             Ok(ContinuationResult {
                 response: final_response,
+                thinking: final_thinking,
+                pre_tool_content: cont_result.pre_tool_content,
+                pre_tool_thinking: cont_result.pre_tool_thinking,
                 metrics: final_metrics,
                 context_window: initial_result.context_window,
                 system_prompt: initial_result.system_prompt,

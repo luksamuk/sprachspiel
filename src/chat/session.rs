@@ -492,6 +492,7 @@ impl ChatSession {
     pub fn add_assistant_message(
         &mut self,
         content: String,
+        thinking: Option<String>,
         prompt_tokens: Option<u64>,
     ) -> Option<i64> {
         // Reject empty assistant messages — these are artifacts from
@@ -510,7 +511,7 @@ impl ChatSession {
         self.messages.push(SavedMessage {
             role: MessageRole::Assistant,
             content: content.clone(),
-            thinking: None, // wired in Step 7
+            thinking: thinking.clone(),
             timestamp: now,
             prompt_tokens,
             message_type: None,
@@ -538,7 +539,7 @@ impl ChatSession {
                 None,
                 None,
                 &content,
-                None, // thinking_content — will be wired in Step 7
+                thinking.as_deref(),
                 0.5,
                 self.project_id.as_deref(),
                 now,
