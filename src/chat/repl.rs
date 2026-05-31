@@ -70,18 +70,9 @@ fn init_chat_database(
         None
     };
 
-    // Normalize inline thinking tags in existing pre-tool messages (v13→v14 data migration).
-    // This is done at the caller level (not in db::connection) to avoid a circular
-    // dependency between the `db` module and `chat::thinking`.
-    if let Some(db_ref) = &result.db {
-        let split_fn = |content: &str| -> (Option<String>, String) {
-            let processed = crate::chat::thinking::process_thinking(content);
-            (processed.thinking, processed.content)
-        };
-        if let Err(e) = db_ref.normalize_inline_thinking(split_fn) {
-            log::warn!("Warning: Failed to normalize inline thinking: {}", e);
-        }
-    }
+    // NOTE: normalize_inline_thinking() is called in the background spawn
+    // (repl_tui.rs), not here. It runs before embedding recovery to ensure
+    // normalized items (has_embedding=0) are picked up for regeneration.
 
     (result.db, result.embedding, ollama, error_detail)
 }

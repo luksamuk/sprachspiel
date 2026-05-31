@@ -816,14 +816,28 @@ impl Database {
 
             for (id, content) in &rows {
                 let (thinking, clean_content) = split_fn(content);
+
+                // Rewrite content (remove inline thinking) and store thinking separately.
+                // Also reset has_embedding=0 and delete stale embeddings/chunks because
+                // the content changed — old embeddings were computed from text containing
+                // <thinking> tags and are now semantically stale. The background embedding
+                // recovery pipeline (repl_tui.rs) will regenerate them from the cleaned text.
                 conn.execute(
-                    "UPDATE content_items SET content = ?, thinking_content = ? WHERE id = ?",
+                    "UPDATE content_items SET content = ?, thinking_content = ?, has_embedding = 0 WHERE id = ?",
                     rusqlite::params![clean_content, thinking, id],
+                )?;
+                conn.execute(
+                    "DELETE FROM content_embeddings WHERE item_id = ?",
+                    rusqlite::params![id],
+                )?;
+                conn.execute(
+                    "DELETE FROM content_chunks WHERE item_id = ?",
+                    rusqlite::params![id],
                 )?;
             }
 
             log::info!(
-                "Normalized {} content items with inline thinking tags",
+                "Normalized {} content items with inline thinking tags (embeddings will be regenerated)",
                 count
             );
             Ok(count as u64)
@@ -1133,6 +1147,21 @@ mod tests {
             thinking,
             Some("<thinking>Let me reason</thinking>".to_string())
         );
+
+        // Fix A: verify has_embedding was reset to 0
+        let has_embedding: i32 = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT has_embedding FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query has_embedding");
+        assert_eq!(
+            has_embedding, 0,
+            "has_embedding should be reset to 0 after normalization"
+        );
     }
 
     #[test]
@@ -1225,5 +1254,55 @@ mod tests {
             .expect("Failed to query row");
 
         assert_eq!(thinking, None, "thinking_content should be NULL by default");
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_resets_embedding_flag() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with inline thinking AND has_embedding = 1
+        // (simulating an item that had an embedding computed from the old
+        // content that included <thinking> tags)
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, has_embedding, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', '<thinking>My reasoning</thinking>The answer', 'conv1', 'pre_tool', 1, ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    let start = content.find("<thinking>").unwrap();
+                    let end = content.find("</thinking>").unwrap() + "</thinking>".len();
+                    let thinking = content[start..end].to_string();
+                    let clean = content[..start].trim().to_string() + &content[end..];
+                    (Some(thinking), clean.trim().to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(count, 1);
+
+        // has_embedding must be 0 (reset for re-indexing by background recovery)
+        let has_embedding: i32 = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT has_embedding FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query has_embedding");
+        assert_eq!(
+            has_embedding, 0,
+            "has_embedding must be reset to 0 after content rewrite"
+        );
     }
 }

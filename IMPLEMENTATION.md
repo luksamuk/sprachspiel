@@ -145,7 +145,7 @@
 
 **M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience. **Design inputs:** R-32 (ratatui-cheese widget adoption — Help, Fieldset, Select/MultiSelect, List+Paginator; Palette evaluation; direct dependency `ratatui-cheese = "0.7"`), R-33 (first-run onboarding wizard — OnboardingWizard state machine, sub-item of #16). Both evaluated in `doc/m2-ratatui-cheese-evaluation.md` (absorbed into research icebox).
 
-**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 or #136 — re-embedding uses the existing `/reindex --yes` recovery pipeline (items with `has_embedding=0` are re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. The previous "Joint PR with #136" was decoupled (#136 now depends on #106 and #135, after which it becomes W4.7). T3-Phase0 also includes continuation thinking fix (5th data loss path). #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
+**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 or #136 — re-embedding uses the existing background embedding recovery pipeline (normalized items get `has_embedding=0`, then re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. The previous "Joint PR with #136" was decoupled (#136 now depends on #106 and #135, after which it becomes W4.7). T3-Phase0 also includes continuation thinking fix (5th data loss path) and embedding consistency fix (see R5-R7). #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind. T3-Phase3 (Semantic/Reflect + Facts Integration) added to M3 — depends on W7.1 (Thinking-Aware Retrieval) completion.
 
@@ -303,7 +303,7 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 |------|-------------|--------|-----------|
 | 1 | Schema — Migration v13→v14: `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` | 📋 | `schema.rs`, `connection.rs` |
 | 2a | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | 📋 | `types.rs`, `db.rs` |
-| 2b | Data migration — normalize existing pre-tool messages with inline `<thinking>` tags: `Database::normalize_inline_thinking()` method, called from `repl.rs` after init | 📋 | `connection.rs`, `repl.rs` |
+| 2b | Data migration — normalize existing pre-tool messages with inline `<thinking>` tags: `Database::normalize_inline_thinking()` method; resets `has_embedding=0`, deletes stale embeddings/chunks; runs in background spawn before embedding recovery | 📋 | `connection.rs`, `repl.rs`, `repl_tui.rs` |
 | 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` (with `#[serde(default)]`) | 📋 | `core.rs`, `session.rs` |
 | 4 | Replace storage callers: `process_thinking()` instead of `strip_thinking_tags()` in `process_chat_response()` (L348) and `send_message_stream()` (L880) | 📋 | `core.rs` |
 | 5 | Normalize `add_pre_tool_message()` — remove inline `<thinking>` formatting, pass `thinking_content` as separate DB column | 📋 | `session.rs` |
@@ -341,13 +341,16 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 | R2 | `handle_continuation()` needs `user_message_id` param | Low | Step 6 — add `user_message_id: Option<i64>` to signature. `process_send_result()` already has this value and passes it at call site (L80). |
 | R3 | `ChatMessage` has no `with_thinking()` builder | Low | Step 8 — construct `ChatMessage` manually: `msg.thinking = Some(thinking.clone())` when `[thinking_trace] enabled`. Follows pattern in `custom_coordinator.rs:780-794`. |
 | R4 | `get_messages_for_llm()` + `build_context()` need thinking injection | Medium | Step 8 — `get_messages_for_llm(system_prompt, include_thinking: bool)` passes thinking to `ChatMessage`. `RetrievalConfig.include_thinking` field added. Both gated by `settings.thinking_trace.enabled`. |
+| R5 | `normalize_inline_thinking()` must reset `has_embedding=0` for stale embeddings | High | Step 2b extension — when `content` is rewritten (thinking removed), the existing embedding (computed from old text with `<thinking>` tags) becomes semantically stale. The UPDATE must also set `has_embedding = 0`, delete the stale row from `content_embeddings` (vec0), and delete stale `content_chunks`. The existing background embedding recovery pipeline (repl_tui.rs) then picks up these items and regenerates embeddings from the cleaned content. Without this fix, vector search returns results with embedding/content mismatch. |
+| R6 | `normalize_inline_thinking()` must run in background, not block startup | Medium | Step 2b extension — the method was initially called synchronously in `init_chat_database()`, blocking the TUI before it renders. Move to the background `tokio::spawn` in `run_startup_tasks()` / `repl_tui.rs`, running before the embedding recovery pipeline. For DBs with many pre-tool messages, this avoids a visible startup delay. The normalization itself is fast (sub-second typically), but the subsequent embedding regeneration it triggers is the slow part — which already runs in background with ⚙ status bar indicator. |
+| R7 | Normalization result should be communicated via log + chat message | Low | Step 2b extension — when items are normalized, log the count ("Normalized N content items") and show a system message in the chat ("💾 Migrated N pre-tool messages — embeddings being regenerated"). No dedicated progress bar needed: normalization is sub-second, and the ⚙ indicator from the subsequent embedding recovery already provides visual feedback. |
 
 **Files to Create:**
 - None (inline data migration is a method on `Database`, not a new file)
 
 **Files to Modify:**
 - `src/db/schema.rs` — `SCHEMA_VERSION = 14`, `thinking_content TEXT` in CREATE TABLE
-- `src/db/connection.rs` — `migrate_v13_to_v14()` (ALTER TABLE only) + dispatcher + `normalize_inline_thinking()` method
+- `src/db/connection.rs` — `migrate_v13_to_v14()` (ALTER TABLE only) + dispatcher + `normalize_inline_thinking()` method (with `has_embedding=0` reset, stale embedding/chunk deletion)
 - `src/content/types.rs` — `ContentItem.thinking_content: Option<String>`
 - `src/content/db.rs` — `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()`
 - `src/chat/core.rs` — `SendMessageResult.thinking`, 2× `process_thinking()` replacing `strip_thinking_tags()`
@@ -357,7 +360,8 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 - `src/chat/thinking.rs` — (no change — `process_thinking` already public)
 - `src/settings.rs` — `ThinkingTraceSettings`, `Settings.thinking_trace`, sample config
 - `src/retrieval/context_builder.rs` — `RetrievalConfig.include_thinking`, `push_messages_as_chat_messages(thinking)` param
-- `src/chat/repl.rs` — Call `db_ref.normalize_inline_thinking()` after init
+- `src/chat/repl.rs` — Move `normalize_inline_thinking()` call from `init_chat_database()` to background spawn
+- `src/chat/repl_tui.rs` — Add normalization step before embedding recovery in background spawn
 - `src/chat/command_handlers.rs` — Pass `include_thinking` to `get_messages_for_llm()`, pass `None` for thinking in 5 `add_assistant_message()` callers
 - `IMPLEMENTATION.md` — Naming cleanup
 - `doc/src/development/architecture.md` — Naming update
@@ -373,6 +377,11 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 6. **Compaction summary does NOT preserve thinking:** Compaction summaries are content generated by the LLM (not original thinking traces). The retrieval path retrieves original traces from `thinking_content`, not from summaries. See Decision Record D-08.
 7. **Inline data migration uses `process_thinking()` from caller level:** The `db` module does not import from `chat` (dependency direction is `chat`→`db`). The `normalize_inline_thinking()` method on `Database` accepts a closure or the caller (`repl.rs`) iterates rows and calls `process_thinking()` directly. This avoids circular dependency.
 8. **`ChatMessage.thinking` set manually (no builder):** `ollama-rs 0.3.4` has `ChatMessage { thinking: Option<String> }` but no `with_thinking()` method. We set the field directly, following the pattern in `custom_coordinator.rs:780-794`.
+9. **Embedding consistency on content rewrite (R5):** When `normalize_inline_thinking()` rewrites `content` (removing inline `<thinking>` tags), existing embeddings become semantically stale. The UPDATE must also set `has_embedding = 0` and delete stale vec0 + chunk rows. The existing background embedding recovery pipeline (repl_tui.rs) then regenerates embeddings from the cleaned content. Without this, vector search returns stale results.
+10. **No `/reindex` needed — use background recovery (R6):** Normalized items join the `has_embedding = 0` queue, which the background embedding recovery pipeline on startup already handles. No manual `/reindex --yes` is required. The pipeline runs as a `tokio::spawn` with ⚙ status bar indicator, so embedding regeneration does not block the TUI.
+11. **Normalization runs in background spawn (R6):** The `normalize_inline_thinking()` call was initially synchronous in `init_chat_database()`, blocking TUI startup. Moved to the background `tokio::spawn` in `repl_tui.rs`, running before the embedding recovery step. Sub-second for typical DBs; the slow part (embedding regen) already runs in background.
+12. **No progress bar for normalization (R7):** Normalization is sub-second for typical DBs. The ⚙ indicator from the subsequent embedding recovery provides visual feedback. If count > 0, a log message and chat system message inform the user. A dedicated progress bar would be over-engineering for this operation.
+13. **Retroactive recovery is impossible:** Normal assistant messages never stored thinking in the DB (`strip_thinking_tags()` ran before insertion). No raw/original response is retained. Only pre-tool messages had inline `<thinking>` tags, recovered by `normalize_inline_thinking()`. This is documented as a known limitation.
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
