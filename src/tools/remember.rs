@@ -6,6 +6,7 @@
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::settings::{DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT};
 use crate::tools::context::{get_db, get_embedding, get_settings};
 
 /// Number of chunks to show in preview for large documents
@@ -657,8 +658,8 @@ async fn remember_by_query(
     limit: usize,
 ) -> String {
     // Generate embedding for query
-    let embedding = match embedding_client.embed(query).await {
-        Ok(emb) => emb,
+    let query_result = match embedding_client.embed(query).await {
+        Ok(result) => result,
         Err(e) => {
             return format!(
                 "Error: Failed to generate embedding for query.\n\n\
@@ -668,21 +669,28 @@ async fn remember_by_query(
             );
         }
     };
+    let embedding = query_result.vector;
+    let query_norm_correction = query_result.norm_correction;
 
     // Get feedback settings for boost and access tracking
     let settings = get_settings();
     let feedback_settings = settings.as_ref().map(|s| &s.feedback);
+    let (keyword_weight, semantic_weight) = settings
+        .as_ref()
+        .map(|s| (s.retrieval.keyword_weight, s.retrieval.semantic_weight))
+        .unwrap_or((DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT));
     // Search for notes using unified content search
     let note_params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
+        query_norm_correction,
         content_type: Some(crate::content::ContentType::Note),
         conversation_id: None,
         project_id: None,
         scope: None,
         limit,
-        keyword_weight: 0.4,
-        semantic_weight: 0.6,
+        keyword_weight,
+        semantic_weight,
         feedback_settings,
     };
 
@@ -701,13 +709,14 @@ async fn remember_by_query(
     let doc_params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
+        query_norm_correction,
         content_type: Some(crate::content::ContentType::Document),
         conversation_id: None,
         project_id: None,
         scope: None,
         limit,
-        keyword_weight: 0.4,
-        semantic_weight: 0.6,
+        keyword_weight,
+        semantic_weight,
         feedback_settings,
     };
 
@@ -724,10 +733,14 @@ async fn remember_by_query(
 
     // Search for messages using V7 search
     let message_results = match db.search_messages_hybrid(
-        query, &embedding, None, // conversation_id
+        query,
+        &embedding,
+        query_norm_correction,
+        None, // conversation_id
         None, // project_id
-        limit, 0.4, // keyword_weight
-        0.6, // semantic_weight
+        limit,
+        keyword_weight,
+        semantic_weight,
     ) {
         Ok(r) => r,
         Err(e) => {

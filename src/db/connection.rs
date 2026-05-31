@@ -551,6 +551,71 @@ impl Database {
         Ok(())
     }
 
+    /// Migration v12 -> v13: Add norm_correction auxiliary column to vec0 tables.
+    ///
+    /// Matryoshka truncation (768→256 dims) discards dimensions that contribute
+    /// to the L2 norm. When sqlite-vec computes cosine distance on the truncated
+    /// vector, the result is biased because the stored vector is not truly unit-length.
+    /// The `norm_correction` column stores `1/(|truncated_vec|^2)` so that at query
+    /// time, `true_cosine ≈ measured_cosine * sqrt(query_nc * result_nc)`.
+    ///
+    /// `norm_correction` is stored as FLOAT (f64 in SQLite, cast from f32 on insert).
+    /// sqlite-vec supports FLOAT as an auxiliary column type (alongside INTEGER,
+    /// TEXT, and BLOB). Note: REAL (the standard SQLite float type name) does NOT
+    /// work — the sqlite-vec parser requires the exact type name FLOAT.
+    ///
+    /// Since sqlite-vec does not support ALTER TABLE on virtual tables, we must
+    /// DROP and re-CREATE all three vec0 tables. This loses all embeddings, but
+    /// startup recovery regenerates them (has_embedding flags are reset below).
+    fn migrate_v12_to_v13(conn: &Connection) -> Result<()> {
+        conn.execute_batch("DROP TABLE IF EXISTS fact_embeddings;")?;
+        conn.execute_batch("DROP TABLE IF EXISTS content_embeddings;")?;
+        conn.execute_batch("DROP TABLE IF EXISTS chunk_embeddings_v2;")?;
+
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+                fact_id INTEGER PRIMARY KEY,
+                embedding FLOAT[256] distance_metric=cosine,
+                +scope TEXT,
+                +category TEXT,
+                +project_id TEXT,
+                +norm_correction FLOAT
+            );",
+        )?;
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+                item_id INTEGER PRIMARY KEY,
+                embedding FLOAT[256] distance_metric=cosine,
+                +content_type TEXT,
+                +conversation_id TEXT,
+                +project_id TEXT,
+                +timestamp INTEGER,
+                +norm_correction FLOAT
+            );",
+        )?;
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding FLOAT[256] distance_metric=cosine,
+                +content_type TEXT,
+                +conversation_id TEXT,
+                +project_id TEXT,
+                +timestamp INTEGER,
+                +norm_correction FLOAT
+            );",
+        )?;
+
+        // Reset embedding flags so startup recovery regenerates all embeddings
+        // with norm_correction values
+        conn.execute(
+            "UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL",
+            [],
+        )?;
+        conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+        conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
+        Ok(())
+    }
+
     /// Apply incremental schema migrations (dispatcher)
     fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
         if from_version < 3 {
@@ -582,6 +647,9 @@ impl Database {
         }
         if from_version < 12 {
             Self::migrate_v11_to_v12(conn)?;
+        }
+        if from_version < 13 {
+            Self::migrate_v12_to_v13(conn)?;
         }
         Ok(())
     }

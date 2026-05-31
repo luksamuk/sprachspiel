@@ -1,7 +1,7 @@
 //! Settings module — application configuration from `~/.config/sprachspiel/config.toml`.
 //!
 //! Provides [`Settings`] and its sub-structs for configuring models, tools, output,
-//! display, LED, feedback, and fact auto-extraction. Settings are loaded from TOML
+//! display, LED, feedback, fact auto-extraction, and retrieval. Settings are loaded from TOML
 //! at startup via [`Settings::load`], with sensible defaults when no config file exists.
 //!
 //! # Configuration hierarchy
@@ -35,6 +35,19 @@ pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 
 /// Default LLM server port
 pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
+
+/// Default semantic search threshold for fact deduplication (cosine similarity).
+///
+/// Used by Layer 3.5 in the dedup pipeline. Intentionally broad (0.70) to catch
+/// contradictions that normalized match and FTS5 miss.
+/// Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs (startup pairwise dedup).
+pub const DEFAULT_SEMANTIC_THRESHOLD: f32 = 0.70;
+
+/// Default keyword weight for hybrid RRF retrieval (BM25).
+pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.4;
+
+/// Default semantic weight for hybrid RRF retrieval (vector similarity).
+pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.6;
 
 /// Normalize host string to ensure it has a scheme (http:// or https://)
 /// This handles cases where users configure just an IP address like "192.168.1.100"
@@ -71,6 +84,9 @@ pub struct Settings {
     /// Factual memory auto-extraction configuration
     #[serde(default)]
     pub facts: FactSettings,
+    /// Retrieval configuration (hybrid search weights)
+    #[serde(default)]
+    pub retrieval: RetrievalSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -278,6 +294,16 @@ pub struct FactSettings {
     /// Suppressed in Quiet mode regardless of this setting.
     #[serde(default = "default_true")]
     pub auto_extract_notify: bool,
+
+    /// Threshold for semantic search via embeddings (cosine similarity).
+    /// Used for fact deduplication and conflict detection.
+    /// Range: 0.0–1.0. Default: 0.70.
+    /// Higher values (0.80+) are stricter — fewer false matches,
+    /// but may miss genuine contradictions.
+    /// Lower values (0.60-) are more permissive — catches more
+    /// contradictions but risks false positives.
+    #[serde(default = "default_semantic_threshold")]
+    pub semantic_threshold: f32,
 }
 
 impl Default for FactSettings {
@@ -286,12 +312,56 @@ impl Default for FactSettings {
             auto_extract: true,
             max_facts: 3,
             auto_extract_notify: true,
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD,
         }
     }
 }
 
 fn default_max_facts() -> u32 {
     3
+}
+
+fn default_semantic_threshold() -> f32 {
+    DEFAULT_SEMANTIC_THRESHOLD
+}
+
+/// Retrieval configuration for hybrid search (Reciprocal Rank Fusion).
+///
+/// Controls how keyword (BM25) and semantic (vector similarity) search
+/// results are combined. The two weights should typically sum to ~1.0,
+/// but this is not enforced — weights are applied independently in RRF.
+///
+/// See `content/db.rs::content_reciprocal_rank_fusion()` for the RRF algorithm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalSettings {
+    /// Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
+    /// Higher = more weight on keyword matches.
+    /// Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
+    #[serde(default = "default_keyword_weight")]
+    pub keyword_weight: f32,
+
+    /// Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
+    /// Higher = more weight on semantic similarity.
+    /// Default: 0.6 (embeddings capture meaning better than keyword overlap)
+    #[serde(default = "default_semantic_weight")]
+    pub semantic_weight: f32,
+}
+
+impl Default for RetrievalSettings {
+    fn default() -> Self {
+        RetrievalSettings {
+            keyword_weight: DEFAULT_KEYWORD_WEIGHT,
+            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
+        }
+    }
+}
+
+fn default_keyword_weight() -> f32 {
+    DEFAULT_KEYWORD_WEIGHT
+}
+
+fn default_semantic_weight() -> f32 {
+    DEFAULT_SEMANTIC_WEIGHT
 }
 
 fn default_led_port() -> u16 {
@@ -863,6 +933,34 @@ skin = "dark"
 # Suppressed in Quiet mode regardless of this setting.
 # Default: true
 # auto_extract_notify = true
+
+# Semantic similarity threshold for fact deduplication (0.0–1.0).
+# Cosine similarity at or above this value triggers semantic conflict detection.
+# Higher = stricter matching (fewer false matches, may miss contradictions).
+# Lower = more permissive (catches more contradictions, risks false positives).
+# The default 0.70 is designed for nomic-embed-text-v2-moe at 256 dimensions.
+# Adjust based on "sprach diagnostics" threshold recommendations.
+# Default: 0.70
+# semantic_threshold = 0.70
+
+# =============================================================================
+# RETRIEVAL CONFIGURATION (Optional)
+# =============================================================================
+# Control how keyword and semantic search are combined (Reciprocal Rank Fusion).
+# The two weights are applied independently in the RRF formula.
+# They should typically sum to ~1.0, but this is not enforced.
+
+# [retrieval]
+
+# Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on exact keyword matches.
+# Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
+# keyword_weight = 0.4
+
+# Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on semantic similarity.
+# Default: 0.6 (embeddings capture meaning better than keyword overlap)
+# semantic_weight = 0.6
 "#;
 
         std::fs::write(&config_path, sample_config)?;
@@ -1103,5 +1201,65 @@ content_prune_threshold = 0.1
         assert!(settings.feedback.implicit_capture);
         assert!((settings.feedback.decay_half_life_correction - 14.0).abs() < f32::EPSILON);
         assert!((settings.feedback.content_prune_threshold - 0.1).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_fact_settings_defaults() {
+        let settings = Settings::default();
+        assert!(settings.facts.auto_extract);
+        assert_eq!(settings.facts.max_facts, 3);
+        assert!(settings.facts.auto_extract_notify);
+        assert!((settings.facts.semantic_threshold - 0.70).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_fact_settings_parse_defaults() {
+        // Empty config should yield all defaults
+        let settings: Settings = toml::from_str("").unwrap();
+        assert!(settings.facts.auto_extract);
+        assert!((settings.facts.semantic_threshold - 0.70).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_fact_settings_parse_overrides() {
+        let sample = r#"
+[facts]
+auto_extract = false
+max_facts = 5
+semantic_threshold = 0.80
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert!(!settings.facts.auto_extract);
+        assert_eq!(settings.facts.max_facts, 5);
+        assert!((settings.facts.semantic_threshold - 0.80).abs() < f32::EPSILON);
+        // Not overridden fields should keep defaults
+        assert!(settings.facts.auto_extract_notify);
+    }
+
+    #[test]
+    fn test_retrieval_settings_defaults() {
+        let settings = Settings::default();
+        assert!((settings.retrieval.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.retrieval.semantic_weight - 0.6).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_retrieval_settings_parse_defaults() {
+        // Empty config should yield all defaults
+        let settings: Settings = toml::from_str("").unwrap();
+        assert!((settings.retrieval.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.retrieval.semantic_weight - 0.6).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_retrieval_settings_parse_overrides() {
+        let sample = r#"
+[retrieval]
+keyword_weight = 0.3
+semantic_weight = 0.7
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert!((settings.retrieval.keyword_weight - 0.3).abs() < f32::EPSILON);
+        assert!((settings.retrieval.semantic_weight - 0.7).abs() < f32::EPSILON);
     }
 }

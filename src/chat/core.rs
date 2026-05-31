@@ -261,8 +261,13 @@ pub async fn prepare_messages(
     coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
     continuation_tag: Option<&ContinuationTag>,
 ) -> Vec<ChatMessage> {
+    let settings = crate::settings::Settings::load();
     let retrieval_config = if session.retrieval_enabled {
-        RetrievalConfig::default()
+        RetrievalConfig {
+            keyword_weight: settings.retrieval.keyword_weight,
+            semantic_weight: settings.retrieval.semantic_weight,
+            ..RetrievalConfig::default()
+        }
     } else {
         RetrievalConfig {
             enabled: false,

@@ -91,7 +91,17 @@ pub async fn verify_and_dedup_facts(
         return stats;
     }
 
+    // Report initial progress for fact dedup phase
     let facts_total = all_facts.len();
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::FactDedup,
+            0,
+            facts_total,
+            0,
+            facts_total,
+        ));
+    }
 
     // Step 3: Load existing embeddings from DB; generate only for missing
     //
@@ -122,9 +132,9 @@ pub async fn verify_and_dedup_facts(
         } else {
             // No vec0 row — generate embedding (rare: recovery should catch these)
             match super::embedding::generate_fact_embedding(&fact.content, client).await {
-                Ok(emb) => {
+                Ok(result) => {
                     generated += 1;
-                    fact_embeddings.push((fact.id, emb, fact.scope));
+                    fact_embeddings.push((fact.id, result.vector, fact.scope));
                 }
                 Err(e) => {
                     log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);

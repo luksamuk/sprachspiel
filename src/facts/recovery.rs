@@ -86,7 +86,7 @@ pub async fn recover_missing_fact_embeddings(
         }
 
         match generate_fact_embedding(content, client).await {
-            Ok(embedding) => {
+            Ok(result) => {
                 // Fetch the full fact to get scope/category/project_id for vec0 partition keys
                 let fact = match db.get_fact(*fact_id) {
                     Ok(Some(f)) => f,
@@ -99,10 +99,11 @@ pub async fn recover_missing_fact_embeddings(
 
                 if let Err(e) = db.update_fact_embedding(
                     *fact_id,
-                    &embedding,
+                    &result.vector,
                     &fact.scope.to_string(),
                     &fact.category.to_string(),
                     fact.project_id.as_deref(),
+                    result.norm_correction,
                 ) {
                     log::warn!("Failed to store fact embedding for id {}: {}", fact_id, e);
                     continue;

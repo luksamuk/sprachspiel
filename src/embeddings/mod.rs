@@ -41,4 +41,4 @@ pub use fallback::{
 };
 pub use recovery::recover_missing_embeddings;
 pub use regenerate::regenerate_all_embeddings;
-pub use truncate::{TRUNCATED_DIMENSIONS, cosine_similarity};
+pub use truncate::{TRUNCATED_DIMENSIONS, TruncateResult, cosine_similarity};

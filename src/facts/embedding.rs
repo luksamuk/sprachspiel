@@ -8,6 +8,7 @@
 
 use crate::embeddings::EmbeddingClient;
 use crate::embeddings::EmbeddingError;
+use crate::embeddings::TruncateResult;
 
 /// Generate an embedding vector for a fact's content.
 ///
@@ -15,19 +16,19 @@ use crate::embeddings::EmbeddingError;
 /// as content embeddings. Facts are short content (< 500 chars) so they
 /// never exceed the model's context window.
 ///
+/// Returns a [`TruncateResult`] containing both the normalized 256-dim vector
+/// and the norm correction factor for accurate cosine similarity computation.
+///
 /// # Arguments
 /// * `content` - The fact content to embed
 /// * `client` - The embedding client
-///
-/// # Returns
-/// A 256-dimensional L2-normalized embedding vector
 ///
 /// # Errors
 /// Returns `EmbeddingError` if the API call fails
 pub async fn generate_fact_embedding(
     content: &str,
     client: &EmbeddingClient,
-) -> Result<Vec<f32>, EmbeddingError> {
+) -> Result<TruncateResult, EmbeddingError> {
     client.embed(content).await
 }
 

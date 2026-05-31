@@ -281,6 +281,7 @@ pub async fn recover_missing_embeddings(
                     }
                 }
                 processed += 1;
+                entities_current += 1;
                 if let Some(ref tx) = progress_tx {
                     let _ = tx.send(EmbeddingProgress::new(
                         EmbeddingPhase::Content,

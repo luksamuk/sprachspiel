@@ -26,7 +26,9 @@ use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::models::ModelInfo;
 use tokio::sync::{OnceCell, Semaphore};
 
-use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
+use super::truncate::{
+    FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
+};
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
@@ -236,7 +238,7 @@ impl EmbeddingClient {
     /// Returns `EmbeddingError::ContextExceeded` if the text exceeds the model's
     /// context window. Use the `fallback` module's `embed_chunk_with_fallback`
     /// for automatic chunking when context is exceeded.
-    pub async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+    pub async fn embed(&self, text: &str) -> Result<TruncateResult, EmbeddingError> {
         // Proactive check: estimate if content exceeds context window
         // Use cached context length if available, otherwise use conservative default
         let context_length = self
@@ -303,8 +305,8 @@ impl EmbeddingClient {
             });
         }
 
-        // Truncate and normalize
-        Ok(truncate_and_normalize(&embedding))
+        // Truncate and normalize with norm correction
+        Ok(truncate_and_normalize_with_correction(&embedding))
     }
 
     /// Generate embeddings for multiple texts in batch
@@ -315,7 +317,7 @@ impl EmbeddingClient {
     /// Future use: Bulk migration with `/migrate` for better performance
     /// when migrating large conversation histories.
     #[allow(dead_code)]
-    pub async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+    pub async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<TruncateResult>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -334,11 +336,11 @@ impl EmbeddingClient {
             .await
             .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
-        // Truncate and normalize each embedding
+        // Truncate and normalize each embedding with norm correction
         Ok(response
             .embeddings
             .into_iter()
-            .map(|e| truncate_and_normalize(&e))
+            .map(|e| truncate_and_normalize_with_correction(&e))
             .collect())
     }
 

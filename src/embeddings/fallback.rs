@@ -266,15 +266,16 @@ pub fn embed_chunk_with_fallback<'a>(
 
         // Try direct embed first
         match client.embed(ctx.content).await {
-            Ok(embedding) => {
+            Ok(result) => {
                 // Success - save embedding to existing chunk
                 db.update_content_chunk_embedding(
                     ctx.chunk_id,
-                    &embedding,
+                    &result.vector,
                     ctx.content_type,
                     ctx.conversation_id,
                     ctx.project_id,
                     ctx.timestamp,
+                    result.norm_correction,
                 )?;
                 Ok(EmbedResult { chunks_created: 1 })
             }
@@ -464,15 +465,16 @@ pub async fn embed_item_with_fallback(
 
     // Try direct embed first
     match client.embed(ctx.content).await {
-        Ok(embedding) => {
+        Ok(result) => {
             // Success - save embedding to item
             db.update_content_item_embedding(
                 ctx.item_id,
-                &embedding,
+                &result.vector,
                 ctx.content_type,
                 ctx.conversation_id,
                 ctx.project_id,
                 ctx.timestamp,
+                result.norm_correction,
             )?;
             Ok(EmbedResult { chunks_created: 0 })
         }

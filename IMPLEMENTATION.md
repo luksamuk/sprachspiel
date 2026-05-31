@@ -175,7 +175,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 - **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration). Expanded from original scope (config + provider) to include geometry-aware changes from embedding audit and T3-Phase0. Sub-phases:
-  - **W4.0** (#133): Diagnostics subcommand (`sprach diag embeddings`) — measure d_eff, average magnitude, threshold pass rate
+  - **W4.0** (#133): Diagnostics subcommand (`sprach diagnostics`) — measure d_eff, average magnitude, threshold pass rate
   - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
@@ -344,17 +344,37 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY: Norm Correction in Embedding Tables — #157 [M1]
 
-**Status:** 📋 NOT STARTED
+**Status:** ✅ COMPLETED
 **Issue:** #157
-**Depends on:** #133 (Embedding Diagnostics) — need d_eff measurement to confirm bias
+**PR:** #184
+**Branch:** `feat/norm-correction-and-threshold-validation`
+**Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
+**Prerequisite of:** #153 (TAP-2 — thinking-aware retrieval)
 
-**Goal:** Add `norm_correction REAL` column to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). One float per vector corrects the bias at zero query-time cost.
+**Goal:** Add norm correction to embedding tables to correct systematic cosine similarity underestimation when d_eff is low (Matryoshka 768→256). Applied as multiplicative correction at query time: `corrected_similarity = (1 - distance) * sqrt(nc_query * nc_result)`.
 
 **Background:** TurboQuant (Zandieh et al., ICLR 2026) and RaBitQ (Gao & Long, SIGMOD 2024) show that scalar quantization introduces systematic underestimation of cosine similarity, amplified when effective dimensionality (d_eff) is low. This directly impacts TAP-2 (#153, thinking-aware retrieval), fact dedup, and all semantic retrieval.
 
-**Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.
+**Implementation Summary:**
+- Schema v12→v13: added `+norm_correction FLOAT` auxiliary column to all three vec0 tables (sqlite-vec supports INTEGER, FLOAT, TEXT, and BLOB auxiliary column types; using FLOAT avoids string↔float conversion overhead)
+- `TruncateResult` struct in `embeddings/truncate.rs` carries both normalized vector and `norm_correction = 1/(|truncated_vec|²)`
+- `embed()` and `embed_batch()` return `TruncateResult`; all DB insertion functions accept `norm_correction: f32`
+- All semantic search functions (`search_content_semantic`, `search_facts_semantic`) read `norm_correction` from vec0 auxiliary columns and apply `sqrt(nc_query * nc_result)` correction
+- `ContentSearchParams` and `search_messages_hybrid` accept `query_norm_correction: f32` parameter
+- Migration v12→v13: DROP+re-CREATE vec0 tables, reset `has_embedding` flags (recovery pipeline regenerates embeddings with norm_correction)
 
-**Effort:** ~20 lines of Rust, 1 SQL migration
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Schema migration v12→v13: add `+norm_correction FLOAT` to vec0 tables | ✅ |
+| 2 | Calculate norm_correction on embedding insert (`1/(|truncated_vec|²)`) | ✅ |
+| 3 | Apply norm correction in scoring (search, dedup) | ✅ |
+| 4 | Enhance diagnostics report with norm correction awareness | ✅ |
+| 5 | Add threshold validation recommendation to diagnostics (joint with #134) | ✅ |
+| 6 | Tests: migration, norm calculation, threshold recommendation | ✅ |
+
+**Effort:** ~1.5 days (20+ lines Rust, 1 SQL migration, diagnostics enhancement)
 
 **Cross-refs:** R-25 (research-icebox.md), #133 (diagnostics), #153 (TAP-2)
 
@@ -2940,7 +2960,7 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 These criteria extend the original validation with geometry metrics discovered in the embedding audit (d_eff=7, d̄=0.353, SPREAD system):
 
-- [x] `sprach diag embeddings` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
+- [x] `sprach diagnostics` reports d_eff, average magnitude, threshold pass rate (#133) — PR #181 merged
 - [ ] Fact semantic threshold decision is data-driven: measure recall@k at 0.70 and 0.80 before changing (#134)
 - [ ] Alternative models are benchmarked by d_eff, retrieval quality, and multilingual support (#135)
 - [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` (#136)
@@ -2975,8 +2995,9 @@ These criteria extend the original validation with geometry metrics discovered i
 
 | Phase | Issue | Description | Priority | Milestone |
 |-------|-------|-------------|----------|-----------|
-| W4.0 | #133 | `sprach diagnostics embeddings` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
-| W4.1 | #134 | Validate fact semantic threshold 0.70 vs 0.80 before changing | High | M1 |
+| W4.0 | #133 | `sprach diagnostics` — diagnose d_eff, d̄, regime, variance explained | High | M1 |
+| W4.1 | #134 | ✅ COMPLETED Validate fact semantic threshold 0.70 vs 0.80 — PR #184 | High | M1 |
+| W4.0b | #157 | ✅ COMPLETED Norm correction in embedding tables — PR #184 | High | M1 |
 | W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
 | W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
 | W4.4 | #107 | Embedding provider abstraction — multi-provider support | High | M1 |
@@ -2992,7 +3013,7 @@ These criteria extend the original validation with geometry metrics discovered i
 **Depends on:** None
 **Estimated effort:** 2-3 days
 
-**Goal:** Add `sprach diagnostics embeddings` subcommand that performs spectral analysis on stored embeddings, reporting d_eff, mean cosine distance (d̄), regime classification, and variance distribution. This is the W4.0 gateway card — foundational infrastructure for all subsequent W4 phases.
+**Goal:** Add `sprach diagnostics` command that performs spectral analysis on stored embeddings, reporting d_eff, mean cosine distance (d̄), regime classification, and variance distribution. This is the W4.0 gateway card — foundational infrastructure for all subsequent W4 phases.
 
 **Design Decisions:**
 
@@ -3068,11 +3089,11 @@ Vectors: 18
 **CLI Syntax:**
 
 ```bash
-sprach diagnostics embeddings              # All sources combined
-sprach diagnostics embeddings --source content   # content_embeddings only
-sprach diagnostics embeddings --source chunks    # chunk_embeddings_v2 only
-sprach diagnostics embeddings --source facts    # fact_embeddings only
-sprach diag embeddings                        # Shortcut
+sprach diagnostics                            # All sources combined
+sprach diagnostics --source content           # content_embeddings only
+sprach diagnostics --source chunks            # chunk_embeddings_v2 only
+sprach diagnostics --source facts             # fact_embeddings only
+sprach diag                                   # Shortcut (alias)
 ```
 
 **Algorithms (no external dependencies):**
@@ -3185,6 +3206,45 @@ Three interrelated bugs discovered via production database investigation (12 ite
 | 4 | Read existing fact embeddings from DB instead of regenerating on every startup | ✅ COMPLETED |
 | 5 | `DELETE + INSERT` pattern for all vec0 embedding update methods | ✅ COMPLETED |
 | 6 | Orphan embedding cleanup in `/gc` (content, chunk, and fact embeddings) | ✅ COMPLETED |
+
+### Threshold Validation — #134 [M1/W4.1]
+
+**Status:** ✅ COMPLETED
+**Issue:** #134
+**PR:** #184
+**Branch:** `feat/norm-correction-and-threshold-validation`
+**Depends on:** #133 (Embedding Diagnostics) ✅ COMPLETED
+**Joint PR with:** #157 (Norm Correction)
+
+**Goal:** Data-driven validation of `SEMANTIC_SEARCH_THRESHOLD` (currently 0.70 in `src/facts/conflict.rs:230`) before potentially changing to 0.80. Use `sprach diagnostics` to measure whether the current threshold is appropriate given the measured d_eff and d̄.
+
+**Implementation Summary:**
+- `SEMANTIC_SEARCH_THRESHOLD` renamed to `DEFAULT_SEMANTIC_SEARCH_THRESHOLD` (kept as canonical default)
+- Configurable `[facts].semantic_threshold` in `FactSettings` (default: 0.70, serde default)
+- Threaded through `DedupContext.semantic_threshold` → `deduplicate_and_insert()` (8 args, `#[allow(clippy::too_many_arguments)]`)
+- All 3 callers updated: `command_handlers.rs`, `fact_tools.rs`, `extract.rs`
+- New `[retrieval]` config section with `keyword_weight` (default: 0.4) and `semantic_weight` (default: 0.6)
+- Hardcoded `KEYWORD_WEIGHT`/`SEMANTIC_WEIGHT` constants removed from `context_builder.rs`
+- `ThresholdRecommendation` struct in `diagnostics/embeddings.rs` with `recommend_threshold()` function
+- Diagnostics report now includes **Recommended configuration** section with data-driven threshold and weight suggestions
+- 6 new tests for threshold recommendation logic
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `[facts].semantic_threshold` to config | ✅ |
+| 2 | Thread through dedup pipeline | ✅ |
+| 3 | Add `[retrieval]` section with keyword_weight/semantic_weight | ✅ |
+| 4 | Add `ThresholdRecommendation` struct and `recommend_threshold()` | ✅ |
+| 5 | Add recommendation section to diagnostics display | ✅ |
+| 6 | Tests for threshold recommendation logic | ✅ |
+
+**Files to Modify:**
+- `src/diagnostics/embeddings.rs` — Add `ThresholdRecommendation` struct, `recommend_threshold()` function, extend `EmbeddingDiagnostics`
+- `src/diagnostics/display.rs` — Add "Threshold Recommendation" section to markdown report
+
+**Effort:** ~0.5 day
 
 **Deferred to Later Milestones:**
 

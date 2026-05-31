@@ -208,7 +208,7 @@ pub fn extract_fact_triple(content: &str) -> Option<FactTriple> {
     None
 }
 
-/// Default threshold for FTS5 BM25 conflict detection (similarity score 0.0-1.0)
+/// Threshold for FTS5 BM25 conflict detection (similarity score 0.0-1.0)
 ///
 /// Lowered from 0.85 to 0.75 to catch more FTS5 keyword matches.
 /// BM25 normalization maps score -5 (good match) to ~0.83, which was
@@ -216,18 +216,6 @@ pub fn extract_fact_triple(content: &str) -> Option<FactTriple> {
 /// are caught while false positives remain rare due to the layered
 /// dedup pipeline (exact match → normalized match → semantic → FTS5).
 pub const CONFLICT_THRESHOLD: f32 = 0.75;
-
-/// Threshold for insert-time semantic search via embeddings (cosine similarity).
-///
-/// Used by Layer 3.5 in `dedup::deduplicate_and_insert()` (the centralized pipeline).
-/// Intentionally broad (0.70) to catch contradictions that normalized match
-/// and FTS5 BM25 miss (e.g., "prefer dark mode" vs "prefer light mode" at
-/// cosine ~0.77). Triple-based disambiguation inside the semantic block
-/// separates contradictions from duplicates and related facts.
-///
-/// Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs, which is
-/// for startup O(n²) pairwise dedup (intentionally strict — near-identical only).
-pub const SEMANTIC_SEARCH_THRESHOLD: f32 = 0.70;
 
 /// Type of conflict detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1231,12 +1219,13 @@ mod tests {
     }
 
     #[test]
-    fn test_semantic_search_threshold_value() {
-        // Verify threshold constant matches spec
-        assert!((SEMANTIC_SEARCH_THRESHOLD - 0.70).abs() < f32::EPSILON);
+    fn test_semantic_search_threshold_default_value() {
+        // Verify default constant matches spec
+        use crate::settings::DEFAULT_SEMANTIC_THRESHOLD;
+        assert!((DEFAULT_SEMANTIC_THRESHOLD - 0.70).abs() < f32::EPSILON);
         // Verify it's below the minimum contradiction cosine (0.7753)
-        assert!(SEMANTIC_SEARCH_THRESHOLD < 0.77);
+        assert!(DEFAULT_SEMANTIC_THRESHOLD < 0.77);
         // Verify it's above the maximum different-topic cosine (0.60)
-        assert!(SEMANTIC_SEARCH_THRESHOLD > 0.60);
+        assert!(DEFAULT_SEMANTIC_THRESHOLD > 0.60);
     }
 }

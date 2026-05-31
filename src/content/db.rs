@@ -37,7 +37,7 @@ const SEARCH_NOTES_FTS_SQL: &str = "
     JOIN content_items ci ON fts.rowid = ci.id";
 
 const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
-    SELECT ce.item_id, ce.distance, ci.id, ci.content_type, ci.conversation_id,
+    SELECT ce.item_id, ce.distance, ce.norm_correction, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
@@ -46,7 +46,7 @@ const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
     WHERE ce.embedding MATCH ? AND ce.k = ?";
 
 const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
-    SELECT cc.id, ce.distance, cc.item_id, cc.chunk_index, cc.content, 
+    SELECT cc.id, ce.distance, ce.norm_correction, cc.item_id, cc.chunk_index, cc.content, 
            cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
@@ -63,6 +63,9 @@ pub struct ContentSearchParams<'a> {
     pub query: &'a str,
     /// Query embedding for semantic search
     pub embedding: &'a [f32],
+    /// Norm correction factor for the query embedding.
+    /// Applied as: corrected_similarity = (1 - distance) * sqrt(query_nc * result_nc)
+    pub query_norm_correction: f32,
     /// Filter by content type (None = all types)
     pub content_type: Option<ContentType>,
     /// Filter by conversation ID (for messages)
@@ -623,6 +626,11 @@ impl Database {
     /// Inserts the embedding into content_embeddings and marks the item as having embedding.
     /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
     /// (UNIQUE constraint on item_id PRIMARY KEY). This makes re-embedding safe.
+    ///
+    /// `norm_correction` is stored as a FLOAT auxiliary column in the vec0 table.
+    /// It represents `1/(norm²)` for the truncated embedding, used to correct
+    /// cosine similarity at query time.
+    #[expect(clippy::too_many_arguments)] // All parameters needed for vec0 auxiliary columns
     pub fn update_content_item_embedding(
         &self,
         item_id: i64,
@@ -631,10 +639,12 @@ impl Database {
         conversation_id: Option<&str>,
         project_id: Option<&str>,
         timestamp: chrono::DateTime<chrono::Utc>,
+        norm_correction: f32,
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+            let norm_correction_f64 = f64::from(norm_correction);
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the item already has an embedding, the old row must be removed
@@ -646,8 +656,8 @@ impl Database {
             )?;
 
             conn.execute(
-                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp, norm_correction)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     item_id,
                     embedding_bytes.as_slice(),
@@ -655,6 +665,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
+                    norm_correction_f64,
                 ],
             )?;
 
@@ -672,6 +683,11 @@ impl Database {
     /// Inserts the embedding into chunk_embeddings_v2 and marks the chunk as having embedding.
     /// Uses DELETE + INSERT because vec0 virtual tables do not support INSERT OR REPLACE
     /// (UNIQUE constraint on chunk_id PRIMARY KEY). This makes re-embedding safe.
+    ///
+    /// `norm_correction` is stored as a FLOAT auxiliary column in the vec0 table.
+    /// It represents `1/(norm²)` for the truncated embedding, used to correct
+    /// cosine similarity at query time.
+    #[expect(clippy::too_many_arguments)] // All parameters needed for vec0 auxiliary columns
     pub fn update_content_chunk_embedding(
         &self,
         chunk_id: i64,
@@ -680,10 +696,12 @@ impl Database {
         conversation_id: Option<&str>,
         project_id: Option<&str>,
         timestamp: chrono::DateTime<chrono::Utc>,
+        norm_correction: f32,
     ) -> Result<()> {
         self.with_connection(|conn| {
             let embedding_bytes = crate::db::embedding_to_le_bytes(embedding);
             let ts = timestamp.timestamp();
+            let norm_correction_f64 = f64::from(norm_correction);
 
             // DELETE first: vec0 does not support INSERT OR REPLACE.
             // If the chunk already has an embedding, the old row must be removed
@@ -695,8 +713,8 @@ impl Database {
             )?;
 
             conn.execute(
-                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp, norm_correction)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     chunk_id,
                     embedding_bytes.as_slice(),
@@ -704,6 +722,7 @@ impl Database {
                     conversation_id,
                     project_id,
                     ts,
+                    norm_correction_f64,
                 ],
             )?;
 
@@ -876,10 +895,16 @@ impl Database {
         })
     }
 
-    /// Search content items using vector similarity
+    /// Search content items using vector similarity with norm correction.
+    ///
+    /// When embeddings are truncated from higher dimensions, the cosine similarity
+    /// of the truncated vectors underestimates the true similarity. The `norm_correction`
+    /// factor compensates: `corrected = (1 - distance) * sqrt(nc_query * nc_result)`.
+    #[expect(clippy::too_many_arguments)]
     pub fn search_content_semantic(
         &self,
         embedding: &[f32],
+        query_norm_correction: f32,
         content_type: Option<ContentType>,
         conversation_id: Option<&str>,
         project_id: Option<&str>,
@@ -904,52 +929,55 @@ impl Database {
                     |row| {
                         let item_id: i64 = row.get(0)?;
                         let distance: f32 = row.get(1)?;
+                        let norm_correction: f32 = row.get::<_, f64>(2)? as f32;
                         let item = ContentItem {
-                            id: row.get(2)?,
-                            content_type: ContentType::from_str(&row.get::<_, String>(3)?)
+                            id: row.get(3)?,
+                            content_type: ContentType::from_str(&row.get::<_, String>(4)?)
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
-                            conversation_id: row.get(4)?,
-                            role: row.get(5)?,
-                            message_type: row.get(6)?,
-                            previous_item_id: row.get(7)?,
-                            prompt_tokens: row.get(8)?,
+                            conversation_id: row.get(5)?,
+                            role: row.get(6)?,
+                            message_type: row.get(7)?,
+                            previous_item_id: row.get(8)?,
+                            prompt_tokens: row.get(9)?,
                             scope: row
-                                .get::<_, Option<String>>(9)?
+                                .get::<_, Option<String>>(10)?
                                 .map(|s| ContentScope::from_str(&s))
                                 .transpose()
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             source: row
-                                .get::<_, Option<String>>(10)?
+                                .get::<_, Option<String>>(11)?
                                 .map(|s| ContentSource::from_str(&s))
                                 .transpose()
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
-                            title: row.get(11)?,
-                            content: row.get(12)?,
-                            importance: row.get(13)?,
-                            access_count: row.get::<_, i32>(14)? as u32,
-                            decay_score: row.get(15)?,
-                            created_at: DateTime::from_timestamp(row.get::<_, i64>(16)?, 0)
+                            title: row.get(12)?,
+                            content: row.get(13)?,
+                            importance: row.get(14)?,
+                            access_count: row.get::<_, i32>(15)? as u32,
+                            decay_score: row.get(16)?,
+                            created_at: DateTime::from_timestamp(row.get::<_, i64>(17)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(17)?, 0)
+                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(18)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(18)?, 0)
+                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(19)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            has_embedding: row.get::<_, i32>(19)? != 0,
-                            project_id: row.get(20)?,
+                            has_embedding: row.get::<_, i32>(20)? != 0,
+                            project_id: row.get(21)?,
                         };
-                        Ok((item_id, item, distance))
+                        Ok((item_id, item, distance, norm_correction))
                     },
                 )?
                 .collect::<Result<Vec<_>, _>>()?;
 
-            for (_item_id, item, distance) in rows {
-                // Convert cosine distance to cosine similarity.
-                // With distance_metric=cosine (schema v12), sqlite-vec returns
-                // cosine distance directly: similarity = 1.0 - distance.
-                let similarity = 1.0 - distance;
+            for (_item_id, item, distance, result_nc) in rows {
+                // Convert cosine distance to cosine similarity,
+                // then apply norm correction for truncated embeddings.
+                // corrected = (1 - distance) * sqrt(nc_query * nc_result)
+                let raw_similarity = 1.0 - distance;
+                let corrected_similarity =
+                    raw_similarity * (query_norm_correction * result_nc).sqrt();
                 results.push(ContentSearchResult {
                     item,
-                    score: similarity,
+                    score: corrected_similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content: None,
                     chunk_offsets: None,
@@ -964,50 +992,52 @@ impl Database {
                     |row| {
                         let _chunk_id: i64 = row.get(0)?;
                         let distance: f32 = row.get(1)?;
-                        let item_id: i64 = row.get(2)?;
-                        let _chunk_index: i32 = row.get(3)?;
-                        let chunk_content: String = row.get(4)?;
-                        let start_offset: i32 = row.get(5)?;
-                        let end_offset: i32 = row.get(6)?;
+                        let norm_correction: f32 = row.get::<_, f64>(2)? as f32;
+                        let item_id: i64 = row.get(3)?;
+                        let _chunk_index: i32 = row.get(4)?;
+                        let chunk_content: String = row.get(5)?;
+                        let start_offset: i32 = row.get(6)?;
+                        let end_offset: i32 = row.get(7)?;
 
                         let item = ContentItem {
-                            id: row.get(7)?,
-                            content_type: ContentType::from_str(&row.get::<_, String>(8)?)
+                            id: row.get(8)?,
+                            content_type: ContentType::from_str(&row.get::<_, String>(9)?)
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
-                            conversation_id: row.get(9)?,
-                            role: row.get(10)?,
-                            message_type: row.get(11)?,
-                            previous_item_id: row.get(12)?,
-                            prompt_tokens: row.get(13)?,
+                            conversation_id: row.get(10)?,
+                            role: row.get(11)?,
+                            message_type: row.get(12)?,
+                            previous_item_id: row.get(13)?,
+                            prompt_tokens: row.get(14)?,
                             scope: row
-                                .get::<_, Option<String>>(14)?
+                                .get::<_, Option<String>>(15)?
                                 .map(|s| ContentScope::from_str(&s))
                                 .transpose()
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             source: row
-                                .get::<_, Option<String>>(15)?
+                                .get::<_, Option<String>>(16)?
                                 .map(|s| ContentSource::from_str(&s))
                                 .transpose()
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
-                            title: row.get(16)?,
-                            content: row.get(17)?,
-                            importance: row.get(18)?,
-                            access_count: row.get::<_, i32>(19)? as u32,
-                            decay_score: row.get(20)?,
-                            created_at: DateTime::from_timestamp(row.get::<_, i64>(21)?, 0)
+                            title: row.get(17)?,
+                            content: row.get(18)?,
+                            importance: row.get(19)?,
+                            access_count: row.get::<_, i32>(20)? as u32,
+                            decay_score: row.get(21)?,
+                            created_at: DateTime::from_timestamp(row.get::<_, i64>(22)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(22)?, 0)
+                            updated_at: DateTime::from_timestamp(row.get::<_, i64>(23)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(23)?, 0)
+                            last_accessed: DateTime::from_timestamp(row.get::<_, i64>(24)?, 0)
                                 .unwrap_or_else(Utc::now),
-                            has_embedding: row.get::<_, i32>(24)? != 0,
-                            project_id: row.get(25)?,
+                            has_embedding: row.get::<_, i32>(25)? != 0,
+                            project_id: row.get(26)?,
                         };
 
                         Ok((
                             item_id,
                             item,
                             distance,
+                            norm_correction,
                             Some(chunk_content),
                             Some((start_offset, end_offset)),
                         ))
@@ -1015,14 +1045,15 @@ impl Database {
                 )?
                 .collect::<Result<Vec<_>, _>>()?;
 
-            for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {
-                // Convert cosine distance to cosine similarity.
-                // With distance_metric=cosine (schema v12), sqlite-vec returns
-                // cosine distance directly: similarity = 1.0 - distance.
-                let similarity = 1.0 - distance;
+            for (_item_id, item, distance, result_nc, chunk_content, chunk_offsets) in rows {
+                // Convert cosine distance to cosine similarity,
+                // then apply norm correction for truncated embeddings.
+                let raw_similarity = 1.0 - distance;
+                let corrected_similarity =
+                    raw_similarity * (query_norm_correction * result_nc).sqrt();
                 results.push(ContentSearchResult {
                     item,
-                    score: similarity,
+                    score: corrected_similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content,
                     chunk_offsets,
@@ -1091,6 +1122,7 @@ impl Database {
 
         let semantic_results = self.search_content_semantic(
             params.embedding,
+            params.query_norm_correction,
             params.content_type,
             params.conversation_id,
             params.project_id,
@@ -1507,6 +1539,7 @@ impl Database {
         &self,
         query: &str,
         embedding: &[f32],
+        query_norm_correction: f32,
         conversation_id: Option<&str>,
         project_id: Option<&str>,
         limit: usize,
@@ -1516,6 +1549,7 @@ impl Database {
         let params = ContentSearchParams {
             query,
             embedding,
+            query_norm_correction,
             content_type: Some(ContentType::Message),
             conversation_id,
             project_id,

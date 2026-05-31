@@ -279,7 +279,11 @@ pub async fn run_query(
 
     let coordinator = coordinator::build_query_coordinator(&ctx, settings);
 
-    let retrieval_config = crate::retrieval::RetrievalConfig::default();
+    let retrieval_config = crate::retrieval::RetrievalConfig {
+        keyword_weight: settings.retrieval.keyword_weight,
+        semantic_weight: settings.retrieval.semantic_weight,
+        ..crate::retrieval::RetrievalConfig::default()
+    };
     let context_result = build_query_context(
         ctx.project_id.as_deref(),
         ctx.db.as_ref(),

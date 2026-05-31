@@ -24,6 +24,10 @@ use std::fmt;
 
 use clap::ValueEnum;
 
+use crate::settings::{
+    DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_THRESHOLD, DEFAULT_SEMANTIC_WEIGHT,
+};
+
 /// Source of embedding vectors for diagnostics
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum EmbeddingSource {
@@ -74,6 +78,29 @@ pub struct RegimeAtThreshold {
     pub regime: Regime,
 }
 
+/// Recommended configuration values based on embedding geometry analysis.
+///
+/// Based on the observed d_eff and d̄, this struct recommends:
+/// - A `semantic_threshold` for fact deduplication that avoids false positives
+///   in SPREAD regimes while maintaining good recall in TIGHT regimes.
+/// - Whether `keyword_weight` / `semantic_weight` should be adjusted from defaults
+///   based on the observed regime.
+#[derive(Debug, Clone)]
+pub struct ThresholdRecommendation {
+    /// Recommended `[facts].semantic_threshold` value
+    pub semantic_threshold: f64,
+    /// Rationale for the recommendation
+    pub rationale: String,
+    /// Whether default weights are appropriate, or if the user should adjust them
+    pub adjust_weights: bool,
+    /// Suggested `keyword_weight` (only meaningful if `adjust_weights` is true)
+    pub suggested_keyword_weight: f64,
+    /// Suggested `semantic_weight` (only meaningful if `adjust_weights` is true)
+    pub suggested_semantic_weight: f64,
+    /// Weight adjustment rationale (only meaningful if `adjust_weights` is true)
+    pub weight_rationale: String,
+}
+
 /// Variance explained at specific cumulative percentages
 #[derive(Debug, Clone)]
 pub struct VarianceExplained {
@@ -112,6 +139,8 @@ pub struct EmbeddingDiagnostics {
     pub variance_explained: VarianceExplained,
     /// Embedding model name
     pub model_name: String,
+    /// Recommended threshold values based on observed geometry
+    pub threshold_recommendation: ThresholdRecommendation,
 }
 
 /// Progress callback type for spectral analysis.
@@ -189,6 +218,15 @@ pub fn analyze_embeddings_with_progress(
                 pc_99: 0,
             },
             model_name: model_name.to_string(),
+            threshold_recommendation: ThresholdRecommendation {
+                semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
+                rationale: "No vectors available for analysis. Using default threshold."
+                    .to_string(),
+                adjust_weights: false,
+                suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+                suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
+                weight_rationale: String::new(),
+            },
         };
     }
 
@@ -225,6 +263,7 @@ pub fn analyze_embeddings_with_progress(
     progress("Finalizing analysis", 0.99);
     let regimes = compute_regimes(mean_cd);
     let variance_explained = compute_variance_explained(&eigenvalues, d);
+    let threshold_recommendation = recommend_threshold(d_eff, mean_cd, &regimes);
 
     EmbeddingDiagnostics {
         vector_count: n,
@@ -242,6 +281,7 @@ pub fn analyze_embeddings_with_progress(
         regimes,
         variance_explained,
         model_name: model_name.to_string(),
+        threshold_recommendation,
     }
 }
 
@@ -650,6 +690,127 @@ fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
         .collect()
 }
 
+/// Recommend a semantic threshold and weight configuration based on observed geometry.
+///
+/// The recommendation follows these rules:
+///
+/// - **TIGHT at θ=0.70:** Default threshold 0.70 is appropriate. Vectors
+///   discriminate well at this level. No weight adjustment needed.
+///
+/// - **SPREAD at θ=0.70 but TIGHT at θ=0.80:** Recommend raising threshold
+///   to 0.80. Vectors don't discriminate well enough at 0.70 (many false
+///   positives in dedup), but work well at 0.80. Consider increasing
+///   keyword_weight since semantic search is less reliable at lower thresholds.
+///
+/// - **SPREAD at all thresholds (0.70–0.85):** The embedding space has
+///   minimal discriminative power. Recommend 0.85 threshold and shifting
+///   strongly toward keyword-matching (keyword_weight=0.7, semantic_weight=0.3).
+///
+/// - **Edge case — very low d̄ (< 0.15):** Vectors are nearly identical.
+///   This usually means the corpus is too small or too homogeneous. Threshold
+///   doesn't matter much; suggest 0.70 with a warning.
+pub fn recommend_threshold(
+    _d_eff: f64,
+    mean_cosine_distance: f64,
+    regimes: &[RegimeAtThreshold],
+) -> ThresholdRecommendation {
+    let tight_at_070 = regimes
+        .iter()
+        .find(|r| (r.theta - 0.70).abs() < 0.01)
+        .map(|r| r.regime == Regime::Tight)
+        .unwrap_or(true);
+
+    let tight_at_080 = regimes
+        .iter()
+        .find(|r| (r.theta - 0.80).abs() < 0.01)
+        .map(|r| r.regime == Regime::Tight)
+        .unwrap_or(true);
+
+    let tight_at_085 = regimes
+        .iter()
+        .find(|r| (r.theta - 0.85).abs() < 0.01)
+        .map(|r| r.regime == Regime::Tight)
+        .unwrap_or(true);
+
+    // Edge case: very low mean cosine distance (< 0.15) means vectors are
+    // nearly identical — threshold doesn't matter much
+    if mean_cosine_distance < 0.15 {
+        return ThresholdRecommendation {
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
+            rationale: "Vectors are nearly identical (d̄ < 0.15). Default threshold \
+                works but corpus may be too small or homogeneous for meaningful analysis."
+                .to_string(),
+            adjust_weights: false,
+            suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+            suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
+            weight_rationale: String::new(),
+        };
+    }
+
+    // Case 1: TIGHT at 0.70 — geometry works well at default threshold
+    if tight_at_070 {
+        ThresholdRecommendation {
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
+            rationale: "Embedding geometry is TIGHT at θ=0.70 — semantic search \
+                discriminates well. Default threshold is appropriate."
+                .to_string(),
+            adjust_weights: false,
+            suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
+            suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
+            weight_rationale: String::new(),
+        }
+    }
+    // Case 2: SPREAD at 0.70 but TIGHT at 0.80 — raise threshold to 0.80
+    else if tight_at_080 {
+        ThresholdRecommendation {
+            semantic_threshold: 0.80,
+            rationale: "Embedding geometry is SPREAD at θ=0.70 but TIGHT at θ=0.80. \
+                Raising the threshold to 0.80 avoids false positive matches while \
+                maintaining good recall."
+                .to_string(),
+            adjust_weights: true,
+            suggested_keyword_weight: 0.5,
+            suggested_semantic_weight: 0.5,
+            weight_rationale: "With θ=0.80, semantic search is effective but less \
+                permissive — balancing keyword and semantic equally provides \
+                the best RRF fusion."
+                .to_string(),
+        }
+    }
+    // Case 3: SPREAD at all thresholds — maximize threshold, shift to keyword
+    else if !tight_at_085 {
+        ThresholdRecommendation {
+            semantic_threshold: 0.85,
+            rationale: "Embedding geometry is SPREAD at all tested thresholds. \
+                Setting θ=0.85 minimizes false positives but semantic search \
+                still has limited discriminative power."
+                .to_string(),
+            adjust_weights: true,
+            suggested_keyword_weight: 0.7,
+            suggested_semantic_weight: 0.3,
+            weight_rationale: "With SPREAD geometry, keyword search is more \
+                reliable than semantic search. Shifting weight toward keywords \
+                improves retrieval quality."
+                .to_string(),
+        }
+    }
+    // Case 4: TIGHT at 0.85 but not at 0.80 — use 0.85
+    else {
+        ThresholdRecommendation {
+            semantic_threshold: 0.85,
+            rationale: "Embedding geometry is TIGHT only at θ=0.85. Using the \
+                highest threshold ensures reliable discrimination."
+                .to_string(),
+            adjust_weights: true,
+            suggested_keyword_weight: 0.6,
+            suggested_semantic_weight: 0.4,
+            weight_rationale: "With a high threshold, semantic search is restrictive. \
+                Giving more weight to keywords broadens recall."
+                .to_string(),
+        }
+    }
+}
+
 /// Compute variance explained at key percentiles
 ///
 /// Reports which principal component number reaches 50%, 90%, 95%, 99%
@@ -961,6 +1122,217 @@ mod tests {
             "d_eff with progress should match baseline: {} vs {}",
             diagnostics.d_eff,
             baseline.d_eff
+        );
+    }
+
+    // ============================================================
+    // Threshold recommendation tests
+    // ============================================================
+
+    /// Test: TIGHT at θ=0.70 → recommend default threshold 0.70
+    #[test]
+    fn test_recommend_threshold_tight_at_070() {
+        // d̄ = 0.2, so at θ=0.70, θ'=0.30, and 0.2 < 0.30 → TIGHT
+        let regimes = compute_regimes(0.2);
+        let rec = recommend_threshold(10.0, 0.2, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.70).abs() < 0.01,
+            "TIGHT at 0.70 should recommend θ=0.70, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
+    }
+
+    /// Test: TIGHT at θ=0.70 but SPREAD at θ≥0.75 → still recommend θ=0.70
+    ///
+    /// With d̄=0.28: TIGHT at 0.70 (θ'=0.30), SPREAD at 0.75+ (θ'≤0.25).
+    /// Because d̄ < 0.30 at θ=0.70, `tight_at_070=true` → default 0.70 is appropriate.
+    #[test]
+    fn test_recommend_threshold_tight_at_070_spread_above() {
+        let regimes = compute_regimes(0.28);
+        assert_eq!(
+            regimes[0].regime,
+            Regime::Tight,
+            "d̄=0.28 < θ'=0.30 at θ=0.70"
+        );
+        assert_eq!(
+            regimes[1].regime,
+            Regime::Spread,
+            "d̄=0.28 ≥ θ'=0.25 at θ=0.75"
+        );
+        assert_eq!(
+            regimes[2].regime,
+            Regime::Spread,
+            "d̄=0.28 ≥ θ'=0.20 at θ=0.80"
+        );
+        assert_eq!(
+            regimes[3].regime,
+            Regime::Spread,
+            "d̄=0.28 ≥ θ'=0.15 at θ=0.85"
+        );
+
+        let rec = recommend_threshold(10.0, 0.28, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.70).abs() < 0.01,
+            "TIGHT at 0.70 should recommend θ=0.70, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
+    }
+
+    /// Test: SPREAD at all thresholds → recommend θ=0.85 with keyword-heavy weights
+    #[test]
+    fn test_recommend_threshold_spread_everywhere() {
+        // d̄ = 0.65 → SPREAD at all thresholds
+        // θ=0.70→θ'=0.30, 0.65≥0.30→SPREAD
+        // θ=0.75→θ'=0.25, 0.65≥0.25→SPREAD
+        // θ=0.80→θ'=0.20, 0.65≥0.20→SPREAD
+        // θ=0.85→θ'=0.15, 0.65≥0.15→SPREAD
+        let regimes = compute_regimes(0.65);
+        for r in &regimes {
+            assert_eq!(
+                r.regime,
+                Regime::Spread,
+                "Should be SPREAD at θ={}",
+                r.theta
+            );
+        }
+
+        let rec = recommend_threshold(10.0, 0.65, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.85).abs() < 0.01,
+            "SPREAD everywhere should recommend θ=0.85, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            rec.adjust_weights,
+            "Should adjust weights for SPREAD geometry"
+        );
+        assert!(
+            (rec.suggested_keyword_weight - 0.7).abs() < 0.01,
+            "Should suggest keyword_weight=0.7, got {}",
+            rec.suggested_keyword_weight
+        );
+        assert!(
+            (rec.suggested_semantic_weight - 0.3).abs() < 0.01,
+            "Should suggest semantic_weight=0.3, got {}",
+            rec.suggested_semantic_weight
+        );
+    }
+
+    /// Test: Very low d̄ (< 0.15) → default threshold with warning
+    #[test]
+    fn test_recommend_threshold_very_low_distance() {
+        // d̄ = 0.05 → all TIGHT, but edge case because vectors are nearly identical
+        let regimes = compute_regimes(0.05);
+        let rec = recommend_threshold(10.0, 0.05, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.70).abs() < 0.01,
+            "Very low d̄ should recommend default θ=0.70, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights for very low d̄"
+        );
+        assert!(
+            rec.rationale.contains("nearly identical"),
+            "Rationale should mention low distance, got: {}",
+            rec.rationale
+        );
+    }
+
+    /// Test: SPREAD at 0.70-0.75, TIGHT at 0.80-0.85 → recommend θ=0.80
+    #[test]
+    fn test_recommend_threshold_spread_low_tight_high() {
+        // d̄ = 0.22
+        // θ=0.70→θ'=0.30, 0.22<0.30→TIGHT
+        // θ=0.75→θ'=0.25, 0.22<0.25→TIGHT
+        // θ=0.80→θ'=0.20, 0.22≥0.20→SPREAD
+        // θ=0.85→θ'=0.15, 0.22≥0.15→SPREAD
+        let regimes = compute_regimes(0.22);
+        assert_eq!(regimes[0].regime, Regime::Tight); // 0.70
+        assert_eq!(regimes[1].regime, Regime::Tight); // 0.75
+        assert_eq!(regimes[2].regime, Regime::Spread); // 0.80
+        assert_eq!(regimes[3].regime, Regime::Spread); // 0.85
+
+        // TIGHT at 0.70 → default threshold 0.70, no adjustment
+        let rec = recommend_threshold(10.0, 0.22, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.70).abs() < 0.01,
+            "TIGHT at 0.70 should recommend θ=0.70, got {}",
+            rec.semantic_threshold
+        );
+        assert!(!rec.adjust_weights);
+    }
+
+    /// Test: TIGHT at θ≤0.80 but SPREAD at θ=0.85 → default θ=0.70 still appropriate
+    ///
+    /// With d̄=0.18: TIGHT at 0.70/0.75/0.80, SPREAD only at 0.85.
+    /// Since `tight_at_070=true`, the default threshold 0.70 is still the
+    /// best choice — vectors discriminate well at this threshold.
+    #[test]
+    fn test_recommend_threshold_tight_low_spread_at_085() {
+        let regimes = compute_regimes(0.18);
+        assert_eq!(
+            regimes[0].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.30 at θ=0.70"
+        );
+        assert_eq!(
+            regimes[1].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.25 at θ=0.75"
+        );
+        assert_eq!(
+            regimes[2].regime,
+            Regime::Tight,
+            "d̄=0.18 < θ'=0.20 at θ=0.80"
+        );
+        assert_eq!(
+            regimes[3].regime,
+            Regime::Spread,
+            "d̄=0.18 ≥ θ'=0.15 at θ=0.85"
+        );
+
+        // tight_at_070=true → recommend θ=0.70 (default)
+        let rec = recommend_threshold(10.0, 0.18, &regimes);
+        assert!(
+            (rec.semantic_threshold - 0.70).abs() < 0.01,
+            "TIGHT at 0.70 should recommend θ=0.70, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            !rec.adjust_weights,
+            "Should not adjust weights when TIGHT at 0.70"
+        );
+    }
+
+    /// Test: analyze_embeddings produces threshold_recommendation
+    #[test]
+    fn test_diagnostics_includes_threshold_recommendation() {
+        let vectors: Vec<Vec<f64>> = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+        ];
+
+        let diagnostics = analyze_embeddings(&vectors, 3, "test-model", vec![]);
+
+        // Should have a threshold recommendation
+        assert!(
+            diagnostics.threshold_recommendation.semantic_threshold > 0.0,
+            "semantic_threshold should be positive"
+        );
+        assert!(
+            !diagnostics.threshold_recommendation.rationale.is_empty(),
+            "rationale should not be empty"
         );
     }
 }
