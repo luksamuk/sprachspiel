@@ -143,14 +143,19 @@ pub async fn verify_and_dedup_facts(
 
     stats.embeddings_generated = recovered + generated;
 
-    // Report completion for FactDedup phase
+    // Signal completion for FactDedup phase.
+    // In the dedup phase, entities == embeddings: each fact has exactly one
+    // embedding. This differs from content indexing where 1 item may produce
+    // N chunks (entities_total != embeddings_total). Here, both counters
+    // equal facts_total because every fact gets one embedding.
     if let Some(ref tx) = progress_tx {
+        let facts_processed = fact_embeddings.len();
         let _ = tx.send(EmbeddingProgress::new(
             EmbeddingPhase::FactDedup,
-            facts_total,
-            facts_total,
-            facts_total,
-            facts_total,
+            facts_processed, // entities_current: facts with embeddings (loaded or generated)
+            facts_total,    // entities_total: total facts checked
+            facts_processed, // embeddings_current: same as entities (1:1 ratio)
+            facts_total,    // embeddings_total: same as entities_total (1:1 ratio)
         ));
     }
 
