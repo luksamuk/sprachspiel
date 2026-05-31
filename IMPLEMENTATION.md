@@ -297,20 +297,28 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 **Key Insight:** `process_thinking()` already correctly splits thinking from content, but callers use `strip_thinking_tags()` for storage. The preservation path exists — we need to use it.
 
-**Implementation Phases (10 Steps):**
+**Implementation Phases (12 Steps):**
 
 | Step | Description | Status | Key Files |
 |------|-------------|--------|-----------|
 | 1 | Schema — Migration v13→v14: `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` | 📋 | `schema.rs`, `connection.rs` |
-| 2 | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | 📋 | `types.rs`, `db.rs` |
-| 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` + `load_sqlite()` mapping | 📋 | `core.rs`, `session.rs` |
-| 4 | Replace storage callers: `process_thinking()` instead of `strip_thinking_tags()` (2 call sites) | 📋 | `core.rs` |
-| 5 | Normalize `add_pre_tool_message()` — separate thinking from content | 📋 | `session.rs` |
-| 6 | `ContinuationResult` fields + `handle_continuation()` accumulation + `process_send_result()` | 📋 | `continuation.rs` |
-| 7 | `add_assistant_message()` accepts `thinking: Option<String>` — 6 callers | 📋 | `session.rs`, `command_handlers.rs` |
-| 8 | `ThinkingTraceSettings` + `[thinking_trace]` config + context builder | 📋 | `settings.rs`, `context_builder.rs` |
-| 9 | Tests: migration, roundtrip, continuation, retrocompat, search, compaction, pre-tool | 📋 | Test files |
-| 10 | Documentation — naming cleanup: `[t3]` → `[thinking_trace]`, `T3Status` → `ThinkingTraceStatus` | 📋 | Various docs |
+| 2a | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | 📋 | `types.rs`, `db.rs` |
+| 2b | Data migration — normalize existing pre-tool messages with inline `<thinking>` tags: `Database::normalize_inline_thinking()` method, called from `repl.rs` after init | 📋 | `connection.rs`, `repl.rs` |
+| 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` (with `#[serde(default)]`) | 📋 | `core.rs`, `session.rs` |
+| 4 | Replace storage callers: `process_thinking()` instead of `strip_thinking_tags()` in `process_chat_response()` (L348) and `send_message_stream()` (L880) | 📋 | `core.rs` |
+| 5 | Normalize `add_pre_tool_message()` — remove inline `<thinking>` formatting, pass `thinking_content` as separate DB column | 📋 | `session.rs` |
+| 6 | `ContinuationResult` 3 new fields + `handle_continuation(user_message_id: Option<i64>)` signature + accumulation logic | 📋 | `continuation.rs` |
+| 7 | `add_assistant_message(content, thinking, prompt_tokens)` — 6 callers (5 pass `None`, 1 passes thinking) | 📋 | `session.rs`, `command_handlers.rs` |
+| 10 | `process_send_result()` — pass `thinking` to `add_assistant_message()`, derive from continuation or direct result | 📋 | `continuation.rs` |
+| 11 | `load_sqlite()` — map `item.thinking_content` → `SavedMessage.thinking` | 📋 | `session.rs` |
+| 8 | `ThinkingTraceSettings` + `[thinking_trace]` config + `get_messages_for_llm(include_thinking)` + `RetrievalConfig.include_thinking` + context builder injection | 📋 | `settings.rs`, `session.rs`, `context_builder.rs`, `command_handlers.rs` |
+| 9 | Tests: migration, roundtrip, continuation, retrocompat, search, compaction, pre-tool, inline data migration, feature flag | 📋 | Test files |
+| 12 | Documentation — naming cleanup: `[t3]` → `[thinking_trace]`, `T3Status` → `ThinkingTraceStatus` | 📋 | Various docs |
+
+**Step Dependencies:**
+```
+1 → 2a → 2b → 3 → (4 ‖ 5) → (6 ‖ 7) → 10 → 11 → 8 → 9 → 12
+```
 
 **`thinking_trace_status` deferred to T3-Phase1 (#152):** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking." Phase 1 introduces the Thinking Trace Transform pipeline and needs `ThinkingTraceStatus` enum (`None=0, Raw=1, Pending=2, Done=3`) stored as `thinking_trace_status INTEGER DEFAULT 0`. See Decision Record D-09.
 
@@ -325,19 +333,32 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 | Doc first mention | Thinking Trace Transform (T3) |
 | Doc subsequent | T3 (acceptable shorthand) |
 
+**Refinements from Deep Analysis:**
+
+| # | Refinement | Impact | Detail |
+|---|-----------|--------|--------|
+| R1 | Inline data migration for existing pre-tool messages | Medium | Step 2b — `Database::normalize_inline_thinking()` uses `process_thinking()` to split inline `<thinking>` tags from stored `content` into `thinking_content` column. Without this, old rows pollute LLM context with raw tags. Called from `repl.rs` (where both `db` and `chat::thinking` are importable, avoiding circular `db`→`chat` dep). |
+| R2 | `handle_continuation()` needs `user_message_id` param | Low | Step 6 — add `user_message_id: Option<i64>` to signature. `process_send_result()` already has this value and passes it at call site (L80). |
+| R3 | `ChatMessage` has no `with_thinking()` builder | Low | Step 8 — construct `ChatMessage` manually: `msg.thinking = Some(thinking.clone())` when `[thinking_trace] enabled`. Follows pattern in `custom_coordinator.rs:780-794`. |
+| R4 | `get_messages_for_llm()` + `build_context()` need thinking injection | Medium | Step 8 — `get_messages_for_llm(system_prompt, include_thinking: bool)` passes thinking to `ChatMessage`. `RetrievalConfig.include_thinking` field added. Both gated by `settings.thinking_trace.enabled`. |
+
 **Files to Create:**
-- `src/chat/thinking_preserve.rs` — Helper functions for preserving thinking in storage path
+- None (inline data migration is a method on `Database`, not a new file)
 
 **Files to Modify:**
 - `src/db/schema.rs` — `SCHEMA_VERSION = 14`, `thinking_content TEXT` in CREATE TABLE
-- `src/db/connection.rs` — `migrate_v13_to_v14()` + dispatcher
+- `src/db/connection.rs` — `migrate_v13_to_v14()` (ALTER TABLE only) + dispatcher + `normalize_inline_thinking()` method
 - `src/content/types.rs` — `ContentItem.thinking_content: Option<String>`
 - `src/content/db.rs` — `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()`
 - `src/chat/core.rs` — `SendMessageResult.thinking`, 2× `process_thinking()` replacing `strip_thinking_tags()`
-- `src/chat/session.rs` — `SavedMessage.thinking`, `add_assistant_message()` param, `add_pre_tool_message()` storage, `load_sqlite()`
-- `src/chat/continuation.rs` — `ContinuationResult` fields, `handle_continuation()` accumulation, `process_send_result()` thinking
+- `src/chat/session.rs` — `SavedMessage.thinking`, `add_assistant_message()` param, `add_pre_tool_message()` storage, `load_sqlite()`, `get_messages_for_llm(include_thinking)` param
+- `src/chat/continuation.rs` — `ContinuationResult` 3 fields, `handle_continuation(user_message_id)` signature, `process_send_result()` thinking
+- `src/chat/mod.rs` — Add `process_thinking` to re-exports
+- `src/chat/thinking.rs` — (no change — `process_thinking` already public)
 - `src/settings.rs` — `ThinkingTraceSettings`, `Settings.thinking_trace`, sample config
-- `src/retrieval/context_builder.rs` — Conditional thinking injection
+- `src/retrieval/context_builder.rs` — `RetrievalConfig.include_thinking`, `push_messages_as_chat_messages(thinking)` param
+- `src/chat/repl.rs` — Call `db_ref.normalize_inline_thinking()` after init
+- `src/chat/command_handlers.rs` — Pass `include_thinking` to `get_messages_for_llm()`, pass `None` for thinking in 5 `add_assistant_message()` callers
 - `IMPLEMENTATION.md` — Naming cleanup
 - `doc/src/development/architecture.md` — Naming update
 - `doc/src/development/research-icebox.md` — D-09 naming update
@@ -350,6 +371,8 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 4. **No `thinking_trace_status` column in Phase 0:** In Phase 0, `thinking_content IS NOT NULL` is equivalent to "has thinking content." The `ThinkingTraceStatus` enum (`None=0, Raw=1, Pending=2, Done=3`) and `thinking_trace_status INTEGER DEFAULT 0` column are deferred to T3-Phase1 (#152) when the transform pipeline needs state tracking. See Decision Record D-09.
 5. **Continuation thinking uses original `previous_message_id`:** All pre-tool messages from continuation turns reference the same user message as the initial turn. This is semantically correct — all are "what the assistant thought before calling a tool, in the same response to the same user message." Multiple pre-tool messages with the same parent are expected and handled by the `previous_item_id` FK.
 6. **Compaction summary does NOT preserve thinking:** Compaction summaries are content generated by the LLM (not original thinking traces). The retrieval path retrieves original traces from `thinking_content`, not from summaries. See Decision Record D-08.
+7. **Inline data migration uses `process_thinking()` from caller level:** The `db` module does not import from `chat` (dependency direction is `chat`→`db`). The `normalize_inline_thinking()` method on `Database` accepts a closure or the caller (`repl.rs`) iterates rows and calls `process_thinking()` directly. This avoids circular dependency.
+8. **`ChatMessage.thinking` set manually (no builder):** `ollama-rs 0.3.4` has `ChatMessage { thinking: Option<String> }` but no `with_thinking()` method. We set the field directly, following the pattern in `custom_coordinator.rs:780-794`.
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
