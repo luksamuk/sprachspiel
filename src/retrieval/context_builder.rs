@@ -250,8 +250,7 @@ fn push_messages_as_chat_messages<'a, I>(
     messages: &mut Vec<ChatMessage>,
     source: I,
     include_thinking: bool,
-)
-where
+) where
     I: IntoIterator<Item = &'a crate::chat::session::SavedMessage>,
 {
     for msg in source {
@@ -351,7 +350,11 @@ pub async fn build_context(
         // Clamp to actual message count to avoid panic after /clear
         let first_preserved = first_preserved.min(session.messages.len());
         if first_preserved > 0 {
-            push_messages_as_chat_messages(&mut messages, &session.messages[..first_preserved], config.include_thinking);
+            push_messages_as_chat_messages(
+                &mut messages,
+                &session.messages[..first_preserved],
+                config.include_thinking,
+            );
         }
     }
 
@@ -937,7 +940,10 @@ mod tests {
         push_messages_as_chat_messages(&mut messages, source.iter(), true);
 
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].thinking, Some("I reasoned about the question".to_string()));
+        assert_eq!(
+            messages[0].thinking,
+            Some("I reasoned about the question".to_string())
+        );
         assert_eq!(messages[1].thinking, None);
     }
 
@@ -954,6 +960,9 @@ mod tests {
         push_messages_as_chat_messages(&mut messages, source.iter(), false);
 
         assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].thinking, None, "thinking should NOT be injected when include_thinking=false");
+        assert_eq!(
+            messages[0].thinking, None,
+            "thinking should NOT be injected when include_thinking=false"
+        );
     }
 }

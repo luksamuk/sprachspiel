@@ -1057,7 +1057,11 @@ impl ChatSession {
     ///
     /// When `include_thinking` is true, assistant messages with preserved thinking
     /// content include their reasoning traces in the `ChatMessage.thinking` field.
-    pub fn get_messages_for_llm(&self, system_prompt: &str, include_thinking: bool) -> Vec<ChatMessage> {
+    pub fn get_messages_for_llm(
+        &self,
+        system_prompt: &str,
+        include_thinking: bool,
+    ) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
 
         // Add system message

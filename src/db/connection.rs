@@ -1129,7 +1129,10 @@ mod tests {
             .expect("Failed to query updated row");
 
         assert_eq!(content, "The answer is 42");
-        assert_eq!(thinking, Some("<thinking>Let me reason</thinking>".to_string()));
+        assert_eq!(
+            thinking,
+            Some("<thinking>Let me reason</thinking>".to_string())
+        );
     }
 
     #[test]
@@ -1158,7 +1161,10 @@ mod tests {
             })
             .expect("normalize_inline_thinking failed");
 
-        assert_eq!(count, 0, "Should normalize 0 rows when no thinking tags present");
+        assert_eq!(
+            count, 0,
+            "Should normalize 0 rows when no thinking tags present"
+        );
     }
 
     #[test]
