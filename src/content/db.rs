@@ -808,7 +808,7 @@ impl Database {
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(20)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -878,7 +878,7 @@ impl Database {
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![escaped_query, limit as i32], |row| {
-                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(20)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 

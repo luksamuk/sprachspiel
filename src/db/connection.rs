@@ -626,7 +626,7 @@ impl Database {
     ///
     /// Reference: Arabzadeh et al. 2026, arXiv:2605.03344
     fn migrate_v13_to_v14(conn: &Connection) -> Result<()> {
-        conn.execute_batch("ALTER TABLE content_items ADD COLUMN thinking_content TEXT;")?;
+        Self::add_column_if_missing(conn, "content_items", "thinking_content", "TEXT")?;
         log::info!("Migration v13→v14: Added thinking_content column to content_items");
         Ok(())
     }

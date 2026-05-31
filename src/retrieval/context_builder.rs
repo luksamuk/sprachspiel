@@ -811,7 +811,7 @@ mod tests {
     /// end_exclusive = len (include all).
     #[test]
     fn test_end_exclusive_excludes_last_user_message() {
-        let session = ChatSession::new("test-model".to_string(), None, false);
+        let _session = ChatSession::new("test-model".to_string(), None, false);
         // Simulate: [User("hello"), Assistant("hi"), User("current query")]
         let messages: Vec<SavedMessage> = vec![
             SavedMessage {
