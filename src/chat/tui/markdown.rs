@@ -32,6 +32,8 @@ use ratatui::text::{Line, Span, Text};
 use tui_markdown::{Options, StyleSheet, from_str_with_options};
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(feature = "latex")]
+use crate::markdown::call_latex_safely;
 #[cfg(feature = "mermaid")]
 use crate::markdown::call_mermaid_safely;
 
@@ -50,10 +52,12 @@ use super::wrap::wrap_line;
 // Mocha (dark flavor) — used by DarkStyleSheet
 const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4
 const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68); // #313244
+const MOCHA_TEAL: Color = Color::Rgb(148, 226, 213); // #94e2d5
 
 // Latte (light flavor) — used by LightStyleSheet
 const LATTE_TEXT: Color = Color::Rgb(76, 79, 105); // #4c4f69
 const LATTE_SURFACE0: Color = Color::Rgb(204, 208, 218); // #ccd0da
+const LATTE_TEAL: Color = Color::Rgb(23, 146, 153); // #179299
 
 /// Markdown theme matching the user's `display.skin` configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,7 +222,7 @@ impl StyleSheet for MonoStyleSheet {
 // detecting table blocks and rendering them with box-drawing borders,
 // Unicode-aware column alignment, cell word-wrapping, and responsive width.
 
-/// A segment of markdown content — regular text, a table, or a Mermaid diagram.
+/// A segment of markdown content — regular text, a table, a Mermaid diagram, or a LaTeX formula.
 #[derive(Debug)]
 enum ContentSegment {
     /// Regular markdown content (rendered via tui-markdown)
@@ -228,12 +232,16 @@ enum ContentSegment {
     /// Mermaid diagram block (rendered as Unicode box-drawing text)
     #[cfg(feature = "mermaid")]
     Mermaid(String),
+    /// LaTeX formula block (rendered as Unicode character art)
+    #[cfg(feature = "latex")]
+    Latex(String),
 }
 
-/// Detect markdown table blocks and Mermaid blocks in content and split into segments.
+/// Detect markdown table blocks, Mermaid blocks, and LaTeX blocks in content
+/// and split into segments.
 ///
-/// Tables and Mermaid diagrams inside fenced code blocks are NOT detected as
-/// special segments — they remain as regular Markdown content.
+/// Tables, Mermaid diagrams, and LaTeX formulas inside fenced code blocks
+/// are NOT detected as special segments — they remain as regular Markdown content.
 fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut segments = Vec::new();
     let mut current_markdown = String::new();
@@ -242,6 +250,14 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut in_mermaid_block = false;
     #[cfg(feature = "mermaid")]
     let mut mermaid_content = String::new();
+    #[cfg(feature = "latex")]
+    let mut in_latex_block = false;
+    #[cfg(feature = "latex")]
+    let mut latex_content = String::new();
+    #[cfg(feature = "latex")]
+    let mut in_dollar_math = false;
+    #[cfg(feature = "latex")]
+    let mut dollar_content = String::new();
     let mut lines = content.lines().peekable();
 
     while let Some(line) = lines.next() {
@@ -256,6 +272,14 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
                 in_mermaid_block = false;
                 segments.push(ContentSegment::Mermaid(mermaid_content.clone()));
                 mermaid_content.clear();
+                continue;
+            }
+
+            #[cfg(feature = "latex")]
+            if in_latex_block {
+                in_latex_block = false;
+                segments.push(ContentSegment::Latex(latex_content.clone()));
+                latex_content.clear();
                 continue;
             }
 
@@ -278,6 +302,18 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
                 continue;
             }
 
+            // Starting a new code block — check if it's LaTeX
+            #[cfg(feature = "latex")]
+            if lang.starts_with("latex") || lang.starts_with("math") {
+                if !current_markdown.is_empty() {
+                    segments.push(ContentSegment::Markdown(std::mem::take(
+                        &mut current_markdown,
+                    )));
+                }
+                in_latex_block = true;
+                continue;
+            }
+
             in_code_block = true;
             current_markdown.push_str(line);
             current_markdown.push('\n');
@@ -291,9 +327,42 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
             continue;
         }
 
+        #[cfg(feature = "latex")]
+        if in_latex_block {
+            latex_content.push_str(line);
+            latex_content.push('\n');
+            continue;
+        }
+
         if in_code_block {
             current_markdown.push_str(line);
             current_markdown.push('\n');
+            continue;
+        }
+
+        // Check for $$ display math blocks (only when $$ is alone on a line)
+        #[cfg(feature = "latex")]
+        if trimmed == "$$" && !in_dollar_math {
+            if !current_markdown.is_empty() {
+                segments.push(ContentSegment::Markdown(std::mem::take(
+                    &mut current_markdown,
+                )));
+            }
+            in_dollar_math = true;
+            continue;
+        }
+        #[cfg(feature = "latex")]
+        if trimmed == "$$" && in_dollar_math {
+            in_dollar_math = false;
+            segments.push(ContentSegment::Latex(dollar_content.clone()));
+            dollar_content.clear();
+            continue;
+        }
+
+        #[cfg(feature = "latex")]
+        if in_dollar_math {
+            dollar_content.push_str(line);
+            dollar_content.push('\n');
             continue;
         }
 
@@ -345,6 +414,14 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     #[cfg(feature = "mermaid")]
     if in_mermaid_block && !mermaid_content.is_empty() {
         segments.push(ContentSegment::Mermaid(mermaid_content));
+    }
+    #[cfg(feature = "latex")]
+    if in_latex_block && !latex_content.is_empty() {
+        segments.push(ContentSegment::Latex(latex_content));
+    }
+    #[cfg(feature = "latex")]
+    if in_dollar_math && !dollar_content.is_empty() {
+        segments.push(ContentSegment::Latex(dollar_content));
     }
     if !current_markdown.is_empty() {
         segments.push(ContentSegment::Markdown(current_markdown));
@@ -1394,15 +1471,35 @@ fn render_markdown_impl(
                     all_lines.extend(rendered_lines);
                 }
             }
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(latex_source) => {
+                if render_mermaid && style_enabled {
+                    let latex_lines = render_latex_tui(&latex_source, max_width, theme);
+                    all_lines.extend(latex_lines);
+                } else {
+                    // Style disabled or streaming mode: treat as regular code block
+                    let code_md = format!("```latex\n{}```", latex_source);
+                    let rendered = render_markdown_inner_owned(&code_md, theme);
+                    let mut rendered_lines = rendered.lines;
+                    apply_code_block_background(
+                        &mut rendered_lines,
+                        theme,
+                        max_width,
+                        style_enabled,
+                    );
+                    all_lines.extend(rendered_lines);
+                }
+            }
         }
     }
 
     Text::from(all_lines)
 }
 
-/// Quick check: does the content contain a table or Mermaid block?
+/// Quick check: does the content contain a table, Mermaid block, or LaTeX block?
 ///
-/// Returns true if content has a table-like structure or a ` ```mermaid ` block.
+/// Returns true if content has a table-like structure, a ` ```mermaid ` block,
+/// a ` ```latex `/` ```math ` block, or a `$$` display math block.
 /// This avoids the overhead of segment extraction for the common case of no
 /// special blocks.
 fn content_contains_special_blocks(content: &str) -> bool {
@@ -1421,12 +1518,22 @@ fn content_contains_special_blocks(content: &str) -> bool {
                 if lang.starts_with("mermaid") {
                     return true;
                 }
+                // Check for LaTeX block before marking as code block
+                #[cfg(feature = "latex")]
+                if lang.starts_with("latex") || lang.starts_with("math") {
+                    return true;
+                }
                 in_code_block = true;
             }
             continue;
         }
         if in_code_block {
             continue;
+        }
+        // Check for $$ display math (alone on a line)
+        #[cfg(feature = "latex")]
+        if trimmed == "$$" {
+            return true;
         }
         if is_table_row(trimmed)
             && lines
@@ -1507,6 +1614,81 @@ fn fallback_mermaid_code_block(source: &str, theme: MarkdownTheme) -> Vec<Line<'
     lines
 }
 
+// ── LaTeX formula rendering (TUI) ───────────────────────────────────
+
+/// Render a LaTeX formula as styled ratatui `Line`s for the TUI.
+///
+/// Uses the `term-maths` crate to produce 2D Unicode character art,
+/// then converts each line to a ratatui `Line` with theme-aware styling.
+///
+/// Falls back to rendering the LaTeX source as a code block on parse
+/// errors or panics.
+///
+/// Uses [`call_latex_safely`] to suppress the Rust panic hook before
+/// calling `term_maths::render()`, which prevents the TUI's panic hook
+/// from destroying the alternate screen on recoverable errors.
+#[cfg(feature = "latex")]
+fn render_latex_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> Vec<Line<'static>> {
+    let effective_width = max_width.clamp(40, 200);
+    let style = latex_style(theme);
+    let trimmed = source.trim();
+
+    // term_maths::render() is unlikely to panic (pure Rust, no byte-slicing bugs
+    // like mermaid-text), but call_latex_safely provides a safety net preserving
+    // the TUI alternate screen.
+    let result = call_latex_safely(|| term_maths::render(trimmed));
+
+    match result {
+        Ok(block) => {
+            let rendered = block.to_string();
+            rendered
+                .lines()
+                .map(|line| {
+                    let truncated = crate::utils::truncate_visual_width(line, effective_width);
+                    if truncated.len() != line.len() {
+                        log::debug!(
+                            "LaTeX line truncated: {} cols > {} budget",
+                            UnicodeWidthStr::width(line),
+                            effective_width
+                        );
+                    }
+                    Line::from(Span::styled(truncated, style))
+                })
+                .collect()
+        }
+        Err(msg) => {
+            log::warn!("LaTeX render error in TUI, falling back to code block: {msg}");
+            fallback_latex_code_block(source, theme)
+        }
+    }
+}
+
+/// Fallback for LaTeX rendering failures: emit as a styled code block.
+#[cfg(feature = "latex")]
+fn fallback_latex_code_block(source: &str, theme: MarkdownTheme) -> Vec<Line<'static>> {
+    let style = latex_style(theme);
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled("```latex".to_string(), style)));
+    for line in source.lines() {
+        lines.push(Line::from(Span::styled(line.to_string(), style)));
+    }
+    lines.push(Line::from(Span::styled("```".to_string(), style)));
+    lines
+}
+
+/// Catppuccin Teal for LaTeX formula styling.
+///
+/// Uses Teal instead of Mermaid's green/blue to visually distinguish
+/// formulas from diagrams in the chat area.
+#[cfg(feature = "latex")]
+fn latex_style(theme: MarkdownTheme) -> Style {
+    match theme {
+        MarkdownTheme::Dark => Style::default().fg(MOCHA_TEAL),
+        MarkdownTheme::Light => Style::default().fg(LATTE_TEAL),
+        MarkdownTheme::Mono => Style::default(),
+    }
+}
+
 /// Replace markdown table blocks in content with a placeholder string.
 ///
 /// Used by `show_recent_context` to avoid rendering pipe characters and
@@ -1538,6 +1720,14 @@ pub fn collapse_tables(content: &str) -> String {
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(_) => {
                 // Replace Mermaid blocks with a placeholder too
+                if !result.is_empty() && !result.ends_with(' ') && !result.ends_with('\n') {
+                    result.push(' ');
+                }
+                result.push_str("(...) ");
+            }
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(_) => {
+                // Replace LaTeX formula blocks with a placeholder too
                 if !result.is_empty() && !result.ends_with(' ') && !result.ends_with('\n') {
                     result.push(' ');
                 }
@@ -2127,6 +2317,8 @@ mod tests {
             ContentSegment::Table(_) => panic!("Expected Markdown segment"),
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(_) => panic!("Expected Markdown segment"),
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(_) => panic!("Expected Markdown segment"),
         }
     }
 
@@ -2143,6 +2335,8 @@ mod tests {
             ContentSegment::Markdown(_) => panic!("Expected Table segment"),
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(_) => panic!("Expected Table segment"),
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(_) => panic!("Expected Table segment"),
         }
     }
 
@@ -2181,6 +2375,8 @@ mod tests {
             ContentSegment::Table(_) => panic!("Table inside code block should not be detected"),
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(_) => panic!("Table inside code block should be Markdown"),
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(_) => panic!("Table inside code block should be Markdown"),
         }
     }
 

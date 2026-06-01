@@ -370,7 +370,16 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         }
     }
 
-    // 4e. Context status (if status provided and needs compaction)
+    // 4e. LaTeX formula rendering instruction (if feature enabled)
+    #[cfg(feature = "latex")]
+    {
+        if !matches!(config.prompt_type, PromptType::Summarize) {
+            prompt.push('\n');
+            prompt.push_str(super::base::LATEX_INSTRUCTION);
+        }
+    }
+
+    // 4f. Context status (if status provided and needs compaction)
     // Injected before examples so LLM is aware of context pressure
     if let Some(ref status) = config.context_status
         && status.needs_compaction()

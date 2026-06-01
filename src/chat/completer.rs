@@ -99,7 +99,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         trigger: "/toggle-style",
-        description: "Toggle style rendering (mermaid/source, syntax highlight, table format)",
+        description: "Toggle style rendering (mermaid/latex, syntax highlight, table format)",
         arg_type: ArgCompletion::None,
     },
     SlashCommand {

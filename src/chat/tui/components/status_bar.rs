@@ -30,7 +30,7 @@ pub struct StatusBarState {
     pub think_enabled: bool,
     /// Whether tools are active
     pub tools_enabled: bool,
-    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// Whether style rendering is enabled (mermaid diagrams, LaTeX formulas, syntax
     /// highlighting, box-drawing tables). Shown as 🎨 (on) or 📄 (off)
     /// in the status bar indicator row.
     pub style_enabled: bool,

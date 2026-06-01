@@ -284,7 +284,7 @@ pub struct App {
     llm_state: LlmState,
     /// Markdown rendering theme
     theme: MarkdownTheme,
-    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// Whether style rendering is enabled (mermaid diagrams, LaTeX formulas, syntax
     /// highlighting, box-drawing tables). When false, Mermaid blocks
     /// show as source code blocks, code blocks have fg colors stripped,
     /// and tables are rendered as pipe-delimited text.
@@ -718,7 +718,7 @@ impl App {
         &self.status_bar
     }
 
-    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// Whether style rendering is enabled (mermaid diagrams, LaTeX formulas, syntax
     /// highlighting, box-drawing tables).
     pub fn style_enabled(&self) -> bool {
         self.style_enabled
