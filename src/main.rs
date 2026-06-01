@@ -9,6 +9,7 @@
 mod capabilities;
 mod chat;
 mod clipboard;
+mod commands;
 mod config;
 mod consts;
 mod content;
@@ -55,8 +56,8 @@ use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
-    Commands, CompletionArgs, DiagArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs,
-    TranslationStyle, build_translation_prompt, parse_language_pair,
+    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, QueryArgs, Shell,
+    TranslateArgs, TranslationStyle, UpgradeArgs, build_translation_prompt, parse_language_pair,
 };
 use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
@@ -188,6 +189,7 @@ async fn main() -> AppResult<()> {
                 return handle_diag(args.clone(), &cli, &settings);
             }
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
+            Commands::Config(args) => return handle_config(args.clone(), &settings),
         }
     }
 
@@ -643,6 +645,36 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
         }
         Err(e) => {
             eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn handle_config(args: ConfigArgs, settings: &Settings) -> AppResult<()> {
+    match args.action {
+        ConfigAction::Upgrade(upgrade_args) => handle_config_upgrade(upgrade_args, settings),
+    }
+}
+
+fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<()> {
+    use crate::commands::config_upgrade::run_upgrade;
+
+    let config_path = match crate::settings::Settings::config_path() {
+        Some(p) => p,
+        None => {
+            let msg = "Could not determine config directory. \
+                       Set $XDG_CONFIG_HOME or ensure $HOME is set.";
+            log::error!("Config upgrade aborted: {msg}");
+            eprintln!("Error: {msg}");
+            std::process::exit(1);
+        }
+    };
+
+    match run_upgrade(config_path, args.dry_run, args.no_backup) {
+        Ok(_report) => Ok(()),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            log::error!("Config upgrade failed: {e}");
             std::process::exit(1);
         }
     }

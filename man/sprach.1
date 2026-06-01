@@ -51,6 +51,13 @@ Create concise summaries of text with customizable styles.
 .TP
 .B completion
 Generate shell completions for bash, elvish, fish, powershell, and zsh.
+.TP
+.B config, cfg
+Manage the user's configuration file (~/.config/sprachspiel/config.toml).
+Currently supports
+.BR "config upgrade" ,
+which merges missing default fields into the existing config.toml
+while preserving all existing values, comments, and formatting.
 .SH GLOBAL OPTIONS
 These options must be placed BEFORE the subcommand:
 .TP
@@ -351,6 +358,35 @@ Focus style: general (default), technical, academic, business.
 .TP
 .B SHELL
 Shell to generate completions for: bash, elvish, fish, powershell, zsh.
+.SH CONFIG OPTIONS
+.SS config upgrade
+Merge missing default fields into the existing config.toml.
+.PP
+Compares the user's
+.B config.toml
+against
+.B Settings::default()
+and inserts any missing field with its default value and a
+doc-comment extracted from the sample configuration. The command is
+purely additive — it never modifies or removes existing values.
+.PP
+A backup file is created by default at
+.BR config.toml.bak
+(or
+.B config.toml.bak.YYYYMMDD-HHMMSS
+if
+.B .bak
+already exists). Use
+.B --no-backup
+to skip the backup, or
+.B --dry-run
+to preview changes without modifying the file.
+.TP
+.B --dry-run
+Show what would be added without modifying the file.
+.TP
+.B --no-backup
+Skip creating a backup file.
 .SH MODELS
 Built-in model presets (always available):
 .PP

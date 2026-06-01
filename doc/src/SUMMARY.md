@@ -15,6 +15,7 @@
   - [ocr](./commands/ocr.md)
   - [vision](./commands/vision.md)
   - [summarize](./commands/summarize.md)
+  - [config](./commands/config.md)
 - [Models](./models.md)
 - [Evaluated Models](./evaluated-models.md)
 - [Prompts](./prompts.md)

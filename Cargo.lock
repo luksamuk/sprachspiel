@@ -3607,6 +3607,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
+ "toml_edit 0.22.27",
  "tui-markdown",
  "unicode-segmentation",
  "unicode-width 0.2.2",

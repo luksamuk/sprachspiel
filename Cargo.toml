@@ -85,6 +85,10 @@ serde_json = "1.0"
  tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.8"
+# toml_edit preserves comments and formatting when modifying TOML files.
+# Used by `sprach config upgrade` to insert missing default fields
+# into existing config.toml without disturbing user content.
+toml_edit = "0.22"
 urlencoding = "2.1"
 walkdir = "2.5"
 unicode-width = "0.2.2"
