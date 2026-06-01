@@ -272,8 +272,10 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 ### 🔴 PRIORITY 0: T3-Phase0 — Preserve Thinking Content + Schema Foundation [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #151
+**PR:** #189
+**Branch:** `feat/151-thinking-preserve`
 **Depends on:** None (dependency on #107 was artificial — re-embedding uses existing `/reindex --yes` recovery pipeline; #136 decoupled — see D-11)
 
 **Goal:** Fix the architectural bug where `strip_thinking_tags()` permanently deletes thinking content before storage. Preserve thinking traces as the most valuable RAG corpus for reasoning tasks (Arabzadeh et al. 2026, arXiv:2605.03344).
@@ -301,19 +303,19 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 | Step | Description | Status | Key Files |
 |------|-------------|--------|-----------|
-| 1 | Schema — Migration v13→v14: `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` | 📋 | `schema.rs`, `connection.rs` |
-| 2a | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | 📋 | `types.rs`, `db.rs` |
-| 2b | Data migration — normalize existing pre-tool messages with inline `<thinking>` tags: `Database::normalize_inline_thinking()` method; resets `has_embedding=0`, deletes stale embeddings/chunks; runs in background spawn before embedding recovery | 📋 | `connection.rs`, `repl.rs`, `repl_tui.rs` |
-| 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` (with `#[serde(default)]`) | 📋 | `core.rs`, `session.rs` |
-| 4 | Replace storage callers: `process_thinking()` instead of `strip_thinking_tags()` in `process_chat_response()` (L348) and `send_message_stream()` (L880) | 📋 | `core.rs` |
-| 5 | Normalize `add_pre_tool_message()` — remove inline `<thinking>` formatting, pass `thinking_content` as separate DB column | 📋 | `session.rs` |
-| 6 | `ContinuationResult` 3 new fields + `handle_continuation(user_message_id: Option<i64>)` signature + accumulation logic | 📋 | `continuation.rs` |
-| 7 | `add_assistant_message(content, thinking, prompt_tokens)` — 6 callers (5 pass `None`, 1 passes thinking) | 📋 | `session.rs`, `command_handlers.rs` |
-| 10 | `process_send_result()` — pass `thinking` to `add_assistant_message()`, derive from continuation or direct result | 📋 | `continuation.rs` |
-| 11 | `load_sqlite()` — map `item.thinking_content` → `SavedMessage.thinking` | 📋 | `session.rs` |
-| 8 | `ThinkingTraceSettings` + `[thinking_trace]` config + `get_messages_for_llm(include_thinking)` + `RetrievalConfig.include_thinking` + context builder injection | 📋 | `settings.rs`, `session.rs`, `context_builder.rs`, `command_handlers.rs` |
-| 9 | Tests: migration, roundtrip, continuation, retrocompat, search, compaction, pre-tool, inline data migration, feature flag | 📋 | Test files |
-| 12 | Documentation — naming cleanup: `[t3]` → `[thinking_trace]`, `T3Status` → `ThinkingTraceStatus` | 📋 | Various docs |
+| 1 | Schema — Migration v13→v14: `ALTER TABLE content_items ADD COLUMN thinking_content TEXT` | ✅ | `schema.rs`, `connection.rs` |
+| 2a | `ContentItem` + DB operations: `thinking_content: Option<String>`, `insert_content_item()` param, 6 SQL queries, 2 inline constructions, `row_to_content_item()` | ✅ | `types.rs`, `db.rs` |
+| 2b | Data migration — normalize existing pre-tool messages with inline `<thinking>` tags: `Database::normalize_inline_thinking()` method; resets `has_embedding=0`, deletes stale embeddings/chunks; runs in background spawn before embedding recovery; explicit `BEGIN`/`COMMIT` transaction for atomicity | ✅ | `connection.rs`, `repl.rs`, `repl_tui.rs` |
+| 3 | `SendMessageResult.thinking` + `SavedMessage.thinking` (with `#[serde(default)]`) | ✅ | `core.rs`, `session.rs` |
+| 4 | Replace storage callers: `extract_thinking()` (respects API-native `thinking` field) instead of `strip_thinking_tags()` in `process_chat_response()` and `send_message_stream()` | ✅ | `core.rs` |
+| 5 | Normalize `add_pre_tool_message()` — remove inline `<thinking>` formatting, pass `thinking_content` as separate DB column | ✅ | `session.rs` |
+| 6 | `ContinuationResult` thinking field + `handle_continuation(user_message_id: Option<i64>)` signature + accumulation logic | ✅ | `continuation.rs` |
+| 7 | `add_assistant_message(content, thinking, prompt_tokens)` — 6 callers (5 pass `None`, 1 passes thinking) | ✅ | `session.rs`, `command_handlers.rs` |
+| 10 | `process_send_result()` — pass `thinking` to `add_assistant_message()`, derive from continuation or direct result | ✅ | `continuation.rs` |
+| 11 | `load_sqlite()` — map `item.thinking_content` → `SavedMessage.thinking` | ✅ | `session.rs` |
+| 8 | `ThinkingTraceSettings` + `[thinking_trace]` config + `get_messages_for_llm(include_thinking)` + `RetrievalConfig.include_thinking` + context builder injection | ✅ | `settings.rs`, `session.rs`, `context_builder.rs`, `command_handlers.rs` |
+| 9 | Tests: migration, roundtrip, continuation, retrocompat, search, compaction, pre-tool, inline data migration, feature flag | ✅ | Test files |
+| 12 | Documentation — naming cleanup: `[t3]` → `[thinking_trace]`, `T3Status` → `ThinkingTraceStatus` | ✅ | Various docs |
 
 **Step Dependencies:**
 ```
@@ -382,6 +384,8 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 11. **Normalization runs in background spawn (R6):** The `normalize_inline_thinking()` call was initially synchronous in `init_chat_database()`, blocking TUI startup. Moved to the background `tokio::spawn` in `repl_tui.rs`, running before the embedding recovery step. Sub-second for typical DBs; the slow part (embedding regen) already runs in background.
 12. **No progress bar for normalization (R7):** Normalization is sub-second for typical DBs. The ⚙ indicator from the subsequent embedding recovery provides visual feedback. If count > 0, a log message and chat system message inform the user. A dedicated progress bar would be over-engineering for this operation.
 13. **Retroactive recovery is impossible:** Normal assistant messages never stored thinking in the DB (`strip_thinking_tags()` ran before insertion). No raw/original response is retained. Only pre-tool messages had inline `<thinking>` tags, recovered by `normalize_inline_thinking()`. This is documented as a known limitation.
+14. **API-native `thinking` field must be respected (review fix D-14):** Both streaming and non-streaming paths use `extract_thinking()` — which checks `response.message.thinking` (API-native field from R1, Kimi) before falling back to regex-based `process_thinking()`. The initial implementation only used `process_thinking()` in the streaming path, silently dropping native thinking from compatible models.
+15. **Atomic batch normalization (review fix D-15):** `normalize_inline_thinking()` wraps the per-row loop in `conn.execute_batch("BEGIN")` / `conn.execute_batch("COMMIT")`. If the process is interrupted mid-batch, SQLite auto-rollbacks the incomplete transaction. On next startup, the same rows still have `<thinking>` tags and normalization reruns (idempotent).
 
 **Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
 
