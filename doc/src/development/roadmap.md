@@ -561,7 +561,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 | Card # | Feature | Status | Priority | Milestone |
 |--------|---------|--------|----------|-----------|
-| #151 | T3-Phase0: Preserve Thinking Content + Schema Foundation | 📋 Not Started | 🔴 P0-CRITICAL | M1/W4.5 |
+| #151 | T3-Phase0: Preserve Thinking Content + Schema Foundation | ✅ Completed (PR #189) | 🔴 P0-CRITICAL | M1/W4.5 |
 | #152 | T3-Phase1: ThinkingTrace Pipeline + Struct Transform | 📋 Not Started | P0-HIGH | M1/W7.0 |
 | #153 | T3-Phase2: Thinking-Aware Retrieval + RRF Fusion | 📋 Not Started | P0-HIGH | M1/W7.1 |
 

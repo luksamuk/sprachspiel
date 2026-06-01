@@ -70,6 +70,10 @@ fn init_chat_database(
         None
     };
 
+    // NOTE: normalize_inline_thinking() is called in the background spawn
+    // (repl_tui.rs), not here. It runs before embedding recovery to ensure
+    // normalized items (has_embedding=0) are picked up for regeneration.
+
     (result.db, result.embedding, ollama, error_detail)
 }
 

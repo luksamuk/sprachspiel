@@ -151,6 +151,9 @@ pub struct ActiveSkill {
 pub struct SavedMessage {
     pub role: MessageRole,
     pub content: String,
+    /// Thinking content from the LLM response (preserved for Thinking Trace Transform)
+    #[serde(default)]
+    pub thinking: Option<String>,
     pub timestamp: DateTime<Utc>,
     /// Prompt tokens used in this interaction (real count from Ollama)
     #[serde(default)]
@@ -168,6 +171,7 @@ impl Default for SavedMessage {
         Self {
             role: MessageRole::User,
             content: String::new(),
+            thinking: None,
             timestamp: Utc::now(),
             prompt_tokens: None,
             message_type: None,
@@ -248,6 +252,7 @@ impl ChatSession {
                         _ => MessageRole::Tool,
                     },
                     content: item.content,
+                    thinking: item.thinking_content,
                     timestamp: item.created_at,
                     prompt_tokens: item.prompt_tokens.map(|t| t as u64),
                     message_type: item.message_type,
@@ -363,6 +368,7 @@ impl ChatSession {
                 None,
                 None,
                 &content,
+                None, // thinking_content — user messages never have thinking
                 0.5,
                 self.project_id.as_deref(),
                 now,
@@ -486,6 +492,7 @@ impl ChatSession {
     pub fn add_assistant_message(
         &mut self,
         content: String,
+        thinking: Option<String>,
         prompt_tokens: Option<u64>,
     ) -> Option<i64> {
         // Reject empty assistant messages — these are artifacts from
@@ -504,6 +511,7 @@ impl ChatSession {
         self.messages.push(SavedMessage {
             role: MessageRole::Assistant,
             content: content.clone(),
+            thinking: thinking.clone(),
             timestamp: now,
             prompt_tokens,
             message_type: None,
@@ -531,6 +539,7 @@ impl ChatSession {
                 None,
                 None,
                 &content,
+                thinking.as_deref(),
                 0.5,
                 self.project_id.as_deref(),
                 now,
@@ -673,12 +682,8 @@ impl ChatSession {
         // Ensure conversation exists
         self.ensure_conversation_exists();
 
-        // Combine thinking and content for storage
-        let full_content = if let Some(thinking) = thinking_content {
-            format!("<thinking>\n{}\n</thinking>\n\n{}", thinking, content)
-        } else {
-            content
-        };
+        // Store thinking separately in thinking_content column, content stays clean
+        // (Previously, thinking was concatenated inline as <thinking> tags in content)
 
         // Insert with message_type = "pre_tool_content"
         match db.insert_content_item(
@@ -691,7 +696,8 @@ impl ChatSession {
             None,
             None,
             None,
-            &full_content,
+            &content,
+            thinking_content.as_deref(),
             0.5,
             self.project_id.as_deref(),
             now,
@@ -703,7 +709,7 @@ impl ChatSession {
                     let db = Arc::clone(db);
                     let conv_id = self.id.clone();
                     let timestamp = now;
-                    let content_clone = full_content.clone();
+                    let content_clone = content.clone();
                     let project_id = self.project_id.clone();
                     let progress_tx = self.embedding_tx.clone();
 
@@ -1048,7 +1054,14 @@ impl ChatSession {
     }
 
     /// Get messages to send to LLM (summary + recent messages)
-    pub fn get_messages_for_llm(&self, system_prompt: &str) -> Vec<ChatMessage> {
+    ///
+    /// When `include_thinking` is true, assistant messages with preserved thinking
+    /// content include their reasoning traces in the `ChatMessage.thinking` field.
+    pub fn get_messages_for_llm(
+        &self,
+        system_prompt: &str,
+        include_thinking: bool,
+    ) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
 
         // Add system message
@@ -1071,7 +1084,11 @@ impl ChatSession {
                     messages.push(ChatMessage::user(msg.content.clone()));
                 }
                 MessageRole::Assistant => {
-                    messages.push(ChatMessage::assistant(msg.content.clone()));
+                    let mut chat_msg = ChatMessage::assistant(msg.content.clone());
+                    if include_thinking {
+                        chat_msg.thinking = msg.thinking.clone();
+                    }
+                    messages.push(chat_msg);
                 }
                 MessageRole::System => {
                     // System messages are handled separately
@@ -1293,7 +1310,7 @@ mod tests {
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 3)));
 
         // get_messages_for_llm should return system + summary + messages 3,4
-        let messages = session.get_messages_for_llm("You are helpful.");
+        let messages = session.get_messages_for_llm("You are helpful.", false);
 
         // 1 system + 1 summary + 2 messages = 4
         assert_eq!(messages.len(), 4);
@@ -1820,4 +1837,32 @@ fn test_get_recent_exchanges_tool_messages_between() {
     assert_eq!(exchanges.len(), 1);
     assert_eq!(exchanges[0].0.content, "What's the weather?");
     assert_eq!(exchanges[0].1.as_ref().unwrap().content, "It's sunny!");
+}
+
+#[test]
+fn test_saved_message_thinking_field() {
+    let mut session = ChatSession::new("test-model".into(), None, false);
+
+    // Add assistant message with thinking
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "The answer is 42".into(),
+        thinking: Some("I reasoned about the question".into()),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    // Add assistant message without thinking
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "Simple response".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        session.messages[0].thinking,
+        Some("I reasoned about the question".to_string())
+    );
+    assert_eq!(session.messages[1].thinking, None);
 }

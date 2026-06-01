@@ -51,7 +51,7 @@ use super::coordinator::{
 use super::custom_coordinator::CustomCoordinator;
 use super::llm_event::LlmEvent;
 use super::session::ChatSession;
-use super::thinking::{extract_thinking, strip_thinking_tags};
+use super::thinking::{extract_thinking, process_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
 
@@ -71,6 +71,8 @@ pub struct TokenMetrics {
 /// token metrics, and continuation information.
 pub struct SendMessageResult {
     pub response: String,
+    /// Thinking content from the LLM response (preserved for storage)
+    pub thinking: Option<String>,
     pub pre_tool_content: Option<String>,
     pub pre_tool_thinking: Option<String>,
     pub metrics: TokenMetrics,
@@ -347,7 +349,9 @@ pub fn process_chat_response(
         }
     }
 
-    let display_content = strip_thinking_tags(&content);
+    let processed = process_thinking(&content);
+    let display_content = processed.content.clone();
+    let thinking = processed.thinking;
     view.show_assistant_response(&display_content, None);
 
     let pre_tool = coordinator.take_pre_tool_content();
@@ -365,6 +369,7 @@ pub fn process_chat_response(
 
     SendMessageResult {
         response: cleaned_response,
+        thinking,
         pre_tool_content,
         pre_tool_thinking,
         metrics,
@@ -869,18 +874,16 @@ pub async fn send_message_stream(
                 TokenMetrics::default()
             };
 
-            // In streaming mode, thinking was already displayed via StreamThinking events.
-            // Extract thinking for the result struct (but don't display again via view).
-            let thinking = if think_enabled {
-                extract_thinking(&content, response.message.thinking.as_ref())
-            } else {
-                None
-            };
+            // In streaming mode, thinking was already displayed via StreamThinking
+            // events — no need to display again. But we still need to extract it
+            // for storage. Use extract_thinking() so API-native thinking fields
+            // (e.g. R1, Kimi) are respected before falling back to regex parsing.
 
             // Content is already displayed via StreamToken events.
             // Don't call view.show_assistant_response() — that would duplicate.
 
-            let display_content = strip_thinking_tags(&content);
+            let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+            let display_content = process_thinking(&content).content;
             let pre_tool = coordinator.take_pre_tool_content();
             let (pre_tool_content, pre_tool_thinking) = match pre_tool {
                 Some(ptc) => (Some(ptc.content), ptc.thinking),
@@ -922,6 +925,7 @@ pub async fn send_message_stream(
 
             SendMessageResult {
                 response: cleaned_response,
+                thinking,
                 pre_tool_content,
                 pre_tool_thinking,
                 metrics,

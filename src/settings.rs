@@ -87,6 +87,9 @@ pub struct Settings {
     /// Retrieval configuration (hybrid search weights)
     #[serde(default)]
     pub retrieval: RetrievalSettings,
+    /// Thinking Trace Transform configuration
+    #[serde(default)]
+    pub thinking_trace: ThinkingTraceSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -362,6 +365,24 @@ fn default_keyword_weight() -> f32 {
 
 fn default_semantic_weight() -> f32 {
     DEFAULT_SEMANTIC_WEIGHT
+}
+
+/// Thinking Trace Transform configuration.
+///
+/// Controls whether reasoning traces from LLM responses are included in
+/// the LLM context for improved reasoning (Arabzadeh et al. 2026, arXiv:2605.03344).
+/// Thinking content is always preserved in the database regardless of this setting —
+/// the flag only controls whether it's injected into the conversation context.
+///
+/// When enabled, assistant messages with thinking content will include their
+/// reasoning traces in the `ChatMessage.thinking` field sent to the LLM.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThinkingTraceSettings {
+    /// Enable thinking trace injection into LLM context.
+    /// Default: false — thinking is preserved in DB but not injected into context.
+    /// When true, thinking traces are included in retrieval context for reasoning tasks.
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 fn default_led_port() -> u16 {
@@ -961,6 +982,22 @@ skin = "dark"
 # Higher = more weight on semantic similarity.
 # Default: 0.6 (embeddings capture meaning better than keyword overlap)
 # semantic_weight = 0.6
+
+# =============================================================================
+# THINKING TRACE TRANSFORM CONFIGURATION (Optional)
+# =============================================================================
+# Control whether reasoning traces from LLM responses are included in context
+# for improved reasoning (Arabzadeh et al. 2026, arXiv:2605.03344).
+# Thinking content is always preserved in the database — this flag only
+# controls whether it's injected into the LLM conversation context.
+
+# [thinking_trace]
+
+# Enable thinking trace injection into LLM context.
+# Default: false — thinking is preserved in DB but not included in context.
+# When true, assistant messages with thinking content include their reasoning
+# traces in the ChatMessage sent to the LLM, improving reasoning performance.
+# enabled = false
 "#;
 
         std::fs::write(&config_path, sample_config)?;
@@ -1261,5 +1298,24 @@ semantic_weight = 0.7
         let settings: Settings = toml::from_str(sample).unwrap();
         assert!((settings.retrieval.keyword_weight - 0.3).abs() < f32::EPSILON);
         assert!((settings.retrieval.semantic_weight - 0.7).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_thinking_trace_settings_default_disabled() {
+        let settings = Settings::default();
+        assert!(
+            !settings.thinking_trace.enabled,
+            "thinking_trace should be disabled by default"
+        );
+    }
+
+    #[test]
+    fn test_thinking_trace_settings_parse_enabled() {
+        let sample = r#"
+[thinking_trace]
+enabled = true
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert!(settings.thinking_trace.enabled);
     }
 }

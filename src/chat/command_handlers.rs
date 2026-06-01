@@ -1017,9 +1017,11 @@ pub async fn handle_retry(
     .await
     {
         Ok(result) => {
-            state.last_assistant_message_id = state
-                .session
-                .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
+            state.last_assistant_message_id = state.session.add_assistant_message(
+                result.response,
+                None,
+                Some(result.metrics.prompt_tokens),
+            );
 
             if result.metrics.total_tokens > 0 {
                 outputs.push(CommandOutput::TokenDisplay {
@@ -2005,7 +2007,8 @@ pub fn format_context_info(
             .with_soulless(soulless),
     );
 
-    let history_messages = session.get_messages_for_llm(&system_prompt);
+    let history_messages =
+        session.get_messages_for_llm(&system_prompt, settings.thinking_trace.enabled);
     let context_window = model_config.num_ctx as usize;
 
     let tool_count = if tools_enabled {
@@ -3199,7 +3202,9 @@ pub async fn handle_subagent_ocr(
 
     match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
-            let _ = state.session.add_assistant_message(result.clone(), None);
+            let _ = state
+                .session
+                .add_assistant_message(result.clone(), None, None);
             vec![CommandOutput::info(result)]
         }
         Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
@@ -3243,7 +3248,9 @@ pub async fn handle_subagent_vision(
 
     match runner.run_vision(&path_bufs, prompt_str).await {
         Ok(result) => {
-            let _ = state.session.add_assistant_message(result.clone(), None);
+            let _ = state
+                .session
+                .add_assistant_message(result.clone(), None, None);
             vec![CommandOutput::info(result)]
         }
         Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
@@ -3269,7 +3276,9 @@ pub async fn handle_subagent_translate(
 
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
-            let _ = state.session.add_assistant_message(result.clone(), None);
+            let _ = state
+                .session
+                .add_assistant_message(result.clone(), None, None);
             vec![CommandOutput::info(result)]
         }
         Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
@@ -3291,7 +3300,9 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) -> V
 
     match runner.run_summarize(&text).await {
         Ok(result) => {
-            let _ = state.session.add_assistant_message(result.clone(), None);
+            let _ = state
+                .session
+                .add_assistant_message(result.clone(), None, None);
             vec![CommandOutput::info(result)]
         }
         Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],

@@ -32,7 +32,7 @@ const SEARCH_NOTES_FTS_SQL: &str = "
            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
            ci.content, ci.importance, ci.access_count, ci.decay_score,
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-           ci.project_id, bm25(content_fts) as score
+           ci.project_id, ci.thinking_content, bm25(content_fts) as score
     FROM content_fts fts
     JOIN content_items ci ON fts.rowid = ci.id";
 
@@ -40,7 +40,8 @@ const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
     SELECT ce.item_id, ce.distance, ce.norm_correction, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
-           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id,
+           ci.thinking_content
     FROM content_embeddings ce
     JOIN content_items ci ON ce.item_id = ci.id
     WHERE ce.embedding MATCH ? AND ce.k = ?";
@@ -50,7 +51,8 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
            cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
            ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
            ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
-           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id,
+           ci.thinking_content
     FROM chunk_embeddings_v2 ce
     JOIN content_chunks cc ON ce.chunk_id = cc.id
     JOIN content_items ci ON cc.item_id = ci.id
@@ -806,7 +808,7 @@ impl Database {
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(20)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -864,7 +866,7 @@ impl Database {
                         ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
                         ci.content, ci.importance, ci.access_count, ci.decay_score,
                         ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                        ci.project_id, bm25(content_fts) as score
+                        ci.project_id, ci.thinking_content, bm25(content_fts) as score
                  FROM content_fts fts
                  JOIN content_items ci ON fts.rowid = ci.id
                  WHERE {}
@@ -876,7 +878,7 @@ impl Database {
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![escaped_query, limit as i32], |row| {
-                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(20)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -951,6 +953,7 @@ impl Database {
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             title: row.get(12)?,
                             content: row.get(13)?,
+                            thinking_content: row.get(22)?,
                             importance: row.get(14)?,
                             access_count: row.get::<_, i32>(15)? as u32,
                             decay_score: row.get(16)?,
@@ -1020,6 +1023,7 @@ impl Database {
                                 .map_err(rusqlite::Error::InvalidParameterName)?,
                             title: row.get(17)?,
                             content: row.get(18)?,
+                            thinking_content: row.get(27)?,
                             importance: row.get(19)?,
                             access_count: row.get::<_, i32>(20)? as u32,
                             decay_score: row.get(21)?,
@@ -1216,6 +1220,7 @@ impl Database {
         source: Option<&str>,
         title: Option<&str>,
         content: &str,
+        thinking_content: Option<&str>,
         importance: f32,
         project_id: Option<&str>,
         timestamp: DateTime<Utc>,
@@ -1225,10 +1230,10 @@ impl Database {
             conn.execute(
                 "INSERT INTO content_items (
                     content_type, conversation_id, role, message_type, previous_item_id,
-                    prompt_tokens, scope, source, title, content, importance,
+                    prompt_tokens, scope, source, title, content, thinking_content, importance,
                     access_count, decay_score, created_at, updated_at, last_accessed,
                     has_embedding, project_id
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, 1.0, ?12, ?12, ?12, 0, ?13)",
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, 1.0, ?13, ?13, ?13, 0, ?14)",
                 params![
                     content_type,
                     conversation_id,
@@ -1240,6 +1245,7 @@ impl Database {
                     source,
                     title,
                     content,
+                    thinking_content,
                     importance,
                     now,
                     project_id,
@@ -1333,7 +1339,8 @@ impl Database {
                 "SELECT id, content_type, conversation_id, role, message_type,
                         previous_item_id, prompt_tokens, scope, source, title,
                         content, importance, access_count, decay_score,
-                        created_at, updated_at, last_accessed, has_embedding, project_id
+                        created_at, updated_at, last_accessed, has_embedding, project_id,
+                        thinking_content
                  FROM content_items
                  WHERE conversation_id = ?1
                  ORDER BY created_at ASC",
@@ -1520,7 +1527,8 @@ impl Database {
                 "SELECT id, content_type, conversation_id, role, message_type,
                         previous_item_id, prompt_tokens, scope, source, title,
                         content, importance, access_count, decay_score,
-                        created_at, updated_at, last_accessed, has_embedding, project_id
+                        created_at, updated_at, last_accessed, has_embedding, project_id,
+                        thinking_content
                  FROM content_items
                  WHERE id = ?1",
             )?;
@@ -1576,7 +1584,8 @@ impl Database {
                 SELECT id, content_type, conversation_id, role, message_type,
                        previous_item_id, prompt_tokens, scope, source, title,
                        content, importance, access_count, decay_score,
-                       created_at, updated_at, last_accessed, has_embedding, project_id
+                       created_at, updated_at, last_accessed, has_embedding, project_id,
+                       thinking_content
                 FROM content_items
                 WHERE conversation_id = ?1
                   AND role = 'assistant'
@@ -1688,6 +1697,7 @@ fn row_to_content_item(row: &rusqlite::Row) -> Result<ContentItem> {
             .map_err(rusqlite::Error::InvalidParameterName)?,
         title: row.get(9)?,
         content: row.get(10)?,
+        thinking_content: row.get(19)?,
         importance: row.get(11)?,
         access_count: row.get::<_, i32>(12)? as u32,
         decay_score: row.get(13)?,
@@ -2066,5 +2076,137 @@ mod tests {
             None,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_thinking_content_stored_and_retrieved() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert an assistant message with thinking content
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                Some(ROLE_ASSISTANT),
+                Some("regular"),
+                None,
+                Some(10),
+                None,
+                None,
+                None,
+                "The answer is 42",
+                Some("I reasoned about the meaning of life"),
+                0.5,
+                None,
+                Utc::now(),
+            )
+            .expect("Failed to insert content item");
+
+        // Retrieve it back
+        let loaded = db
+            .get_content_item_by_id(item_id)
+            .expect("Failed to get content item")
+            .expect("Content item not found");
+
+        assert_eq!(loaded.content, "The answer is 42");
+        assert_eq!(
+            loaded.thinking_content,
+            Some("I reasoned about the meaning of life".to_string())
+        );
+    }
+
+    #[test]
+    fn test_thinking_content_not_in_search_results() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a note with "Rust" in content (should be found by search)
+        let note = Note::new(
+            "Rust programming language".to_string(),
+            ContentScope::Global,
+            None,
+            ContentSource::User,
+            Some("Test Note".to_string()),
+        )
+        .expect("Failed to create note");
+        db.insert_note(&note).expect("Failed to insert note");
+
+        // Insert an assistant message with thinking that mentions "Rust"
+        // (thinking_content is NOT indexed by FTS, so this should NOT be found)
+        db.insert_content_item(
+            "message",
+            None,
+            Some(ROLE_ASSISTANT),
+            Some("regular"),
+            None,
+            Some(10),
+            None,
+            None,
+            None,
+            "Python is great",
+            Some("I considered Rust but chose Python"),
+            0.5,
+            None,
+            Utc::now(),
+        )
+        .expect("Failed to insert content item");
+
+        // Search for "Rust" — should find the note but NOT the assistant message
+        // (thinking_content is not indexed by FTS)
+        let results = db
+            .search_notes_keyword("Rust", None, None, 10)
+            .expect("Failed to search");
+
+        // The note has "Rust" in its content, so it should be found
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find only the note, not the message with thinking about Rust"
+        );
+        assert_eq!(results[0].item.title, Some("Test Note".to_string()));
+    }
+
+    /// Regression test: FTS keyword search must include thinking_content in SELECT.
+    /// Bug: after adding thinking_content column, the inline format!() SQL in
+    /// search_content_keyword() was missing ci.thinking_content, causing column
+    /// index mismatch — row_to_content_item reads index 19 expecting String but
+    /// found the bm25 score (REAL). This broke /search and all hybrid search.
+    #[test]
+    fn test_search_content_keyword_with_thinking_content_column() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert an assistant message with thinking_content
+        db.insert_content_item(
+            "message",
+            Some("test-conv"),
+            Some(ROLE_ASSISTANT),
+            Some("regular"),
+            None,
+            Some(10),
+            None,
+            None,
+            None,
+            "Wittgenstein language games",
+            Some("I need to think about Wittgenstein's philosophy"),
+            0.5,
+            None,
+            Utc::now(),
+        )
+        .expect("Failed to insert content item");
+
+        // search_content_keyword must not crash with column type mismatch
+        let results = db
+            .search_content_keyword("Wittgenstein", None, Some("test-conv"), None, None, 10)
+            .expect("keyword search must succeed — thinking_content column must be in SELECT");
+
+        assert_eq!(results.len(), 1, "Should find the message by keyword");
+        let found = &results[0];
+        // Verify thinking_content was read correctly (index 19, not score)
+        assert_eq!(
+            found.item.thinking_content,
+            Some("I need to think about Wittgenstein's philosophy".to_string()),
+            "thinking_content should be populated, not overwritten by bm25 score"
+        );
+        // Verify content is clean
+        assert_eq!(found.item.content, "Wittgenstein language games");
     }
 }

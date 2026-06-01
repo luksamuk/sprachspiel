@@ -133,6 +133,8 @@ pub struct RetrievalConfig {
     pub keyword_weight: f32,
     /// Semantic weight for RRF (0.0 - 1.0)
     pub semantic_weight: f32,
+    /// Include thinking content in ChatMessage for LLM context
+    pub include_thinking: bool,
 }
 
 impl Default for RetrievalConfig {
@@ -146,6 +148,7 @@ impl Default for RetrievalConfig {
             min_query_interval_secs: MIN_RETRIEVAL_INTERVAL_SECS,
             keyword_weight: settings.retrieval.keyword_weight,
             semantic_weight: settings.retrieval.semantic_weight,
+            include_thinking: settings.thinking_trace.enabled,
         }
     }
 }
@@ -243,14 +246,23 @@ async fn perform_retrieval(
 ///
 /// System messages are handled separately in the context building flow,
 /// so they are skipped when converting session messages to ChatMessages.
-fn push_messages_as_chat_messages<'a, I>(messages: &mut Vec<ChatMessage>, source: I)
-where
+fn push_messages_as_chat_messages<'a, I>(
+    messages: &mut Vec<ChatMessage>,
+    source: I,
+    include_thinking: bool,
+) where
     I: IntoIterator<Item = &'a crate::chat::session::SavedMessage>,
 {
     for msg in source {
         match msg.role {
             MessageRole::User => messages.push(ChatMessage::user(msg.content.clone())),
-            MessageRole::Assistant => messages.push(ChatMessage::assistant(msg.content.clone())),
+            MessageRole::Assistant => {
+                let mut chat_msg = ChatMessage::assistant(msg.content.clone());
+                if include_thinking {
+                    chat_msg.thinking = msg.thinking.clone();
+                }
+                messages.push(chat_msg);
+            }
             MessageRole::System => { /* skip - handled separately */ }
             MessageRole::Tool => messages.push(ChatMessage::tool(msg.content.clone())),
         }
@@ -338,7 +350,11 @@ pub async fn build_context(
         // Clamp to actual message count to avoid panic after /clear
         let first_preserved = first_preserved.min(session.messages.len());
         if first_preserved > 0 {
-            push_messages_as_chat_messages(&mut messages, &session.messages[..first_preserved]);
+            push_messages_as_chat_messages(
+                &mut messages,
+                &session.messages[..first_preserved],
+                config.include_thinking,
+            );
         }
     }
 
@@ -385,7 +401,7 @@ pub async fn build_context(
         .rev()
         .collect();
 
-    push_messages_as_chat_messages(&mut messages, recent_messages);
+    push_messages_as_chat_messages(&mut messages, recent_messages, config.include_thinking);
 
     // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
@@ -741,7 +757,7 @@ mod tests {
             },
         ];
 
-        push_messages_as_chat_messages(&mut messages, source.iter());
+        push_messages_as_chat_messages(&mut messages, source.iter(), false);
 
         // System message should be filtered out
         assert_eq!(messages.len(), 2);
@@ -772,7 +788,7 @@ mod tests {
             },
         ];
 
-        push_messages_as_chat_messages(&mut messages, source.iter());
+        push_messages_as_chat_messages(&mut messages, source.iter(), false);
 
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].content, "user");
@@ -785,7 +801,7 @@ mod tests {
         let mut messages = Vec::new();
         let source: Vec<SavedMessage> = Vec::new();
 
-        push_messages_as_chat_messages(&mut messages, source.iter());
+        push_messages_as_chat_messages(&mut messages, source.iter(), false);
 
         assert!(messages.is_empty());
     }
@@ -798,7 +814,7 @@ mod tests {
     /// end_exclusive = len (include all).
     #[test]
     fn test_end_exclusive_excludes_last_user_message() {
-        let session = ChatSession::new("test-model".to_string(), None, false);
+        let _session = ChatSession::new("test-model".to_string(), None, false);
         // Simulate: [User("hello"), Assistant("hi"), User("current query")]
         let messages: Vec<SavedMessage> = vec![
             SavedMessage {
@@ -901,5 +917,52 @@ mod tests {
             messages.len()
         };
         assert_eq!(end_exclusive, 2);
+    }
+
+    #[test]
+    fn test_push_messages_injects_thinking_when_enabled() {
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "The answer is 42".to_string(),
+                thinking: Some("I reasoned about the question".to_string()),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "Simple response".to_string(),
+                thinking: None,
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter(), true);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            messages[0].thinking,
+            Some("I reasoned about the question".to_string())
+        );
+        assert_eq!(messages[1].thinking, None);
+    }
+
+    #[test]
+    fn test_push_messages_omits_thinking_when_disabled() {
+        let mut messages = Vec::new();
+        let source = vec![SavedMessage {
+            role: MessageRole::Assistant,
+            content: "The answer is 42".to_string(),
+            thinking: Some("I reasoned about the question".to_string()),
+            ..Default::default()
+        }];
+
+        push_messages_as_chat_messages(&mut messages, source.iter(), false);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0].thinking, None,
+            "thinking should NOT be injected when include_thinking=false"
+        );
     }
 }

@@ -616,6 +616,21 @@ impl Database {
         Ok(())
     }
 
+    /// Migration v13 -> v14: Add thinking_content column to content_items.
+    ///
+    /// Preserves thinking traces from LLM responses in a dedicated column.
+    /// Previously, thinking was either stripped before storage (normal messages)
+    /// or concatenated inline in the content field (pre-tool messages).
+    /// The `thinking_content` column stores the thinking separately, keeping
+    /// the `content` field clean for display and retrieval.
+    ///
+    /// Reference: Arabzadeh et al. 2026, arXiv:2605.03344
+    fn migrate_v13_to_v14(conn: &Connection) -> Result<()> {
+        Self::add_column_if_missing(conn, "content_items", "thinking_content", "TEXT")?;
+        log::info!("Migration v13→v14: Added thinking_content column to content_items");
+        Ok(())
+    }
+
     /// Apply incremental schema migrations (dispatcher)
     fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
         if from_version < 3 {
@@ -650,6 +665,9 @@ impl Database {
         }
         if from_version < 13 {
             Self::migrate_v12_to_v13(conn)?;
+        }
+        if from_version < 14 {
+            Self::migrate_v13_to_v14(conn)?;
         }
         Ok(())
     }
@@ -762,6 +780,78 @@ impl Database {
             )))
         })?;
         f(&mut conn)
+    }
+
+    /// Normalize inline thinking tags in existing content items.
+    ///
+    /// Prior to v14, pre-tool messages stored `<thinking>` content inline in the
+    /// `content` field. After v14, thinking is stored in a separate `thinking_content`
+    /// column. This method migrates existing rows by:
+    /// 1. Selecting rows where `content LIKE '%<thinking>%'`
+    /// 2. Calling the provided `split_fn` to separate thinking from content
+    /// 3. Updating the row: `content` = clean text, `thinking_content` = thinking text
+    ///
+    /// The `split_fn` parameter avoids a circular dependency: the `db` module does
+    /// not import `chat::thinking::process_thinking`. The caller (e.g., `repl.rs`)
+    /// passes `process_thinking` as the closure.
+    ///
+    /// Returns the number of rows normalized.
+    ///
+    /// All writes are wrapped in an explicit transaction so the batch is
+    /// atomic: either every row is normalized or none are. If the process
+    /// is interrupted (Ctrl+C, panic, kill), SQLite rolls back automatically.
+    pub fn normalize_inline_thinking<F>(&self, split_fn: F) -> Result<u64>
+    where
+        F: Fn(&str) -> (Option<String>, String),
+    {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content FROM content_items WHERE content LIKE '%<thinking>%'",
+            )?;
+            let rows: Vec<(i64, String)> = stmt
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let count = rows.len();
+            if count == 0 {
+                log::debug!("No inline thinking rows to normalize");
+                return Ok(0u64);
+            }
+
+            // Explicit transaction: all or nothing. If any statement fails or
+            // the process is interrupted, SQLite auto-rollbacks the batch.
+            conn.execute_batch("BEGIN")?;
+
+            for (id, content) in &rows {
+                let (thinking, clean_content) = split_fn(content);
+
+                // Rewrite content (remove inline thinking) and store thinking separately.
+                // Also reset has_embedding=0 and delete stale embeddings/chunks because
+                // the content changed — old embeddings were computed from text containing
+                // <thinking> tags and are now semantically stale. The background embedding
+                // recovery pipeline (repl_tui.rs) will regenerate them from the cleaned text.
+                conn.execute(
+                    "UPDATE content_items SET content = ?, thinking_content = ?, has_embedding = 0 WHERE id = ?",
+                    rusqlite::params![clean_content, thinking, id],
+                )?;
+                conn.execute(
+                    "DELETE FROM content_embeddings WHERE item_id = ?",
+                    rusqlite::params![id],
+                )?;
+                conn.execute(
+                    "DELETE FROM content_chunks WHERE item_id = ?",
+                    rusqlite::params![id],
+                )?;
+            }
+
+            conn.execute_batch("COMMIT")?;
+
+            log::info!(
+                "Normalized {} content items with inline thinking tags (embeddings will be regenerated)",
+                count
+            );
+            Ok(count as u64)
+        })
     }
 }
 
@@ -979,6 +1069,9 @@ mod tests {
         assert!(columns.contains(&"source".to_string()));
         assert!(columns.contains(&"title".to_string()));
 
+        // Thinking trace field (added in v14)
+        assert!(columns.contains(&"thinking_content".to_string()));
+
         // Check content_embeddings virtual table exists
         let vtables: Vec<String> = db
             .with_connection(|conn| {
@@ -992,5 +1085,234 @@ mod tests {
 
         assert!(vtables.contains(&"content_embeddings".to_string()));
         assert!(vtables.contains(&"content_fts".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_content_column_in_content_items() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(
+            columns.contains(&"thinking_content".to_string()),
+            "thinking_content column must exist in content_items"
+        );
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_basic() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with inline thinking tags
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', '<thinking>Let me reason</thinking>The answer is 42', 'conv1', 'pre_tool', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        // Run normalize_inline_thinking with a simple split function
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    let start = content.find("<thinking>").unwrap();
+                    let end = content.find("</thinking>").unwrap() + "</thinking>".len();
+                    let thinking = content[start..end].to_string();
+                    let clean = content[..start].trim().to_string() + &content[end..];
+                    (Some(thinking), clean.trim().to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(count, 1, "Should normalize 1 row");
+
+        // Verify the row was updated
+        let (content, thinking): (String, Option<String>) = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT content, thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .expect("Failed to query updated row");
+
+        assert_eq!(content, "The answer is 42");
+        assert_eq!(
+            thinking,
+            Some("<thinking>Let me reason</thinking>".to_string())
+        );
+
+        // Fix A: verify has_embedding was reset to 0
+        let has_embedding: i32 = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT has_embedding FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query has_embedding");
+        assert_eq!(
+            has_embedding, 0,
+            "has_embedding should be reset to 0 after normalization"
+        );
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_no_thinking_rows() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item without thinking tags
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'Just a regular message', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    (Some("thinking".to_string()), "clean".to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(
+            count, 0,
+            "Should normalize 0 rows when no thinking tags present"
+        );
+    }
+
+    #[test]
+    fn test_thinking_content_roundtrip() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with thinking_content
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, thinking_content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'The answer is 42', 'My reasoning process', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        // Read it back
+        let (content, thinking): (String, Option<String>) = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT content, thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .expect("Failed to query row");
+
+        assert_eq!(content, "The answer is 42");
+        assert_eq!(thinking, Some("My reasoning process".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_content_null_by_default() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item without thinking_content (should default to NULL)
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', 'Hello world', 'conv1', 'regular', ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let thinking: Option<String> = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT thinking_content FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query row");
+
+        assert_eq!(thinking, None, "thinking_content should be NULL by default");
+    }
+
+    #[test]
+    fn test_normalize_inline_thinking_resets_embedding_flag() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a content item with inline thinking AND has_embedding = 1
+        // (simulating an item that had an embedding computed from the old
+        // content that included <thinking> tags)
+        let now = chrono::Utc::now().timestamp();
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, role, content, conversation_id, message_type, has_embedding, created_at, updated_at, last_accessed)
+                 VALUES ('message', 'assistant', '<thinking>My reasoning</thinking>The answer', 'conv1', 'pre_tool', 1, ?1, ?1, ?1)",
+                rusqlite::params![now],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("Failed to insert test row");
+
+        let count = db
+            .normalize_inline_thinking(|content| {
+                if content.contains("<thinking>") {
+                    let start = content.find("<thinking>").unwrap();
+                    let end = content.find("</thinking>").unwrap() + "</thinking>".len();
+                    let thinking = content[start..end].to_string();
+                    let clean = content[..start].trim().to_string() + &content[end..];
+                    (Some(thinking), clean.trim().to_string())
+                } else {
+                    (None, content.to_string())
+                }
+            })
+            .expect("normalize_inline_thinking failed");
+
+        assert_eq!(count, 1);
+
+        // has_embedding must be 0 (reset for re-indexing by background recovery)
+        let has_embedding: i32 = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT has_embedding FROM content_items WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .expect("Failed to query has_embedding");
+        assert_eq!(
+            has_embedding, 0,
+            "has_embedding must be reset to 0 after content rewrite"
+        );
     }
 }

@@ -167,6 +167,9 @@ pub async fn run_chat_repl_tui(
         // Embedding progress channel — reports current/total to the TUI status bar
         let tx = Some(view.embedding_tx());
 
+        // Async message channel — for chat messages from background tasks
+        let async_tx = view.async_message_tx();
+
         let db_clone = Arc::clone(db_ref);
         let client_clone = Arc::clone(client);
 
@@ -175,7 +178,52 @@ pub async fn run_chat_repl_tui(
         // the TUI for minutes when hundreds of embeddings needed regeneration
         // (e.g., after schema migration v11→v12 that resets all has_embedding flags).
         tokio::spawn(async move {
-            // Regenerate embeddings if needed (after schema migration)
+            // Step 1: Normalize inline thinking tags (v13→v14 data migration).
+            // Must run BEFORE embedding recovery because normalize_inline_thinking()
+            // sets has_embedding=0 for rows whose content was rewritten (thinking
+            // removed). The recovery pipeline then regenerates these embeddings
+            // from the cleaned content automatically.
+            //
+            // This runs synchronously inside the async spawn — typical DBs have
+            // few pre-tool messages (<100), so it completes in <100ms. The slow
+            // part (embedding regeneration) is handled by the recovery pipeline below.
+            let split_fn = |content: &str| -> (Option<String>, String) {
+                let processed = crate::chat::thinking::process_thinking(content);
+                (processed.thinking, processed.content)
+            };
+            match db_clone.normalize_inline_thinking(split_fn) {
+                Ok(count) if count > 0 => {
+                    log::info!(
+                        "Normalized {} pre-tool messages with inline thinking tags — \
+                         embeddings will be regenerated",
+                        count
+                    );
+                    // Brief progress signal to update the ⚙ indicator
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send(EmbeddingProgress::new(
+                            EmbeddingPhase::Content,
+                            0,
+                            count as usize,
+                            0,
+                            count as usize,
+                        ));
+                    }
+                    // Chat message (Fix C) — sent via async channel so the
+                    // TUI event loop picks it up and displays it
+                    let msg = format!(
+                        "💾 Migrated {} pre-tool message(s) — thinking preserved separately. \
+                         Embeddings being regenerated\u{2026}",
+                        count
+                    );
+                    let _ = async_tx.send(msg);
+                }
+                Ok(_) => { /* No rows to normalize — nothing to do */ }
+                Err(e) => {
+                    log::warn!("Failed to normalize inline thinking: {}", e);
+                }
+            }
+
+            // Step 2: Regenerate embeddings if needed (after schema migration)
             let stats = crate::embeddings::regenerate_all_embeddings(
                 &db_clone,
                 &client_clone,

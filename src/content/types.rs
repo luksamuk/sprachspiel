@@ -200,6 +200,8 @@ pub struct ContentItem {
     pub title: Option<String>,
     /// Content text
     pub content: String,
+    /// Thinking content from LLM reasoning (preserved separately from content)
+    pub thinking_content: Option<String>,
     /// Importance (for retrieval ranking)
     pub importance: f32,
     /// Access count (for decay)
