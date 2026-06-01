@@ -59,8 +59,17 @@ pub fn render_markdown_streaming(content: &str, width: usize) -> String {
 fn render_segments(content: &str, width: usize, render_special: bool) -> String {
     let mut output = String::new();
     let segments = extract_content_segments(content);
+    let mut first_segment = true;
 
     for segment in segments {
+        // Add vertical padding (blank line) between segments so that
+        // consecutive special blocks (LaTeX, Mermaid, Table) are visually
+        // separated from preceding content instead of glued together.
+        if !first_segment {
+            output.push('\n');
+        }
+        first_segment = false;
+
         match segment {
             ContentSegment::Markdown(text) => {
                 output.push_str(&render_markdown_inline(&text, width));
@@ -109,8 +118,17 @@ fn render_segments(content: &str, width: usize, render_special: bool) -> String 
 pub fn render_markdown_plain(content: &str, width: usize) -> String {
     let mut output = String::new();
     let segments = extract_content_segments(content);
+    let mut first_segment = true;
 
     for segment in segments {
+        // Add vertical padding (blank line) between segments so that
+        // consecutive special blocks (LaTeX, Mermaid, Table) are visually
+        // separated from preceding content instead of glued together.
+        if !first_segment {
+            output.push('\n');
+        }
+        first_segment = false;
+
         match segment {
             ContentSegment::Markdown(text) => {
                 output.push_str(&render_markdown_inline_plain(&text, width));

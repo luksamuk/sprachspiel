@@ -1436,8 +1436,17 @@ fn render_markdown_impl(
     // Slow path: extract segments and render hybrid
     let segments = extract_content_segments(content);
     let mut all_lines: Vec<Line<'static>> = Vec::new();
+    let mut first_segment = true;
 
     for segment in segments {
+        // Add vertical padding (blank line) between segments so that
+        // consecutive special blocks (LaTeX, Mermaid, Table) are visually
+        // separated from preceding content instead of glued together.
+        if !first_segment {
+            all_lines.push(Line::raw(""));
+        }
+        first_segment = false;
+
         match segment {
             ContentSegment::Markdown(md) => {
                 let rendered = render_markdown_inner_owned(&md, theme);
@@ -2580,6 +2589,22 @@ mod tests {
         assert!(
             matches!(&segments[0], ContentSegment::Markdown(_)),
             "Inline $$ should remain as Markdown, not Latex"
+        );
+    }
+
+    #[cfg(feature = "latex")]
+    #[test]
+    fn test_consecutive_latex_blocks_have_padding() {
+        // Two consecutive ```latex blocks without a blank line between them
+        // should still produce a blank line (padding) between them in the output.
+        let content = "```latex\nx^2\n```\n```latex\ny^2\n```";
+        let text = render_markdown(content, MarkdownTheme::Dark, true, 80);
+        let rendered_str = text.to_string();
+
+        // There must be at least one blank line between the two rendered blocks
+        assert!(
+            rendered_str.contains("\n\n"),
+            "Consecutive LaTeX blocks should have at least one blank line between them, got:\n{rendered_str}"
         );
     }
 
