@@ -220,17 +220,11 @@ pub fn build_pre_tool_prompt(state: &ReplState) -> String {
 }
 
 /// Result of processing continuation(s) after context compaction
-/// Result of processing continuation(s) after context compaction
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // pre_tool_content/thinking: for TUI display in Phase 1
 pub struct ContinuationResult {
     pub response: String,
     /// Accumulated thinking content from all continuation turns
     pub thinking: Option<String>,
-    /// Pre-tool content from the last continuation turn (if any)
-    pub pre_tool_content: Option<String>,
-    /// Pre-tool thinking from the last continuation turn (if any)
-    pub pre_tool_thinking: Option<String>,
     pub metrics: TokenMetrics,
     pub context_window: usize,
     pub system_prompt: String,
@@ -431,8 +425,6 @@ pub async fn handle_continuation(
             Ok(ContinuationResult {
                 response: final_response,
                 thinking: final_thinking,
-                pre_tool_content: cont_result.pre_tool_content,
-                pre_tool_thinking: cont_result.pre_tool_thinking,
                 metrics: final_metrics,
                 context_window: initial_result.context_window,
                 system_prompt: initial_result.system_prompt,
