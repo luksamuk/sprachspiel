@@ -862,11 +862,8 @@ fn value_type_name(s: &str) -> &'static str {
 }
 
 
-// (Previously contained a `_path_marker` no-op used to silence
-// unused-import warnings on `Path`. The marker was YAGNI: `Path`
-// is unused after the marker is removed, and the marker had zero
-// call sites. Removed in commit for R1.)
-
+// ---------------------------------------------------------------------------
+// Field comparison
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
