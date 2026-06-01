@@ -866,7 +866,7 @@ impl Database {
                         ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
                         ci.content, ci.importance, ci.access_count, ci.decay_score,
                         ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                        ci.project_id, bm25(content_fts) as score
+                        ci.project_id, ci.thinking_content, bm25(content_fts) as score
                  FROM content_fts fts
                  JOIN content_items ci ON fts.rowid = ci.id
                  WHERE {}
@@ -2163,5 +2163,50 @@ mod tests {
             "Should find only the note, not the message with thinking about Rust"
         );
         assert_eq!(results[0].item.title, Some("Test Note".to_string()));
+    }
+
+    /// Regression test: FTS keyword search must include thinking_content in SELECT.
+    /// Bug: after adding thinking_content column, the inline format!() SQL in
+    /// search_content_keyword() was missing ci.thinking_content, causing column
+    /// index mismatch — row_to_content_item reads index 19 expecting String but
+    /// found the bm25 score (REAL). This broke /search and all hybrid search.
+    #[test]
+    fn test_search_content_keyword_with_thinking_content_column() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert an assistant message with thinking_content
+        db.insert_content_item(
+            "message",
+            Some("test-conv"),
+            Some(ROLE_ASSISTANT),
+            Some("regular"),
+            None,
+            Some(10),
+            None,
+            None,
+            None,
+            "Wittgenstein language games",
+            Some("I need to think about Wittgenstein's philosophy"),
+            0.5,
+            None,
+            Utc::now(),
+        )
+        .expect("Failed to insert content item");
+
+        // search_content_keyword must not crash with column type mismatch
+        let results = db
+            .search_content_keyword("Wittgenstein", None, Some("test-conv"), None, None, 10)
+            .expect("keyword search must succeed — thinking_content column must be in SELECT");
+
+        assert_eq!(results.len(), 1, "Should find the message by keyword");
+        let found = &results[0];
+        // Verify thinking_content was read correctly (index 19, not score)
+        assert_eq!(
+            found.item.thinking_content,
+            Some("I need to think about Wittgenstein's philosophy".to_string()),
+            "thinking_content should be populated, not overwritten by bm25 score"
+        );
+        // Verify content is clean
+        assert_eq!(found.item.content, "Wittgenstein language games");
     }
 }

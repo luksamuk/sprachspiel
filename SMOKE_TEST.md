@@ -316,6 +316,21 @@ SCHEMA_VER=$(sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_vers
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(content_items);" | grep -q "thinking_content" && echo "✓ thinking_content column" || echo "✗ thinking_content column missing"
 ```
 
+**v14 regression: FTS keyword search (PR #189 bug fix):**
+
+After adding `thinking_content` column, the inline FTS SQL in `search_content_keyword()` was
+missing `ci.thinking_content` — causing a column index mismatch that broke `/search`. Verify:
+
+- [ ] `/search <query>` (where `<query>` matches a note or message) → returns results, no errors
+- [ ] `/search` with a term that exists in `thinking_content` but NOT in `content` → does NOT find the item (FTS5 only indexes `content`, not `thinking_content`)
+- [ ] Search results should show `thinking_content` correctly (not garbage from bm25 score column):
+  ```bash
+  # Insert a test message with thinking, then search for it
+  # Verify thinking_content is readable in the result
+  sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT id, substr(content, 1, 50), substr(thinking_content, 1, 50) FROM content_items WHERE thinking_content IS NOT NULL LIMIT 1;"
+  # Expected: content and thinking_content are both readable strings
+  ```
+
 **Verify priority/tags columns in session_todos (v9):**
 ```bash
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(session_todos);"
