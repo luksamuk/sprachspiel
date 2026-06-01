@@ -684,14 +684,20 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
         }
     };
 
-    // `run_upgrade` is self-contained: it both writes the user-
-    // facing output to stdout and returns the captured lines plus
-    // the report. We discard the captured lines here (the
-    // terminal already received them) and only consume the
-    // report for completeness — future code might want to log
-    // or react to the upgrade result programmatically.
+    // `run_upgrade` is pure-ish: it does not perform any I/O
+    // of its own. It returns a `Vec<String>` of every line of
+    // user-facing output alongside the report. We iterate the
+    // lines here to write them to stdout for direct CLI
+    // invocation; the tests in `config_upgrade.rs` capture the
+    // same `Vec<String>` programmatically without polluting
+    // `cargo test` output.
     match run_upgrade(config_path, args.dry_run, args.no_backup) {
-        Ok((_report, _output)) => Ok(()),
+        Ok((_report, output)) => {
+            for line in &output {
+                println!("{line}");
+            }
+            Ok(())
+        }
         Err(e) => {
             eprintln!("Error: {e}");
             log::error!("Config upgrade failed: {e}");

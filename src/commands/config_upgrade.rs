@@ -768,10 +768,13 @@ fn parse_toml_value(s: &str) -> Value {
 
 /// Top-level entry point that runs the upgrade. Returns the
 /// report and a vector of every line of user-facing output the
-/// command would have printed to stdout. The handler in
-/// `main.rs` and the tests in this module both consume the
-/// output lines; the `main.rs` handler additionally writes them
-/// to stdout so the user sees them on the terminal.
+/// command produces.
+///
+/// This function is pure-ish: it does not perform any I/O of
+/// its own. The handler in `main.rs` is responsible for writing
+/// the returned `Vec<String>` to stdout; the tests in this
+/// module consume it programmatically without polluting
+/// `cargo test` output.
 pub fn run_upgrade(
     config_path: PathBuf,
     dry_run: bool,
@@ -788,10 +791,6 @@ pub fn run_upgrade(
             backup_path: None,
             dry_run,
         };
-        // Also write to stdout for direct CLI invocation.
-        for line in &output {
-            println!("{line}");
-        }
         return Ok((report, output));
     }
 
@@ -829,13 +828,6 @@ pub fn run_upgrade(
             "Upgraded {} field(s) successfully.",
             report.added
         ));
-    }
-
-    // Write the captured output to stdout for direct CLI
-    // invocation. The caller can ignore the Vec<String> if it
-    // does not need programmatic access.
-    for line in &output {
-        println!("{line}");
     }
 
     Ok((report, output))
