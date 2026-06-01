@@ -604,10 +604,7 @@ fn insert_field(doc: &mut DocumentMut, field: &MissingField) {
     // Decorate the key with the doc-comments.
     let mut decorated_key = toml_edit::Key::new(leaf_key);
     if !field.comment.is_empty() {
-        let prefix = toml_edit::Decor::new(
-            render_toml_comment(&field.comment),
-            "",
-        );
+        let prefix = toml_edit::Decor::new(render_toml_comment(&field.comment), "");
         decorated_key = decorated_key.with_leaf_decor(prefix);
     }
 
@@ -824,10 +821,7 @@ pub fn run_upgrade(
     if report.dry_run {
         output.push("Dry-run mode: no changes made.".to_string());
     } else {
-        output.push(format!(
-            "Upgraded {} field(s) successfully.",
-            report.added
-        ));
+        output.push(format!("Upgraded {} field(s) successfully.", report.added));
     }
 
     Ok((report, output))
@@ -852,7 +846,6 @@ fn value_type_name(s: &str) -> &'static str {
         "value"
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Field comparison
@@ -1372,8 +1365,8 @@ ollama_port = 11434
 
         // The final document must be valid TOML.
         let updated = std::fs::read_to_string(&path).unwrap();
-        let parsed: toml::Value = toml::from_str(&updated)
-            .expect("deeply nested inserts must produce valid TOML");
+        let parsed: toml::Value =
+            toml::from_str(&updated).expect("deeply nested inserts must produce valid TOML");
         // At least one of the paths must have created a key —
         // exact layout depends on TOML dotted-key semantics, but
         // the document must round-trip cleanly.

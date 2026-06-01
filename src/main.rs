@@ -668,11 +668,9 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
         None => {
             // Try the conventional path even if it doesn't exist
             // yet, so the user sees a path they recognize.
-            let candidate = crate::settings::Settings::config_dir()
-                .map(|d| d.join("config.toml"));
-            let candidate = candidate.unwrap_or_else(|| {
-                std::path::PathBuf::from("~/.config/sprachspiel/config.toml")
-            });
+            let candidate = crate::settings::Settings::config_dir().map(|d| d.join("config.toml"));
+            let candidate = candidate
+                .unwrap_or_else(|| std::path::PathBuf::from("~/.config/sprachspiel/config.toml"));
             let msg = format!(
                 "Config file not found: {}\n\
                  Run `sprach --init-config` to create a fresh one.",
