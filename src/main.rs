@@ -659,11 +659,23 @@ fn handle_config(args: ConfigArgs, settings: &Settings) -> AppResult<()> {
 fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<()> {
     use crate::commands::config_upgrade::run_upgrade;
 
+    // First, check if the user has a config at all. The path lookup
+    // in Settings::config_path() only returns Some if the file
+    // exists, so we use a separate helper here to detect the
+    // "no config" case explicitly and produce a clear error.
     let config_path = match crate::settings::Settings::config_path() {
         Some(p) => p,
         None => {
-            let msg = "Could not determine config directory. \
-                       Set $XDG_CONFIG_HOME or ensure $HOME is set.";
+            // Try the conventional path even if it doesn't exist
+            // yet, so the user sees a path they recognize.
+            let candidate = crate::settings::Settings::config_dir().map(|d| d.join("config.toml"));
+            let candidate = candidate
+                .unwrap_or_else(|| std::path::PathBuf::from("~/.config/sprachspiel/config.toml"));
+            let msg = format!(
+                "Config file not found: {}\n\
+                 Run `sprach --init-config` to create a fresh one.",
+                candidate.display()
+            );
             log::error!("Config upgrade aborted: {msg}");
             eprintln!("Error: {msg}");
             std::process::exit(1);
