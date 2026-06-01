@@ -24,7 +24,7 @@
 #![allow(clippy::print_stdout)] // User-facing CLI output
 #![allow(clippy::print_stderr)] // User-facing CLI output
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
 use toml_edit::{Array, DocumentMut, Item, Table, Value};
@@ -355,7 +355,6 @@ fn emit_missing_from_default(
 /// primary path uses `emit_missing_from_default` instead because
 /// `serde(default)` would otherwise hide the absence of optional
 /// fields.
-#[allow(dead_code)]
 fn compare_settings(
     current: &Settings,
     default: &Settings,
@@ -373,7 +372,6 @@ fn compare_settings(
     walk_diff(&cur_val, &def_val, prefix, out, sample);
 }
 
-#[allow(dead_code)]
 fn walk_diff(
     current: &serde_json::Value,
     default: &serde_json::Value,
@@ -821,10 +819,11 @@ fn value_type_name(s: &str) -> &'static str {
     }
 }
 
-// Silence unused-import warnings on `Path` (kept for API stability in
-// public signatures; tests below exercise the helper functions).
-#[allow(dead_code)]
-fn _path_marker(_p: &Path) {}
+
+// (Previously contained a `_path_marker` no-op used to silence
+// unused-import warnings on `Path`. The marker was YAGNI: `Path`
+// is unused after the marker is removed, and the marker had zero
+// call sites. Removed in commit for R1.)
 
 // ---------------------------------------------------------------------------
 // Tests
