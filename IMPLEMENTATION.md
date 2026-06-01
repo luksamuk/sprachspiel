@@ -270,6 +270,126 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 ---
 
+### 🔵 PRIORITY: Config Upgrade Command — #105 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #105
+**Branch:** `feat/105-config-upgrade`
+**Depends on:** None (W1 quick win — no dependencies)
+
+**Goal:** Add a `sprach config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, preserving all existing values, user comments, and formatting.
+
+**Problem Statement:**
+
+Every release adds new config fields (e.g., `[feedback]` in v0.40, `[facts]` in v0.42, `[retrieval]` in v0.43, `[thinking_trace]` in v0.45). Users with existing configs miss new fields because:
+- `serde(default)` silently fills missing fields with no user-visible indication
+- The sample config (`--init-config`) creates a full file but does not merge with existing
+- Users must read CHANGELOG to discover new fields and add them manually
+
+**Proposed Solution:**
+
+```bash
+sprach config upgrade [--dry-run] [--no-backup]
+```
+
+**Behavior:**
+1. Read user config with `toml` (preserves structure)
+2. Parse with `serde` to detect which fields are present
+3. Compare against `Settings::default()` to find missing fields
+4. Insert missing fields with doc-comments using `toml_edit` (extracted from `SAMPLE_CONFIG`)
+5. Write back, preserving all existing content (insert-only — never modifies existing fields)
+
+**Example Output:**
+
+```
+$ sprach config upgrade
+Config: /home/user/.config/sprachspiel/config.toml
+
+Found 3 new fields:
+  - facts.auto_extract (default: true, bool)
+  - facts.max_facts (default: 3, u32)
+  - facts.auto_extract_notify (default: true, bool)
+
+Backup created: /home/user/.config/sprachspiel/config.toml.bak
+Upgraded 3 fields successfully.
+```
+
+**Architecture:**
+
+- Two-pass approach: `toml` for detection, `toml_edit` for file operations
+- New module: `src/commands/config_upgrade.rs`
+- New dependency: `toml_edit = "0.22"` (compatible with `toml 0.8`)
+- Insert-only: never modify existing fields or comments
+- Backup file created before upgrade: `.bak` or `.bak.YYYYMMDD-HHMMSS` if `.bak` exists
+- Doc-comments extracted from `SAMPLE_CONFIG` static (parsing of comment blocks preceding each field)
+- Invalid TOML → report parser error, abort (no destructive overwrite)
+
+**Design Decisions:**
+
+1. **`--no-backup` (opt-out, default = backup active)** — Aligns with the principle of not destroying user data. Inverts the issue's original `--backup` proposal but is consistent with `--dry-run` (also opt-in, also a "safety off" flag).
+2. **Insert-only semantics** — The command is purely additive. Never modifies or removes existing values. This guarantees zero risk of data loss.
+3. **`toml_edit` for file writes, `toml` for parsing** — `toml_edit` preserves comments and formatting, which is essential for the "non-destructive" promise. `toml` is faster and more lenient for detection.
+4. **Doc-comments from `SAMPLE_CONFIG` parsing** — Reuses the existing sample config string. The `extract_field_comment(path)` helper parses the comment block immediately preceding each field assignment in the sample. This guarantees sync with `Settings::default()` whenever someone edits the sample.
+5. **Invalid TOML aborts** — The command does NOT attempt to recover from invalid syntax. It reports the parser error, suggests `--init-config` for a full reset, and exits with code 1. Avoids silent corruption.
+6. **No interactive prompts** — The command is fully non-interactive. Suitable for scripts and CI.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Add `toml_edit` to `Cargo.toml` | `Cargo.toml` | ❌ |
+| 2 | Refactor `create_sample_config` to expose `SAMPLE_CONFIG: &str` constant | `src/settings.rs` | ❌ |
+| 3 | Create `src/commands/mod.rs` + skeleton of `config_upgrade.rs` | `src/commands/*` | ❌ |
+| 4 | Implement `MissingField` struct + comment extraction from `SAMPLE_CONFIG` | `src/commands/config_upgrade.rs` | ❌ |
+| 5 | Implement `ConfigUpgrader::new` (read config, parse with `toml`) | `src/commands/config_upgrade.rs` | ❌ |
+| 6 | Implement `detect_missing` (field-by-field comparison) | `src/commands/config_upgrade.rs` | ❌ |
+| 7 | Implement `apply` (write with `toml_edit`, insert with comments) | `src/commands/config_upgrade.rs` | ❌ |
+| 8 | Implement `backup` (`.bak` or timestamped variant) | `src/commands/config_upgrade.rs` | ❌ |
+| 9 | Add CLI args + `handle_config_upgrade` dispatch in `main.rs` | `src/translate/cli.rs`, `src/main.rs`, `src/translate/mod.rs` | ❌ |
+| 10 | 17 unit tests inline (cfg(test)) | `src/commands/config_upgrade.rs` | ❌ |
+| 11 | Documentation: `doc/src/commands/config-upgrade.md`, `doc/src/SUMMARY.md`, `man/sprach.1` | various | ❌ |
+| 12 | Quality gates: `cargo fmt --check`, `cargo clippy --all-features -- -D warnings`, `cargo test --all-features`, `cargo audit` | — | ❌ |
+
+**Files to Create:**
+- `src/commands/mod.rs` — Module exports
+- `src/commands/config_upgrade.rs` — `MissingField`, `ConfigUpgrader`, `UpgradeReport`, CLI logic
+- `doc/src/commands/config-upgrade.md` — User documentation page
+
+**Files to Modify:**
+- `Cargo.toml` — Add `toml_edit = "0.22"`
+- `src/settings.rs` — Expose `SAMPLE_CONFIG: &str` constant; refactor `create_sample_config` to use it
+- `src/translate/cli.rs` — Add `Commands::Config(ConfigArgs)`, `ConfigArgs`, `ConfigAction::Upgrade(UpgradeArgs)`, `UpgradeArgs`
+- `src/translate/mod.rs` — Re-export `ConfigArgs`, `UpgradeArgs`, `ConfigAction`
+- `src/main.rs` — Add `mod commands;`, dispatch `Commands::Config` → `handle_config`
+- `doc/src/SUMMARY.md` — Add entry to commands section
+- `man/sprach.1` — Document `config upgrade` subcommand
+
+**Test Plan (17 unit tests in `#[cfg(test)]`):**
+
+1. `test_detect_no_missing_when_complete` — full config yields empty list
+2. `test_detect_missing_entire_section` — `[facts]` absent
+3. `test_detect_missing_field_in_existing_section` — `[facts].max_facts` absent
+4. `test_detect_multiple_missing` — combination
+5. `test_apply_preserves_existing_values` — existing values unchanged
+6. `test_apply_inserts_missing_with_default` — inserted values match `Settings::default()`
+7. `test_apply_preserves_user_comments` — user comments above existing fields survive
+8. `test_apply_writes_correctly_with_toml_edit` — file is valid TOML after write
+9. `test_backup_creates_bak_file` — `.bak` is created
+10. `test_backup_uses_timestamp_if_bak_exists` — second run uses `.bak.YYYYMMDD-HHMMSS`
+11. `test_dry_run_does_not_modify_file` — file mtime/content unchanged
+12. `test_dry_run_does_not_create_backup` — no `.bak` created in dry-run
+13. `test_no_backup_flag_skips_backup` — explicit `--no-backup` works
+14. `test_invalid_toml_returns_error` — malformed TOML aborts with error
+15. `test_missing_config_file_returns_error` — non-existent config aborts
+16. `test_extract_comment_from_sample` — comment extraction works for known fields
+17. `test_dotted_path_notation` — `facts.auto_extract` path resolution
+
+**Estimated effort:** ~5 days (consistency with the issue's original estimate)
+
+**Reference:** Issue #105 (canonical)
+
+---
+
 ### 🔴 PRIORITY 0: T3-Phase0 — Preserve Thinking Content + Schema Foundation [M1]
 
 **Status:** ✅ COMPLETED
