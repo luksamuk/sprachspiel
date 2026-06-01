@@ -874,15 +874,16 @@ pub async fn send_message_stream(
                 TokenMetrics::default()
             };
 
-            // In streaming mode, thinking was already extracted via process_thinking().
-            // It was displayed via StreamThinking events — no need to display again.
+            // In streaming mode, thinking was already displayed via StreamThinking
+            // events — no need to display again. But we still need to extract it
+            // for storage. Use extract_thinking() so API-native thinking fields
+            // (e.g. R1, Kimi) are respected before falling back to regex parsing.
 
             // Content is already displayed via StreamToken events.
             // Don't call view.show_assistant_response() — that would duplicate.
 
-            let processed = process_thinking(&content);
-            let display_content = processed.content.clone();
-            let thinking = processed.thinking;
+            let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+            let display_content = process_thinking(&content).content;
             let pre_tool = coordinator.take_pre_tool_content();
             let (pre_tool_content, pre_tool_thinking) = match pre_tool {
                 Some(ptc) => (Some(ptc.content), ptc.thinking),

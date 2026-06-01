@@ -796,6 +796,10 @@ impl Database {
     /// passes `process_thinking` as the closure.
     ///
     /// Returns the number of rows normalized.
+    ///
+    /// All writes are wrapped in an explicit transaction so the batch is
+    /// atomic: either every row is normalized or none are. If the process
+    /// is interrupted (Ctrl+C, panic, kill), SQLite rolls back automatically.
     pub fn normalize_inline_thinking<F>(&self, split_fn: F) -> Result<u64>
     where
         F: Fn(&str) -> (Option<String>, String),
@@ -813,6 +817,10 @@ impl Database {
                 log::debug!("No inline thinking rows to normalize");
                 return Ok(0u64);
             }
+
+            // Explicit transaction: all or nothing. If any statement fails or
+            // the process is interrupted, SQLite auto-rollbacks the batch.
+            conn.execute_batch("BEGIN")?;
 
             for (id, content) in &rows {
                 let (thinking, clean_content) = split_fn(content);
@@ -835,6 +843,8 @@ impl Database {
                     rusqlite::params![id],
                 )?;
             }
+
+            conn.execute_batch("COMMIT")?;
 
             log::info!(
                 "Normalized {} content items with inline thinking tags (embeddings will be regenerated)",

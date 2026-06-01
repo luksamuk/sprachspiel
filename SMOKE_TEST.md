@@ -973,7 +973,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
 - [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
-- [ ] Verify norm_correction FLOAT column: `sqlite3 ~/.local/share/sprachspiel/sprachpiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **+norm_correction FLOAT**
+- [ ] Verify norm_correction FLOAT column: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **+norm_correction FLOAT**
 - [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
 
 ### 21.2 Fact Insertion Generates Embedding (Synchronous)
