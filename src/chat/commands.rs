@@ -1173,7 +1173,7 @@ pub fn format_help() -> String {
   /system <text>   Change the system prompt
   /think [on|off]  Toggle or set think mode
   /tools           Toggle tools
-  /toggle-style     Toggle style rendering (mermaid/source, syntax highlighting, table format)
+  /toggle-style     Toggle style rendering (mermaid/latex, syntax highlighting, table format)
   /tools-output    Set tool output level (compact|full|hidden)
   /compact         Compact conversation history (summarize)
   /retry           Retry last message (regenerate response)

@@ -213,6 +213,27 @@ When describing diagrams, flows, or relationships, use ```mermaid code blocks:
 - You may also use regular markdown tables and lists for structured data
 "#;
 
+/// LaTeX formula rendering instruction
+///
+/// Injected into system prompts when the `latex` feature is compiled.
+///
+/// Instructs the LLM to use ```latex or ```math code blocks for formulas,
+/// which will be rendered as 2D Unicode character art in the terminal.
+/// Also mentions $$ display math delimiter support.
+#[cfg(feature = "latex")]
+pub const LATEX_INSTRUCTION: &str = r#"### LATEX FORMULAS
+
+When writing mathematical formulas, equations, or expressions, use ```latex or ```math code blocks:
+- Use standard LaTeX math syntax (e.g., ```latex\n\frac{a}{b}\n```)
+- Supported: fractions, integrals, summations, matrices, Greek letters, sub/superscripts, square roots, delimiters
+- Keep formulas concise to fit within 80–120 column terminals
+- For display-style equations, you may also use $$ delimiters on their own lines:
+  $$
+  E = mc^2
+  $$
+- For simple inline math in prose, PREFER plain Unicode (e.g., "x² + y² = z²", "α → β") over LaTeX — LaTeX is only rendered inside ```latex/```math blocks and $$ display math
+"#;
+
 /// Inter-tool compaction continuation prompt
 ///
 /// Used when context compaction interrupts multi-tool execution.

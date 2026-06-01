@@ -54,13 +54,22 @@ pub fn render_markdown_streaming(content: &str, width: usize) -> String {
 
 /// Internal implementation shared between streaming and final rendering.
 ///
-/// When `render_mermaid` is true, Mermaid blocks are rendered as Unicode
-/// box-drawing diagrams. When false, they are treated as regular code blocks.
-fn render_segments(content: &str, width: usize, render_mermaid: bool) -> String {
+/// When `render_special` is true, Mermaid blocks and LaTeX blocks are rendered
+/// as Unicode art. When false, they are treated as regular code blocks.
+fn render_segments(content: &str, width: usize, render_special: bool) -> String {
     let mut output = String::new();
     let segments = extract_content_segments(content);
+    let mut first_segment = true;
 
     for segment in segments {
+        // Add vertical padding (blank line) between segments so that
+        // consecutive special blocks (LaTeX, Mermaid, Table) are visually
+        // separated from preceding content instead of glued together.
+        if !first_segment {
+            output.push('\n');
+        }
+        first_segment = false;
+
         match segment {
             ContentSegment::Markdown(text) => {
                 output.push_str(&render_markdown_inline(&text, width));
@@ -74,13 +83,25 @@ fn render_segments(content: &str, width: usize, render_mermaid: bool) -> String 
             }
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(mermaid_source) => {
-                if render_mermaid {
+                if render_special {
                     let rendered = super::mermaid::render_mermaid_rich(&mermaid_source, width);
                     output.push_str(&rendered);
                 } else {
                     // Streaming mode: treat as regular code block
                     output.push_str("```mermaid\n");
                     output.push_str(&mermaid_source);
+                    output.push_str("```\n");
+                }
+            }
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(latex_source) => {
+                if render_special {
+                    let rendered = super::latex::render_latex_rich(&latex_source, width);
+                    output.push_str(&rendered);
+                } else {
+                    // Streaming mode: treat as regular code block
+                    output.push_str("```latex\n");
+                    output.push_str(&latex_source);
                     output.push_str("```\n");
                 }
             }
@@ -97,8 +118,17 @@ fn render_segments(content: &str, width: usize, render_mermaid: bool) -> String 
 pub fn render_markdown_plain(content: &str, width: usize) -> String {
     let mut output = String::new();
     let segments = extract_content_segments(content);
+    let mut first_segment = true;
 
     for segment in segments {
+        // Add vertical padding (blank line) between segments so that
+        // consecutive special blocks (LaTeX, Mermaid, Table) are visually
+        // separated from preceding content instead of glued together.
+        if !first_segment {
+            output.push('\n');
+        }
+        first_segment = false;
+
         match segment {
             ContentSegment::Markdown(text) => {
                 output.push_str(&render_markdown_inline_plain(&text, width));
@@ -113,6 +143,11 @@ pub fn render_markdown_plain(content: &str, width: usize) -> String {
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(mermaid_source) => {
                 let rendered = super::mermaid::render_mermaid_plain(&mermaid_source);
+                output.push_str(&rendered);
+            }
+            #[cfg(feature = "latex")]
+            ContentSegment::Latex(latex_source) => {
+                let rendered = super::latex::render_latex_plain(&latex_source);
                 output.push_str(&rendered);
             }
         }

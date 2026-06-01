@@ -10,9 +10,9 @@ name = "sprach"
 path = "src/main.rs"
 
 [features]
-default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -37,6 +37,8 @@ subagent-tools = []
 sandbox = ["dep:landlock"]
 # Mermaid diagram rendering (Unicode box-drawing text, pure Rust)
 mermaid = ["dep:mermaid-text"]
+# LaTeX formula rendering (Unicode character art, pure Rust)
+latex = ["dep:term-maths"]
 
 [dependencies]
 base64 = "0.22.1"
@@ -89,6 +91,9 @@ unicode-width = "0.2.2"
 # Mermaid diagram rendering as Unicode box-drawing text (pure Rust, no browser)
 # Optional — enabled by the "mermaid" feature flag
 mermaid-text = { version = "0.56", optional = true }
+# LaTeX formula rendering as Unicode character art (pure Rust, no browser)
+# Optional — enabled by the "latex" feature flag
+term-maths = { version = "1.0", optional = true, features = ["ratatui"] }
 # Database for semantic search
 rusqlite = { version = "0.32", features = ["bundled"] }
 sqlite-vec = "0.1"

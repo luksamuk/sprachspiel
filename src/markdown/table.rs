@@ -55,7 +55,7 @@ pub const BD_BR: &str = "┘";
 
 // ── Table detection ─────────────────────────────────────────────────
 
-/// A segment of markdown content — regular text, a table, or a Mermaid block.
+/// A segment of markdown content — regular text, a table, a Mermaid block, or a LaTeX block.
 #[derive(Debug)]
 pub enum ContentSegment {
     /// Regular markdown content (rendered via tui-markdown or standalone)
@@ -65,6 +65,9 @@ pub enum ContentSegment {
     /// Mermaid diagram block (rendered as Unicode box-drawing text)
     #[cfg(feature = "mermaid")]
     Mermaid(String),
+    /// LaTeX formula block (rendered as Unicode character art)
+    #[cfg(feature = "latex")]
+    Latex(String),
 }
 
 /// Check if a line looks like a table row (starts and ends with `|`).
@@ -78,12 +81,14 @@ pub fn is_table_separator(line: &str) -> bool {
     parse_separator_line(line).is_some()
 }
 
-/// Detect markdown table blocks and Mermaid blocks in content and split into segments.
+/// Detect markdown table blocks, Mermaid blocks, and LaTeX blocks in content
+/// and split into segments.
 ///
-/// Tables and Mermaid diagrams inside fenced code blocks are NOT detected as
-/// special segments — they remain as regular Markdown content. Only top-level
-/// table rows following a separator and top-level ` ```mermaid ` blocks are
-/// extracted.
+/// Tables, Mermaid diagrams, and LaTeX formulas inside fenced code blocks are
+/// NOT detected as special segments — they remain as regular Markdown content.
+/// Only top-level table rows following a separator, top-level ` ```mermaid `
+/// blocks, top-level ` ```latex `/` ```math ` blocks, and `$$` display math
+/// blocks are extracted.
 pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut segments = Vec::new();
     let mut current_markdown = String::new();
@@ -92,6 +97,14 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut in_mermaid_block = false;
     #[cfg(feature = "mermaid")]
     let mut mermaid_content = String::new();
+    #[cfg(feature = "latex")]
+    let mut in_latex_block = false;
+    #[cfg(feature = "latex")]
+    let mut latex_content = String::new();
+    #[cfg(feature = "latex")]
+    let mut in_dollar_math = false;
+    #[cfg(feature = "latex")]
+    let mut dollar_content = String::new();
     let mut lines = content.lines().peekable();
 
     while let Some(line) = lines.next() {
@@ -107,6 +120,15 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
                 in_mermaid_block = false;
                 segments.push(ContentSegment::Mermaid(mermaid_content.clone()));
                 mermaid_content.clear();
+                continue;
+            }
+
+            #[cfg(feature = "latex")]
+            if in_latex_block {
+                // End of LaTeX block
+                in_latex_block = false;
+                segments.push(ContentSegment::Latex(latex_content.clone()));
+                latex_content.clear();
                 continue;
             }
 
@@ -131,6 +153,19 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
                 continue;
             }
 
+            // Starting a new code block — check if it's LaTeX
+            #[cfg(feature = "latex")]
+            if lang.starts_with("latex") || lang.starts_with("math") {
+                // Flush accumulated markdown
+                if !current_markdown.is_empty() {
+                    segments.push(ContentSegment::Markdown(std::mem::take(
+                        &mut current_markdown,
+                    )));
+                }
+                in_latex_block = true;
+                continue;
+            }
+
             // Start of a regular code block
             in_code_block = true;
             current_markdown.push_str(line);
@@ -146,9 +181,47 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
             continue;
         }
 
+        // Inside a LaTeX fenced block — collect content
+        #[cfg(feature = "latex")]
+        if in_latex_block {
+            latex_content.push_str(line);
+            latex_content.push('\n');
+            continue;
+        }
+
         if in_code_block {
             current_markdown.push_str(line);
             current_markdown.push('\n');
+            continue;
+        }
+
+        // Check for $$ display math blocks (only when $$ is alone on a line)
+        // This avoids matching inline $$ in prose like "The equation $$E=mc^2$$ is famous."
+        #[cfg(feature = "latex")]
+        if trimmed == "$$" && !in_dollar_math {
+            // Flush accumulated markdown before starting $$ block
+            if !current_markdown.is_empty() {
+                segments.push(ContentSegment::Markdown(std::mem::take(
+                    &mut current_markdown,
+                )));
+            }
+            in_dollar_math = true;
+            continue;
+        }
+        #[cfg(feature = "latex")]
+        if trimmed == "$$" && in_dollar_math {
+            // End of $$ display math block
+            in_dollar_math = false;
+            segments.push(ContentSegment::Latex(dollar_content.clone()));
+            dollar_content.clear();
+            continue;
+        }
+
+        // Inside a $$ display math block — collect content
+        #[cfg(feature = "latex")]
+        if in_dollar_math {
+            dollar_content.push_str(line);
+            dollar_content.push('\n');
             continue;
         }
 
@@ -204,12 +277,16 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     if in_mermaid_block && !mermaid_content.is_empty() {
         segments.push(ContentSegment::Mermaid(mermaid_content));
     }
-    #[cfg(not(feature = "mermaid"))]
-    if !current_markdown.is_empty() {
-        segments.push(ContentSegment::Markdown(current_markdown));
+    #[cfg(feature = "latex")]
+    if in_latex_block && !latex_content.is_empty() {
+        segments.push(ContentSegment::Latex(latex_content));
     }
-    // When mermaid feature is active, also flush non-mermaid markdown
-    #[cfg(feature = "mermaid")]
+    #[cfg(feature = "latex")]
+    if in_dollar_math && !dollar_content.is_empty() {
+        // Unclosed $$ block — treat as Latex segment anyway
+        segments.push(ContentSegment::Latex(dollar_content));
+    }
+    // Always flush remaining markdown (if not empty)
     if !current_markdown.is_empty() {
         segments.push(ContentSegment::Markdown(current_markdown));
     }
