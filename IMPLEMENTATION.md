@@ -5039,7 +5039,7 @@ Changes:
 | *(uncommitted)* | Tool call indicators rendered bright (not dim), tool results stay dim | ✅ COMPLETED |
 | *(uncommitted)* | P0: Fix mouse selection offset with wrapped lines (`wrap_visual_lines` + `source_line_map`) | ✅ COMPLETED |
 | *(uncommitted)* | P1: Filter empty tool parameter values from display (`display_tool_call`, `log_tool_call`) | ✅ COMPLETED |
-| *(uncommitted)* | LaTeX formula rendering via `term-maths` crate — ```latex/```math fenced blocks + `$$` display math as Unicode art (Issue #190) | 🔄 IN PROGRESS |
+| 0.44.0 | LaTeX formula rendering via `term-maths` crate — ```latex/```math fenced blocks + `$$` display math as Unicode art (Issue #190, PR #191) | ✅ COMPLETED |
 
 **Known Bugs (on `feat/tui-streaming-refinement` branch):**
 
