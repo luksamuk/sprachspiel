@@ -52,11 +52,13 @@ use super::wrap::wrap_line;
 // Mocha (dark flavor) — used by DarkStyleSheet
 const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4
 const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68); // #313244
+#[cfg(feature = "latex")]
 const MOCHA_TEAL: Color = Color::Rgb(148, 226, 213); // #94e2d5
 
 // Latte (light flavor) — used by LightStyleSheet
 const LATTE_TEXT: Color = Color::Rgb(76, 79, 105); // #4c4f69
 const LATTE_SURFACE0: Color = Color::Rgb(204, 208, 218); // #ccd0da
+#[cfg(feature = "latex")]
 const LATTE_TEAL: Color = Color::Rgb(23, 146, 153); // #179299
 
 /// Markdown theme matching the user's `display.skin` configuration
@@ -2517,6 +2519,68 @@ mod tests {
         // Both should produce output
         assert!(!on_str.is_empty());
         assert!(!off_str.is_empty());
+    }
+
+    #[cfg(feature = "latex")]
+    #[test]
+    fn test_extract_latex_block() {
+        let content = "Before\n\n```latex\n\\frac{a}{b}\n```\n\nAfter";
+        let segments = extract_content_segments(content);
+        assert_eq!(
+            segments.len(),
+            3,
+            "Expected 3 segments: markdown, latex, markdown"
+        );
+        match &segments[0] {
+            ContentSegment::Markdown(md) => assert!(md.contains("Before")),
+            _ => panic!("Expected Markdown first"),
+        }
+        match &segments[1] {
+            ContentSegment::Latex(latex) => {
+                assert!(latex.contains("\\frac{a}{b}"));
+            }
+            _ => panic!("Expected Latex second"),
+        }
+        match &segments[2] {
+            ContentSegment::Markdown(md) => assert!(md.contains("After")),
+            _ => panic!("Expected Markdown third"),
+        }
+    }
+
+    #[cfg(feature = "latex")]
+    #[test]
+    fn test_extract_dollar_math_block() {
+        let content = "Before\n\n$$\nE = mc^2\n$$\n\nAfter";
+        let segments = extract_content_segments(content);
+        assert_eq!(
+            segments.len(),
+            3,
+            "Expected 3 segments: markdown, latex, markdown"
+        );
+        match &segments[1] {
+            ContentSegment::Latex(s) => assert!(
+                s.contains("E = mc^2"),
+                "Dollar math should contain the formula"
+            ),
+            _ => panic!("Expected Latex segment from $$ block"),
+        }
+    }
+
+    #[cfg(feature = "latex")]
+    #[test]
+    fn test_inline_dollar_not_extracted() {
+        // "$$E=mc^2$$" inline in prose should NOT become a Latex segment
+        let content = "The equation $$E=mc^2$$ is famous.";
+        let segments = extract_content_segments(content);
+        assert_eq!(
+            segments.len(),
+            1,
+            "Inline $$ should not be split into multiple segments"
+        );
+        assert!(
+            matches!(&segments[0], ContentSegment::Markdown(_)),
+            "Inline $$ should remain as Markdown, not Latex"
+        );
     }
 
     // ── Table parsing tests ───────────────────────────────────────

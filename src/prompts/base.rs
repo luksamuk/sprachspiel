@@ -231,7 +231,7 @@ When writing mathematical formulas, equations, or expressions, use ```latex or `
   $$
   E = mc^2
   $$
-- For simple inline references, use plain Unicode text (e.g., "x² + y² = z²", "α → β")
+- For simple inline math in prose, PREFER plain Unicode (e.g., "x² + y² = z²", "α → β") over LaTeX — LaTeX is only rendered inside ```latex/```math blocks and $$ display math
 "#;
 
 /// Inter-tool compaction continuation prompt
