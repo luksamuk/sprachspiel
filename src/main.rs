@@ -668,9 +668,11 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
         None => {
             // Try the conventional path even if it doesn't exist
             // yet, so the user sees a path they recognize.
-            let candidate = crate::settings::Settings::config_dir().map(|d| d.join("config.toml"));
-            let candidate = candidate
-                .unwrap_or_else(|| std::path::PathBuf::from("~/.config/sprachspiel/config.toml"));
+            let candidate = crate::settings::Settings::config_dir()
+                .map(|d| d.join("config.toml"));
+            let candidate = candidate.unwrap_or_else(|| {
+                std::path::PathBuf::from("~/.config/sprachspiel/config.toml")
+            });
             let msg = format!(
                 "Config file not found: {}\n\
                  Run `sprach --init-config` to create a fresh one.",
@@ -682,8 +684,14 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
         }
     };
 
+    // `run_upgrade` is self-contained: it both writes the user-
+    // facing output to stdout and returns the captured lines plus
+    // the report. We discard the captured lines here (the
+    // terminal already received them) and only consume the
+    // report for completeness — future code might want to log
+    // or react to the upgrade result programmatically.
     match run_upgrade(config_path, args.dry_run, args.no_backup) {
-        Ok(_report) => Ok(()),
+        Ok((_report, _output)) => Ok(()),
         Err(e) => {
             eprintln!("Error: {e}");
             log::error!("Config upgrade failed: {e}");

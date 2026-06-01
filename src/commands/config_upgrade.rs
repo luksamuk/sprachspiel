@@ -766,57 +766,79 @@ fn parse_toml_value(s: &str) -> Value {
 // Public entry point used by the CLI handler
 // ---------------------------------------------------------------------------
 
-/// Top-level entry point that runs the upgrade. Returns a printable
-/// summary report on success. Errors propagate to the CLI handler.
+/// Top-level entry point that runs the upgrade. Returns the
+/// report and a vector of every line of user-facing output the
+/// command would have printed to stdout. The handler in
+/// `main.rs` and the tests in this module both consume the
+/// output lines; the `main.rs` handler additionally writes them
+/// to stdout so the user sees them on the terminal.
 pub fn run_upgrade(
     config_path: PathBuf,
     dry_run: bool,
     no_backup: bool,
-) -> Result<UpgradeReport, AppError> {
+) -> Result<(UpgradeReport, Vec<String>), AppError> {
+    let mut output: Vec<String> = Vec::new();
     let upgrader = ConfigUpgrader::new(config_path)?;
     let missing = upgrader.detect_missing();
 
     if missing.is_empty() {
-        println!("Config is already up to date.");
-        return Ok(UpgradeReport {
+        output.push("Config is already up to date.".to_string());
+        let report = UpgradeReport {
             added: 0,
             backup_path: None,
             dry_run,
-        });
+        };
+        // Also write to stdout for direct CLI invocation.
+        for line in &output {
+            println!("{line}");
+        }
+        return Ok((report, output));
     }
 
-    println!("Config: {}", upgrader.config_path.display());
-    println!();
+    output.push(format!("Config: {}", upgrader.config_path.display()));
+    output.push(String::new());
     if dry_run {
-        println!("Would add {} new field(s):", missing.len());
+        output.push(format!("Would add {} new field(s):", missing.len()));
     } else {
-        println!("Found {} new field(s):", missing.len());
+        output.push(format!("Found {} new field(s):", missing.len()));
     }
     for field in &missing {
-        println!(
+        output.push(format!(
             "  - {} (default: {}, {})",
             field.path,
             field.default_value,
             value_type_name(&field.default_value)
-        );
+        ));
     }
-    println!();
+    output.push(String::new());
 
     let report = upgrader.apply(&missing, dry_run, no_backup)?;
 
     match (&report.backup_path, report.dry_run) {
-        (Some(path), false) => println!("Backup created: {}", path.display()),
+        (Some(path), false) => {
+            output.push(format!("Backup created: {}", path.display()));
+        }
         (None, false) => {}
         _ => {}
     }
 
     if report.dry_run {
-        println!("Dry-run mode: no changes made.");
+        output.push("Dry-run mode: no changes made.".to_string());
     } else {
-        println!("Upgraded {} field(s) successfully.", report.added);
+        output.push(format!(
+            "Upgraded {} field(s) successfully.",
+            report.added
+        ));
     }
 
-    Ok(report)
+    // Write the captured output to stdout for direct CLI
+    // invocation. The caller can ignore the Vec<String> if it
+    // does not need programmatic access.
+    for line in &output {
+        println!("{line}");
+    }
+
+    Ok((report, output))
 }
 
 /// A human-readable type name for a TOML literal, used in the
@@ -1288,13 +1310,35 @@ ollama_port = 11434
 
     #[test]
     fn test_run_upgrade_already_up_to_date() {
-        // A complete config should yield "already up to date" and
-        // added=0. Use the toml-serialized Settings::default() as a
-        // canonical complete config.
+        // A complete config should yield "already up to date"
+        // and added=0. The test also verifies that:
+        // (1) the captured output contains the user-facing
+        //     message,
+        // (2) report.backup_path is None (no early backup),
+        // (3) the config file is byte-identical before and
+        //     after (no spurious writes on the no-op path).
         let complete = toml::to_string(&Settings::default()).unwrap();
         let path = write_tmp_config("complete_run.toml", &complete);
-        let report = run_upgrade(path, false, false).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let (report, output) = run_upgrade(path.clone(), false, false).unwrap();
+
+        // (1) User-facing message is captured.
+        assert!(
+            output.iter().any(|l| l == "Config is already up to date."),
+            "expected 'Config is already up to date.' in output, got: {:?}",
+            output
+        );
+
+        // (2) No backup was created.
+        assert!(report.backup_path.is_none());
+        assert!(!report.dry_run);
         assert_eq!(report.added, 0);
+
+        // (3) File is byte-identical (the no-op path must not
+        // touch the file at all).
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(before, after, "no-op upgrade must not modify the file");
     }
 
     /// Regression test for the `unsafe` block in
