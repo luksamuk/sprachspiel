@@ -301,12 +301,19 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (13 or higher)
+- [ ] Schema version correct (14 or higher)
 
 **Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 13 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 13"
+[ "$SCHEMA_VER" -ge 14 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 14"
+```
+
+**Verify v14 additions (thinking_content — PR #189):**
+
+```bash
+# Verify thinking_content column exists in content_items
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(content_items);" | grep -q "thinking_content" && echo "✓ thinking_content column" || echo "✗ thinking_content column missing"
 ```
 
 **Verify priority/tags columns in session_todos (v9):**
@@ -666,9 +673,9 @@ Test the feedback_submit LLM tool and configuration defaults.
 Verify `[feedback]` section in config.toml (or defaults work without it):
 
 ```bash
-# Check schema version (must be 13 or higher)
+# Check schema version (must be 14 or higher)
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
-# Expected: 13 or higher
+# Expected: 14 or higher
 
 # Check feedback_signals table exists
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables"
@@ -958,14 +965,15 @@ Verify that preference and identity facts are auto-extracted from user messages 
 > ```
 > This ensures a clean state for embedding and dedup tests.
 
-### 21.1 Schema Migration: v12 → v13
+### 21.1 Schema Migration: v12 → v13 → v14
 
 - [ ] Start a fresh chat session → no errors
-- [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"` → returns **13**
+- [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"` → returns **14**
+- [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(content_items);" | grep -q "thinking_content"` → **thinking_content column exists**
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
 - [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
-- [ ] Verify norm_correction FLOAT column: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **+norm_correction FLOAT**
+- [ ] Verify norm_correction FLOAT column: `sqlite3 ~/.local/share/sprachspiel/sprachpiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **+norm_correction FLOAT**
 - [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
 
 ### 21.2 Fact Insertion Generates Embedding (Synchronous)
