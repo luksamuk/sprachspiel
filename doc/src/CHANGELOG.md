@@ -6,7 +6,7 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Added
 
-- **Session Forget — Destructive Session Deletion with Confirmations (Issue #36)** — `/session forget` now deletes sessions by name or ID (not just the current session). New subcommands: `/session forget` (delete current session, requires `--yes`), `/session forget <name>` (delete named session by name or ID, requires `--yes`). `/forget` is now an alias for `/session forget` (current session only). Two-step confirmation pattern: first shows what will be deleted (message count, embedding count, associated notes), then requires explicit `--yes`. Cascade deletion order: embeddings → chunks → content items → notes → conversation. Transaction-based atomic deletion. `/session list` shows session IDs for easy reference.
+- **Session Forget — Destructive Session Deletion with Confirmations (Issue #36)** — `/forget` removed entirely. `/session forget` is the canonical command for deleting sessions, with context-sensitive tab completion. New subcommands: `/session forget` (current session, requires `--yes`), `/session forget <name>` (preview then `--yes`), `/session forget --id <id> --yes` (delete by ID). Preview shows message count, embedding count, and todo count before confirmation. `--yes` is intentionally NOT autocompleted after session names (safety). Notes and facts survive session deletion (project-scoped, not session-scoped). `/save <name>` now rejects duplicate names within the same project. Context-sensitive autocomplete: `/session` shows subcommands with descriptions, `/session forget` shows `--id`, `--yes`, and session names, `/session forget --id` shows IDs with name descriptions.
 
 ### Fixed
 

@@ -412,74 +412,82 @@ Upgraded 3 fields successfully.
 **Branch:** `feat/36-session-forget`
 **Depends on:** None (W1 quick win — no dependencies)
 
-**Goal:** Add `/session forget` command that deletes sessions by name or ID with two-step confirmation and cascade deletion of all associated data (messages, embeddings, chunks, notes, facts).
+**Goal:** Replace the `/forget` command with `/session forget` — the canonical path for deleting sessions by name or ID, with preview confirmation, cascade deletion, and context-sensitive autocomplete. Also add unique name constraint to `/save`.
 
 **Problem Statement:**
 
-Currently `/forget --yes` only deletes the current session. There is no way to delete a specific session by name or ID. The existing `/forget` command:
-- Only works on the current session
-- Has no preview of what will be deleted (message count, embedding count, notes)
-- Uses a single `--yes` flag (no two-step confirmation)
-- Does not show a progress indicator during deletion
+1. `/forget --yes` only deletes the current session — no way to delete a specific session by name or ID.
+2. `/forget` is a destructive alias with no preview of what will be deleted.
+3. `/save <name>` allows duplicate names within the same project, causing ambiguity.
+4. Tab completion for `/session` subcommands doesn't exist — users must memorize arguments.
 
-**Proposed Solution:**
+**Redesign Decisions (per user discussion):**
 
-```
-> /session forget Blabla
-⚠️  This will permanently delete session "Blabla":
-  - 42 messages
-  - 42 embeddings
-  - 3 notes
-Continue? [y/N]: y
-Deleting session...
-Session "Blabla" deleted.
+1. **Remove `/forget` entirely.** `/session forget` is the only path. No aliases for destructive commands — the user must be explicit.
+2. **`--yes` is not autocompletable.** Safety feature: the user must type `--yes` manually after seeing the preview. Tab will not suggest `--yes` after a session name.
+3. **Session names are unique per project.** `/save <name>` rejects duplicate names within the same project. The same name in different projects is allowed.
+4. **Notes and facts are NOT deleted** with a session. They belong to the project, not the session (no `conversation_id` column).
 
-> /session forget current-session-id
-⚠️  This will permanently delete the current session:
-  - 15 messages
-  - 15 embeddings
-Continue? [y/N]: y
-Starting fresh conversation.
+**Canonical Commands:**
 
-> /forget
-⚠️  /forget will permanently delete this conversation.
-   Use /forget --yes to confirm.
-```
+| Command | Action |
+|---------|--------|
+| `/session forget` | Preview: warns that `--yes` is required (current session) |
+| `/session forget --yes` | Deletes current session, starts fresh |
+| `/session forget <name>` | Preview: shows counts, warns that `--yes` is required |
+| `/session forget <name> --yes` | Deletes session identified by name |
+| `/session forget --id <id> --yes` | Deletes session by ID (for disambiguation) |
+
+**Autocomplete Behavior:**
+
+| Input | Tab shows |
+|--------|-----------|
+| `/session` | `forget` (Delete current or specific session), `list`, `new`, `load`, `save` |
+| `/session forget ` | `--id` (Select session by ID), `--yes` (Confirm deletion — current session), session names (newest first) |
+| `/session forget --id ` | Session IDs with session name as description (newest first) |
+| `/session forget <name>` | **Nothing** — `--yes` must be typed manually (safety) |
+
+**Project vs. Session (ELI15):**
+
+- **Project** = where you are (derived from git remote or folder name). Groups sessions, facts, notes, documents.
+- **Session** = a conversation within a project. Contains messages, embeddings, chunks, and todos.
+- `/list` only shows sessions from the current project. Facts, notes, and documents are shared across all sessions in the project.
+- Deleting a session deletes its messages, embeddings, chunks, and todos. Facts/notes/documents remain intact.
 
 **Implementation Phases:**
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Add `SessionDelete` variant to `ChatCommand` | `src/chat/commands.rs` | 📋 |
-| 2 | Parse `/session delete <name>` and `/session delete --id <id>` subcommands | `src/chat/commands.rs` | 📋 |
-| 3 | Add `delete_session_by_name()` and `delete_session_by_id()` to `Database` | `src/content/db.rs` | 📋 |
-| 4 | Add `count_session_items()` for preview (message count, embedding count, note count) | `src/content/db.rs` | 📋 |
-| 5 | Implement `handle_session_delete()` handler with two-step confirmation | `src/chat/command_handlers.rs` | 📋 |
-| 6 | Update help text and command listing | `src/chat/commands.rs` | 📋 |
-| 7 | Update man page | `man/sprach.1` | 📋 |
-| 8 | Add unit tests for parsing and DB operations | `src/chat/commands.rs`, `src/content/db.rs` | 📋 |
-| 9 | Quality gates: fmt, clippy, test | — | 📋 |
+| 1 | Add `SessionForgetTarget` enum + `SessionForget` variant to `ChatCommand` | `src/chat/commands.rs` | 📋 |
+| 2 | Remove `Forget { confirmed: bool }` variant from `ChatCommand` | `src/chat/commands.rs` | 📋 |
+| 3 | Update `parse_session_subcommand()` for new format | `src/chat/commands.rs` | 📋 |
+| 4 | Remove `/forget` shortcut from `parse_command()` dispatch | `src/chat/commands.rs` | 📋 |
+| 5 | Add `SessionItemCounts` struct + `count_session_items()` | `src/content/db.rs` | 📋 |
+| 6 | Add `handle_session_forget()` handler with preview + confirmation | `src/chat/command_handlers.rs` | 📋 |
+| 7 | Remove `handle_forget_cmd()` + `handle_forget()` | `src/chat/command_handlers.rs` | 📋 |
+| 8 | Add unique name constraint in `handle_save()` | `src/chat/command_handlers.rs` | 📋 |
+| 9 | Update `ChatCompleter` — session subcommands + session names + `--id` + `--yes` | `src/chat/completer.rs` | 📋 |
+| 10 | Remove `/forget` from `SLASH_COMMANDS` | `src/chat/completer.rs` | 📋 |
+| 11 | Update `app.rs` to refresh `session_names` in completer | `src/chat/app.rs` | 📋 |
+| 12 | Update help text, man page, user docs | `src/chat/commands.rs`, `man/sprach.1`, `doc/src/commands/chat.md` | 📋 |
+| 13 | Unit tests (parsing, DB, completer, handler) | `src/chat/commands.rs`, `src/chat/completer.rs`, `src/content/db.rs` | 📋 |
+| 14 | Quality gates: fmt, clippy, test | — | 📋 |
 
 **Design Decisions:**
 
-1. **Two-command model:** `/session forget` (current session, same as existing `/forget --yes`) and `/session forget <name>` (delete by name or ID). The existing `Forget { confirmed: bool }` is expanded to also accept a session name/ID specifier.
-2. **Two-step confirmation with preview:** First step shows what will be deleted (message count, embeddings, notes). Second step requires `--yes` to proceed. This matches the `/forget --yes` pattern already established.
-3. **Cascade deletion order:** embeddings → chunks → content items → notes → conversation (same order as `delete_conversation()` already implements, but with explicit row counts).
-4. **No progress bar for deletion:** Deletion is typically sub-second for session-sized data. A simple "Deleting session..." message is sufficient, consistent with the existing `/forget` UX.
-5. **`/forget` remains as alias:** `/forget [--yes]` continues to work for the current session only. `/session forget` is the general command.
-6. **Transaction-based atomic deletion:** Wrap all deletes in a transaction. If deletion fails partway through, the database state remains consistent.
+1. **`/forget` removed entirely.** No alias for destructive commands. The canonical path is `/session forget`. This removes cognitive load (one way to do things) and prevents accidental execution.
+2. **`SessionForgetTarget` enum:**
+   - `Current` — deletes current session (equivalent to old `/forget --yes`)
+   - `ByName(String)` — deletes session by name
+   - `ById(String)` — deletes session by ID (disambiguation for duplicate names from pre-constraint data)
+3. **Preview before deletion.** Without `--yes`, shows: session name, ID, message count, embedding count, todo count. Notes and facts are NOT shown (they belong to the project, not the session).
+4. **`--yes` not autocompletable.** After `/session forget <name>`, Tab offers nothing. The user must manually type `--yes` to confirm. This is a safety feature, not a limitation.
+5. **Unique name constraint in `/save`.** `handle_save()` checks `find_conversation(name)` before renaming. If another session in the same project has the name, it returns an error. Same-name-as-own-session is allowed (idempotent rename).
+6. **Cascade deletion is existing code.** `delete_conversation()` already handles: embeddings → chunks → content items → conversation. `session_todos` has `ON DELETE CASCADE` FK. No new deletion logic needed.
+7. **Notes and facts survive session deletion.** They have `project_id`/`scope` scoping, no `conversation_id`. Deleting a session only removes messages, embeddings, chunks, and todos.
+8. **Duplicate name disambiguation for legacy data.** If `find_conversation()` finds multiple sessions with the same name (from before the constraint), the error message suggests using `--id`.
 
-**Scope clarification (from issue vs. implementation):**
-
-- `/session forget` → delete current session (alias: `/forget`)
-- `/session forget <name>` → delete session by name
-- `/session forget --id <id>` → delete session by numeric ID from `/session list`
-- Two-step confirmation with `--yes` flag (matching existing `/forget --yes` pattern)
-- Preview: show message count, embedding count before confirmation
-- If deleting current session: auto-create new session (existing behavior)
-- If deleting a different session: just delete it, no session change
-
-**Estimated effort:** ~2-3 days
+**Estimated effort:** ~3-4 days (increased from 2 days due to: autocomplete, `/forget` removal, unique name constraint)
 
 **Reference:** Issue #36
 
