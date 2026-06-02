@@ -569,6 +569,7 @@ pub struct ResetStats {
 ///
 /// Shows what will be deleted so the user can make an informed decision
 /// before confirming destructive operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionItemCounts {
     pub message_count: i64,
     pub embedding_count: i64,
@@ -2261,9 +2262,14 @@ mod tests {
             .count_session_items("nonexistent-id")
             .expect("count_session_items failed");
 
-        assert_eq!(counts.message_count, 0);
-        assert_eq!(counts.embedding_count, 0);
-        assert_eq!(counts.todo_count, 0);
+        assert_eq!(
+            counts,
+            SessionItemCounts {
+                message_count: 0,
+                embedding_count: 0,
+                todo_count: 0
+            }
+        );
     }
 
     #[test]
@@ -2311,8 +2317,14 @@ mod tests {
             .count_session_items(convo_id)
             .expect("count_session_items failed");
 
-        assert_eq!(counts.message_count, 3, "Should count 3 messages");
-        assert_eq!(counts.embedding_count, 0, "No embeddings inserted");
-        assert_eq!(counts.todo_count, 0, "No todos inserted");
+        assert_eq!(
+            counts,
+            SessionItemCounts {
+                message_count: 3,
+                embedding_count: 0,
+                todo_count: 0
+            },
+            "Should count 3 messages, no embeddings, no todos"
+        );
     }
 }
