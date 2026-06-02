@@ -633,10 +633,10 @@ loop {
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Replace `Duration::from_millis(0)` with `Duration::from_millis(5)` | `src/chat/repl_tui.rs` | ❌ |
-| 2 | Skip redundant `view.render()` when no event was processed during streaming | `src/chat/repl_tui.rs` | ❌ |
-| 3 | Update comment explaining the trade-off | `src/chat/repl_tui.rs` | ❌ |
-| 4 | Tests: verify CPU usage, verify Ctrl+C responsiveness | manual | ❌ |
+| 1 | Replace `Duration::from_millis(0)` with `Duration::from_millis(5)` | `src/chat/repl_tui.rs` | ✅ |
+| 2 | Skip redundant `view.render()` when no event was processed during streaming | `src/chat/repl_tui.rs` | ✅ |
+| 3 | Update comment explaining the trade-off | `src/chat/repl_tui.rs` | ✅ |
+| 4 | Tests: verify CPU usage, verify Ctrl+C responsiveness | manual | ❌ (user testing) |
 
 **Design Decisions:**
 
