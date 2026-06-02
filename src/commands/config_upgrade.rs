@@ -563,7 +563,7 @@ fn render_toml_literal(v: &serde_json::Value) -> String {
     use serde_json::Value as J;
     match v {
         J::Bool(b) => b.to_string(),
-        J::Number(n) => n.to_string(),
+        J::Number(n) => format_number(n),
         J::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         J::Array(arr) => {
             let parts: Vec<String> = arr.iter().map(render_toml_literal).collect();
@@ -572,6 +572,34 @@ fn render_toml_literal(v: &serde_json::Value) -> String {
         J::Null => "null".to_string(),
         J::Object(_) => "{}".to_string(),
     }
+}
+
+/// Format a `serde_json::Number` for human-readable display.
+///
+/// Strategy:
+/// - Integer-valued floats are shown without a decimal point
+///   (`7` instead of `7.0`).
+/// - Decimal floats are shown with at most 4 decimal places and
+///   trailing zeros trimmed (`0.7` instead of `0.699999988079071`).
+///
+/// This matches what a user would write by hand in `config.toml`
+/// and is consistent with the rounding used in `sprach diagnostics`
+/// (e.g., `{:.1}` for d_eff, `{:.2}` for `[facts].semantic_threshold`).
+/// The output remains parseable by `parse_toml_value` (integer
+/// strings -> `Value::Integer`, decimal strings -> `Value::Float`).
+fn format_number(n: &serde_json::Number) -> String {
+    if let Some(f) = n.as_f64() {
+        // Integer-valued floats: show without a decimal point.
+        if f.is_finite() && (f - f.round()).abs() < f64::EPSILON {
+            return format!("{:.0}", f);
+        }
+        // Otherwise: 4 decimal places, trim trailing zeros.
+        let s = format!("{:.4}", f);
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        return trimmed.to_string();
+    }
+    // Fallback for any other Number variant (e.g., u64).
+    n.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,6 +1314,41 @@ ollama_port = 11434
             }
             other => panic!("expected array, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_format_number() {
+        // Integer-valued floats: show without a decimal point.
+        let n: serde_json::Number = serde_json::from_str("7.0").unwrap();
+        assert_eq!(format_number(&n), "7");
+        let n: serde_json::Number = serde_json::from_str("30.0").unwrap();
+        assert_eq!(format_number(&n), "30");
+        let n: serde_json::Number = serde_json::from_str("0.0").unwrap();
+        assert_eq!(format_number(&n), "0");
+        let n: serde_json::Number = serde_json::from_str("11434").unwrap();
+        assert_eq!(format_number(&n), "11434");
+        let n: serde_json::Number = serde_json::from_str("-7.0").unwrap();
+        assert_eq!(format_number(&n), "-7");
+
+        // Decimal floats: trim trailing zeros, keep up to 4 decimals.
+        let n: serde_json::Number = serde_json::from_str("0.7").unwrap();
+        assert_eq!(format_number(&n), "0.7");
+        let n: serde_json::Number = serde_json::from_str("0.05").unwrap();
+        assert_eq!(format_number(&n), "0.05");
+        let n: serde_json::Number = serde_json::from_str("0.3").unwrap();
+        assert_eq!(format_number(&n), "0.3");
+        let n: serde_json::Number = serde_json::from_str("0.4").unwrap();
+        assert_eq!(format_number(&n), "0.4");
+        let n: serde_json::Number = serde_json::from_str("0.6").unwrap();
+        assert_eq!(format_number(&n), "0.6");
+        let n: serde_json::Number = serde_json::from_str("0.001").unwrap();
+        assert_eq!(format_number(&n), "0.001");
+        let n: serde_json::Number = serde_json::from_str("0.1234").unwrap();
+        assert_eq!(format_number(&n), "0.1234");
+
+        // Negative decimal.
+        let n: serde_json::Number = serde_json::from_str("-0.5").unwrap();
+        assert_eq!(format_number(&n), "-0.5");
     }
 
     #[test]
