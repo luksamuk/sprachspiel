@@ -134,7 +134,7 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153, #157, #182 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153, #157, #182, #193 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict, T3-Phase3 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
@@ -596,6 +596,64 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 **Files to Modify:** `src/prompts/base.rs` (A, C), `src/prompts/builder.rs` (B), `src/prompts/tools.rs` (D)
 
 **Cross-refs:** R-31 (research-icebox.md), #16 (TUI), #180 (MCP Client Phase 1)
+
+---
+
+### 🔴 PRIORITY 0: Fix 100% CPU During LLM Streaming — #193 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #193
+**Branch:** `fix/193-cpu-spinlock-streaming`
+**Depends on:** None (critical bug, bypasses wave order)
+
+**Goal:** Fix the busy-wait spinlock that causes Sprachspiel to consume 100% CPU (one full core) during LLM message streaming.
+
+**Problem Statement:**
+
+The TUI event loop in `src/chat/repl_tui.rs` uses `event::poll(Duration::from_millis(0))` when the LLM is streaming (`has_llm_task = true`). This zero-duration poll returns `Ready(None)` instantly on every iteration, making the crossterm event branch of `tokio::select!` always ready. The Tokio runtime never parks the thread — the loop spins thousands of times per second, consuming an entire CPU core.
+
+**Root Cause Analysis:**
+
+```
+loop {
+  tokio::select! {
+    crossterm_event = poll(0ms)  →  Ready(None) INSTANTLY
+    llm_event = rx.recv().await  →  Pending (waiting for tokens)
+    spinner = interval.tick()    →  Pending (waiting 120ms)
+  }
+  → match None {} → nothing happens
+  → view.render() → terminal redraw (redundant during streaming)
+  → loop restarts → poll(0ms) again
+}
+```
+
+**Secondary Issue:** `view.render()` at line 473 is called on every loop iteration, including when no actual event was processed. During streaming, `stream_token()` and `stream_thinking()` already call `render()` per token, making the unconditional render redundant (thousands of redraws/sec with no new content).
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Replace `Duration::from_millis(0)` with `Duration::from_millis(5)` | `src/chat/repl_tui.rs` | ✅ |
+| 2 | Skip redundant `view.render()` when no event was processed during streaming | `src/chat/repl_tui.rs` | ✅ |
+| 3 | Update comment explaining the trade-off | `src/chat/repl_tui.rs` | ✅ |
+| 4 | Tests: verify CPU usage, verify Ctrl+C responsiveness | manual | ❌ (user testing) |
+
+**Design Decisions:**
+
+1. **5ms poll timeout (not 1ms):** 5ms reduces loop iterations to ~200/sec (CPU <5%) while keeping Ctrl+C latency imperceptible. 1ms also works but 5ms gives more headroom on slow machines.
+2. **Skip render when no event during streaming:** `stream_token()` / `stream_thinking()` already render per token. The render at the end of the loop is for non-streaming state changes. Only render when: (a) a real crossterm event was processed, (b) an LLM event was processed, or (c) a spinner tick occurred.
+3. **No new dependencies.** Pure timeout value + render guard change.
+
+**Impact:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| CPU during streaming | ~100% (1 core) | <5% |
+| Ctrl+C latency | 0ms | ≤5ms (imperceptible) |
+| Token streaming speed | Unaffected | Unaffected |
+| Terminal redraws/sec during streaming | ~thousands | ~8 (tokens/sec) |
+
+**Reference:** Issue #193
 
 ---
 
