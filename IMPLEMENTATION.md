@@ -601,8 +601,9 @@ CASO 2: Pre-tool messages (message_type = 'pre_tool_content')
 
 ### 🔴 PRIORITY 0: Fix 100% CPU During LLM Streaming — #193 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #193
+**PR:** #194
 **Branch:** `fix/193-cpu-spinlock-streaming`
 **Depends on:** None (critical bug, bypasses wave order)
 
@@ -636,7 +637,7 @@ loop {
 | 1 | Replace `Duration::from_millis(0)` with `Duration::from_millis(5)` | `src/chat/repl_tui.rs` | ✅ |
 | 2 | Skip redundant `view.render()` when no event was processed during streaming | `src/chat/repl_tui.rs` | ✅ |
 | 3 | Update comment explaining the trade-off | `src/chat/repl_tui.rs` | ✅ |
-| 4 | Tests: verify CPU usage, verify Ctrl+C responsiveness | manual | ❌ (user testing) |
+| 4 | Tests: verify CPU usage, verify Ctrl+C responsiveness | manual | ✅ (user confirmed) |
 
 **Design Decisions:**
 
