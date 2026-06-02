@@ -161,7 +161,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 🔄 IN PROGRESS |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 ✅ COMPLETED |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
@@ -407,8 +407,9 @@ Upgraded 3 fields successfully.
 
 ### 🔵 PRIORITY: Session Forget — Destructive Session Deletion with Confirmations — #36 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #36
+**PR:** #195
 **Branch:** `feat/36-session-forget`
 **Depends on:** None (W1 quick win — no dependencies)
 
@@ -458,20 +459,20 @@ Upgraded 3 fields successfully.
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Add `SessionForgetTarget` enum + `SessionForget` variant to `ChatCommand` | `src/chat/commands.rs` | 📋 |
-| 2 | Remove `Forget { confirmed: bool }` variant from `ChatCommand` | `src/chat/commands.rs` | 📋 |
-| 3 | Update `parse_session_subcommand()` for new format | `src/chat/commands.rs` | 📋 |
-| 4 | Remove `/forget` shortcut from `parse_command()` dispatch | `src/chat/commands.rs` | 📋 |
-| 5 | Add `SessionItemCounts` struct + `count_session_items()` | `src/content/db.rs` | 📋 |
-| 6 | Add `handle_session_forget()` handler with preview + confirmation | `src/chat/command_handlers.rs` | 📋 |
-| 7 | Remove `handle_forget_cmd()` + `handle_forget()` | `src/chat/command_handlers.rs` | 📋 |
-| 8 | Add unique name constraint in `handle_save()` | `src/chat/command_handlers.rs` | 📋 |
-| 9 | Update `ChatCompleter` — session subcommands + session names + `--id` + `--yes` | `src/chat/completer.rs` | 📋 |
-| 10 | Remove `/forget` from `SLASH_COMMANDS` | `src/chat/completer.rs` | 📋 |
-| 11 | Update `app.rs` to refresh `session_names` in completer | `src/chat/app.rs` | 📋 |
-| 12 | Update help text, man page, user docs | `src/chat/commands.rs`, `man/sprach.1`, `doc/src/commands/chat.md` | 📋 |
-| 13 | Unit tests (parsing, DB, completer, handler) | `src/chat/commands.rs`, `src/chat/completer.rs`, `src/content/db.rs` | 📋 |
-| 14 | Quality gates: fmt, clippy, test | — | 📋 |
+| 1 | Add `SessionForgetTarget` enum + `SessionForget` variant to `ChatCommand` | `src/chat/commands.rs` | ✅ COMPLETED |
+| 2 | Remove `Forget { confirmed: bool }` variant from `ChatCommand` | `src/chat/commands.rs` | ✅ COMPLETED |
+| 3 | Update `parse_session_subcommand()` for new format | `src/chat/commands.rs` | ✅ COMPLETED |
+| 4 | Remove `/forget` shortcut from `parse_command()` dispatch | `src/chat/commands.rs` | ✅ COMPLETED |
+| 5 | Add `SessionItemCounts` struct + `count_session_items()` | `src/content/db.rs` | ✅ COMPLETED |
+| 6 | Add `handle_session_forget()` handler with preview + confirmation | `src/chat/command_handlers.rs` | ✅ COMPLETED |
+| 7 | Remove `handle_forget_cmd()` + `handle_forget()` | `src/chat/command_handlers.rs` | ✅ COMPLETED |
+| 8 | Add unique name constraint in `handle_save()` | `src/chat/command_handlers.rs` | ✅ COMPLETED |
+| 9 | Update `ChatCompleter` — session subcommands + session names + `--id` + `--yes` | `src/chat/completer.rs` | ✅ COMPLETED |
+| 10 | Remove `/forget` from `SLASH_COMMANDS` | `src/chat/completer.rs` | ✅ COMPLETED |
+| 11 | Update `app.rs` to refresh `session_names` in completer | `src/chat/app.rs` | ✅ COMPLETED |
+| 12 | Update help text, man page, user docs | `src/chat/commands.rs`, `man/sprach.1`, `doc/src/commands/chat.md` | ✅ COMPLETED |
+| 13 | Unit tests (parsing, DB, completer, handler) | `src/chat/commands.rs`, `src/chat/completer.rs`, `src/content/db.rs` | ✅ COMPLETED |
+| 14 | Quality gates: fmt, clippy, test | — | ✅ COMPLETED |
 
 **Design Decisions:**
 
