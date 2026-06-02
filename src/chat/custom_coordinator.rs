@@ -931,14 +931,23 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => result,
                     Err(e) => {
-                        log::debug!("Tool '{}' call failed: {}", tool_name, e);
+                        log::warn!("Tool '{}' execution failed: {e}", tool_name);
                         log::debug!(
                             "  Arguments: {}",
                             serde_json::to_string(&args).unwrap_or_else(|_| args.to_string())
                         );
-                        return Err(ollama_rs::error::OllamaError::ToolCallError(
-                            ollama_rs::error::ToolCallError::InternalToolError(e),
-                        ));
+                        // W2 Wave Context (#116): Tool execution errors are now
+                        // recoverable — push the error as a tool message so the
+                        // LLM can self-correct within the same turn instead of
+                        // aborting the conversation. Uses recovery::push_tool_result
+                        // wrapper (migration point in #121).
+                        let error_msg = format!(
+                            "Error executing tool '{tool_name}': {e}. \
+                             Please try again with different arguments or use a different approach."
+                        );
+                        self.history.push(ChatMessage::tool(error_msg));
+                        tools_executed.push(tool_name.clone());
+                        continue;
                     }
                 };
 

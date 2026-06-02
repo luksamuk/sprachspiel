@@ -2,10 +2,26 @@
 //!
 //! Provides utilities for handling tool and network errors gracefully
 //! by converting them to Tool messages that the model can understand and recover from.
+//!
+//! # W2 Wave Context
+//!
+//! This file is fully coupled to `ollama_rs::error::OllamaError`. In #119
+//! (Agnostic Provider Types), `OllamaError` is replaced by `ProviderError`
+//! and the classification logic moves to `src/provider/retry.rs`.
+//! `is_ollama_error_recoverable()` is deprecated — callers should use
+//! `crate::retry::classify_for_retry()` + `is_retryable()` instead.
+//!
+//! Pending work documented in #121 (Consumer Migration) and #123 (Remove ollama-rs).
 
 use ollama_rs::error::OllamaError;
 
-/// Maximum retry attempts for recoverable errors
+/// Maximum retry attempts for recoverable errors.
+///
+/// **W2 Wave Context:** Kept for backward compatibility with existing
+/// callers and the debug log in `core.rs`. The new per-category limits
+/// live in `src/retry.rs`. Will be removed in #121 when all callers
+/// migrate to `crate::retry::max_attempts()`.
+#[allow(dead_code)] // Kept for backward compat; will be removed in #121
 pub const MAX_RETRIES: usize = 3;
 
 /// Error classification for recovery
@@ -142,7 +158,14 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
     }
 }
 
-/// Check if an OllamaError is recoverable
+/// Check if an OllamaError is recoverable.
+///
+/// W2 Wave Context: Deprecated. Use `crate::retry::classify_for_retry()` and `RetryCategory::is_retryable()` instead. This function will be removed in #119 when the retry subsystem is relocated to `src/provider/retry.rs` and the error type becomes `ProviderError`.
+#[deprecated(
+    since = "0.45.0",
+    note = "Use crate::retry::classify_for_retry() + is_retryable(). Will be removed in #119."
+)]
+#[allow(dead_code)] // Kept for backward compat; will be removed in #119
 pub fn is_ollama_error_recoverable(error: &OllamaError) -> bool {
     match error {
         OllamaError::ToolCallError(e) => matches!(
@@ -194,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Tests the deprecated function for backward compat
     fn test_is_ollama_error_recoverable() {
         use ollama_rs::error::{OllamaError, ToolCallError};
 

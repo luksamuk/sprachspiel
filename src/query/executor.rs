@@ -1,6 +1,10 @@
 //! Query execution with retry logic
 //!
 //! Provides execute_query_with_retry to handle Ollama errors with retry logic.
+//!
+//! **W2 Wave Context:** This module's retry loop is migrated to the
+//! per-category classification in #116. The `is_ollama_error_recoverable()`
+//! call is replaced by `crate::retry::classify_for_retry()` + `is_retryable()`.
 
 #![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
@@ -9,12 +13,12 @@ use indicatif::ProgressBar;
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::coordinator::{
-    MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
-};
+use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};
 use crate::chat::custom_coordinator::CustomCoordinator;
+use crate::chat::recovery::push_tool_result;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
+use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 use crate::settings::Settings;
 use crate::tools::context::{with_full_context, with_tool_context};
 
@@ -100,7 +104,8 @@ async fn execute_retry_loop(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
+                let category = classify_for_retry(&e);
+                if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
                     let recovery_err = classify_ollama_error(&e, tool_names);
@@ -110,17 +115,25 @@ async fn execute_retry_loop(
                         log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
-                            MAX_RETRIES,
+                            category.max_attempts(),
                             recovery_err.description()
                         );
                     }
 
-                    messages.push(ChatMessage::tool(error_msg));
+                    push_tool_result(&mut messages, error_msg);
 
                     if attempts == 1 {
                         crate::spinner::finish_spinner(spinner.clone());
-                        eprintln!("  Retrying after error...");
+                        let delay = retry_delay(&category, attempts);
+                        if delay > std::time::Duration::ZERO {
+                            eprintln!("  Retrying in {}s...", delay.as_secs());
+                        } else {
+                            eprintln!("  Retrying after error...");
+                        }
                     }
+
+                    // Query mode has no cancel token — unconditional sleep
+                    let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
 
                     continue;
                 } else {

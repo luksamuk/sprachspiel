@@ -31,6 +31,7 @@ mod project;
 mod prompts;
 mod query;
 mod retrieval;
+mod retry;
 mod security;
 mod settings;
 mod skills;

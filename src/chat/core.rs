@@ -45,15 +45,15 @@ use crate::spinner::finish_spinner;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
 
-use super::coordinator::{
-    MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
-};
+use super::coordinator::{classify_ollama_error, format_recovery_message};
 use super::custom_coordinator::CustomCoordinator;
 use super::llm_event::LlmEvent;
+use super::recovery::push_tool_result;
 use super::session::ChatSession;
 use super::thinking::{extract_thinking, process_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
+use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -584,7 +584,8 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
+                let category = classify_for_retry(&e);
+                if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
                     let recovery_err = classify_ollama_error(&e, &tool_names);
@@ -594,17 +595,25 @@ pub async fn send_message(
                         log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
-                            MAX_RETRIES,
+                            category.max_attempts(),
                             recovery_err.description()
                         );
                     }
 
-                    messages.push(ChatMessage::tool(error_msg));
+                    push_tool_result(&mut messages, error_msg);
 
                     if attempts == 1 {
                         finish_spinner(spinner.clone());
-                        view.show_system("  Retrying after error...");
+                        let delay = retry_delay(&category, attempts);
+                        if delay > std::time::Duration::ZERO {
+                            view.show_system(&format!("  Retrying in {}s...", delay.as_secs()));
+                        } else {
+                            view.show_system("  Retrying after error...");
+                        }
                     }
+
+                    // Cancel-aware sleep (non-streaming: no cancel token)
+                    let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
 
                     continue;
                 } else {
@@ -821,7 +830,8 @@ pub async fn send_message_stream(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
+                let category = classify_for_retry(&e);
+                if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
                     let recovery_err = classify_ollama_error(&e, &tool_names);
@@ -831,16 +841,26 @@ pub async fn send_message_stream(
                         log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
-                            MAX_RETRIES,
+                            category.max_attempts(),
                             recovery_err.description()
                         );
                     }
 
-                    messages.push(ChatMessage::tool(error_msg));
+                    push_tool_result(&mut messages, error_msg);
 
                     if attempts == 1 {
-                        view.show_system("  Retrying after error...");
+                        let delay = retry_delay(&category, attempts);
+                        if delay > std::time::Duration::ZERO {
+                            view.show_system(&format!("  Retrying in {}s...", delay.as_secs()));
+                        } else {
+                            view.show_system("  Retrying after error...");
+                        }
                     }
+
+                    // Cancel-aware sleep: aborts immediately on Ctrl+C
+                    let _completed =
+                        sleep_or_cancel(retry_delay(&category, attempts), cancel_token.as_ref())
+                            .await;
 
                     continue;
                 } else {
