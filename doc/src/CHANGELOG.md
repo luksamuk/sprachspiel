@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Session Forget — Destructive Session Deletion with Confirmations (Issue #36)** — `/session forget` now deletes sessions by name or ID (not just the current session). New subcommands: `/session forget` (delete current session, requires `--yes`), `/session forget <name>` (delete named session by name or ID, requires `--yes`). `/forget` is now an alias for `/session forget` (current session only). Two-step confirmation pattern: first shows what will be deleted (message count, embedding count, associated notes), then requires explicit `--yes`. Cascade deletion order: embeddings → chunks → content items → notes → conversation. Transaction-based atomic deletion. `/session list` shows session IDs for easy reference.
+
 ### Fixed
 
 - **100% CPU During LLM Streaming (Issue #193)** — Fix busy-wait spinlock in the TUI event loop. When the LLM was streaming tokens, the crossterm event branch of `tokio::select!` used `event::poll(Duration::from_millis(0))` which returned `Ready(None)` instantly on every iteration. Since this branch was always ready, the Tokio runtime never parked the thread — the loop spun thousands of times per second, consuming an entire CPU core. Fixed by replacing the 0ms timeout with 5ms, and skipping the redundant `view.render()` call at the end of the loop when no actual event was processed (during streaming, `stream_token()` / `stream_thinking()` already call `render()` per token). CPU usage during streaming drops from ~100% to <5%. Ctrl+C latency remains ≤5ms (imperceptible to users). No change to token streaming speed — tokens arrive via `llm_rx.recv().await`, independent of the crossterm poll timeout.

@@ -161,7 +161,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 and #36 remaining |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 🔄 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
@@ -402,6 +402,86 @@ Upgraded 3 fields successfully.
 **Aliases:** `cfg` (for `config`) and `up` (for `upgrade`) are intentional and documented in `man/sprach.1`.
 
 **Unsafe in `ensure_table_chain`:** The raw-pointer descent is the only `unsafe` in the codebase. The review suggested refactoring to recursion; this was attempted but the borrow checker (NLL) cannot express the required 'reborrow a nested field and return the deepest reference' pattern. Polonius would solve this but is not yet stable. The `unsafe` is retained with a tightened SAFETY justification (each pointer explained, aliasing argument made explicit) and a new regression test (`test_apply_creates_deeply_nested_table`) that exercises two distinct 3-level nested paths to provide ongoing evidence that the pointer arithmetic is sound.
+
+---
+
+### 🔵 PRIORITY: Session Forget — Destructive Session Deletion with Confirmations — #36 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #36
+**Branch:** `feat/36-session-forget`
+**Depends on:** None (W1 quick win — no dependencies)
+
+**Goal:** Add `/session forget` command that deletes sessions by name or ID with two-step confirmation and cascade deletion of all associated data (messages, embeddings, chunks, notes, facts).
+
+**Problem Statement:**
+
+Currently `/forget --yes` only deletes the current session. There is no way to delete a specific session by name or ID. The existing `/forget` command:
+- Only works on the current session
+- Has no preview of what will be deleted (message count, embedding count, notes)
+- Uses a single `--yes` flag (no two-step confirmation)
+- Does not show a progress indicator during deletion
+
+**Proposed Solution:**
+
+```
+> /session forget Blabla
+⚠️  This will permanently delete session "Blabla":
+  - 42 messages
+  - 42 embeddings
+  - 3 notes
+Continue? [y/N]: y
+Deleting session...
+Session "Blabla" deleted.
+
+> /session forget current-session-id
+⚠️  This will permanently delete the current session:
+  - 15 messages
+  - 15 embeddings
+Continue? [y/N]: y
+Starting fresh conversation.
+
+> /forget
+⚠️  /forget will permanently delete this conversation.
+   Use /forget --yes to confirm.
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Add `SessionDelete` variant to `ChatCommand` | `src/chat/commands.rs` | 📋 |
+| 2 | Parse `/session delete <name>` and `/session delete --id <id>` subcommands | `src/chat/commands.rs` | 📋 |
+| 3 | Add `delete_session_by_name()` and `delete_session_by_id()` to `Database` | `src/content/db.rs` | 📋 |
+| 4 | Add `count_session_items()` for preview (message count, embedding count, note count) | `src/content/db.rs` | 📋 |
+| 5 | Implement `handle_session_delete()` handler with two-step confirmation | `src/chat/command_handlers.rs` | 📋 |
+| 6 | Update help text and command listing | `src/chat/commands.rs` | 📋 |
+| 7 | Update man page | `man/sprach.1` | 📋 |
+| 8 | Add unit tests for parsing and DB operations | `src/chat/commands.rs`, `src/content/db.rs` | 📋 |
+| 9 | Quality gates: fmt, clippy, test | — | 📋 |
+
+**Design Decisions:**
+
+1. **Two-command model:** `/session forget` (current session, same as existing `/forget --yes`) and `/session forget <name>` (delete by name or ID). The existing `Forget { confirmed: bool }` is expanded to also accept a session name/ID specifier.
+2. **Two-step confirmation with preview:** First step shows what will be deleted (message count, embeddings, notes). Second step requires `--yes` to proceed. This matches the `/forget --yes` pattern already established.
+3. **Cascade deletion order:** embeddings → chunks → content items → notes → conversation (same order as `delete_conversation()` already implements, but with explicit row counts).
+4. **No progress bar for deletion:** Deletion is typically sub-second for session-sized data. A simple "Deleting session..." message is sufficient, consistent with the existing `/forget` UX.
+5. **`/forget` remains as alias:** `/forget [--yes]` continues to work for the current session only. `/session forget` is the general command.
+6. **Transaction-based atomic deletion:** Wrap all deletes in a transaction. If deletion fails partway through, the database state remains consistent.
+
+**Scope clarification (from issue vs. implementation):**
+
+- `/session forget` → delete current session (alias: `/forget`)
+- `/session forget <name>` → delete session by name
+- `/session forget --id <id>` → delete session by numeric ID from `/session list`
+- Two-step confirmation with `--yes` flag (matching existing `/forget --yes` pattern)
+- Preview: show message count, embedding count before confirmation
+- If deleting current session: auto-create new session (existing behavior)
+- If deleting a different session: just delete it, no session change
+
+**Estimated effort:** ~2-3 days
+
+**Reference:** Issue #36
 
 ---
 
