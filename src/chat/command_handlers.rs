@@ -267,10 +267,13 @@ fn handle_forget_current(state: &mut ReplState) -> Vec<CommandOutput> {
             Ok(_) => outputs.push(CommandOutput::progress(
                 "Removing conversation from database...",
             )),
-            Err(e) => outputs.push(CommandOutput::warning(format!(
-                "Could not delete conversation: {}",
-                e
-            ))),
+            Err(e) => {
+                log::error!("Failed to delete conversation {}: {e}", state.session.id);
+                outputs.push(CommandOutput::warning(format!(
+                    "Could not delete conversation: {}",
+                    e
+                )));
+            }
         }
     }
 
@@ -330,12 +333,22 @@ fn handle_forget_by_id(state: &mut ReplState, id: &str, confirmed: bool) -> Vec<
         None => return vec![CommandOutput::error("Database not initialized.")],
     };
 
-    // Verify the ID exists
-    if db.get_conversation_metadata(id).is_err() {
-        return vec![CommandOutput::error(format!(
-            "Session with ID \"{}\" not found. Use /session list to see available sessions.",
-            id
-        ))];
+    // Verify the ID exists, distinguishing "not found" from DB errors
+    match db.get_conversation_metadata(id) {
+        Ok(_meta) => {} // ID exists, proceed
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            return vec![CommandOutput::error(format!(
+                "Session with ID \"{}\" not found. Use /session list to see available sessions.",
+                id
+            ))];
+        }
+        Err(e) => {
+            log::error!("Database error checking session ID: {e}");
+            return vec![CommandOutput::error(format!(
+                "Could not verify session ID \"{}\": {e}",
+                id
+            ))];
+        }
     }
 
     handle_forget_by_conversation_id(state, id, id, confirmed)
@@ -359,6 +372,7 @@ fn handle_forget_by_conversation_id(
             let counts = match db.count_session_items(conversation_id) {
                 Ok(c) => c,
                 Err(e) => {
+                    log::warn!("Could not count session items for {}: {e}", conversation_id);
                     return vec![CommandOutput::warning(format!(
                         "Could not count session items: {}",
                         e
@@ -384,6 +398,7 @@ fn handle_forget_by_conversation_id(
         let counts = match db.count_session_items(conversation_id) {
             Ok(c) => c,
             Err(e) => {
+                log::warn!("Could not count session items for {}: {e}", conversation_id);
                 return vec![CommandOutput::warning(format!(
                     "Could not count session items: {}",
                     e
@@ -412,10 +427,13 @@ fn handle_forget_by_conversation_id(
             "Session \"{}\" deleted.",
             display_name
         ))],
-        Err(e) => vec![CommandOutput::error(format!(
-            "Could not delete session \"{}\": {}",
-            display_name, e
-        ))],
+        Err(e) => {
+            log::error!("Failed to delete session \"{display_name}\": {e}");
+            vec![CommandOutput::error(format!(
+                "Could not delete session \"{}\": {}",
+                display_name, e
+            ))]
+        }
     }
 }
 fn handle_save_cmd(state: &mut ReplState, name: Option<String>) -> Vec<CommandOutput> {
@@ -535,9 +553,13 @@ fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<Vec<Comman
     }
 
     if let Some(ref n) = name {
-        // Check for duplicate name within the same project
+        // Check for duplicate name within the same project.
+        // Uses find_conversation_by_name (title match only) instead of
+        // find_conversation (ID or title match) to avoid false positives
+        // when the user types a session ID as the save name.
         if let Some(ref db) = state.session.db
-            && let Ok(Some(existing_id)) = db.find_conversation(n)
+            && let Ok(Some(existing_id)) =
+                db.find_conversation_by_name(n, state.session.project_id.as_deref().unwrap_or(""))
             && existing_id != state.session.id
         {
             return Err(format!(

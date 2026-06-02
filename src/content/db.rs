@@ -1499,10 +1499,10 @@ impl Database {
                 }
             }
 
-            // Delete content embeddings (vec0 requires explicit deletion)
+            // Delete content embeddings (vec0 requires explicit deletion by item_id)
             for item_id in &item_ids {
                 let _ = conn.execute(
-                    "DELETE FROM content_embeddings WHERE rowid = ?1",
+                    "DELETE FROM content_embeddings WHERE item_id = ?1",
                     params![item_id],
                 );
             }
@@ -1543,7 +1543,7 @@ impl Database {
             )?;
 
             let embedding_count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM content_embeddings WHERE rowid IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                "SELECT COUNT(*) FROM content_embeddings WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
                 rusqlite::params![conversation_id],
                 |row| row.get(0),
             )?;

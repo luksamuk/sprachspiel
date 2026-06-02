@@ -387,6 +387,30 @@ impl Database {
         })
     }
 
+    /// Find a conversation ID by name (title) only.
+    ///
+    /// Unlike `find_conversation`, which matches by ID or name, this
+    /// method only matches the `title` column. Used for duplicate-name
+    /// checks in `/save`, where an ID-like input should NOT be treated
+    /// as a name collision.
+    pub fn find_conversation_by_name(
+        &self,
+        name: &str,
+        project_id: &str,
+    ) -> Result<Option<String>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let found_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM conversations WHERE title = ?1 AND project_id = ?2 LIMIT 1",
+                    params![name, project_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            Ok(found_id)
+        })
+    }
+
     /// Get conversation metadata by ID or name.
     ///
     /// First tries exact ID match. If not found, tries name match.

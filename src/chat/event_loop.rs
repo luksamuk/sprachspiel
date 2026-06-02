@@ -204,8 +204,12 @@ pub async fn handle_key_line(
                 view.show_command_outputs(&outputs);
 
                 // Refresh session entries in the completer after
-                // commands that change the session list.
-                if refreshes_sessions {
+                // commands that change the session list, but only
+                // if no error occurred (preview-only or failed commands
+                // don't change the DB).
+                if refreshes_sessions
+                    && !outputs.iter().any(|o| matches!(o, CommandOutput::Error(_)))
+                {
                     let entries = state.session_entries_for_completer();
                     view.app_mut().refresh_session_entries(entries);
                 }

@@ -1222,8 +1222,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 pub fn format_help() -> String {
     r#"Available commands:
   /quit / exit     Exit the chat session
-   /new             Start a new conversation (previous messages remain searchable)
-   /help            Show this help message
+  /new             Start a new conversation (previous messages remain searchable)
+  /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
   /think [on|off]  Toggle or set think mode
@@ -1235,7 +1235,7 @@ pub fn format_help() -> String {
   /undo            Undo last message (remove response, show last input)
   /save [name]     Save current session (optionally named)
   /load <name>     Load a saved session
-   /session        Session management commands:
+  /session        Session management commands:
      /session new     Same as /new
      /session load <name>  Same as /load
      /session list    Same as /list

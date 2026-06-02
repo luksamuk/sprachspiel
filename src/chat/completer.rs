@@ -49,10 +49,6 @@ enum ArgCompletion {
     ModelName,
     /// Static subcommands for slash commands (e.g., /think on|off)
     StaticSubcommands,
-    /// Dynamic subcommands for session commands (e.g., /session forget <name>)
-    SessionSubcommands,
-    /// Dynamic session-name completion for /session forget <name>
-    SessionForgetName,
 }
 
 /// Slash commands for tab completion.
@@ -139,7 +135,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/session",
         description: "Session management commands",
-        arg_type: ArgCompletion::SessionSubcommands,
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/export",
@@ -681,7 +677,7 @@ impl ChatCompleter {
     /// Check if the fragment matches a `/session` command with subcommand arguments.
     ///
     /// Returns `Some((command_trigger, arg_fragment))` if the fragment starts
-    /// with `/session ` (plus space) that has `arg_type: SessionSubcommands`.
+    /// with `/session ` (plus space).
     fn try_session_subcommand_fragment(&self, fragment: &str) -> Option<(&'static str, String)> {
         let prefix = "/session ";
         if let Some(arg) = fragment.strip_prefix(prefix) {
@@ -767,7 +763,7 @@ impl ChatCompleter {
             SlashCommand {
                 trigger: "/session forget",
                 description: "Delete current or specific session (requires --yes)",
-                arg_type: ArgCompletion::SessionForgetName,
+                arg_type: ArgCompletion::None,
             },
             SlashCommand {
                 trigger: "/session list",
