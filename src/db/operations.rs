@@ -387,6 +387,30 @@ impl Database {
         })
     }
 
+    /// Find a conversation ID by name (title) only.
+    ///
+    /// Unlike `find_conversation`, which matches by ID or name, this
+    /// method only matches the `title` column. Used for duplicate-name
+    /// checks in `/save`, where an ID-like input should NOT be treated
+    /// as a name collision.
+    pub fn find_conversation_by_name(
+        &self,
+        name: &str,
+        project_id: &str,
+    ) -> Result<Option<String>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let found_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM conversations WHERE title = ?1 AND project_id = ?2 LIMIT 1",
+                    params![name, project_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            Ok(found_id)
+        })
+    }
+
     /// Get conversation metadata by ID or name.
     ///
     /// First tries exact ID match. If not found, tries name match.
@@ -592,5 +616,87 @@ mod tests {
             .expect("Failed to count conversations");
 
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_find_conversation_by_name_matches_title_not_id() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a conversation with id="session-111" and title="my-work"
+        db.insert_conversation(
+            "session-111",
+            Some("project-1"),
+            Some("my-work"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+
+        // find_conversation_by_name should match by title, not by id
+        let found_by_title = db
+            .find_conversation_by_name("my-work", "project-1")
+            .expect("DB query failed");
+        assert_eq!(found_by_title, Some("session-111".to_string()));
+
+        // Searching by id should NOT match (title-only search)
+        let found_by_id = db
+            .find_conversation_by_name("session-111", "project-1")
+            .expect("DB query failed");
+        assert_eq!(
+            found_by_id, None,
+            "find_conversation_by_name should NOT match by ID"
+        );
+
+        // Non-existent name returns None
+        let not_found = db
+            .find_conversation_by_name("nonexistent", "project-1")
+            .expect("DB query failed");
+        assert_eq!(not_found, None);
+
+        // Different project_id returns None
+        let wrong_project = db
+            .find_conversation_by_name("my-work", "project-999")
+            .expect("DB query failed");
+        assert_eq!(
+            wrong_project, None,
+            "find_conversation_by_name should filter by project_id"
+        );
+    }
+
+    #[test]
+    fn test_find_conversation_by_name_allows_same_name_different_project() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Same name "my-work" in different projects
+        db.insert_conversation(
+            "session-a",
+            Some("project-1"),
+            Some("my-work"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation a");
+
+        db.insert_conversation(
+            "session-b",
+            Some("project-2"),
+            Some("my-work"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation b");
+
+        let found_p1 = db
+            .find_conversation_by_name("my-work", "project-1")
+            .expect("DB query failed");
+        assert_eq!(found_p1, Some("session-a".to_string()));
+
+        let found_p2 = db
+            .find_conversation_by_name("my-work", "project-2")
+            .expect("DB query failed");
+        assert_eq!(found_p2, Some("session-b".to_string()));
     }
 }

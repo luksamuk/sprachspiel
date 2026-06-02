@@ -194,6 +194,29 @@ impl Default for ReplStateBuilder {
     }
 }
 
+impl ReplState {
+    /// Return session entries for the tab completer.
+    ///
+    /// Each entry is `(display_label, id)` where `display_label` shows
+    /// the session name (or ID if unnamed), suitable for `/session forget`
+    /// tab completion.
+    pub fn session_entries_for_completer(&self) -> Vec<(String, String)> {
+        let Some(db) = &self.db else {
+            return Vec::new();
+        };
+        match db.list_sessions(self.session.project_id.as_deref()) {
+            Ok(sessions) => sessions
+                .into_iter()
+                .map(|s| {
+                    let label = s.name.unwrap_or_else(|| s.id.clone());
+                    (label, s.id)
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

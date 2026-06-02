@@ -565,8 +565,18 @@ pub struct ResetStats {
     pub facts: usize,
 }
 
+/// Item counts for a session, used in delete preview.
+///
+/// Shows what will be deleted so the user can make an informed decision
+/// before confirming destructive operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionItemCounts {
+    pub message_count: i64,
+    pub embedding_count: i64,
+    pub todo_count: i64,
+}
+
 impl Database {
-    /// Reset all embedding flags and delete all vector embeddings.
     ///
     /// This is the core operation for `/reindex --yes` — it clears every
     /// embedding from the vec0 tables (`content_embeddings`, `chunk_embeddings_v2`,
@@ -1490,10 +1500,10 @@ impl Database {
                 }
             }
 
-            // Delete content embeddings (vec0 requires explicit deletion)
+            // Delete content embeddings (vec0 requires explicit deletion by item_id)
             for item_id in &item_ids {
                 let _ = conn.execute(
-                    "DELETE FROM content_embeddings WHERE rowid = ?1",
+                    "DELETE FROM content_embeddings WHERE item_id = ?1",
                     params![item_id],
                 );
             }
@@ -1517,6 +1527,39 @@ impl Database {
             )?;
 
             Ok(())
+        })
+    }
+
+    /// Count session items for delete preview.
+    ///
+    /// Returns the number of messages, embeddings, and todos that will be
+    /// deleted if the given conversation is removed. Notes and facts are NOT
+    /// included because they belong to the project, not the session.
+    pub fn count_session_items(&self, conversation_id: &str) -> Result<SessionItemCounts> {
+        self.with_connection(|conn| {
+            let message_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_items WHERE conversation_id = ?1 AND content_type = 'message'",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            let embedding_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_embeddings WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            let todo_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM session_todos WHERE conversation_id = ?1",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            Ok(SessionItemCounts {
+                message_count,
+                embedding_count,
+                todo_count,
+            })
         })
     }
 
@@ -2208,5 +2251,80 @@ mod tests {
         );
         // Verify content is clean
         assert_eq!(found.item.content, "Wittgenstein language games");
+    }
+
+    #[test]
+    fn test_count_session_items_empty() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Count items for a non-existent conversation
+        let counts = db
+            .count_session_items("nonexistent-id")
+            .expect("count_session_items failed");
+
+        assert_eq!(
+            counts,
+            SessionItemCounts {
+                message_count: 0,
+                embedding_count: 0,
+                todo_count: 0
+            }
+        );
+    }
+
+    #[test]
+    fn test_count_session_items_with_messages() {
+        let db = Database::in_memory().expect("Failed to create database");
+        let convo_id = "session-test-count";
+
+        // Insert a conversation
+        db.insert_conversation(
+            convo_id,
+            Some("project-1"),
+            Some("test-count-session"),
+            "test-model",
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+
+        // Insert 3 messages for this conversation
+        for i in 0..3 {
+            db.insert_content_item(
+                "message",
+                Some(convo_id),
+                Some(if i % 2 == 0 {
+                    ROLE_USER
+                } else {
+                    ROLE_ASSISTANT
+                }),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"), // source must be 'user' or 'llm'
+                None,         // title
+                &format!("Message {}", i),
+                None, // thinking_content
+                0.5,
+                Some("project-1"),
+                chrono::Utc::now(),
+            )
+            .expect("Failed to insert message");
+        }
+
+        let counts = db
+            .count_session_items(convo_id)
+            .expect("count_session_items failed");
+
+        assert_eq!(
+            counts,
+            SessionItemCounts {
+                message_count: 3,
+                embedding_count: 0,
+                todo_count: 0
+            },
+            "Should count 3 messages, no embeddings, no todos"
+        );
     }
 }

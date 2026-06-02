@@ -161,7 +161,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 and #36 remaining |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 🔄 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
@@ -402,6 +402,94 @@ Upgraded 3 fields successfully.
 **Aliases:** `cfg` (for `config`) and `up` (for `upgrade`) are intentional and documented in `man/sprach.1`.
 
 **Unsafe in `ensure_table_chain`:** The raw-pointer descent is the only `unsafe` in the codebase. The review suggested refactoring to recursion; this was attempted but the borrow checker (NLL) cannot express the required 'reborrow a nested field and return the deepest reference' pattern. Polonius would solve this but is not yet stable. The `unsafe` is retained with a tightened SAFETY justification (each pointer explained, aliasing argument made explicit) and a new regression test (`test_apply_creates_deeply_nested_table`) that exercises two distinct 3-level nested paths to provide ongoing evidence that the pointer arithmetic is sound.
+
+---
+
+### 🔵 PRIORITY: Session Forget — Destructive Session Deletion with Confirmations — #36 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #36
+**Branch:** `feat/36-session-forget`
+**Depends on:** None (W1 quick win — no dependencies)
+
+**Goal:** Replace the `/forget` command with `/session forget` — the canonical path for deleting sessions by name or ID, with preview confirmation, cascade deletion, and context-sensitive autocomplete. Also add unique name constraint to `/save`.
+
+**Problem Statement:**
+
+1. `/forget --yes` only deletes the current session — no way to delete a specific session by name or ID.
+2. `/forget` is a destructive alias with no preview of what will be deleted.
+3. `/save <name>` allows duplicate names within the same project, causing ambiguity.
+4. Tab completion for `/session` subcommands doesn't exist — users must memorize arguments.
+
+**Redesign Decisions (per user discussion):**
+
+1. **Remove `/forget` entirely.** `/session forget` is the only path. No aliases for destructive commands — the user must be explicit.
+2. **`--yes` is not autocompletable.** Safety feature: the user must type `--yes` manually after seeing the preview. Tab will not suggest `--yes` after a session name.
+3. **Session names are unique per project.** `/save <name>` rejects duplicate names within the same project. The same name in different projects is allowed.
+4. **Notes and facts are NOT deleted** with a session. They belong to the project, not the session (no `conversation_id` column).
+
+**Canonical Commands:**
+
+| Command | Action |
+|---------|--------|
+| `/session forget` | Preview: warns that `--yes` is required (current session) |
+| `/session forget --yes` | Deletes current session, starts fresh |
+| `/session forget <name>` | Preview: shows counts, warns that `--yes` is required |
+| `/session forget <name> --yes` | Deletes session identified by name |
+| `/session forget --id <id> --yes` | Deletes session by ID (for disambiguation) |
+
+**Autocomplete Behavior:**
+
+| Input | Tab shows |
+|--------|-----------|
+| `/session` | `forget` (Delete current or specific session), `list`, `new`, `load`, `save` |
+| `/session forget ` | `--id` (Select session by ID), `--yes` (Confirm deletion — current session), session names (newest first) |
+| `/session forget --id ` | Session IDs with session name as description (newest first) |
+| `/session forget <name>` | **Nothing** — `--yes` must be typed manually (safety) |
+
+**Project vs. Session (ELI15):**
+
+- **Project** = where you are (derived from git remote or folder name). Groups sessions, facts, notes, documents.
+- **Session** = a conversation within a project. Contains messages, embeddings, chunks, and todos.
+- `/list` only shows sessions from the current project. Facts, notes, and documents are shared across all sessions in the project.
+- Deleting a session deletes its messages, embeddings, chunks, and todos. Facts/notes/documents remain intact.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Add `SessionForgetTarget` enum + `SessionForget` variant to `ChatCommand` | `src/chat/commands.rs` | 📋 |
+| 2 | Remove `Forget { confirmed: bool }` variant from `ChatCommand` | `src/chat/commands.rs` | 📋 |
+| 3 | Update `parse_session_subcommand()` for new format | `src/chat/commands.rs` | 📋 |
+| 4 | Remove `/forget` shortcut from `parse_command()` dispatch | `src/chat/commands.rs` | 📋 |
+| 5 | Add `SessionItemCounts` struct + `count_session_items()` | `src/content/db.rs` | 📋 |
+| 6 | Add `handle_session_forget()` handler with preview + confirmation | `src/chat/command_handlers.rs` | 📋 |
+| 7 | Remove `handle_forget_cmd()` + `handle_forget()` | `src/chat/command_handlers.rs` | 📋 |
+| 8 | Add unique name constraint in `handle_save()` | `src/chat/command_handlers.rs` | 📋 |
+| 9 | Update `ChatCompleter` — session subcommands + session names + `--id` + `--yes` | `src/chat/completer.rs` | 📋 |
+| 10 | Remove `/forget` from `SLASH_COMMANDS` | `src/chat/completer.rs` | 📋 |
+| 11 | Update `app.rs` to refresh `session_names` in completer | `src/chat/app.rs` | 📋 |
+| 12 | Update help text, man page, user docs | `src/chat/commands.rs`, `man/sprach.1`, `doc/src/commands/chat.md` | 📋 |
+| 13 | Unit tests (parsing, DB, completer, handler) | `src/chat/commands.rs`, `src/chat/completer.rs`, `src/content/db.rs` | 📋 |
+| 14 | Quality gates: fmt, clippy, test | — | 📋 |
+
+**Design Decisions:**
+
+1. **`/forget` removed entirely.** No alias for destructive commands. The canonical path is `/session forget`. This removes cognitive load (one way to do things) and prevents accidental execution.
+2. **`SessionForgetTarget` enum:**
+   - `Current` — deletes current session (equivalent to old `/forget --yes`)
+   - `ByName(String)` — deletes session by name
+   - `ById(String)` — deletes session by ID (disambiguation for duplicate names from pre-constraint data)
+3. **Preview before deletion.** Without `--yes`, shows: session name, ID, message count, embedding count, todo count. Notes and facts are NOT shown (they belong to the project, not the session).
+4. **`--yes` not autocompletable.** After `/session forget <name>`, Tab offers nothing. The user must manually type `--yes` to confirm. This is a safety feature, not a limitation.
+5. **Unique name constraint in `/save`.** `handle_save()` checks `find_conversation(name)` before renaming. If another session in the same project has the name, it returns an error. Same-name-as-own-session is allowed (idempotent rename).
+6. **Cascade deletion is existing code.** `delete_conversation()` already handles: embeddings → chunks → content items → conversation. `session_todos` has `ON DELETE CASCADE` FK. No new deletion logic needed.
+7. **Notes and facts survive session deletion.** They have `project_id`/`scope` scoping, no `conversation_id`. Deleting a session only removes messages, embeddings, chunks, and todos.
+8. **Duplicate name disambiguation for legacy data.** If `find_conversation()` finds multiple sessions with the same name (from before the constraint), the error message suggests using `--id`.
+
+**Estimated effort:** ~3-4 days (increased from 2 days due to: autocomplete, `/forget` removal, unique name constraint)
+
+**Reference:** Issue #36
 
 ---
 

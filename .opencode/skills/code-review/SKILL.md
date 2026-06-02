@@ -131,24 +131,39 @@ curl -X POST .../reviews -d '{
 
 ## ⛔ CRITICAL: Reply to EXISTING Threads, NOT Create New Reviews
 
-When responding to review comments on YOUR PR, **ALWAYS use `addPullRequestReviewThreadReply`** to reply within the existing thread. **NEVER create new review submissions for responses.**
+When responding to review comments on YOUR PR, **ALWAYS reply within the existing thread using `in_reply_to`.** **NEVER create new top-level PR comments or new reviews for responses.**
+
+### The ONLY Correct Way to Reply
+
+Use `gh api` with `in_reply_to` pointing to the original comment ID:
 
 ```bash
-# ✅ GOOD — Reply to existing thread
-curl -s -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-  "https://api.github.com/repos/luksamuk/sprachspiel/pulls/PR_NUMBER/comments" \
-  -d '{
-    "body": "✅ Resolvido em abc1234. Fixed the bug.",
-    "in_reply_to": ORIGINAL_COMMENT_ID
-  }'
+# ✅ CORRECT — Reply to existing thread (find ID first)
+# Step 1: Find the comment ID you want to reply to
+gh api repos/luksamuk/sprachspiel/pulls/PR_NUMBER/comments \
+  --jq '.[] | "ID=\(.id) replyTo=\(.in_reply_to_id // "null") \(.body[:80])"'
+
+# Step 2: Reply inline using the comment ID
+gh api repos/luksamuk/sprachspiel/pulls/PR_NUMBER/comments \
+  --method POST \
+  --field body="✅ Resolvido em abc1234. Fixed the bug." \
+  --field in_reply_to=ORIGINAL_COMMENT_ID
 ```
 
+### ❌ FORBIDDEN Patterns
+
 ```bash
-# ❌ BAD — Creates a separate review for each response
-for each_response in responses:
-    curl -X POST .../reviews -d '{"event": "COMMENT", "body": "", "comments": [response]}'
-    # This produces N empty review bodies — NOISY and confusing
+# ❌ NEVER — Creates a standalone PR comment (NOT an inline reply)
+gh pr comment PR_NUMBER --body "✅ Resolvido..."
+
+# ❌ NEVER — Creates a new review with empty body
+curl -X POST .../reviews -d '{"event": "COMMENT", "body": "", "comments": [response]}'
+
+# ❌ NEVER — Creates a new review summary comment
+gh pr comment PR_NUMBER --body "## Review Responses\n### Point 1\n..."
 ```
+
+**Why this matters:** `gh pr comment` creates a **top-level PR comment** that is NOT attached to any review thread. It appears as a separate conversation, disconnected from the original review point. Reviewers must then search the PR timeline to find your response. The `in_reply_to` field threads your response directly beneath the original comment, keeping the conversation in context.
 
 ### How to Find the Original Comment ID
 
@@ -175,18 +190,22 @@ for c in json.load(sys.stdin):
 
 ### ❌ NEVER Create a Single Summary Comment
 
-```markdown
-# ❌ BAD — Wall-of-text summary
-## Review Responses
+````markdown
+# ❌ BAD — Wall-of-text summary as PR comment (NOT threaded)
+gh pr comment 195 --body "## Review Responses
 ### Point 1
 Fixed in abc123.
 ### Point 2
 Not YAGNI, removed #[allow(dead_code)].
 ### Point 3
-...
-```
+..."
 
-Instead, reply to each thread individually using `in_reply_to`.
+This creates a TOP-LEVEL comment on the PR. It is NOT threaded under
+the original review comment. The reviewer must scroll through the entire
+PR timeline to find it and match it to the original discussion.
+
+Instead, reply to each thread individually using `in_reply_to` as shown above.
+````
 
 ---
 

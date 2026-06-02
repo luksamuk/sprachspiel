@@ -143,7 +143,11 @@ Interactive commands available inside chat:
 .br
 /new \- Start a new conversation (previous messages remain searchable)
 .br
-/forget [--yes] \- Delete conversation completely and start fresh (requires --yes)
+/session forget [--yes] \- Delete current conversation and start fresh (requires --yes)
+.br
+/session forget <name> \- Delete a named session (shows preview, requires --yes)
+.br
+/session forget \-\-id <id> \- Delete a session by ID (shows preview, requires --yes)
 .br
 /help \- Show available commands
 .br
