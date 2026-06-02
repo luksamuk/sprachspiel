@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **100% CPU During LLM Streaming (Issue #193)** — Fix busy-wait spinlock in the TUI event loop. When the LLM was streaming tokens, the crossterm event branch of `tokio::select!` used `event::poll(Duration::from_millis(0))` which returned `Ready(None)` instantly on every iteration. Since this branch was always ready, the Tokio runtime never parked the thread — the loop spun thousands of times per second, consuming an entire CPU core. Fixed by replacing the 0ms timeout with 5ms, and skipping the redundant `view.render()` call at the end of the loop when no actual event was processed (during streaming, `stream_token()` / `stream_thinking()` already call `render()` per token). CPU usage during streaming drops from ~100% to <5%. Ctrl+C latency remains ≤5ms (imperceptible to users). No change to token streaming speed — tokens arrive via `llm_rx.recv().await`, independent of the crossterm poll timeout.
+
 ### Added
 
 - **Config Upgrade Command (Issue #105)** — New `sprach config upgrade` subcommand merges missing default fields into the user's existing `config.toml`, preserving all existing values, user comments, and formatting. Compares the user's parsed `Settings` against `Settings::default()` to detect missing fields, then uses `toml_edit` to insert ONLY the missing fields with their default values and doc-comments extracted from the sample configuration. A backup file (`.bak`, or `.bak.YYYYMMDD-HHMMSS` if `.bak` exists) is created by default. Flags: `--dry-run` previews changes without modifying the file, `--no-backup` skips the backup. The command never modifies or removes existing values — it is purely additive. Invalid TOML is reported with the parser error and the process aborts (no destructive overwrite). The dispatcher reports `Config file not found: <path>` (with the conventional path) rather than the generic `Could not determine config directory` error when the user has no config, so the suggestion to run `sprach --init-config` is always shown. New dependency: `toml_edit = "0.22"` (Rust crate, used only by this command).
