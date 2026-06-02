@@ -348,16 +348,24 @@ pub async fn run_chat_repl_tui(
         // the async block while the LLM branch holds &mut llm_rx.
         let has_llm_task = llm_rx.is_some();
 
+        // Track whether any real event was processed this iteration.
+        // During streaming, stream_token() and stream_thinking() already
+        // call render() per token, so we skip the final render when only
+        // the crossterm poll timed out with no actual key event.
+        let mut needs_render = true;
+
         tokio::select! {
             // ── Crossterm key events ──────────────────────────────
-            // Use a short (0ms) poll when the LLM is streaming so tokens
-            // arrive without delay. Use a longer block when idle to
-            // let the CPU sleep and avoid busy-waiting.
+            // Use a 5ms poll when the LLM is streaming — short enough
+            // for responsive Ctrl+C (≤5ms latency), but long enough to
+            // prevent the busy-wait spinlock that 0ms caused (100% CPU,
+            // see Issue #193). Use a longer block when idle to let the
+            // CPU sleep between events.
             crossterm_event = async {
                 let poll_timeout = if has_llm_task {
-                    // Streaming: non-blocking so the LLM events branch
-                    // in tokio::select! is never starved.
-                    std::time::Duration::from_millis(0)
+                    // Streaming: 5ms poll balances responsiveness (Ctrl+C)
+                    // with CPU efficiency (prevents busy-wait at 0ms).
+                    std::time::Duration::from_millis(5)
                 } else {
                     // Idle: block for up to the spinner tick interval.
                     // poll(120ms) lets the CPU sleep between events while
@@ -430,6 +438,11 @@ pub async fn run_chat_repl_tui(
                             // Ignore other events (focus gained/lost, etc.)
                         }
                     }
+                } else {
+                    // No crossterm event — poll timed out. During streaming,
+                    // stream_token()/stream_thinking() already render per
+                    // token, so skip the redundant render at the bottom.
+                    needs_render = has_llm_task;
                 }
             }
 
@@ -467,9 +480,13 @@ pub async fn run_chat_repl_tui(
         // at the end of the message list.
         event_loop::drain_and_add_tool_messages(&mut view);
 
-        // Re-render after each event or tick
-        view.app_mut().poll_embedding_progress();
-        view.app_mut().poll_async_messages();
-        view.render();
+        // Re-render after each event or tick — but skip during streaming
+        // when no real event was processed, since stream_token() and
+        // stream_thinking() already render per token.
+        if needs_render {
+            view.app_mut().poll_embedding_progress();
+            view.app_mut().poll_async_messages();
+            view.render();
+        }
     }
 }
