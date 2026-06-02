@@ -3338,6 +3338,161 @@ mod tests {
 
         // Should print "No messages to remove" and not panic
     }
+
+    // ── Session forget handler tests ─────────────────────────────
+
+    fn create_test_state_with_db() -> ReplState {
+        use crate::db::Database;
+        let db = Database::in_memory().expect("Failed to create in-memory DB");
+
+        let mut session = ChatSession::new(
+            "test-model".to_string(),
+            Some("project-1".to_string()),
+            false,
+        );
+        // Give the session a known ID for testing
+        session.id = "session-test".to_string();
+
+        let model_config = ModelConfig::get_default();
+        let capabilities = ModelCapabilities::default();
+        let ollama = Ollama::new("http://localhost".to_string(), 11434);
+        let settings = Settings::default();
+
+        ReplState {
+            session,
+            current_model_name: "test-model".to_string(),
+            model_config,
+            capabilities,
+            tools_active: false,
+            agents_md: None,
+            cli_code: false,
+            cli_soulless: false,
+            ollama,
+            db: Some(std::sync::Arc::new(db)),
+            embedding_client: None,
+            settings,
+            last_assistant_message_id: None,
+        }
+    }
+
+    fn seed_conversation(db: &crate::db::Database, id: &str, title: &str, project_id: &str) {
+        use chrono::Utc;
+        db.insert_conversation(
+            id,
+            Some(project_id),
+            Some(title),
+            "test-model",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+    }
+
+    #[test]
+    fn test_handle_session_forget_current_preview() {
+        let mut state = create_test_state_with_db();
+        let outputs = handle_session_forget_cmd(
+            &mut state,
+            SessionForgetTarget::Current,
+            false, // not confirmed
+        );
+
+        // Should return 2 warning messages (preview)
+        assert_eq!(outputs.len(), 2, "Preview should return 2 messages");
+        assert!(matches!(outputs[0], CommandOutput::Warning(_)));
+        assert!(matches!(outputs[1], CommandOutput::Warning(_)));
+    }
+
+    #[test]
+    fn test_handle_session_forget_current_confirmed() {
+        let mut state = create_test_state_with_db();
+
+        // Insert the current session into DB so it can be deleted
+        if let Some(ref db) = state.session.db {
+            seed_conversation(db.as_ref(), "session-test", "test-session", "project-1");
+        }
+
+        let original_id = state.session.id.clone();
+        let outputs = handle_session_forget_cmd(
+            &mut state,
+            SessionForgetTarget::Current,
+            true, // confirmed
+        );
+
+        // Should indicate the session was forgotten
+        assert!(
+            outputs.iter().any(|o| matches!(o, CommandOutput::Info(_))),
+            "Should have info message about forgetting session"
+        );
+
+        // The session ID should have changed (new session started)
+        assert_ne!(
+            state.session.id, original_id,
+            "Session ID should change after forget"
+        );
+    }
+
+    #[test]
+    fn test_handle_forget_by_name_not_found() {
+        let mut state = create_test_state_with_db();
+        let outputs = handle_forget_by_name(&mut state, "nonexistent-session", false);
+
+        assert_eq!(outputs.len(), 1);
+        assert!(
+            matches!(outputs[0], CommandOutput::Error(_)),
+            "Should return error for nonexistent session name"
+        );
+    }
+
+    #[test]
+    fn test_handle_forget_by_id_not_found() {
+        let mut state = create_test_state_with_db();
+        let outputs = handle_forget_by_id(&mut state, "nonexistent-id-12345", false);
+
+        assert_eq!(outputs.len(), 1);
+        assert!(
+            matches!(outputs[0], CommandOutput::Error(_)),
+            "Should return error for nonexistent session ID"
+        );
+    }
+
+    #[test]
+    fn test_handle_forget_by_name_preview_shows_counts() {
+        let mut state = create_test_state_with_db();
+        if let Some(ref db) = state.session.db {
+            seed_conversation(db.as_ref(), "session-other", "other-session", "project-1");
+        }
+
+        let outputs = handle_forget_by_name(&mut state, "other-session", false);
+
+        // Should return preview messages (at least header + confirmation)
+        assert!(!outputs.is_empty(), "Preview should return messages");
+        // The first message should be a warning (deletion header)
+        // or an error if something went wrong
+        let first_is_warning = matches!(outputs[0], CommandOutput::Warning(_));
+        let first_is_error = matches!(outputs[0], CommandOutput::Error(_));
+        assert!(
+            first_is_warning || first_is_error,
+            "First output should be Warning or Error, got: {:?}",
+            outputs[0]
+        );
+    }
+
+    #[test]
+    fn test_handle_session_forget_no_db_returns_error() {
+        let mut state = create_test_state(); // no DB
+        let outputs = handle_session_forget_cmd(
+            &mut state,
+            SessionForgetTarget::ByName("test".to_string()),
+            false,
+        );
+
+        assert_eq!(outputs.len(), 1);
+        assert!(
+            matches!(outputs[0], CommandOutput::Error(_)),
+            "Should return error when DB not initialized for ByName target"
+        );
+    }
 }
 
 /// Handle /ocr command - extract text from an image

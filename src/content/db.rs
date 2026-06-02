@@ -2251,4 +2251,68 @@ mod tests {
         // Verify content is clean
         assert_eq!(found.item.content, "Wittgenstein language games");
     }
+
+    #[test]
+    fn test_count_session_items_empty() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Count items for a non-existent conversation
+        let counts = db
+            .count_session_items("nonexistent-id")
+            .expect("count_session_items failed");
+
+        assert_eq!(counts.message_count, 0);
+        assert_eq!(counts.embedding_count, 0);
+        assert_eq!(counts.todo_count, 0);
+    }
+
+    #[test]
+    fn test_count_session_items_with_messages() {
+        let db = Database::in_memory().expect("Failed to create database");
+        let convo_id = "session-test-count";
+
+        // Insert a conversation
+        db.insert_conversation(
+            convo_id,
+            Some("project-1"),
+            Some("test-count-session"),
+            "test-model",
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+
+        // Insert 3 messages for this conversation
+        for i in 0..3 {
+            db.insert_content_item(
+                "message",
+                Some(convo_id),
+                Some(if i % 2 == 0 {
+                    ROLE_USER
+                } else {
+                    ROLE_ASSISTANT
+                }),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"), // source must be 'user' or 'llm'
+                None,         // title
+                &format!("Message {}", i),
+                None, // thinking_content
+                0.5,
+                Some("project-1"),
+                chrono::Utc::now(),
+            )
+            .expect("Failed to insert message");
+        }
+
+        let counts = db
+            .count_session_items(convo_id)
+            .expect("count_session_items failed");
+
+        assert_eq!(counts.message_count, 3, "Should count 3 messages");
+        assert_eq!(counts.embedding_count, 0, "No embeddings inserted");
+        assert_eq!(counts.todo_count, 0, "No todos inserted");
+    }
 }
