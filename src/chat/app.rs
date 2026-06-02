@@ -674,6 +674,14 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Update the completer's session name entries.
+    ///
+    /// Called after session-changing commands (/save, /load, /session forget)
+    /// to keep the tab completion list current.
+    pub fn refresh_session_entries(&mut self, entries: Vec<(String, String)>) {
+        self.completer.set_session_entries(entries);
+    }
+
     /// Get a mutable reference to the textarea
     pub fn textarea_mut(&mut self) -> &mut TextArea<'static> {
         &mut self.textarea

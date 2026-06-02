@@ -49,6 +49,10 @@ enum ArgCompletion {
     ModelName,
     /// Static subcommands for slash commands (e.g., /think on|off)
     StaticSubcommands,
+    /// Dynamic subcommands for session commands (e.g., /session forget <name>)
+    SessionSubcommands,
+    /// Dynamic session-name completion for /session forget <name>
+    SessionForgetName,
 }
 
 /// Slash commands for tab completion.
@@ -68,8 +72,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         arg_type: ArgCompletion::None,
     },
     SlashCommand {
-        trigger: "/forget",
-        description: "Delete conversation completely (requires --yes)",
+        trigger: "/new",
+        description: "Start a new conversation",
         arg_type: ArgCompletion::None,
     },
     SlashCommand {
@@ -135,7 +139,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/session",
         description: "Session management commands",
-        arg_type: ArgCompletion::None,
+        arg_type: ArgCompletion::SessionSubcommands,
     },
     SlashCommand {
         trigger: "/export",
@@ -382,11 +386,15 @@ pub enum CompletionResult {
 
 /// Tab completer for the TUI chat input.
 ///
-/// Maintains model names for `/model` argument completion and
-/// cycling state for repeated Tab presses.
+/// Maintains model names for `/model <name>` argument completion and
+/// session names/IDs for `/session forget` argument completion.
+/// Cycling state for repeated Tab presses is also tracked.
 pub struct ChatCompleter {
     /// Available model names for `/model <name>` completion
     model_names: Vec<String>,
+    /// Available session names and IDs for `/session forget` completion
+    /// Each entry is (display_name, session_id)
+    session_entries: Vec<(String, String)>,
     /// Current cycling index for multiple completions (resets on input change)
     cycle_index: usize,
     /// The last fragment that was completed (to detect changes and reset cycling)
@@ -398,9 +406,18 @@ impl ChatCompleter {
     pub fn new(model_names: Vec<String>) -> Self {
         Self {
             model_names,
+            session_entries: Vec::new(),
             cycle_index: 0,
             last_fragment: String::new(),
         }
+    }
+
+    /// Update the session entries for `/session forget` completion.
+    ///
+    /// Each entry is a (display_name, session_id) pair. The display_name
+    /// is shown in the completion menu, the session_id is used for `--id`.
+    pub fn set_session_entries(&mut self, entries: Vec<(String, String)>) {
+        self.session_entries = entries;
     }
 
     /// Attempt tab completion based on the current buffer and cursor position.
@@ -435,6 +452,16 @@ impl ChatCompleter {
                 self.try_static_subcommand_fragment(&fragment)
             {
                 return self.complete_static_subcommand(cmd_trigger, arg_fragment.trim());
+            }
+            // Check for session subcommand completion
+            if let Some((cmd_trigger, arg_fragment)) =
+                self.try_session_subcommand_fragment(&fragment)
+            {
+                return self.complete_session_subcommand(cmd_trigger, arg_fragment.trim());
+            }
+            // Check for session forget argument completion (names/IDs)
+            if let Some((cmd_trigger, arg_fragment)) = self.try_session_forget_fragment(&fragment) {
+                return self.complete_session_forget(cmd_trigger, arg_fragment.trim());
             }
             return self.complete_slash_command(&fragment);
         }
@@ -650,6 +677,166 @@ impl ChatCompleter {
             }
         }
     }
+
+    /// Check if the fragment matches a `/session` command with subcommand arguments.
+    ///
+    /// Returns `Some((command_trigger, arg_fragment))` if the fragment starts
+    /// with `/session ` (plus space) that has `arg_type: SessionSubcommands`.
+    fn try_session_subcommand_fragment(&self, fragment: &str) -> Option<(&'static str, String)> {
+        let prefix = "/session ";
+        if let Some(arg) = fragment.strip_prefix(prefix) {
+            // Check if there's a sub-subcommand already typed (e.g., "/session forget ")
+            // In that case, we need deeper completion
+            // If the arg contains a space, it means a subcommand is already selected
+            // e.g., "/session forget" or "/session forget "
+            if arg.starts_with("forget ") || arg.starts_with("forget\t") {
+                return None; // handled by try_session_forget_fragment
+            }
+            return Some(("/session", arg.to_string()));
+        }
+        None
+    }
+
+    /// Check if the fragment matches `/session forget` with arguments.
+    ///
+    /// Returns `Some(("/session forget", arg_fragment))` if the fragment starts
+    /// with `/session forget `.
+    fn try_session_forget_fragment(&self, fragment: &str) -> Option<(&'static str, String)> {
+        let prefix = "/session forget ";
+        if let Some(arg) = fragment.strip_prefix(prefix) {
+            return Some(("/session forget", arg.to_string()));
+        }
+        None
+    }
+
+    /// Complete session forget arguments: flags and session names.
+    ///
+    /// Offers `--id` and `--yes` flags plus session names from the current project.
+    /// When `--id` flag is present, offers session IDs instead of names.
+    /// Does NOT offer `--yes` in tab completion — it's a safety flag
+    /// that must be typed manually.
+    fn complete_session_forget(&mut self, _cmd_trigger: &str, fragment: &str) -> CompletionResult {
+        let mut completions: Vec<String> = Vec::new();
+        let mut descriptions: Vec<String> = Vec::new();
+
+        // Check if --id flag is present in the fragment (already typed before cursor)
+        let has_id_flag = fragment.contains("--id");
+
+        // Always offer --id flag if not already present
+        if !has_id_flag && "--id".starts_with(fragment) {
+            completions.push("/session forget --id ".to_string());
+            descriptions.push("Select session by ID".to_string());
+        }
+
+        // Offer session names or IDs based on flag presence
+        if has_id_flag {
+            // After --id, offer session IDs
+            let after_id = fragment.split("--id").last().unwrap_or("").trim();
+            for (label, id) in &self.session_entries {
+                if id.starts_with(after_id) {
+                    completions.push(format!("/session forget --id {id} "));
+                    descriptions.push(format!("Session: {label}"));
+                }
+            }
+        } else {
+            // Offer session names
+            for (name, _id) in &self.session_entries {
+                if name.starts_with(fragment) {
+                    completions.push(format!("/session forget {name} "));
+                    descriptions.push(String::new());
+                }
+            }
+        }
+
+        match completions.len() {
+            0 => CompletionResult::None,
+            1 => CompletionResult::Single {
+                replacement: completions[0].clone(),
+                cursor_pos: completions[0].len(),
+            },
+            _ => CompletionResult::Multiple {
+                matches: completions,
+                descriptions,
+            },
+        }
+    }
+
+    /// Session subcommand definitions for `/session`.
+    fn get_session_subcommands() -> Vec<SlashCommand> {
+        vec![
+            SlashCommand {
+                trigger: "/session forget",
+                description: "Delete current or specific session (requires --yes)",
+                arg_type: ArgCompletion::SessionForgetName,
+            },
+            SlashCommand {
+                trigger: "/session list",
+                description: "List sessions for this project",
+                arg_type: ArgCompletion::None,
+            },
+            SlashCommand {
+                trigger: "/session new",
+                description: "Start a new conversation",
+                arg_type: ArgCompletion::None,
+            },
+            SlashCommand {
+                trigger: "/session load",
+                description: "Load a saved session",
+                arg_type: ArgCompletion::None,
+            },
+            SlashCommand {
+                trigger: "/session save",
+                description: "Save current session",
+                arg_type: ArgCompletion::None,
+            },
+        ]
+    }
+
+    /// Complete a session subcommand from a partial input.
+    fn complete_session_subcommand(
+        &mut self,
+        _cmd_trigger: &str,
+        fragment: &str,
+    ) -> CompletionResult {
+        let subcommands = Self::get_session_subcommands();
+        let matches: Vec<&SlashCommand> = subcommands
+            .iter()
+            .filter(|cmd| {
+                if fragment.is_empty() {
+                    true // Show all subcommands
+                } else {
+                    cmd.trigger
+                        .strip_prefix("/session ")
+                        .unwrap_or(cmd.trigger)
+                        .starts_with(fragment)
+                }
+            })
+            .collect();
+
+        match matches.len() {
+            0 => CompletionResult::None,
+            1 => {
+                let cmd = matches[0];
+                CompletionResult::Single {
+                    replacement: format!("{} ", cmd.trigger),
+                    cursor_pos: cmd.trigger.len() + 1,
+                }
+            }
+            _ => {
+                let match_strings: Vec<String> =
+                    matches.iter().map(|cmd| cmd.trigger.to_string()).collect();
+                let descriptions: Vec<String> = matches
+                    .iter()
+                    .map(|cmd| cmd.description.to_string())
+                    .collect();
+
+                CompletionResult::Multiple {
+                    matches: match_strings,
+                    descriptions,
+                }
+            }
+        }
+    }
 }
 
 /// Find the common prefix among a list of strings.
@@ -822,6 +1009,112 @@ mod tests {
                 assert!(!matches.is_empty());
             }
             CompletionResult::None => panic!("Expected some completion for /to"),
+        }
+    }
+
+    // --- /session completion tests ---
+
+    #[test]
+    fn test_complete_session_shows_subcommands() {
+        let mut completer = make_completer();
+        // "/session " should show session subcommands
+        let result = completer.complete("/session ", 9);
+        match result {
+            CompletionResult::Multiple { matches, .. } => {
+                assert!(matches.iter().any(|m| m.contains("forget")));
+                assert!(matches.iter().any(|m| m.contains("list")));
+                assert!(matches.iter().any(|m| m.contains("new")));
+                assert!(matches.iter().any(|m| m.contains("save")));
+                assert!(matches.iter().any(|m| m.contains("load")));
+            }
+            _ => panic!(
+                "Expected Multiple completions for /session, got {:?}",
+                result
+            ),
+        }
+    }
+
+    #[test]
+    fn test_complete_session_forget_with_names() {
+        let mut completer = make_completer();
+        // session_entries format: (label, id) — label is the display name
+        completer.set_session_entries(vec![
+            ("my-work".to_string(), "session-1".to_string()),
+            ("my-personal".to_string(), "session-2".to_string()),
+        ]);
+        // "/session forget " should offer --id flag and session names
+        let buf = "/session forget ";
+        let result = completer.complete(buf, buf.len());
+        // Completion returns full commands like "/session forget --id " or "/session forget my-work "
+        match result {
+            CompletionResult::Multiple { matches, .. } => {
+                assert!(
+                    matches.iter().any(|m| m.contains("--id")),
+                    "Expected --id in matches: {matches:?}"
+                );
+                assert!(
+                    matches.iter().any(|m| m.contains("my-work")),
+                    "Expected my-work in matches: {matches:?}"
+                );
+                assert!(
+                    matches.iter().any(|m| m.contains("my-personal")),
+                    "Expected my-personal in matches: {matches:?}"
+                );
+            }
+            CompletionResult::Single { replacement, .. } => {
+                // If only one matches, it could be --id or a single name
+                assert!(
+                    replacement.contains("--id") || replacement.contains("my-"),
+                    "Unexpected Single: {replacement}"
+                );
+            }
+            CompletionResult::None => panic!("Expected completions for /session forget "),
+        }
+    }
+
+    #[test]
+    fn test_complete_session_forget_name_prefix() {
+        let mut completer = make_completer();
+        // session_entries format: (label, id)
+        completer.set_session_entries(vec![
+            ("my-work".to_string(), "s1".to_string()),
+            ("my-play".to_string(), "s2".to_string()),
+            ("other-session".to_string(), "s3".to_string()),
+        ]);
+        // "/session forget my" should complete session names starting with "my"
+        let buf = "/session forget my";
+        let result = completer.complete(buf, buf.len());
+        match result {
+            CompletionResult::Multiple { matches, .. } => {
+                // Should match my-work and my-play, but not other-session
+                assert!(matches.iter().any(|m| m.contains("my-work")));
+                assert!(matches.iter().any(|m| m.contains("my-play")));
+                assert!(!matches.iter().any(|m| m.contains("other-session")));
+            }
+            CompletionResult::Single { replacement, .. } => {
+                // Common prefix completion: "my-" matches both my-work and my-play
+                assert!(replacement.contains("my-"));
+            }
+            CompletionResult::None => panic!("Expected completions for /session forget my"),
+        }
+    }
+
+    #[test]
+    fn test_complete_session_forget_no_entries() {
+        let mut completer = make_completer();
+        // No session entries set — --id should still be offered but no names
+        let buf = "/session forget ";
+        let result = completer.complete(buf, buf.len());
+        match result {
+            CompletionResult::Single { replacement, .. } => {
+                // Only --id matches when no session entries
+                assert!(replacement.contains("--id"));
+            }
+            CompletionResult::Multiple { matches, .. } => {
+                // May include --id flag
+                assert!(!matches.is_empty());
+            }
+            CompletionResult::None => {} // Also acceptable if nothing to offer
         }
     }
 

@@ -65,7 +65,6 @@ Once inside the chat, these commands are available:
 |---------|-------------|
 | `/quit / exit` | Exit the chat session |
 | `/new` | Start a new conversation (previous messages remain searchable) |
-| `/forget [--yes]` | Delete conversation completely and start fresh (requires `--yes`) |
 | `/help` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>` | Load a saved session |
@@ -76,7 +75,7 @@ Once inside the chat, these commands are available:
 
 #### Session Command Group
 
-The `/session` command provides an alternative syntax for session management:
+The `/session` command provides session management, including deletion:
 
 | Command | Description |
 |---------|-------------|
@@ -84,7 +83,9 @@ The `/session` command provides an alternative syntax for session management:
 | `/session load <name>` | Same as `/load` - load a saved session |
 | `/session list` | Same as `/list` - list saved sessions |
 | `/session save [name]` | Same as `/save` - save current session |
-| `/session forget [--yes]` | Same as `/forget` - delete and start fresh (requires `--yes`) |
+| `/session forget [--yes]` | Delete current conversation and start fresh (requires `--yes`) |
+| `/session forget <name>` | Delete a named session (shows preview, requires `--yes`) |
+| `/session forget --id <id>` | Delete a session by ID (shows preview, requires `--yes`) |
 
 ### Model & Mode
 

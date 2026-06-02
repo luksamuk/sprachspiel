@@ -565,8 +565,17 @@ pub struct ResetStats {
     pub facts: usize,
 }
 
+/// Item counts for a session, used in delete preview.
+///
+/// Shows what will be deleted so the user can make an informed decision
+/// before confirming destructive operations.
+pub struct SessionItemCounts {
+    pub message_count: i64,
+    pub embedding_count: i64,
+    pub todo_count: i64,
+}
+
 impl Database {
-    /// Reset all embedding flags and delete all vector embeddings.
     ///
     /// This is the core operation for `/reindex --yes` — it clears every
     /// embedding from the vec0 tables (`content_embeddings`, `chunk_embeddings_v2`,
@@ -1517,6 +1526,39 @@ impl Database {
             )?;
 
             Ok(())
+        })
+    }
+
+    /// Count session items for delete preview.
+    ///
+    /// Returns the number of messages, embeddings, and todos that will be
+    /// deleted if the given conversation is removed. Notes and facts are NOT
+    /// included because they belong to the project, not the session.
+    pub fn count_session_items(&self, conversation_id: &str) -> Result<SessionItemCounts> {
+        self.with_connection(|conn| {
+            let message_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_items WHERE conversation_id = ?1 AND content_type = 'message'",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            let embedding_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_embeddings WHERE rowid IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            let todo_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM session_todos WHERE conversation_id = ?1",
+                rusqlite::params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            Ok(SessionItemCounts {
+                message_count,
+                embedding_count,
+                todo_count,
+            })
         })
     }
 

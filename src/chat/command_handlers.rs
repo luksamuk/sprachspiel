@@ -30,7 +30,7 @@ use super::command_output::{
     FactSearchResult, GcData, NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry,
     SessionListData, SkillEntry, SkillListData, TodoListData,
 };
-use super::commands::{ChatCommand, FactListScope};
+use super::commands::{ChatCommand, FactListScope, SessionForgetTarget};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
@@ -61,7 +61,9 @@ pub async fn handle_command(
 ) -> Vec<CommandOutput> {
     match cmd {
         ChatCommand::Quit => handle_quit(state, input, view.suppress_progress_spinner()).await,
-        ChatCommand::Forget { confirmed } => handle_forget_cmd(state, confirmed),
+        ChatCommand::SessionForget { target, confirmed } => {
+            handle_session_forget_cmd(state, target, confirmed)
+        }
         ChatCommand::New => handle_new(state),
         ChatCommand::Help => {
             let help_text = super::commands::format_help();
@@ -222,18 +224,200 @@ async fn handle_quit(
     vec![CommandOutput::info("Goodbye!"), CommandOutput::quit()]
 }
 
-/// Handle /forget command — requires confirmation flag.
-fn handle_forget_cmd(state: &mut ReplState, confirmed: bool) -> Vec<CommandOutput> {
-    if !confirmed {
-        return vec![
-            CommandOutput::warning("/forget will permanently delete this conversation."),
-            CommandOutput::warning("   Use /forget --yes to confirm."),
-        ];
+/// Handle /session forget command — delete current or specific session.
+///
+/// For `Current` target: same as the old `/forget --yes` — delete current session
+/// and start a new one.
+///
+/// For `ByName` or `ById` target: resolve to conversation ID, show preview
+/// if not confirmed, then delete if confirmed.
+fn handle_session_forget_cmd(
+    state: &mut ReplState,
+    target: SessionForgetTarget,
+    confirmed: bool,
+) -> Vec<CommandOutput> {
+    match target {
+        SessionForgetTarget::Current => {
+            if !confirmed {
+                return vec![
+                    CommandOutput::warning(
+                        "/session forget will permanently delete this conversation.",
+                    ),
+                    CommandOutput::warning("   Use /session forget --yes to confirm."),
+                ];
+            }
+            handle_forget_current(state)
+        }
+        SessionForgetTarget::ByName(name) => handle_forget_by_name(state, &name, confirmed),
+        SessionForgetTarget::ById(id) => handle_forget_by_id(state, &id, confirmed),
     }
-    handle_forget(state)
 }
 
-/// Handle /save command — with error display wrapper.
+/// Handle deletion of the current session — clear state and start fresh.
+fn handle_forget_current(state: &mut ReplState) -> Vec<CommandOutput> {
+    state.session.forget_session();
+
+    let mut outputs = Vec::new();
+
+    if let Some(ref db) = state.session.db
+        && !state.session.anonymous
+        && !state.session.id.is_empty()
+    {
+        match db.delete_conversation(&state.session.id) {
+            Ok(_) => outputs.push(CommandOutput::progress(
+                "Removing conversation from database...",
+            )),
+            Err(e) => outputs.push(CommandOutput::warning(format!(
+                "Could not delete conversation: {}",
+                e
+            ))),
+        }
+    }
+
+    if !state.session.anonymous {
+        // Generate new session ID using timestamp
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        state.session.id = format!("session-{}", timestamp);
+        if let Err(e) = state.session.save_sqlite() {
+            outputs.push(CommandOutput::warning(format!(
+                "Could not save new session: {}",
+                e
+            )));
+        }
+    }
+
+    outputs.push(CommandOutput::info(
+        "Session forgotten. Starting fresh conversation.",
+    ));
+    outputs
+}
+
+/// Handle deletion of a session by name.
+fn handle_forget_by_name(state: &mut ReplState, name: &str, confirmed: bool) -> Vec<CommandOutput> {
+    let db = match &state.session.db {
+        Some(d) => Arc::clone(d),
+        None => return vec![CommandOutput::error("Database not initialized.")],
+    };
+
+    // Resolve name to conversation ID
+    let conversation_id = match db.find_conversation(name) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return vec![CommandOutput::error(format!(
+                "Session \"{}\" not found. Use /session list to see available sessions.",
+                name
+            ))];
+        }
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Error finding session: {}",
+                e
+            ))];
+        }
+    };
+
+    handle_forget_by_conversation_id(state, &conversation_id, name, confirmed)
+}
+
+/// Handle deletion of a session by ID.
+fn handle_forget_by_id(state: &mut ReplState, id: &str, confirmed: bool) -> Vec<CommandOutput> {
+    let db = match &state.session.db {
+        Some(d) => Arc::clone(d),
+        None => return vec![CommandOutput::error("Database not initialized.")],
+    };
+
+    // Verify the ID exists
+    if db.get_conversation_metadata(id).is_err() {
+        return vec![CommandOutput::error(format!(
+            "Session with ID \"{}\" not found. Use /session list to see available sessions.",
+            id
+        ))];
+    }
+
+    handle_forget_by_conversation_id(state, id, id, confirmed)
+}
+
+/// Handle deletion of a session by conversation ID (shared logic for name and ID targets).
+fn handle_forget_by_conversation_id(
+    state: &mut ReplState,
+    conversation_id: &str,
+    display_name: &str,
+    confirmed: bool,
+) -> Vec<CommandOutput> {
+    let db = match &state.session.db {
+        Some(d) => Arc::clone(d),
+        None => return vec![CommandOutput::error("Database not initialized.")],
+    };
+
+    // If this is the current session, delegate to the current-session handler
+    if conversation_id == state.session.id {
+        if !confirmed {
+            let counts = match db.count_session_items(conversation_id) {
+                Ok(c) => c,
+                Err(e) => {
+                    return vec![CommandOutput::warning(format!(
+                        "Could not count session items: {}",
+                        e
+                    ))];
+                }
+            };
+            return vec![
+                CommandOutput::warning(format!(
+                    "This will permanently delete the current session \"{}\":",
+                    display_name
+                )),
+                CommandOutput::info(format!("  - {} messages", counts.message_count)),
+                CommandOutput::info(format!("  - {} embeddings", counts.embedding_count)),
+                CommandOutput::info(format!("  - {} todos", counts.todo_count)),
+                CommandOutput::warning("Use /session forget --yes to confirm.".to_string()),
+            ];
+        }
+        return handle_forget_current(state);
+    }
+
+    // Deleting a different session — show preview or confirm
+    if !confirmed {
+        let counts = match db.count_session_items(conversation_id) {
+            Ok(c) => c,
+            Err(e) => {
+                return vec![CommandOutput::warning(format!(
+                    "Could not count session items: {}",
+                    e
+                ))];
+            }
+        };
+
+        return vec![
+            CommandOutput::warning(format!(
+                "This will permanently delete session \"{}\":",
+                display_name
+            )),
+            CommandOutput::info(format!("  - {} messages", counts.message_count)),
+            CommandOutput::info(format!("  - {} embeddings", counts.embedding_count)),
+            CommandOutput::info(format!("  - {} todos", counts.todo_count)),
+            CommandOutput::warning(format!(
+                "Use /session forget {} --yes to confirm.",
+                display_name
+            )),
+        ];
+    }
+
+    // Confirmed — delete the session
+    match db.delete_conversation(conversation_id) {
+        Ok(_) => vec![CommandOutput::info(format!(
+            "Session \"{}\" deleted.",
+            display_name
+        ))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Could not delete session \"{}\": {}",
+            display_name, e
+        ))],
+    }
+}
 fn handle_save_cmd(state: &mut ReplState, name: Option<String>) -> Vec<CommandOutput> {
     match handle_save(state, name) {
         Ok(outputs) => outputs,
@@ -338,50 +522,11 @@ fn handle_new(state: &mut ReplState) -> Vec<CommandOutput> {
     outputs
 }
 
-/// Handle /forget command — delete conversation completely and start fresh.
-fn handle_forget(state: &mut ReplState) -> Vec<CommandOutput> {
-    state.session.forget_session();
-
-    let mut outputs = Vec::new();
-
-    if let Some(ref db) = state.session.db
-        && !state.session.anonymous
-        && !state.session.id.is_empty()
-    {
-        match db.delete_conversation(&state.session.id) {
-            Ok(_) => outputs.push(CommandOutput::progress(
-                "Removing conversation from database...",
-            )),
-            Err(e) => outputs.push(CommandOutput::warning(format!(
-                "Could not delete conversation: {}",
-                e
-            ))),
-        }
-    }
-
-    if !state.session.anonymous {
-        // Generate new session ID using timestamp
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        state.session.id = format!("session-{}", timestamp);
-        if let Err(e) = state.session.save_sqlite() {
-            outputs.push(CommandOutput::warning(format!(
-                "Could not save new session: {}",
-                e
-            )));
-        }
-    }
-
-    outputs.push(CommandOutput::info(
-        "Session forgotten. Starting fresh conversation.",
-    ));
-    outputs
-}
-
 /// Handle /save command — save current session.
+///
+/// If a name is provided, renames the current session. Rejects duplicate names
+/// within the same project (two sessions in the same project cannot share a name).
+/// Renaming to the current session's own name is allowed (idempotent).
 fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<Vec<CommandOutput>, String> {
     if state.session.anonymous {
         return Err(
@@ -389,8 +534,18 @@ fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<Vec<Comman
         );
     }
 
-    if let Some(n) = name {
-        state.session.rename(n);
+    if let Some(ref n) = name {
+        // Check for duplicate name within the same project
+        if let Some(ref db) = state.session.db
+            && let Ok(Some(existing_id)) = db.find_conversation(n)
+            && existing_id != state.session.id
+        {
+            return Err(format!(
+                "Session name '{}' already exists. Use a different name.",
+                n
+            ));
+        }
+        state.session.rename(n.clone());
     }
 
     match state.session.save_sqlite() {

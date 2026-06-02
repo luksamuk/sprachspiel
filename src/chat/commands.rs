@@ -36,6 +36,21 @@ pub enum FactListScope {
     Project,
 }
 
+/// Target for `/session forget` command.
+///
+/// - `Current` — delete the current session (same as old `/forget --yes`)
+/// - `ByName(name)` — delete a session by its name/title
+/// - `ById(id)` — delete a session by its ID (for disambiguation)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionForgetTarget {
+    /// Delete the current session
+    Current,
+    /// Delete a session by name
+    ByName(String),
+    /// Delete a session by ID
+    ById(String),
+}
+
 /// Parsed chat command
 #[derive(Debug, Clone)]
 pub enum ChatCommand {
@@ -43,9 +58,12 @@ pub enum ChatCommand {
     Quit,
     /// Start a new conversation session
     New,
-    /// Forget everything (clear + delete from database)
+    /// Delete current session or a specific session by name/ID
     /// Requires --yes flag to confirm destructive operation
-    Forget { confirmed: bool },
+    SessionForget {
+        target: SessionForgetTarget,
+        confirmed: bool,
+    },
     /// Show help message
     Help,
     /// Switch to a different model
@@ -857,7 +875,7 @@ fn parse_feedback_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand,
 /// Parse session subcommand arguments into a ChatCommand.
 ///
 /// Extracted from the main parse_command to reduce complexity.
-/// Returns canonical ChatCommand variants (New, Load, List, Save, Forget).
+/// Returns canonical ChatCommand variants (New, Load, List, Save, SessionForget).
 fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
         "new" => Ok(ChatCommand::New),
@@ -879,11 +897,56 @@ fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, 
             Ok(ChatCommand::Save { name })
         }
         "forget" => {
-            let confirmed = subargs.trim() == "--yes";
-            if !confirmed && !subargs.trim().is_empty() && subargs.trim() != "--yes" {
-                return Err("Usage: /session forget [--yes]".to_string());
+            let trimmed = subargs.trim();
+            // /session forget --yes → delete current session, confirmed
+            if trimmed == "--yes" {
+                return Ok(ChatCommand::SessionForget {
+                    target: SessionForgetTarget::Current,
+                    confirmed: true,
+                });
             }
-            Ok(ChatCommand::Forget { confirmed })
+            // /session forget --id <id> [--yes] → delete by ID
+            if trimmed.starts_with("--id") {
+                let id_part = trimmed.strip_prefix("--id").unwrap_or(trimmed).trim();
+                if id_part.is_empty() {
+                    return Err("Usage: /session forget --id <session-id> [--yes]".to_string());
+                }
+                // Split id_part into <id> and optional --yes
+                let (id, confirmed) = if id_part.ends_with(" --yes") {
+                    let id_val = id_part.strip_suffix(" --yes").unwrap_or(id_part).trim();
+                    if id_val.is_empty() {
+                        return Err("Usage: /session forget --id <session-id> [--yes]".to_string());
+                    }
+                    (id_val.to_string(), true)
+                } else {
+                    (id_part.to_string(), false)
+                };
+                return Ok(ChatCommand::SessionForget {
+                    target: SessionForgetTarget::ById(id),
+                    confirmed,
+                });
+            }
+            // /session forget (no args) → preview current session deletion
+            if trimmed.is_empty() {
+                return Ok(ChatCommand::SessionForget {
+                    target: SessionForgetTarget::Current,
+                    confirmed: false,
+                });
+            }
+            // /session forget <name> [--yes] → delete by name
+            let (name, confirmed) = if trimmed.ends_with(" --yes") {
+                let name_val = trimmed.strip_suffix(" --yes").unwrap_or(trimmed).trim();
+                if name_val.is_empty() {
+                    return Err("Usage: /session forget <name> [--yes]".to_string());
+                }
+                (name_val.to_string(), true)
+            } else {
+                (trimmed.to_string(), false)
+            };
+            Ok(ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(name),
+                confirmed,
+            })
         }
         _ => Err("Usage: /session <new|load|list|save|forget>".to_string()),
     }
@@ -911,13 +974,6 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let command = match *cmd {
         "quit" | "exit" => ChatCommand::Quit,
         "new" => ChatCommand::New,
-        "forget" => {
-            let confirmed = args.trim() == "--yes";
-            if !confirmed && !args.trim().is_empty() && args.trim() != "--yes" {
-                return Some(Err("Usage: /forget [--yes]".to_string()));
-            }
-            ChatCommand::Forget { confirmed }
-        }
         "help" => ChatCommand::Help,
         "model" => {
             if args.is_empty() {
@@ -1166,9 +1222,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 pub fn format_help() -> String {
     r#"Available commands:
   /quit / exit     Exit the chat session
-  /new             Start a new conversation (previous messages remain searchable)
-  /forget [--yes]  Delete conversation completely and start fresh (requires --yes)
-  /help            Show this help message
+   /new             Start a new conversation (previous messages remain searchable)
+   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
   /think [on|off]  Toggle or set think mode
@@ -1180,12 +1235,14 @@ pub fn format_help() -> String {
   /undo            Undo last message (remove response, show last input)
   /save [name]     Save current session (optionally named)
   /load <name>     Load a saved session
-  /session        Session management commands:
-    /session new     Same as /new
-    /session load <name>  Same as /load
-    /session list    Same as /list
-    /session save [name]  Same as /save
-    /session forget [--yes]  Same as /forget (requires --yes)
+   /session        Session management commands:
+     /session new     Same as /new
+     /session load <name>  Same as /load
+     /session list    Same as /list
+     /session save [name]  Same as /save
+     /session forget [--yes]               Delete current session (requires --yes)
+     /session forget <name> [--yes]        Delete session by name (preview then --yes)
+     /session forget --id <id> [--yes]     Delete session by ID
   /export <fmt>    Export conversation (md, json)
   /list            List saved sessions for this project
   /info            Show current session information
@@ -1377,20 +1434,93 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_session_subcommand_forget() {
+    fn test_parse_session_subcommand_forget_current() {
         let cmd = parse_session_subcommand("forget", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::Current,
+                confirmed: false
+            }
+        ));
     }
 
     #[test]
-    fn test_parse_session_subcommand_forget_with_yes() {
+    fn test_parse_session_subcommand_forget_current_confirmed() {
         let cmd = parse_session_subcommand("forget", "--yes").unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget { confirmed: true }));
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::Current,
+                confirmed: true
+            }
+        ));
     }
 
     #[test]
-    fn test_parse_session_subcommand_forget_invalid_arg() {
-        assert!(parse_session_subcommand("forget", "nope").is_err());
+    fn test_parse_session_subcommand_forget_by_name() {
+        let cmd = parse_session_subcommand("forget", "my-session").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(ref n),
+                confirmed: false
+            } if n == "my-session"
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_by_name_confirmed() {
+        let cmd = parse_session_subcommand("forget", "my-session --yes").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(ref n),
+                confirmed: true
+            } if n == "my-session"
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_by_id() {
+        let cmd = parse_session_subcommand("forget", "--id session-123").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ById(ref id),
+                confirmed: false
+            } if id == "session-123"
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_by_id_confirmed() {
+        let cmd = parse_session_subcommand("forget", "--id session-123 --yes").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ById(ref id),
+                confirmed: true
+            } if id == "session-123"
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_by_id_empty() {
+        assert!(parse_session_subcommand("forget", "--id").is_err());
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_invalid_arg_now_treated_as_name() {
+        // "nope" is treated as a session name (not a flag error)
+        let cmd = parse_session_subcommand("forget", "nope").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(ref n),
+                confirmed: false
+            } if n == "nope"
+        ));
     }
 
     #[test]
@@ -1763,29 +1893,22 @@ mod tests {
 
     // --- Top-level parse_command tests ---
 
-    #[test]
-    fn test_parse_forget_no_args() {
-        let cmd = parse_command("/forget").unwrap().unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
-    }
+    // --- /forget is removed (use /session forget) ---
 
     #[test]
-    fn test_parse_forget_with_yes() {
-        let cmd = parse_command("/forget --yes").unwrap().unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget { confirmed: true }));
-    }
-
-    #[test]
-    fn test_parse_forget_invalid_flag() {
-        let result = parse_command("/forget --no");
+    fn test_forget_removed_returns_error() {
+        // /forget is no longer a valid top-level command
+        let result = parse_command("/forget");
         assert!(result.is_some());
         assert!(result.unwrap().is_err());
     }
 
     #[test]
-    fn test_parse_forget_trailing_space() {
-        let cmd = parse_command("/forget ").unwrap().unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
+    fn test_forget_with_yes_removed_returns_error() {
+        // /forget --yes is also no longer valid
+        let result = parse_command("/forget --yes");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
     }
 
     #[test]
@@ -1987,5 +2110,87 @@ mod tests {
         // Unknown arg like "maybe" falls back to toggle
         let cmd = parse_command("/think maybe").unwrap().unwrap();
         assert!(matches!(cmd, ChatCommand::Think { enabled: None }));
+    }
+
+    // --- Full /session forget command tests (top-level parse_command) ---
+
+    #[test]
+    fn test_parse_command_session_forget_current() {
+        let cmd = parse_command("/session forget").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::Current,
+                confirmed: false
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_command_session_forget_current_confirmed() {
+        let cmd = parse_command("/session forget --yes").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::Current,
+                confirmed: true
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_command_session_forget_by_name() {
+        let cmd = parse_command("/session forget my-session")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(ref n),
+                confirmed: false
+            } if n == "my-session"
+        ));
+    }
+
+    #[test]
+    fn test_parse_command_session_forget_by_name_confirmed() {
+        let cmd = parse_command("/session forget my-session --yes")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ByName(ref n),
+                confirmed: true
+            } if n == "my-session"
+        ));
+    }
+
+    #[test]
+    fn test_parse_command_session_forget_by_id() {
+        let cmd = parse_command("/session forget --id abc123")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ById(ref id),
+                confirmed: false
+            } if id == "abc123"
+        ));
+    }
+
+    #[test]
+    fn test_parse_command_session_forget_by_id_confirmed() {
+        let cmd = parse_command("/session forget --id abc123 --yes")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::SessionForget {
+                target: SessionForgetTarget::ById(ref id),
+                confirmed: true
+            } if id == "abc123"
+        ));
     }
 }

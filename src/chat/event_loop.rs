@@ -150,6 +150,16 @@ pub async fn handle_key_line(
                 // indicators (🧠 think, 🔧 tools) so we can
                 // update the modeline after execution.
                 let updates_status = matches!(cmd, ChatCommand::Think { .. } | ChatCommand::Tools);
+                // Track whether this command changes the session list
+                // (save, load, new, session forget) so we can refresh
+                // the completer's session entries afterward.
+                let refreshes_sessions = matches!(
+                    cmd,
+                    ChatCommand::Save { .. }
+                        | ChatCommand::Load { .. }
+                        | ChatCommand::New
+                        | ChatCommand::SessionForget { .. }
+                );
                 // For commands that need llm_tx (e.g., /compact,
                 // /retry), create a channel or reuse existing.
                 // Track whether we had an active LLM task before
@@ -192,6 +202,13 @@ pub async fn handle_key_line(
                 }
 
                 view.show_command_outputs(&outputs);
+
+                // Refresh session entries in the completer after
+                // commands that change the session list.
+                if refreshes_sessions {
+                    let entries = state.session_entries_for_completer();
+                    view.app_mut().refresh_session_entries(entries);
+                }
 
                 // Commands that change status bar indicators
                 // (🧠 think, 🔧 tools) must update the modeline.
