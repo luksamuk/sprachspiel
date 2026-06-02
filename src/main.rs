@@ -9,6 +9,7 @@
 mod capabilities;
 mod chat;
 mod clipboard;
+mod commands;
 mod config;
 mod consts;
 mod content;
@@ -55,8 +56,8 @@ use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
-    Commands, CompletionArgs, DiagArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs,
-    TranslationStyle, build_translation_prompt, parse_language_pair,
+    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, QueryArgs, Shell,
+    TranslateArgs, TranslationStyle, UpgradeArgs, build_translation_prompt, parse_language_pair,
 };
 use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
@@ -188,6 +189,7 @@ async fn main() -> AppResult<()> {
                 return handle_diag(args.clone(), &cli, &settings);
             }
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
+            Commands::Config(args) => return handle_config(args.clone(), &settings),
         }
     }
 
@@ -643,6 +645,60 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
         }
         Err(e) => {
             eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn handle_config(args: ConfigArgs, settings: &Settings) -> AppResult<()> {
+    match args.action {
+        ConfigAction::Upgrade(upgrade_args) => handle_config_upgrade(upgrade_args, settings),
+    }
+}
+
+fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<()> {
+    use crate::commands::config_upgrade::run_upgrade;
+
+    // First, check if the user has a config at all. The path lookup
+    // in Settings::config_path() only returns Some if the file
+    // exists, so we use a separate helper here to detect the
+    // "no config" case explicitly and produce a clear error.
+    let config_path = match crate::settings::Settings::config_path() {
+        Some(p) => p,
+        None => {
+            // Try the conventional path even if it doesn't exist
+            // yet, so the user sees a path they recognize.
+            let candidate = crate::settings::Settings::config_dir().map(|d| d.join("config.toml"));
+            let candidate = candidate
+                .unwrap_or_else(|| std::path::PathBuf::from("~/.config/sprachspiel/config.toml"));
+            let msg = format!(
+                "Config file not found: {}\n\
+                 Run `sprach --init-config` to create a fresh one.",
+                candidate.display()
+            );
+            log::error!("Config upgrade aborted: {msg}");
+            eprintln!("Error: {msg}");
+            std::process::exit(1);
+        }
+    };
+
+    // `run_upgrade` is pure-ish: it does not perform any I/O
+    // of its own. It returns a `Vec<String>` of every line of
+    // user-facing output alongside the report. We iterate the
+    // lines here to write them to stdout for direct CLI
+    // invocation; the tests in `config_upgrade.rs` capture the
+    // same `Vec<String>` programmatically without polluting
+    // `cargo test` output.
+    match run_upgrade(config_path, args.dry_run, args.no_backup) {
+        Ok((_report, output)) => {
+            for line in &output {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            log::error!("Config upgrade failed: {e}");
             std::process::exit(1);
         }
     }

@@ -385,6 +385,365 @@ pub struct ThinkingTraceSettings {
     pub enabled: bool,
 }
 
+/// The complete sample configuration exposed as a static string.
+///
+/// This is the single source of truth for the `config.toml` format. The
+/// `sprach config upgrade` subcommand parses this string to extract
+/// doc-comments for new fields, so they always stay in sync with
+/// `Settings::default()`. When adding a new field to any `Settings`
+/// sub-struct, also add a documented entry here so that `config upgrade`
+/// can insert it with proper documentation.
+pub const SAMPLE_CONFIG: &str = r#"# Sprachspiel Configuration File
+# Location: ~/.config/sprachspiel/config.toml
+#
+# This is a complete example configuration showing all available options.
+# Lines starting with '#' are comments and are ignored.
+# Remove the '#' to enable an option, or modify values as needed.
+#
+# After editing, the configuration takes effect immediately on the next run.
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+# Configure which AI models to use for different tasks.
+
+[model]
+
+# The default model preset to use for general queries.
+# See all available models with: sprach --list-models
+# Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
+
+# Global default for thinking mode.
+# This is used as a fallback for all subcommands that don't have their own setting.
+# Subcommand-specific settings (model.query.thinking, model.chat.thinking, etc.) override this.
+# Model capability takes precedence: if the model doesn't support thinking, this is ignored.
+# If not specified, subcommand defaults are used (true for query, false for others).
+# thinking = false
+
+# LLM server connection settings.
+# Change these if your LLM server is not running on the default localhost.
+# The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
+# Default: "127.0.0.1"
+ollama_host = "127.0.0.1"
+# Default: 11434
+ollama_port = 11434
+
+# -----------------------------------------------------------------------------
+# PER-SUBCOMMAND MODEL OVERRIDES (Optional)
+# -----------------------------------------------------------------------------
+# You can use different models for different subcommands.
+# This allows you to use lightweight models for simple tasks and
+# powerful models for complex ones, optimizing for speed and cost.
+#
+# Priority for thinking mode:
+# 1. Model capability (can't enable if model doesn't support it)
+# 2. Subcommand-specific setting (e.g., model.query.thinking)
+# 3. Global setting (model.thinking)
+# 4. Model default (from models.toml or built-in config)
+# 5. Subcommand hardcoded default (true for query, false for others)
+
+# --- QUERY SUBCOMMAND ---
+[model.query]
+# The model to use for 'sprach query' or 'sprach q'.
+# If not specified, falls back to the global [model] default.
+# model = "qwen3.5:4b"
+
+# Enable thinking mode for queries. Some models show their reasoning process.
+# If not specified, defaults to: true for query
+# thinking = true
+
+# Enable tool calling for queries (weather, file operations, etc.).
+# If not specified, defaults to: true for query
+# tools = true
+
+# --- CHAT SUBCOMMAND ---
+[model.chat]
+# The model to use for 'sprach chat'.
+# If not specified, falls back to the global [model] default.
+# model = "qwen3.5:4b"
+
+# Enable thinking mode for chat. Some models show their reasoning process.
+# If not specified, defaults to: false for chat
+# thinking = false
+
+# Enable tool calling for chat (weather, file operations, etc.).
+# If not specified, defaults to: true for chat
+# tools = true
+
+# --- SUMMARIZE SUBCOMMAND ---
+# tools = false
+
+# --- OCR SUBCOMMAND ---
+[model.ocr]
+# The model to use for 'sprach ocr'.
+# Built-in: "glm-ocr:bf16" (optimized for OCR tasks)
+# If not specified, uses "glm-ocr:bf16" by default.
+# model = "glm-ocr:bf16"
+
+# OCR typically doesn't need thinking mode.
+# If not specified, defaults to: false for ocr
+# thinking = false
+
+# OCR doesn't use external tools.
+# If not specified, defaults to: false for ocr
+# tools = false
+
+# --- DOCUMENT SUBCOMMAND ---
+[model.document]
+# The model to use for 'sprach document'.
+# If not specified, falls back to the global [model] default.
+# model = "qwen3.5:4b"
+
+# Document operations typically don't need thinking mode.
+# If not specified, defaults to: false for document
+# thinking = false
+
+# Enable tool calling for document operations. This allows the model to inspect
+# your project files (read_file, list_directory, search_files) before
+# performing document operations.
+# If not specified, defaults to: true for document
+# tools = true
+
+# --- CODE MODE ---
+
+# --- CODE MODE ---
+[model.code]
+# The model to use when the code flag (-c) is active.
+# Default: "qwen2.5-coder:7b" (optimized for coding with function calling)
+# If not specified, falls back to the code default (qwen2.5-coder:7b).
+# model = "qwen2.5-coder:7b"
+
+# Code generation typically doesn't need thinking mode.
+# If not specified, defaults to: false for code
+# thinking = false
+
+# Enable tool calling in code mode. This allows the model to inspect
+# your project files (read_file, list_directory, search_files) before
+# generating code, leading to more accurate suggestions.
+# If not specified, defaults to: true for code
+# tools = true
+
+# =============================================================================
+# TOOLS CONFIGURATION
+# =============================================================================
+# Control which AI tools are available and how they behave.
+
+[tools]
+
+# A list of tools to disable (blacklist).
+# Blacklisted tools won't be available to the AI, saving context window space.
+#
+# Available tools include:
+#   - get_current_datetime, get_project_context (System information)
+#   - get_weather, get_current_weather, get_weather_forecast (Weather)
+#   - read_file, list_directory, search_files (File operations)
+#   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
+#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
+#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
+#
+# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Default: [] (all tools enabled)
+blacklist = []
+
+# =============================================================================
+# OUTPUT CONFIGURATION
+# =============================================================================
+# Control how responses are displayed.
+
+[output]
+
+# Use plain text output by default, disabling markdown rendering.
+# If true, responses will be plain text instead of formatted markdown.
+# Default: false
+plain_default = false
+
+# Verbosity level for log output.
+# Controls how much diagnostic information is shown alongside the LLM response.
+#
+# Options:
+#   "quiet"   — Errors only. No spinner, no tool calls. Ideal for scripting/pipes.
+#   "normal"  — Tool calls (compact), warnings, errors. Good default for interactive use.
+#   "verbose" — Detailed tool calls with full parameters and results. For debugging.
+#   "trace"   — Everything including embedding internals, token budgets. Maximum info.
+#
+# Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
+# Default: "normal" (info level)
+# verbosity = "normal"
+
+# =============================================================================
+# DISPLAY CONFIGURATION
+# =============================================================================
+# Customize the terminal appearance.
+
+[display]
+
+# The color theme for markdown rendering.
+# Options: "dark", "light", or "mono" (for terminals without color)
+# Default: "dark"
+skin = "dark"
+
+# Whether to show 🔧 tool call indicators during chat.
+# When enabled, each tool call is displayed as a compact single line:
+#   🔧 read_file(path=/tmp/test.txt)
+# This is independent of the verbosity setting — tool calls are shown
+# even in Normal mode. Set to false to hide tool call display entirely.
+# Quiet mode (-q) overrides this to false regardless.
+# Default: true
+# show_tool_calls = true
+
+# =============================================================================
+# LED CONTROL CONFIGURATION (Optional)
+# =============================================================================
+# Control NeoPixel LED strips via Raspberry Pi Pico W HTTP server.
+# LED tools are disabled by default and require configuration to activate.
+#
+# Build with LED tools: cargo build --release --features led-tools
+
+[led]
+# IP address of your Raspberry Pi Pico W LED server.
+# Required to enable LED tools. If not set, LED tools are disabled.
+# ip = "192.168.1.100"
+
+# HTTP port for the LED server.
+# Default: 80
+# port = 80
+
+# =============================================================================
+# FEEDBACK CONFIGURATION (Optional)
+# =============================================================================
+# Control how user and LLM feedback affects memory scoring.
+# These settings govern Ebbinghaus decay, access reinforcement,
+# content pruning, and LLM feedback weight.
+# See ADR-004 (LLM feedback weight), ADR-008 (content decay), ADR-009 (access reinforcement).
+
+# [feedback]
+
+# Whether the feedback system is enabled.
+# When enabled, RRF boost and LLM feedback tools are active.
+# This does NOT gate the /feedback command (that always works).
+# Default: true
+# enabled = true
+
+# Whether implicit (non-explicit) feedback signals are captured.
+# Reserved for Phase 2 — currently stored but not used in scoring.
+# Default: true
+# implicit_capture = true
+
+# Weight of LLM-provided feedback relative to explicit user feedback.
+# See ADR-004. Range: 0.0–1.0.
+# Default: 0.3
+# llm_feedback_weight = 0.3
+
+# Half-life (in days) for decay of positively-rated content.
+# Higher = good memories decay slower.
+# Default: 30
+# decay_half_life_good = 30
+
+# Half-life (in days) for decay of negatively-rated content.
+# Lower = bad memories decay faster.
+# Default: 7
+# decay_half_life_bad = 7
+
+# Half-life (in days) for decay of corrections.
+# Between good and bad — corrections age at a moderate rate.
+# Default: 14
+# decay_half_life_correction = 14
+
+# Whether to apply time-based decay to content relevance scores.
+# See ADR-008.
+# Default: true
+# content_decay = true
+
+# Whether to apply a small reinforcement boost each time content is accessed.
+# See ADR-009.
+# Default: true
+# access_reinforcement = true
+
+# Per-access reinforcement boost amount.
+# Applied each time content is retrieved, not per 10 accesses.
+# Default: 0.001
+# access_reinforcement_boost = 0.001
+
+# Threshold below which content is pruned from the knowledge base.
+# Content with a score below this value may be removed during maintenance.
+# Default: 0.05
+# content_prune_threshold = 0.05
+
+# =============================================================================
+# FACT AUTO-EXTRACTION CONFIGURATION (Optional)
+# =============================================================================
+# Control how facts are automatically extracted from user messages.
+# When enabled, the system scans recent user messages after each response
+# and extracts preferences and identity facts using heuristic patterns.
+# Extracted facts are deduplicated against existing facts via FTS5 search.
+# See P6.1 (autoDream-lite) for design details.
+
+# [facts]
+
+# Whether auto-extraction of facts from user messages is enabled.
+# When enabled, the system extracts facts like "I prefer dark mode" or
+# "My name is Lucas" after each response and stores them as facts.
+# Default: true
+# auto_extract = true
+
+# Maximum number of facts to extract per response.
+# Limits noise from over-extraction. Increase for longer conversations.
+# Default: 3
+# max_facts = 3
+
+# Whether to show a notification when facts are auto-extracted.
+# Displays "[Auto-extracted: N fact(s)]" in gray after token metrics.
+# Suppressed in Quiet mode regardless of this setting.
+# Default: true
+# auto_extract_notify = true
+
+# Semantic similarity threshold for fact deduplication (0.0–1.0).
+# Cosine similarity at or above this value triggers semantic conflict detection.
+# Higher = stricter matching (fewer false matches, may miss contradictions).
+# Lower = more permissive (catches more contradictions, risks false positives).
+# The default 0.70 is designed for nomic-embed-text-v2-moe at 256 dimensions.
+# Adjust based on "sprach diagnostics" threshold recommendations.
+# Default: 0.70
+# semantic_threshold = 0.70
+
+# =============================================================================
+# RETRIEVAL CONFIGURATION (Optional)
+# =============================================================================
+# Control how keyword and semantic search are combined (Reciprocal Rank Fusion).
+# The two weights are applied independently in the RRF formula.
+# They should typically sum to ~1.0, but this is not enforced.
+
+# [retrieval]
+
+# Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on exact keyword matches.
+# Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
+# keyword_weight = 0.4
+
+# Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on semantic similarity.
+# Default: 0.6 (embeddings capture meaning better than keyword overlap)
+# semantic_weight = 0.6
+
+# =============================================================================
+# THINKING TRACE TRANSFORM CONFIGURATION (Optional)
+# =============================================================================
+# Control whether reasoning traces from LLM responses are included in context
+# for improved reasoning (Arabzadeh et al. 2026, arXiv:2605.03344).
+# Thinking content is always preserved in the database — this flag only
+# controls whether it's injected into the LLM conversation context.
+
+# [thinking_trace]
+
+# Enable thinking trace injection into LLM context.
+# Default: false — thinking is preserved in DB but not included in context.
+# When true, assistant messages with thinking content include their reasoning
+# traces in the ChatMessage sent to the LLM, improving reasoning performance.
+# enabled = false
+"#;
+
 fn default_led_port() -> u16 {
     80
 }
@@ -541,7 +900,7 @@ impl Settings {
     /// Check if LED is configured (IP address set)
     ///
     /// Note: Used only when `led-tools` feature is enabled.
-    #[allow(dead_code)]
+    #[cfg(feature = "led-tools")]
     pub fn is_led_configured(&self) -> bool {
         self.led.ip.is_some()
     }
@@ -549,7 +908,7 @@ impl Settings {
     /// Get LED endpoint URL (returns None if not configured)
     ///
     /// Note: Used only when `led-tools` feature is enabled.
-    #[allow(dead_code)]
+    #[cfg(feature = "led-tools")]
     pub fn led_endpoint(&self) -> Option<String> {
         self.led
             .ip
@@ -649,358 +1008,7 @@ impl Settings {
             return Ok(config_path);
         }
 
-        let sample_config = r#"# Sprachspiel Configuration File
-# Location: ~/.config/sprachspiel/config.toml
-# 
-# This is a complete example configuration showing all available options.
-# Lines starting with '#' are comments and are ignored.
-# Remove the '#' to enable an option, or modify values as needed.
-# 
-# After editing, the configuration takes effect immediately on the next run.
-
-# =============================================================================
-# MODEL CONFIGURATION
-# =============================================================================
-# Configure which AI models to use for different tasks.
-
-[model]
-
-# The default model preset to use for general queries.
-# See all available models with: sprach --list-models
-# Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
-# Default: "qwen3.5:4b"
-default = "qwen3.5:4b"
-
-# Global default for thinking mode.
-# This is used as a fallback for all subcommands that don't have their own setting.
-# Subcommand-specific settings (model.query.thinking, model.chat.thinking, etc.) override this.
-# Model capability takes precedence: if the model doesn't support thinking, this is ignored.
-# If not specified, subcommand defaults are used (true for query, false for others).
-# thinking = false
-
-# LLM server connection settings.
-# Change these if your LLM server is not running on the default localhost.
-# The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
-# Default: "127.0.0.1"
-ollama_host = "127.0.0.1"
-# Default: 11434
-ollama_port = 11434
-
-# -----------------------------------------------------------------------------
-# PER-SUBCOMMAND MODEL OVERRIDES (Optional)
-# -----------------------------------------------------------------------------
-# You can use different models for different subcommands.
-# This allows you to use lightweight models for simple tasks and 
-# powerful models for complex ones, optimizing for speed and cost.
-#
-# Priority for thinking mode:
-# 1. Model capability (can't enable if model doesn't support it)
-# 2. Subcommand-specific setting (e.g., model.query.thinking)
-# 3. Global setting (model.thinking)
-# 4. Model default (from models.toml or built-in config)
-# 5. Subcommand hardcoded default (true for query, false for others)
-
-# --- QUERY SUBCOMMAND ---
-[model.query]
-# The model to use for 'sprach query' or 'sprach q'.
-# If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
-
-# Enable thinking mode for queries. Some models show their reasoning process.
-# If not specified, defaults to: true for query
-# thinking = true
-
-# Enable tool calling for queries (weather, file operations, etc.).
-# If not specified, defaults to: true for query
-# tools = true
-
-# --- CHAT SUBCOMMAND ---
-[model.chat]
-# The model to use for 'sprach chat'.
-# If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
-
-# Enable thinking mode for chat. Some models show their reasoning process.
-# If not specified, defaults to: false for chat
-# thinking = false
-
-# Enable tool calling for chat (weather, file operations, etc.).
-# If not specified, defaults to: true for chat
-# tools = true
-
-# --- SUMMARIZE SUBCOMMAND ---
-# tools = false
-
-# --- OCR SUBCOMMAND ---
-[model.ocr]
-# The model to use for 'sprach ocr'.
-# Built-in: "glm-ocr:bf16" (optimized for OCR tasks)
-# If not specified, uses "glm-ocr:bf16" by default.
-# model = "glm-ocr:bf16"
-
-# OCR typically doesn't need thinking mode.
-# If not specified, defaults to: false for ocr
-# thinking = false
-
-# OCR doesn't use external tools.
-# If not specified, defaults to: false for ocr
-# tools = false
-
-# --- DOCUMENT SUBCOMMAND ---
-[model.document]
-# The model to use for 'sprach document'.
-# If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
-
-# Document operations typically don't need thinking mode.
-# If not specified, defaults to: false for document
-# thinking = false
-
-# Enable tool calling for document operations. This allows the model to inspect
-# your project files (read_file, list_directory, search_files) before
-# performing document operations.
-# If not specified, defaults to: true for document
-# tools = true
-
-# --- CODE MODE ---
-
-# --- CODE MODE ---
-[model.code]
-# The model to use when the code flag (-c) is active.
-# Default: "qwen2.5-coder:7b" (optimized for coding with function calling)
-# If not specified, falls back to the code default (qwen2.5-coder:7b).
-# model = "qwen2.5-coder:7b"
-
-# Code generation typically doesn't need thinking mode.
-# If not specified, defaults to: false for code
-# thinking = false
-
-# Enable tool calling in code mode. This allows the model to inspect 
-# your project files (read_file, list_directory, search_files) before 
-# generating code, leading to more accurate suggestions.
-# If not specified, defaults to: true for code
-# tools = true
-
-# =============================================================================
-# TOOLS CONFIGURATION
-# =============================================================================
-# Control which AI tools are available and how they behave.
-
-[tools]
-
-# A list of tools to disable (blacklist).
-# Blacklisted tools won't be available to the AI, saving context window space.
-#
-# Available tools include:
-#   - get_current_datetime, get_project_context (System information)
-#   - get_weather, get_current_weather, get_weather_forecast (Weather)
-#   - read_file, list_directory, search_files (File operations)
-#   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
-#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
-#
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
-# Default: [] (all tools enabled)
-blacklist = []
-
-# =============================================================================
-# OUTPUT CONFIGURATION
-# =============================================================================
-# Control how responses are displayed.
-
-[output]
-
-# Use plain text output by default, disabling markdown rendering.
-# If true, responses will be plain text instead of formatted markdown.
-# Default: false
-plain_default = false
-
-# Verbosity level for log output.
-# Controls how much diagnostic information is shown alongside the LLM response.
-#
-# Options:
-#   "quiet"   — Errors only. No spinner, no tool calls. Ideal for scripting/pipes.
-#   "normal"  — Tool calls (compact), warnings, errors. Good default for interactive use.
-#   "verbose" — Detailed tool calls with full parameters and results. For debugging.
-#   "trace"   — Everything including embedding internals, token budgets. Maximum info.
-#
-# Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
-# Default: "normal" (info level)
-# verbosity = "normal"
-
-# =============================================================================
-# DISPLAY CONFIGURATION
-# =============================================================================
-# Customize the terminal appearance.
-
-[display]
-
-# The color theme for markdown rendering.
-# Options: "dark", "light", or "mono" (for terminals without color)
-# Default: "dark"
-skin = "dark"
-
-# Whether to show 🔧 tool call indicators during chat.
-# When enabled, each tool call is displayed as a compact single line:
-#   🔧 read_file(path=/tmp/test.txt)
-# This is independent of the verbosity setting — tool calls are shown
-# even in Normal mode. Set to false to hide tool call display entirely.
-# Quiet mode (-q) overrides this to false regardless.
-# Default: true
-# show_tool_calls = true
-
-# =============================================================================
-# LED CONTROL CONFIGURATION (Optional)
-# =============================================================================
-# Control NeoPixel LED strips via Raspberry Pi Pico W HTTP server.
-# LED tools are disabled by default and require configuration to activate.
-# 
-# Build with LED tools: cargo build --release --features led-tools
-
-[led]
-# IP address of your Raspberry Pi Pico W LED server.
-# Required to enable LED tools. If not set, LED tools are disabled.
-# ip = "192.168.1.100"
-
-# HTTP port for the LED server.
-# Default: 80
-# port = 80
-
-# =============================================================================
-# FEEDBACK CONFIGURATION (Optional)
-# =============================================================================
-# Control how user and LLM feedback affects memory scoring.
-# These settings govern Ebbinghaus decay, access reinforcement,
-# content pruning, and LLM feedback weight.
-# See ADR-004 (LLM feedback weight), ADR-008 (content decay), ADR-009 (access reinforcement).
-
-# [feedback]
-
-# Whether the feedback system is enabled.
-# When enabled, RRF boost and LLM feedback tools are active.
-# This does NOT gate the /feedback command (that always works).
-# Default: true
-# enabled = true
-
-# Whether implicit (non-explicit) feedback signals are captured.
-# Reserved for Phase 2 — currently stored but not used in scoring.
-# Default: true
-# implicit_capture = true
-
-# Weight of LLM-provided feedback relative to explicit user feedback.
-# See ADR-004. Range: 0.0–1.0.
-# Default: 0.3
-# llm_feedback_weight = 0.3
-
-# Half-life (in days) for decay of positively-rated content.
-# Higher = good memories decay slower.
-# Default: 30
-# decay_half_life_good = 30
-
-# Half-life (in days) for decay of negatively-rated content.
-# Lower = bad memories decay faster.
-# Default: 7
-# decay_half_life_bad = 7
-
-# Half-life (in days) for decay of corrections.
-# Between good and bad — corrections age at a moderate rate.
-# Default: 14
-# decay_half_life_correction = 14
-
-# Whether to apply time-based decay to content relevance scores.
-# See ADR-008.
-# Default: true
-# content_decay = true
-
-# Whether to apply a small reinforcement boost each time content is accessed.
-# See ADR-009.
-# Default: true
-# access_reinforcement = true
-
-# Per-access reinforcement boost amount.
-# Applied each time content is retrieved, not per 10 accesses.
-# Default: 0.001
-# access_reinforcement_boost = 0.001
-
-# Threshold below which content is pruned from the knowledge base.
-# Content with a score below this value may be removed during maintenance.
-# Default: 0.05
-# content_prune_threshold = 0.05
-
-# =============================================================================
-# FACT AUTO-EXTRACTION CONFIGURATION (Optional)
-# =============================================================================
-# Control how facts are automatically extracted from user messages.
-# When enabled, the system scans recent user messages after each response
-# and extracts preferences and identity facts using heuristic patterns.
-# Extracted facts are deduplicated against existing facts via FTS5 search.
-# See P6.1 (autoDream-lite) for design details.
-
-# [facts]
-
-# Whether auto-extraction of facts from user messages is enabled.
-# When enabled, the system extracts facts like "I prefer dark mode" or
-# "My name is Lucas" after each response and stores them as facts.
-# Default: true
-# auto_extract = true
-
-# Maximum number of facts to extract per response.
-# Limits noise from over-extraction. Increase for longer conversations.
-# Default: 3
-# max_facts = 3
-
-# Whether to show a notification when facts are auto-extracted.
-# Displays "[Auto-extracted: N fact(s)]" in gray after token metrics.
-# Suppressed in Quiet mode regardless of this setting.
-# Default: true
-# auto_extract_notify = true
-
-# Semantic similarity threshold for fact deduplication (0.0–1.0).
-# Cosine similarity at or above this value triggers semantic conflict detection.
-# Higher = stricter matching (fewer false matches, may miss contradictions).
-# Lower = more permissive (catches more contradictions, risks false positives).
-# The default 0.70 is designed for nomic-embed-text-v2-moe at 256 dimensions.
-# Adjust based on "sprach diagnostics" threshold recommendations.
-# Default: 0.70
-# semantic_threshold = 0.70
-
-# =============================================================================
-# RETRIEVAL CONFIGURATION (Optional)
-# =============================================================================
-# Control how keyword and semantic search are combined (Reciprocal Rank Fusion).
-# The two weights are applied independently in the RRF formula.
-# They should typically sum to ~1.0, but this is not enforced.
-
-# [retrieval]
-
-# Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
-# Higher = more weight on exact keyword matches.
-# Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
-# keyword_weight = 0.4
-
-# Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
-# Higher = more weight on semantic similarity.
-# Default: 0.6 (embeddings capture meaning better than keyword overlap)
-# semantic_weight = 0.6
-
-# =============================================================================
-# THINKING TRACE TRANSFORM CONFIGURATION (Optional)
-# =============================================================================
-# Control whether reasoning traces from LLM responses are included in context
-# for improved reasoning (Arabzadeh et al. 2026, arXiv:2605.03344).
-# Thinking content is always preserved in the database — this flag only
-# controls whether it's injected into the LLM conversation context.
-
-# [thinking_trace]
-
-# Enable thinking trace injection into LLM context.
-# Default: false — thinking is preserved in DB but not included in context.
-# When true, assistant messages with thinking content include their reasoning
-# traces in the ChatMessage sent to the LLM, improving reasoning performance.
-# enabled = false
-"#;
-
-        std::fs::write(&config_path, sample_config)?;
+        std::fs::write(&config_path, SAMPLE_CONFIG)?;
         Ok(config_path)
     }
 }

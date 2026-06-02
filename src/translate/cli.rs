@@ -45,6 +45,10 @@ pub enum Commands {
     /// Generate shell completions
     #[command(about = "Generate shell completions for sprach")]
     Completion(CompletionArgs),
+
+    /// Manage configuration files
+    #[command(visible_alias = "cfg")]
+    Config(ConfigArgs),
 }
 
 /// Arguments for the translate subcommand
@@ -197,6 +201,68 @@ impl TranslateArgs {
 }
 
 use clap::ValueEnum;
+
+/// Arguments for the `config` subcommand family
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Manage sprachspiel configuration",
+    long_about = r#"
+Subcommands for managing the user's `config.toml` file (e.g. merging
+new fields added by newer versions of sprachspiel into an existing
+configuration without overwriting user values).
+
+EXAMPLES:
+  sprach config upgrade               # Merge missing default fields
+  sprach config upgrade --dry-run     # Preview changes without modifying
+  sprach config upgrade --no-backup   # Skip creating a .bak file
+"#
+)]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub action: ConfigAction,
+}
+
+/// Subcommands available under `sprach config`
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigAction {
+    /// Merge missing default fields into existing config.toml
+    #[command(visible_alias = "up")]
+    Upgrade(UpgradeArgs),
+}
+
+/// Arguments for `sprach config upgrade`
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Merge missing default fields into config.toml",
+    long_about = r#"
+Merge missing default fields into the existing configuration file at
+~/.config/sprachspiel/config.toml (or $XDG_CONFIG_HOME/sprachspiel/).
+
+This preserves all existing values and comments. New fields are
+inserted with their default values and doc-comments extracted from
+the sample configuration. The command is purely additive — it never
+modifies or removes existing values.
+
+A backup file (`config.toml.bak`, or `config.toml.bak.YYYYMMDD-HHMMSS`
+if `.bak` already exists) is created by default. Use `--no-backup` to
+skip the backup, or `--dry-run` to preview changes without modifying
+the file.
+
+EXAMPLES:
+  sprach config upgrade               # Upgrade with backup
+  sprach config upgrade --dry-run     # Show what would be added
+  sprach config upgrade --no-backup   # Skip the backup file
+"#
+)]
+pub struct UpgradeArgs {
+    /// Show what would be added without modifying the file
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip creating a backup file
+    #[arg(long)]
+    pub no_backup: bool,
+}
 
 /// Shell types for completion generation
 #[derive(ValueEnum, Clone, Debug)]
