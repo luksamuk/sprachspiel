@@ -900,7 +900,7 @@ impl Settings {
     /// Check if LED is configured (IP address set)
     ///
     /// Note: Used only when `led-tools` feature is enabled.
-    #[allow(dead_code)]
+    #[cfg(feature = "led-tools")]
     pub fn is_led_configured(&self) -> bool {
         self.led.ip.is_some()
     }
@@ -908,7 +908,7 @@ impl Settings {
     /// Get LED endpoint URL (returns None if not configured)
     ///
     /// Note: Used only when `led-tools` feature is enabled.
-    #[allow(dead_code)]
+    #[cfg(feature = "led-tools")]
     pub fn led_endpoint(&self) -> Option<String> {
         self.led
             .ip
