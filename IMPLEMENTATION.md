@@ -3869,9 +3869,9 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 **Branch:** `feat/118-tool-trait-proc-macro`  
 **PR:** #198 (open)
 
-**Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
+**Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (58 tools across 21 files).
 
-**Merge criterion:** All 36 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`.
+**Merge criterion:** All 58 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`.
 
 **Sub-deliverable status:**
 
@@ -3879,7 +3879,7 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 |----------|--------|-------------|
 | Trait + macro (Commit 1-3) | ✅ COMPLETED in PR #198 | `Tool` trait + `#[sprachspiel::tool]` proc-macro in `sprachspiel-tool-derive/`; dual-impl pattern preserves ollama-rs compat. |
 | Bridge (Commit 2, 4, 5) | ✅ COMPLETED in PR #198 | Blanket impl, ToolRegistrar, CustomCoordinator all adopt `crate::tools::Tool` as primary bound. |
-| Tool migration (Commit 6) | ✅ COMPLETED in PR #198 | All 36 tools migrated to `#[sprachspiel::tool]`. |
+| Tool migration (Commit 6) | ✅ COMPLETED in PR #198 | All 58 tools migrated to `#[sprachspiel::tool]`. |
 | DDG reimpl (Commit 7) | ✅ COMPLETED in PR #198 | `DdgSearcher` reimplemented ad-hoc, replacing ollama-rs's `DDGSearcher`. |
 | Serper removal (Commit 8) | ✅ COMPLETED in PR #198 | `serper-tools` feature flag and all Serper code removed. MCP-based search planned post-W2. |
 
