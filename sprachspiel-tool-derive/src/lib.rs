@@ -109,7 +109,7 @@ fn function_impl(input: ItemFn) -> syn::Result<TokenStream2> {
 
         #tool_impl
     )
-    .into())
+    )
 }
 
 fn build_tool_impl(
@@ -274,17 +274,17 @@ fn extract_docs(input: &ItemFn) -> Option<FunctionDocs> {
             // identifier. This avoids stealing unrelated bullets like
             // "* See also `Math` - `std::ops`" (multi-word content in
             // backticks) or "* Veja também X - Y" (no backticks).
-            if let Some(rest) = line.strip_prefix("* `") {
-                if let Some(close_idx) = rest.find('`') {
-                    let param_name = &rest[..close_idx];
-                    // The name must be a valid Rust identifier
-                    if is_valid_rust_ident(param_name) {
-                        let after_name = &rest[close_idx + 1..];
-                        if let Some(after_dash) = after_name.strip_prefix(" - ") {
-                            let param_doc = after_dash.trim();
-                            parameter_docs.insert(param_name.to_owned(), param_doc.to_owned());
-                            return false;
-                        }
+            if let Some(rest) = line.strip_prefix("* `")
+                && let Some(close_idx) = rest.find('`')
+            {
+                let param_name = &rest[..close_idx];
+                // The name must be a valid Rust identifier
+                if is_valid_rust_ident(param_name) {
+                    let after_name = &rest[close_idx + 1..];
+                    if let Some(after_dash) = after_name.strip_prefix(" - ") {
+                        let param_doc = after_dash.trim();
+                        parameter_docs.insert(param_name.to_owned(), param_doc.to_owned());
+                        return false;
                     }
                 }
             }

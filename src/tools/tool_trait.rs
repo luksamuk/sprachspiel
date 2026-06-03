@@ -14,8 +14,8 @@
 
 use std::future::Future;
 
-use schemars::r#gen::SchemaSettings;
-use schemars::schema::RootSchema;
+use schemars::generate::SchemaSettings;
+use schemars::Schema;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 
@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 ///
 /// Returns either a successful string (passed back to the LLM) or a boxed
 /// error (propagated to the caller).
+#[allow(dead_code)] // W2: used in Commit 6 (migration)
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Tool parameter trait: `DeserializeOwned + JsonSchema`.
@@ -36,13 +37,22 @@ impl<P: DeserializeOwned + JsonSchema> Parameters for P {}
 
 /// Tool trait: our own implementation, decoupled from `ollama-rs`.
 ///
-/// **W2 Wave Context (Issue #118):** This trait is defined now so that
-/// `#[sprachspiel::tool]` tools can be written today. The trait will be
-/// adopted by the coordinator in #121 (Consumer Migration). Until then,
-/// the trait is unused in production code (only the `#[cfg(test)]` tests
-/// exercise it). The `#[allow(dead_code)]` is the W2 mini-sprint
-/// flexibility: code prepared for W2 future use is acceptable.
-#[allow(dead_code)] // W2: used in #121 Consumer Migration
+/// `#[sprachspiel::tool]`-generated tools implement this trait. The blanket
+/// impl below allows `#[ollama_rs::function]`-generated tools (and ollama-rs
+/// built-in types like `DDGSearcher`) to be used wherever our `Tool` is
+/// expected. This is the bridge that lets us migrate tools incrementally
+/// while keeping ollama-rs coexistent.
+///
+/// # W2 Wave Context (Issue #118)
+///
+/// This trait is the foundation of the W2 Provider Chain. In #123 (Remove
+/// ollama-rs), the blanket impl and the `ollama_rs::Tool` reference go away.
+///
+/// The `#[allow(dead_code)]` here is removed in the migration commit (Commit 10)
+/// when `CustomCoordinator` and `ToolRegistrar` adopt our `Tool` as their
+/// primary bound. Until then, the trait is "live" but unreachable from the
+/// public API surface.
+#[allow(dead_code)] // W2: will be removed in Commit 10 (migration)
 pub trait Tool: Send + Sync {
     type Params: Parameters;
 
@@ -53,6 +63,63 @@ pub trait Tool: Send + Sync {
     /// To allow the LLM to recover from the error, return the error as a
     /// string via `Ok(error_message)`.
     fn call(&mut self, parameters: Self::Params) -> impl Future<Output = ToolResult> + Send + Sync;
+}
+
+/// Blanket impl: any ollama-rs `Tool` automatically implements our `Tool`.
+///
+/// This is the **forward bridge** for the W2 migration:
+///
+/// - Tools using `#[ollama_rs::function]` (still the majority in this PR's
+///   transition window) get our `Tool` impl for free.
+/// - ollama-rs built-in types like `DDGSearcher` also work via this bridge.
+/// - `ToolRegistrar` and the coordinator can then accept `crate::tools::Tool`
+///   uniformly.
+///
+/// The reverse direction (`impl<T: crate::tools::Tool> ollama_rs::Tool for T`)
+/// is blocked by orphan rules; the proc-macro emits a `#[sprachspiel::tool]`
+/// tool's `ollama_rs::Tool` impl explicitly (see `sprachspiel-tool-derive`).
+///
+/// We require `<T::Params as Parameters>: Sync` to satisfy our `Tool::call`
+/// signature (which demands `impl Future + Send + Sync`). The ollama-rs
+/// `Tool::Params` is `DeserializeOwned + JsonSchema`; ollama-rs's
+/// `ToolHolder`-bound call path doesn't need `Sync`, so we add the bound
+/// here.
+/// Blanket impl: any ollama-rs `Tool` automatically implements our `Tool`.
+///
+/// This is the **forward bridge** for the W2 migration:
+///
+/// - Tools using `#[ollama_rs::function]` (still the majority in this PR's
+///   transition window) get our `Tool` impl for free.
+/// - ollama-rs built-in types like `DDGSearcher` also work via this bridge.
+/// - `ToolRegistrar` and the coordinator can then accept `crate::tools::Tool`
+///   uniformly.
+///
+/// The reverse direction (`impl<T: crate::tools::Tool> ollama_rs::Tool for T`)
+/// is blocked by orphan rules; the proc-macro emits a `#[sprachspiel::tool]`
+/// tool's `ollama_rs::Tool` impl explicitly (see `sprachspiel-tool-derive`).
+///
+/// We require `<T::Params as Parameters>: Send + Sync` to satisfy our
+/// `Tool::call` signature (which demands `impl Future + Send + Sync`). The
+/// ollama-rs `Tool::Params` is `DeserializeOwned + JsonSchema` (same shape
+/// as our `Parameters`); `Send + Sync` is added here as a stricter bound.
+impl<T> Tool for T
+where
+    T: ollama_rs::generation::tools::Tool,
+    T::Params: ollama_rs::generation::tools::Parameters + Send + Sync,
+{
+    type Params = T::Params;
+
+    fn name() -> &'static str {
+        <T as ollama_rs::generation::tools::Tool>::name()
+    }
+
+    fn description() -> &'static str {
+        <T as ollama_rs::generation::tools::Tool>::description()
+    }
+
+    async fn call(&mut self, parameters: Self::Params) -> ToolResult {
+        <T as ollama_rs::generation::tools::Tool>::call(self, parameters).await
+    }
 }
 
 /// A tool's JSON schema info, generated from a `Tool` impl.
@@ -117,7 +184,7 @@ pub struct ToolFunctionInfo {
     /// Tool description (from docstring).
     pub description: String,
     /// JSON schema of the tool's parameters (root schema).
-    pub parameters: RootSchema,
+    pub parameters: Schema,
 }
 
 #[cfg(test)]
