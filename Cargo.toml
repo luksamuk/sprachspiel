@@ -9,6 +9,9 @@ edition = "2024"
 name = "sprach"
 path = "src/main.rs"
 
+[workspace]
+members = [".", "sprachspiel-tool-derive"]
+
 [features]
 default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
 all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex", "sandbox"]

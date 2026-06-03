@@ -12,3 +12,10 @@ proc-macro = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+schemars = "0.8"
+serde_json = "1"
+trybuild = "1"
+tokio = { version = "1", features = ["rt", "macros"] }

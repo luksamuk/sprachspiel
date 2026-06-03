@@ -96,9 +96,6 @@ fn function_impl(input: ItemFn) -> syn::Result<TokenStream2> {
     Ok(quote_spanned!(input.span() =>
         #[doc(hidden)]
         mod #function_module_name {
-            #[allow(unused_imports)]
-            use super::*;
-
             // Use absolute paths to the derive traits. The parent crate
             // (sprachspiel) has schemars and serde as direct dependencies,
             // so `::schemars::JsonSchema` and `::serde::Deserialize` resolve
@@ -272,15 +269,26 @@ fn extract_docs(input: &ItemFn) -> Option<FunctionDocs> {
         .map(str::trim)
         .skip_while(|s| s.is_empty())
         .filter(|line| {
-            if line.starts_with('*') && line.contains('-') {
-                let (param_name, param_doc) = line[1..].trim().split_once('-').unwrap();
-                let param_name = param_name.trim();
-                let param_doc = param_doc.trim();
-                parameter_docs.insert(param_name.to_owned(), param_doc.to_owned());
-                false
-            } else {
-                true
+            // Heuristic: parameter doc lines must be in the exact format
+            // `* `param_name` - desc` where `param_name` is a valid Rust
+            // identifier. This avoids stealing unrelated bullets like
+            // "* See also `Math` - `std::ops`" (multi-word content in
+            // backticks) or "* Veja também X - Y" (no backticks).
+            if let Some(rest) = line.strip_prefix("* `") {
+                if let Some(close_idx) = rest.find('`') {
+                    let param_name = &rest[..close_idx];
+                    // The name must be a valid Rust identifier
+                    if is_valid_rust_ident(param_name) {
+                        let after_name = &rest[close_idx + 1..];
+                        if let Some(after_dash) = after_name.strip_prefix(" - ") {
+                            let param_doc = after_dash.trim();
+                            parameter_docs.insert(param_name.to_owned(), param_doc.to_owned());
+                            return false;
+                        }
+                    }
+                }
             }
+            true
         })
         .collect::<Vec<_>>();
 
@@ -298,6 +306,17 @@ fn extract_docs(input: &ItemFn) -> Option<FunctionDocs> {
             parameter_docs,
         })
     }
+}
+
+/// Returns true if `s` is a non-empty valid Rust identifier
+/// (starts with letter or underscore, followed by letters, digits, or underscores).
+fn is_valid_rust_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_')
 }
 
 #[derive(Debug, Clone)]

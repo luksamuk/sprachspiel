@@ -1,0 +1,11 @@
+error: tool function must be async
+ --> tests/ui/not_async.rs:5:5
+  |
+5 | pub fn not_async(x: i32) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+  |     ^^
+
+error[E0601]: `main` function not found in crate `$CRATE`
+ --> tests/ui/not_async.rs:7:2
+  |
+7 | }
+  |  ^ consider adding a `main` function to `$DIR/tests/ui/not_async.rs`

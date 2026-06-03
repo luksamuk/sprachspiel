@@ -1,0 +1,11 @@
+error: tool function must be documented
+ --> tests/ui/self_arg.rs:8:15
+  |
+8 |     pub async fn has_self(&self, x: i32) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+  |               ^^
+
+error[E0601]: `main` function not found in crate `$CRATE`
+  --> tests/ui/self_arg.rs:11:2
+   |
+11 | }
+   |  ^ consider adding a `main` function to `$DIR/tests/ui/self_arg.rs`
