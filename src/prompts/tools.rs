@@ -11,8 +11,7 @@
 //! Tools are included based on compile-time feature flags:
 //! - `weather-tools`: Weather tools
 //! - `pokemon-tools`: Pokémon API tools
-//! - `serper-tools`: Serper API web search
-//! - `search-tools`: DuckDuckGo web search (fallback)
+//! - `search-tools`: DuckDuckGo web search
 //! - `file-tools`: File operation tools
 //! - `calc-tools`: Calculator
 //! - `system-tools`: System information tools
@@ -70,22 +69,8 @@ Available: fetch_pokemon, fetch_pokemon_stats, fetch_pokemon_moves, etc."#
     )
 }
 
-/// Serper web search section (preferred)
-#[cfg(feature = "serper-tools")]
-fn serper_search_section(blacklist: &HashSet<&str>) -> Option<String> {
-    if blacklist.contains("web_search") {
-        return None;
-    }
-    Some(
-        r#"### WEB SEARCH TOOLS
-Use for general knowledge, current events, or anything NOT about Pokémon or weather.
-Available: web_search, web_search_news"#
-            .to_string(),
-    )
-}
-
-/// DuckDuckGo web search section (fallback)
-#[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+/// DuckDuckGo web search section
+#[cfg(feature = "search-tools")]
 fn ddg_search_section(blacklist: &HashSet<&str>) -> Option<String> {
     let tools = ["web_search", "web_search_news", "web_scrape"];
     let available = filter_available(&tools, blacklist);
@@ -480,12 +465,7 @@ pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
         sections.push(s);
     }
 
-    #[cfg(feature = "serper-tools")]
-    if let Some(s) = serper_search_section(blacklist) {
-        sections.push(s);
-    }
-
-    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+    #[cfg(feature = "search-tools")]
     if let Some(s) = ddg_search_section(blacklist) {
         sections.push(s);
     }
@@ -562,7 +542,7 @@ mod tests {
         let context = build_tool_context(&blacklist);
 
         // Web search should be filtered if blacklisted
-        #[cfg(feature = "serper-tools")]
+        #[cfg(feature = "search-tools")]
         {
             // With web_search blacklisted, the section may or may not appear
             // depending on whether web_search_news is also blacklisted

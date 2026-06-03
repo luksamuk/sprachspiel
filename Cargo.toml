@@ -13,15 +13,14 @@ path = "src/main.rs"
 members = [".", "sprachspiel-tool-derive"]
 
 [features]
-default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
+default = ["weather-tools", "file-tools", "calc-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "latex"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
 # scraper is used to clean HTML before converting to markdown
 search-tools = ["dep:html2md", "dep:scraper"]
-serper-tools = []
 file-tools = []
 # calc is also in ollama-rs, but we need direct access for calculate tool
 calc-tools = []

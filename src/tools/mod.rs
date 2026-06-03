@@ -13,7 +13,6 @@
 //! - `led-tools` — LED strip control (Raspberry Pi Pico W)
 //! - `pokemon-tools` — Pokédex lookup
 //! - `search-tools` — built-in web search
-//! - `serper-tools` — Serper.dev API search
 //! - `system-tools` — system info commands
 //! - `document-tools` — document import (PDF, DOCX, etc.)
 //!
@@ -42,8 +41,6 @@ pub mod registry;
 pub mod remember;
 #[cfg(feature = "search-tools")]
 pub mod search_builtin;
-#[cfg(feature = "serper-tools")]
-pub mod serper;
 #[cfg(feature = "system-tools")]
 pub mod system;
 pub mod todo;
