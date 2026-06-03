@@ -39,9 +39,7 @@ mod tools {
 /// # Arguments
 /// * `name` - The name to greet
 #[tool]
-pub async fn hello_world(
-    name: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn hello_world(name: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     Ok(format!("Hello, {}!", name))
 }
 
@@ -110,9 +108,7 @@ fn test_macro_multi_param_call() {
         .build()
         .unwrap();
     let mut tool = add;
-    let result = rt.block_on(async {
-        tool.call(__add_data::__add__Params { a: 2, b: 3 }).await
-    });
+    let result = rt.block_on(async { tool.call(__add_data::__add__Params { a: 2, b: 3 }).await });
     assert_eq!(result.unwrap(), "5");
 }
 

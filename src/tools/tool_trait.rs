@@ -1,4 +1,4 @@
-//! Our own `Tool` trait and supporting types.
+//! Our own `Tool` trait.
 //!
 //! This module decouples the tool system from `ollama-rs`. The `#[sprachspiel::tool]`
 //! proc-macro generates an impl of this trait for each tool function. The trait
@@ -14,9 +14,7 @@
 
 use std::future::Future;
 
-use schemars::Schema;
-use schemars::generate::SchemaSettings;
-use schemars::{JsonSchema, SchemaGenerator};
+use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 
 /// Result type for tool execution.
@@ -58,71 +56,10 @@ pub trait Tool: Send + Sync {
     fn call(&mut self, parameters: Self::Params) -> impl Future<Output = ToolResult> + Send + Sync;
 }
 
-/// A tool's JSON schema info, generated from a `Tool` impl.
-///
-/// **W2 Wave Context:** Used by the LLM tool schema serialization layer.
-/// This is the project's own `ToolInfo` (replaces the equivalent
-/// ollama-rs struct for tools that implement `crate::tools::Tool`).
-/// The fields mirror the JSON schema format used by the LLM API.
-///
-/// `ToolInfo`/`ToolType`/`ToolFunctionInfo` are exposed for `#[cfg(test)]`
-/// and as the canonical schema for any future `ToolRegistrar` consumer
-/// that prefers our types over `CustomToolInfo` (in `custom_coordinator.rs`).
-/// They are kept `pub` so external integrations can use them, but they
-/// are not consumed by the runtime coordinator today.
-#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers + #[cfg(test)]
-#[derive(Clone, Debug)]
-pub struct ToolInfo {
-    /// The tool type discriminator (always "function" for now).
-    pub tool_type: ToolType,
-    /// The tool's function info (name, description, parameters).
-    pub function: ToolFunctionInfo,
-}
-
-impl ToolInfo {
-    /// Create a new `ToolInfo` for the given `Tool` type.
-    #[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
-    pub fn new<P: Parameters, T: Tool<Params = P>>() -> Self {
-        let mut settings = SchemaSettings::draft07();
-        settings.inline_subschemas = true;
-        let generator: SchemaGenerator = settings.into_generator();
-
-        let parameters = generator.into_root_schema_for::<P>();
-
-        Self {
-            tool_type: ToolType::Function,
-            function: ToolFunctionInfo {
-                name: T::name().to_string(),
-                description: T::description().to_string(),
-                parameters,
-            },
-        }
-    }
-}
-
-/// Tool type discriminator.
-#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
-#[derive(Clone, Debug)]
-pub enum ToolType {
-    /// A function-style tool.
-    Function,
-}
-
-/// Tool function info (name, description, JSON schema parameters).
-#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
-#[derive(Clone, Debug)]
-pub struct ToolFunctionInfo {
-    /// Tool name (function name).
-    pub name: String,
-    /// Tool description (from docstring).
-    pub description: String,
-    /// JSON schema of the tool's parameters (root schema).
-    pub parameters: Schema,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm_provider::types::ToolInfo as ProviderToolInfo;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
 
@@ -177,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_tool_info_generation() {
-        let info = ToolInfo::new::<ExampleParams, ExampleTool>();
+        let info = ProviderToolInfo::new::<ExampleParams, ExampleTool>();
         assert_eq!(info.function.name, "example_tool");
         assert!(info.function.description.contains("minimal example tool"));
     }

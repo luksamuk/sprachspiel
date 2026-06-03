@@ -23,6 +23,7 @@ pub mod external;
 mod facts;
 mod feedback;
 pub mod logging;
+mod llm_provider;
 mod macros;
 mod markdown;
 mod ocr;
