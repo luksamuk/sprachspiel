@@ -80,9 +80,10 @@ tui-markdown = { version = "0.3", features = ["highlight-code"] }
 unicode-segmentation = "1.11"
 # scraper is also in ollama-rs, needed for finance tool
 scraper = { version = "0.22", optional = true }
-# schemars is needed by the Tool trait for JSON schema generation.
-# Pinned to 1.x to match the version used by ollama-rs (0.3.4) so the
-# blanket impl `impl<T: ollama_rs::Tool> crate::tools::Tool for T` compiles.
+# schemars is needed by the Tool trait for JSON schema generation
+# (CustomToolInfo::new + the llm_provider ToolInfo family). Pinned to 1.x
+# to match the version used by ollama-rs 0.3.4 (a transitive dependency
+# that will be removed in #123).
 schemars = "1"
 # serde_derive is needed by the Tool trait (re-exported to derived Params structs)
 serde = { version = "1.0", features = ["derive"] }

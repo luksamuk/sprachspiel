@@ -542,7 +542,8 @@ ollama_port = 11434
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
 #   - web_search, web_search_news, web_scrape (DuckDuckGo - may fail due to CAPTCHA)
 #
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Note: DuckDuckGo tools may be blocked by CAPTCHA. MCP-based search is
+# planned post-W2 (issue TBD); until then, this is the only web search option.
 # Default: [] (all tools enabled)
 blacklist = []
 
