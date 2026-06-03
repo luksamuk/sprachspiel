@@ -14,8 +14,8 @@
 
 use std::future::Future;
 
-use schemars::generate::SchemaSettings;
 use schemars::Schema;
+use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 
@@ -58,20 +58,6 @@ pub trait Tool: Send + Sync {
     fn call(&mut self, parameters: Self::Params) -> impl Future<Output = ToolResult> + Send + Sync;
 }
 
-/// Blanket impl: any ollama-rs `Tool` automatically implements our `Tool`.
-///
-/// This is the **forward bridge** for the W2 migration:
-///
-/// - Tools using `#[ollama_rs::function]` (still the majority in this PR's
-///   transition window) get our `Tool` impl for free.
-/// - ollama-rs built-in types like `DDGSearcher` also work via this bridge.
-/// - `ToolRegistrar` and the coordinator can then accept `crate::tools::Tool`
-///   uniformly.
-///
-/// The reverse direction (`impl<T: crate::tools::Tool> ollama_rs::Tool for T`)
-/// is blocked by orphan rules; the proc-macro emits a `#[sprachspiel::tool]`
-/// tool's `ollama_rs::Tool` impl explicitly (see `sprachspiel-tool-derive`).
-///
 /// A tool's JSON schema info, generated from a `Tool` impl.
 ///
 /// **W2 Wave Context:** Used by the LLM tool schema serialization layer.
