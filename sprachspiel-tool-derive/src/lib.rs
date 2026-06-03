@@ -124,8 +124,16 @@ fn build_tool_impl(
     let function_description = &docs.description;
 
     let function_params_struct_name = &params_struct.name;
-    let function_params_struct_field_names = params_struct.fields.iter().map(|field| &field.name);
+    let function_params_struct_field_names: Vec<_> =
+        params_struct.fields.iter().map(|field| &field.name).collect();
+    let function_params_struct_field_names2 = function_params_struct_field_names.clone();
 
+    // Emit TWO trait impls: our own `crate::tools::Tool` and ollama-rs's
+    // `ollama_rs::generation::tools::Tool`. The reverse direction
+    // (`impl<T: crate::tools::Tool> ollama_rs::Tool for T`) is blocked
+    // by orphan rules, so the macro emits both. This is the **dual-impl**
+    // approach for the W2 transition window (resolved in #123 Remove
+    // ollama-rs).
     quote_spanned!(input.span() =>
         impl crate::tools::Tool for #function_name {
             type Params = #function_module_name::#function_params_struct_name;
@@ -144,6 +152,27 @@ fn build_tool_impl(
                 &mut self,
                 Self::Params { #(#function_params_struct_field_names),* }: Self::Params,
             ) -> crate::tools::ToolResult {
+                #function_body
+            }
+        }
+
+        impl ::ollama_rs::generation::tools::Tool for #function_name {
+            type Params = #function_module_name::#function_params_struct_name;
+
+            #[inline]
+            fn name() -> &'static str {
+                #function_name_str
+            }
+
+            #[inline]
+            fn description() -> &'static str {
+                #function_description
+            }
+
+            async fn call(
+                &mut self,
+                Self::Params { #(#function_params_struct_field_names2),* }: Self::Params,
+            ) -> ::ollama_rs::generation::tools::Result<String> {
                 #function_body
             }
         }
