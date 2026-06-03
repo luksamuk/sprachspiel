@@ -3862,10 +3862,11 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 #### Tool Trait + Proc Macro `#[sprachspiel::tool]` — #118 [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Depends on:** None (can start in parallel with #116)  
 **Estimated effort:** 1–1.5 weeks  
-**Merge criterion:** All 36 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`
+**Issue:** #118  
+**Branch:** `feat/118-tool-trait-proc-macro`
 
 **Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
 
