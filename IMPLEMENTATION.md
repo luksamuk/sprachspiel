@@ -3625,11 +3625,12 @@ Features that enhance core functionality before Sprach 2.0 work begins.
 
 ### Retry Threshold with Backoff — #116 [M1]
 
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED  
 **Depends on:** None  
 **Estimated effort:** 1.5–2 days  
 **Issue:** #116  
-**Branch:** `feat/116-retry-threshold-backoff`
+**Branch:** `feat/116-retry-threshold-backoff`  
+**PR:** #197 (merged 2026-06-02)
 
 **Goal:** Make server errors (500, OOM, cold start) and tool execution errors recoverable with exponential backoff, instead of immediately failing.
 
@@ -3748,6 +3749,31 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 17. `test_retry_after_field_is_unused_until_122` — the field is set but never read (will be wired in #122)
 
 Plus regression tests: existing tests in `coordinator.rs:190-218` for `classify_ollama_error` continue to pass.
+
+#### Implementation Summary (post-merge)
+
+PR #197 was merged on 2026-06-02 after addressing all 5 review threads. Final state:
+
+**What landed:**
+- `src/retry.rs` (NEW) — 389 lines, 20 unit tests for `RetryCategory` classification, `retry_delay`, `max_attempts`, `is_retryable`, `sleep_or_cancel`
+- `src/chat/recovery.rs` (NEW) — `push_tool_result` wrapper, 2 unit tests
+- `src/capabilities.rs` — added `check_server_health()` with 3s timeout, 2 unit tests (fixes startup hang)
+- `src/chat/coordinator.rs` — `MAX_RETRIES` and `is_ollama_error_recoverable` removed (review feedback, YAGNI)
+- `src/chat/core.rs` — both retry loops (send_message, send_message_stream) migrated; `// TODO(#120)` comments
+- `src/chat/custom_coordinator.rs` — `InternalToolError` → push tool message; exception documented
+- `src/chat/repl.rs` — `check_server_health()` call before DB init with clear error on failure
+- `src/query/executor.rs` — query mode retry loop migrated; `// TODO(#120)` comment
+
+**Final test count:** 2831 tests pass (4 tests removed: `test_is_ollama_error_recoverable` × 4 cases; 3 `test_format_*` retained).
+
+**Review feedback addressed:**
+- Thread 1: `MAX_RETRIES` removed (zero call sites in production, YAGNI)
+- Thread 2: `is_ollama_error_recoverable` removed (no production callers, only deprecated tests)
+- Thread 3: `MAX_RATELIMIT_RETRIES` removed (no reader anywhere)
+- Thread 4: `RateLimitRetry` variant kept (defensible by W2 policy, verified in tests)
+- Thread 5: Wrapper exception documented in 2 places (custom_coordinator.rs:942 + recovery.rs docstring)
+
+**W2 closure status:** 1 of 9 cards in the W2 Provider Chain completed. Remaining: #118, #119, #120, #121, #122, #123, #11, #72 (parent).
 
 #### Known Limitations (resolved by #120)
 
