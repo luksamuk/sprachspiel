@@ -23,7 +23,6 @@ use serde::de::DeserializeOwned;
 ///
 /// Returns either a successful string (passed back to the LLM) or a boxed
 /// error (propagated to the caller).
-#[allow(dead_code)] // W2: used in Commit 6 (migration)
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Tool parameter trait: `DeserializeOwned + JsonSchema`.
@@ -37,22 +36,16 @@ impl<P: DeserializeOwned + JsonSchema> Parameters for P {}
 
 /// Tool trait: our own implementation, decoupled from `ollama-rs`.
 ///
-/// `#[sprachspiel::tool]`-generated tools implement this trait. The blanket
-/// impl below allows `#[ollama_rs::function]`-generated tools (and ollama-rs
-/// built-in types like `DDGSearcher`) to be used wherever our `Tool` is
-/// expected. This is the bridge that lets us migrate tools incrementally
-/// while keeping ollama-rs coexistent.
+/// `#[sprachspiel::tool]`-generated tools implement this trait (along with
+/// `ollama_rs::generation::tools::Tool` via the dual-impl macro, so they
+/// remain compatible with `ollama_rs::coordinator::Coordinator` until
+/// #123 removes ollama-rs entirely).
 ///
 /// # W2 Wave Context (Issue #118)
 ///
 /// This trait is the foundation of the W2 Provider Chain. In #123 (Remove
-/// ollama-rs), the blanket impl and the `ollama_rs::Tool` reference go away.
-///
-/// The `#[allow(dead_code)]` here is removed in the migration commit (Commit 10)
-/// when `CustomCoordinator` and `ToolRegistrar` adopt our `Tool` as their
-/// primary bound. Until then, the trait is "live" but unreachable from the
-/// public API surface.
-#[allow(dead_code)] // W2: will be removed in Commit 10 (migration)
+/// ollama-rs), the dual-impl macro and the ollama-rs trait reference go
+/// away, leaving this trait as the sole Tool trait in the codebase.
 pub trait Tool: Send + Sync {
     type Params: Parameters;
 
@@ -79,56 +72,19 @@ pub trait Tool: Send + Sync {
 /// is blocked by orphan rules; the proc-macro emits a `#[sprachspiel::tool]`
 /// tool's `ollama_rs::Tool` impl explicitly (see `sprachspiel-tool-derive`).
 ///
-/// We require `<T::Params as Parameters>: Sync` to satisfy our `Tool::call`
-/// signature (which demands `impl Future + Send + Sync`). The ollama-rs
-/// `Tool::Params` is `DeserializeOwned + JsonSchema`; ollama-rs's
-/// `ToolHolder`-bound call path doesn't need `Sync`, so we add the bound
-/// here.
-/// Blanket impl: any ollama-rs `Tool` automatically implements our `Tool`.
-///
-/// This is the **forward bridge** for the W2 migration:
-///
-/// - Tools using `#[ollama_rs::function]` (still the majority in this PR's
-///   transition window) get our `Tool` impl for free.
-/// - ollama-rs built-in types like `DDGSearcher` also work via this bridge.
-/// - `ToolRegistrar` and the coordinator can then accept `crate::tools::Tool`
-///   uniformly.
-///
-/// The reverse direction (`impl<T: crate::tools::Tool> ollama_rs::Tool for T`)
-/// is blocked by orphan rules; the proc-macro emits a `#[sprachspiel::tool]`
-/// tool's `ollama_rs::Tool` impl explicitly (see `sprachspiel-tool-derive`).
-///
-/// We require `<T::Params as Parameters>: Send + Sync` to satisfy our
-/// `Tool::call` signature (which demands `impl Future + Send + Sync`). The
-/// ollama-rs `Tool::Params` is `DeserializeOwned + JsonSchema` (same shape
-/// as our `Parameters`); `Send + Sync` is added here as a stricter bound.
-impl<T> Tool for T
-where
-    T: ollama_rs::generation::tools::Tool,
-    T::Params: ollama_rs::generation::tools::Parameters + Send + Sync,
-{
-    type Params = T::Params;
-
-    fn name() -> &'static str {
-        <T as ollama_rs::generation::tools::Tool>::name()
-    }
-
-    fn description() -> &'static str {
-        <T as ollama_rs::generation::tools::Tool>::description()
-    }
-
-    async fn call(&mut self, parameters: Self::Params) -> ToolResult {
-        <T as ollama_rs::generation::tools::Tool>::call(self, parameters).await
-    }
-}
-
 /// A tool's JSON schema info, generated from a `Tool` impl.
 ///
 /// **W2 Wave Context:** Used by the LLM tool schema serialization layer.
-// Currently unused because no `#[sprachspiel::tool]` tools are registered
-// with the coordinator yet (gradual migration). Resolved in #121 (Consumer
-// Migration) when the custom coordinator adopts our `ToolInfo` directly.
-#[allow(dead_code)] // W2: used in #121 Consumer Migration
+/// This is the project's own `ToolInfo` (replaces the equivalent
+/// ollama-rs struct for tools that implement `crate::tools::Tool`).
+/// The fields mirror the JSON schema format used by the LLM API.
+///
+/// `ToolInfo`/`ToolType`/`ToolFunctionInfo` are exposed for `#[cfg(test)]`
+/// and as the canonical schema for any future `ToolRegistrar` consumer
+/// that prefers our types over `CustomToolInfo` (in `custom_coordinator.rs`).
+/// They are kept `pub` so external integrations can use them, but they
+/// are not consumed by the runtime coordinator today.
+#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers + #[cfg(test)]
 #[derive(Clone, Debug)]
 pub struct ToolInfo {
     /// The tool type discriminator (always "function" for now).
@@ -139,7 +95,7 @@ pub struct ToolInfo {
 
 impl ToolInfo {
     /// Create a new `ToolInfo` for the given `Tool` type.
-    #[allow(dead_code)] // Used by tests in #[cfg(test)]; will be used in #121
+    #[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
     pub fn new<P: Parameters, T: Tool<Params = P>>() -> Self {
         let mut settings = SchemaSettings::draft07();
         settings.inline_subschemas = true;
@@ -159,13 +115,7 @@ impl ToolInfo {
 }
 
 /// Tool type discriminator.
-///
-/// **W2 Wave Context:** Used by the LLM tool schema serialization
-/// layer. Currently unused because no `#[sprachspiel::tool]` tools
-/// are registered with the coordinator yet (gradual migration).
-/// Resolved in #121 (Consumer Migration) when the custom coordinator
-/// adopts our `ToolInfo` directly.
-#[allow(dead_code)]
+#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
 #[derive(Clone, Debug)]
 pub enum ToolType {
     /// A function-style tool.
@@ -173,10 +123,7 @@ pub enum ToolType {
 }
 
 /// Tool function info (name, description, JSON schema parameters).
-///
-/// **W2 Wave Context:** Same as `ToolType` — placeholder for #121
-/// migration of the custom coordinator.
-#[allow(dead_code)]
+#[allow(dead_code)] // W2: kept for future ToolRegistrar consumers
 #[derive(Clone, Debug)]
 pub struct ToolFunctionInfo {
     /// Tool name (function name).
