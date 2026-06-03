@@ -27,10 +27,10 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote_spanned, ToTokens};
+use quote::{ToTokens, quote_spanned};
 use syn::{
-    spanned::Spanned as _, Error, Expr, ExprLit, FnArg, Ident, ItemFn, Lit, Meta, MetaNameValue,
-    Pat, Type,
+    Error, Expr, ExprLit, FnArg, Ident, ItemFn, Lit, Meta, MetaNameValue, Pat, Type,
+    spanned::Spanned as _,
 };
 
 /// The `#[sprachspiel::tool]` proc-macro attribute.
@@ -79,17 +79,25 @@ fn function_impl(input: ItemFn) -> syn::Result<TokenStream2> {
         ));
     }
 
-    let docs = extract_docs(&input)
-        .ok_or_else(|| Error::new_spanned(input.sig.fn_token, "tool function must be documented"))?;
+    let docs = extract_docs(&input).ok_or_else(|| {
+        Error::new_spanned(input.sig.fn_token, "tool function must be documented")
+    })?;
 
     let vis = &input.vis;
     let function_name = &input.sig.ident;
-    let function_module_name =
-        Ident::new(&format!("__{}_data", input.sig.ident), input.sig.ident.span());
+    let function_module_name = Ident::new(
+        &format!("__{}_data", input.sig.ident),
+        input.sig.ident.span(),
+    );
 
     let params_struct = build_params_struct(&input, &docs)?;
-    let tool_impl =
-        build_tool_impl(&input, &docs, &params_struct, function_name, &function_module_name);
+    let tool_impl = build_tool_impl(
+        &input,
+        &docs,
+        &params_struct,
+        function_name,
+        &function_module_name,
+    );
 
     let function_params_struct_definition = &params_struct.tokens;
 
@@ -108,8 +116,7 @@ fn function_impl(input: ItemFn) -> syn::Result<TokenStream2> {
         #vis struct #function_name;
 
         #tool_impl
-    )
-    )
+    ))
 }
 
 fn build_tool_impl(
@@ -124,8 +131,11 @@ fn build_tool_impl(
     let function_description = &docs.description;
 
     let function_params_struct_name = &params_struct.name;
-    let function_params_struct_field_names: Vec<_> =
-        params_struct.fields.iter().map(|field| &field.name).collect();
+    let function_params_struct_field_names: Vec<_> = params_struct
+        .fields
+        .iter()
+        .map(|field| &field.name)
+        .collect();
     let function_params_struct_field_names2 = function_params_struct_field_names.clone();
 
     // Emit TWO trait impls: our own `crate::tools::Tool` and ollama-rs's
