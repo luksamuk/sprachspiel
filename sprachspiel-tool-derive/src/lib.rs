@@ -90,10 +90,7 @@ fn function_impl(input: ItemFn) -> syn::Result<TokenStream2> {
     // failing because the function lacks a docstring.
     for arg in &input.sig.inputs {
         if let syn::FnArg::Receiver(receiver) = arg {
-            return Err(Error::new_spanned(
-                receiver,
-                "self argument is not allowed",
-            ));
+            return Err(Error::new_spanned(receiver, "self argument is not allowed"));
         }
         if let syn::FnArg::Typed(pat_type) = arg
             && !matches!(&*pat_type.pat, syn::Pat::Ident(_))
