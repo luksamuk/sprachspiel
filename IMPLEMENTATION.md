@@ -3862,40 +3862,57 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 #### Tool Trait + Proc Macro `#[sprachspiel::tool]` — #118 [M1]
 
-**Status:** 🔄 IN PROGRESS  
-**Depends on:** None (can start in parallel with #116)  
-**Estimated effort:** 1–1.5 weeks  
+**Status:** ✅ COMPLETED  
+**Depends on:** None  
+**Estimated effort:** 1.5 weeks (actual: ~2 weeks including review iteration)  
 **Issue:** #118  
 **Branch:** `feat/118-tool-trait-proc-macro`  
 **PR:** #198 (open)
 
 **Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
 
-**Files to create:**
+**Merge criterion:** All 36 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`.
+
+**Sub-deliverable status:**
+
+| Sub-item | Status | Description |
+|----------|--------|-------------|
+| Trait + macro (Commit 1-3) | ✅ COMPLETED in PR #198 | `Tool` trait + `#[sprachspiel::tool]` proc-macro in `sprachspiel-tool-derive/`; dual-impl pattern preserves ollama-rs compat. |
+| Bridge (Commit 2, 4, 5) | ✅ COMPLETED in PR #198 | Blanket impl, ToolRegistrar, CustomCoordinator all adopt `crate::tools::Tool` as primary bound. |
+| Tool migration (Commit 6) | ✅ COMPLETED in PR #198 | All 36 tools migrated to `#[sprachspiel::tool]`. |
+| DDG reimpl (Commit 7) | ✅ COMPLETED in PR #198 | `DdgSearcher` reimplemented ad-hoc, replacing ollama-rs's `DDGSearcher`. |
+| Serper removal (Commit 8) | ✅ COMPLETED in PR #198 | `serper-tools` feature flag and all Serper code removed. MCP-based search planned post-W2. |
+
+**W2 Wave Context — ollama-rs coexistence:**
+
+This PR achieves the migration while keeping ollama-rs as a dependency for the W2 wave (planned removal in #123). The migration uses a **dual-impl macro** (emits both `impl crate::tools::Tool` and `impl ollama_rs::Tool`) so all migrated tools work with both the ollama-rs `Coordinator` and our `CustomCoordinator` without per-tool changes. This is a **pragmatic compromise**: the project's own trait is now the primary surface, and ollama-rs becomes a downstream consumer rather than the source of truth.
+
+**Files created:**
 
 | File | Content |
 |------|---------|
-| `sprachspiel-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
-| `sprachspiel-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
-| `src/tools/tool_trait.rs` | Trait `Tool` with `name()`, `description()`, `Params`, `call()` + `ToolHolder`/`ToolInfo` types |
+| `sprachspiel-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2` |
+| `sprachspiel-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — emits dual `Tool` impl + `Params` struct with derives |
+| `sprachspiel-tool-derive/LICENSE` | MIT license |
+| `sprachspiel-tool-derive/NOTICE` | Attribution chain |
+| `sprachspiel-tool-derive/tests/macro_test.rs` | 7 unit tests for the macro |
+| `sprachspiel-tool-derive/tests/compile_fail.rs` | trybuild harness |
+| `sprachspiel-tool-derive/tests/ui/*.rs` + `.stderr` | 4 compile-fail tests |
+| `src/tools/tool_trait.rs` | `Tool` trait, `Parameters`, `ToolResult`, `ToolInfo`, `ToolType`, `ToolFunctionInfo` |
 
-**Our `Tool` trait:**
+**Files modified (24 tool files, registry, coordinator, prompts, settings, utils, consts, configs):**
 
-```rust
-pub trait Tool: Send + Sync {
-    type Params: DeserializeOwned + JsonSchema;
-    fn name() -> &'static str;
-    fn description() -> &'static str;
-    async fn call(params: Self::Params) -> Result<String, Box<dyn std::error::Error + Send + Sync>>;
-}
-```
-
-**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[sprachspiel::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
-
-**Files to modify:**
-- 12+ tool files — change `#[ollama_rs::function]` → `#[sprachspiel::tool]`
-- `src/tools/registry.rs` — `ToolRegistrar` uses new trait
-- `src/chat/custom_coordinator.rs` — `ToolHolder` impl uses new trait
+- 21 tool files migrated from `#[ollama_rs::function]` to `#[sprachspiel::tool]`
+- `src/tools/registry.rs` — `ToolRegistrar` adopts `crate::tools::Tool` as primary bound
+- `src/chat/custom_coordinator.rs` — `add_tool`, `ToolHolder`, `CustomToolInfo::new` adopt `crate::tools::Tool`
+- `src/tools/search_builtin.rs` — replaced ollama-rs `DDGSearcher` with our own implementation
+- `src/tools/serper.rs` — DELETED (Serper dropped in favor of MCP-based search)
+- `src/prompts/tools.rs` — removed Serper prompt section
+- `src/utils.rs` — removed `post_json_with_headers` (was Serper-only)
+- `src/consts/api.rs` — removed `SERPER_API_URL` constant
+- `src/settings.rs` — updated tool comment examples
+- `Cargo.toml` — removed `serper-tools` feature, added `[workspace]` to include proc-macro crate
+- `IMPLEMENTATION.md` — this section (status: COMPLETED, sub-deliverable table)
 
 ---
 
