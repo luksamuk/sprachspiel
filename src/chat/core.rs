@@ -584,6 +584,18 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
+                // W2 Wave Context (#116): retry classification is in place,
+                // but it only mitigates errors that ollama-rs RETURNS. When
+                // Ollama hangs (kill -STOP, packet drop, server stopped),
+                // ollama-rs does not return an error — the request hangs
+                // indefinitely and the user never sees the retry messages.
+                // TODO(#120): when OllamaProvider uses reqwest directly,
+                // configure explicit timeouts and propagate HTTP errors
+                // through ProviderError. Then this retry loop becomes
+                // effective for the ServerRetry (5s/10s/15s) and
+                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
+                // Acceptance criteria for #120 are documented in
+                // IMPLEMENTATION.md under W2 Wave Context.
                 let category = classify_for_retry(&e);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
@@ -830,6 +842,18 @@ pub async fn send_message_stream(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
+                // W2 Wave Context (#116): retry classification is in place,
+                // but it only mitigates errors that ollama-rs RETURNS. When
+                // Ollama hangs (kill -STOP, packet drop, server stopped),
+                // ollama-rs does not return an error — the request hangs
+                // indefinitely and the user never sees the retry messages.
+                // TODO(#120): when OllamaProvider uses reqwest directly,
+                // configure explicit timeouts and propagate HTTP errors
+                // through ProviderError. Then this retry loop becomes
+                // effective for the ServerRetry (5s/10s/15s) and
+                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
+                // Acceptance criteria for #120 are documented in
+                // IMPLEMENTATION.md under W2 Wave Context.
                 let category = classify_for_retry(&e);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;

@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::capabilities::ModelCapabilities;
+use crate::capabilities::check_server_health;
 use crate::config::ModelConfig;
 use crate::settings::Settings;
 
@@ -585,6 +586,23 @@ pub async fn run_chat_repl(
     } else {
         &settings.model.default
     };
+
+    // W2 Wave Context (#116): Health check the Ollama server BEFORE
+    // initializing the database. This prevents the startup hang reported
+    // during manual testing: when Ollama is unreachable, the heavy
+    // init_chat_database path could hang indefinitely because ollama-rs
+    // does not expose a configurable request timeout. The health check
+    // has a 3s timeout and fails fast with a clear error message.
+    // Resolved permanently by #120 (OllamaProvider reqwest direct).
+    let pre_init_ollama = settings.ollama_client();
+    if let Err(e) = check_server_health(&pre_init_ollama).await {
+        log::error!("Ollama health check failed: {e}");
+        eprintln!("\x1B[31mError: {e}\x1B[0m");
+        eprintln!(
+            "\x1B[33mHint: Start Ollama with `ollama serve` in another terminal, then retry.\x1B[0m"
+        );
+        return Ok(());
+    }
 
     let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings, db_path);
 
