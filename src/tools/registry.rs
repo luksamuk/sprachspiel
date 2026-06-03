@@ -52,13 +52,33 @@ use super::skill_tools::{skill_list, skill_view};
 use super::subagent_tools::{
     spawn_ocr_agent, spawn_summarize_agent, spawn_translate_agent, spawn_vision_agent,
 };
-/// Trait for tool registration - implemented by both Coordinator types
+/// Trait for tool registration - implemented by both Coordinator types.
+///
+/// The bound is `crate::tools::Tool` (our own trait) plus the ollama-rs
+/// trait (which is required by `ollama_rs::coordinator::Coordinator::add_tool`
+/// and is automatically satisfied by any tool that already implements
+/// `crate::tools::Tool` via the dual-impl macro or the forward blanket
+/// impl). The blanket impl in `tool_trait.rs`
+/// (`impl<T: ollama_rs::Tool> crate::tools::Tool for T`) makes any
+/// ollama-rs tool (including `#[ollama_rs::function]`-generated ones and
+/// built-in types like `DDGSearcher`) compatible with this bound
+/// without per-tool changes.
 pub trait ToolRegistrar: Sized {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
+    fn register_tool<T>(self, tool: T) -> Self
+    where
+        T: crate::tools::Tool + ollama_rs::generation::tools::Tool + 'static;
 }
 
 impl<C: ollama_rs::history::ChatHistory> ToolRegistrar for ollama_rs::coordinator::Coordinator<C> {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
+    fn register_tool<T>(self, tool: T) -> Self
+    where
+        T: crate::tools::Tool + ollama_rs::generation::tools::Tool + 'static,
+    {
+        // `T` implements both our trait and ollama-rs's trait. The
+        // forward blanket impl (Commit 2) gives `crate::tools::Tool` to
+        // ollama-rs tools; the dual-impl macro (Commit 3) gives
+        // ollama_rs::Tool to #[sprachspiel::tool] tools. Either way,
+        // ollama-rs's `add_tool` accepts the value.
         self.add_tool(tool)
     }
 }
@@ -66,7 +86,14 @@ impl<C: ollama_rs::history::ChatHistory> ToolRegistrar for ollama_rs::coordinato
 impl<C: ollama_rs::history::ChatHistory> ToolRegistrar
     for crate::chat::custom_coordinator::CustomCoordinator<C>
 {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
+    fn register_tool<T>(self, tool: T) -> Self
+    where
+        T: crate::tools::Tool + ollama_rs::generation::tools::Tool + 'static,
+    {
+        // CustomCoordinator's add_tool is bound to `crate::tools::Tool`
+        // (Commit 5). The extra `ollama_rs::Tool` bound here is for
+        // symmetry with the ollama-rs Coordinator impl; both impls
+        // accept the same set of tool types.
         self.add_tool(tool)
     }
 }
