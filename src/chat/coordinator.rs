@@ -2,11 +2,16 @@
 //!
 //! Provides utilities for handling tool and network errors gracefully
 //! by converting them to Tool messages that the model can understand and recover from.
+//!
+//! # W2 Wave Context
+//!
+//! This file is fully coupled to `ollama_rs::error::OllamaError`. In #119
+//! (Agnostic Provider Types), `OllamaError` is replaced by `ProviderError`
+//! and the classification logic moves to `src/provider/retry.rs`.
+//! Pending work documented in #121 (Consumer Migration) and #123
+//! (Remove ollama-rs).
 
 use ollama_rs::error::OllamaError;
-
-/// Maximum retry attempts for recoverable errors
-pub const MAX_RETRIES: usize = 3;
 
 /// Error classification for recovery
 #[derive(Debug, Clone)]
@@ -142,21 +147,6 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
     }
 }
 
-/// Check if an OllamaError is recoverable
-pub fn is_ollama_error_recoverable(error: &OllamaError) -> bool {
-    match error {
-        OllamaError::ToolCallError(e) => matches!(
-            e,
-            ollama_rs::error::ToolCallError::UnknownToolName
-                | ollama_rs::error::ToolCallError::InvalidToolArguments(_)
-        ),
-        OllamaError::ReqwestError(_) => true,
-        OllamaError::InternalError(_) => false,
-        OllamaError::JsonError(_) => true,
-        OllamaError::Other(_) => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,30 +181,5 @@ mod tests {
         let msg = format_recovery_message(&error);
         assert!(msg.contains("read_file"));
         assert!(msg.contains("missing field 'path'"));
-    }
-
-    #[test]
-    fn test_is_ollama_error_recoverable() {
-        use ollama_rs::error::{OllamaError, ToolCallError};
-
-        // ToolCallError::UnknownToolName is recoverable
-        let err = OllamaError::ToolCallError(ToolCallError::UnknownToolName);
-        assert!(is_ollama_error_recoverable(&err));
-
-        // ToolCallError::InvalidToolArguments is recoverable
-        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
-        let err = OllamaError::ToolCallError(ToolCallError::InvalidToolArguments(json_err));
-        assert!(is_ollama_error_recoverable(&err));
-
-        // JsonError is recoverable
-        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
-        let err = OllamaError::JsonError(json_err);
-        assert!(is_ollama_error_recoverable(&err));
-
-        // InternalError is NOT recoverable
-        let err = OllamaError::InternalError(ollama_rs::error::InternalOllamaError {
-            message: "test".to_string(),
-        });
-        assert!(!is_ollama_error_recoverable(&err));
     }
 }

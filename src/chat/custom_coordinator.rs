@@ -931,14 +931,31 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => result,
                     Err(e) => {
-                        log::debug!("Tool '{}' call failed: {}", tool_name, e);
+                        log::warn!("Tool '{}' execution failed: {e}", tool_name);
                         log::debug!(
                             "  Arguments: {}",
                             serde_json::to_string(&args).unwrap_or_else(|_| args.to_string())
                         );
-                        return Err(ollama_rs::error::OllamaError::ToolCallError(
-                            ollama_rs::error::ToolCallError::InternalToolError(e),
-                        ));
+                        // W2 Wave Context (#116): Tool execution errors are now
+                        // recoverable — push the error as a tool message so the
+                        // LLM can self-correct within the same turn instead of
+                        // aborting the conversation.
+                        //
+                        // Note: this call site uses `ChatMessage::tool()`
+                        // directly instead of the `recovery::push_tool_result`
+                        // wrapper (see src/chat/recovery.rs) because
+                        // `self.history` is generic over `C: ChatHistory` (an
+                        // ollama-rs trait), while the wrapper is typed for
+                        // `Vec<ChatMessage>`. In #121 (Consumer Migration) this
+                        // call site migrates to the wrapper together with the
+                        // rest of the consumer migration.
+                        let error_msg = format!(
+                            "Error executing tool '{tool_name}': {e}. \
+                             Please try again with different arguments or use a different approach."
+                        );
+                        self.history.push(ChatMessage::tool(error_msg));
+                        tools_executed.push(tool_name.clone());
+                        continue;
                     }
                 };
 

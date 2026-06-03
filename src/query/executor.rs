@@ -1,6 +1,11 @@
 //! Query execution with retry logic
 //!
 //! Provides execute_query_with_retry to handle Ollama errors with retry logic.
+//!
+//! **W2 Wave Context:** This module's retry loop is migrated to the
+//! per-category classification in #116. `MAX_RETRIES` (the pre-#116
+//! constant in `coordinator.rs`) has been replaced by per-category
+//! limits from `crate::retry::classify_for_retry()`.
 
 #![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
@@ -9,18 +14,19 @@ use indicatif::ProgressBar;
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::coordinator::{
-    MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
-};
+use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};
 use crate::chat::custom_coordinator::CustomCoordinator;
+use crate::chat::recovery::push_tool_result;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
+use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 use crate::settings::Settings;
 use crate::tools::context::{with_full_context, with_tool_context};
 
 /// Execute a query with retry logic.
 ///
-/// Handles recoverable Ollama errors by retrying up to MAX_RETRIES times.
+/// Handles recoverable Ollama errors by retrying up to the per-category
+/// limit (`RetryCategory::max_attempts()`).
 /// Automatically wraps with full context if available for the remember tool
 /// and agent spawning tools.
 #[expect(clippy::too_many_arguments)]
@@ -100,7 +106,20 @@ async fn execute_retry_loop(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
+                // W2 Wave Context (#116): retry classification is in place,
+                // but it only mitigates errors that ollama-rs RETURNS. When
+                // Ollama hangs (kill -STOP, packet drop, server stopped),
+                // ollama-rs does not return an error — the request hangs
+                // indefinitely and the user never sees the retry messages.
+                // TODO(#120): when OllamaProvider uses reqwest directly,
+                // configure explicit timeouts and propagate HTTP errors
+                // through ProviderError. Then this retry loop becomes
+                // effective for the ServerRetry (5s/10s/15s) and
+                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
+                // Acceptance criteria for #120 are documented in
+                // IMPLEMENTATION.md under W2 Wave Context.
+                let category = classify_for_retry(&e);
+                if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
                     let recovery_err = classify_ollama_error(&e, tool_names);
@@ -110,17 +129,25 @@ async fn execute_retry_loop(
                         log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
-                            MAX_RETRIES,
+                            category.max_attempts(),
                             recovery_err.description()
                         );
                     }
 
-                    messages.push(ChatMessage::tool(error_msg));
+                    push_tool_result(&mut messages, error_msg);
 
                     if attempts == 1 {
                         crate::spinner::finish_spinner(spinner.clone());
-                        eprintln!("  Retrying after error...");
+                        let delay = retry_delay(&category, attempts);
+                        if delay > std::time::Duration::ZERO {
+                            eprintln!("  Retrying in {}s...", delay.as_secs());
+                        } else {
+                            eprintln!("  Retrying after error...");
+                        }
                     }
+
+                    // Query mode has no cancel token — unconditional sleep
+                    let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
 
                     continue;
                 } else {

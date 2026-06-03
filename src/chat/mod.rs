@@ -41,6 +41,7 @@ pub mod event_loop;
 pub mod input;
 pub mod llm_event;
 pub mod model_switch;
+pub mod recovery;
 pub mod repl;
 pub mod repl_state;
 pub mod repl_tui;

@@ -2,10 +2,64 @@
 //!
 //! Capabilities (tools, vision, thinking) are detected at runtime
 //! by querying the server's model info endpoint.
+//!
+//! # W2 Wave Context (Issue #116)
+//!
+//! `check_server_health()` is the entry point for the startup health check.
+//! It calls `ollama.list_local_models()` (which hits `/api/tags`) with a
+//! 3-second timeout. This is a **pre-check** that catches "Ollama is not
+//! running" before the heavier `show_model_info()` call would hang
+//! indefinitely. When #120 (OllamaProvider reqwest direct) lands, this
+//! will be replaced by a `ProviderError`-aware health check.
 
 #![expect(clippy::print_stderr)] // Model capability detection output
+use std::time::Duration;
+
 use ollama_rs::Ollama;
 use ollama_rs::models::ModelInfo;
+
+/// Maximum time to wait for the Ollama server to respond to a health check.
+///
+/// Tuned for the "Ollama is not running" case: localhost connection
+/// refused returns in milliseconds, so a 3s timeout is more than enough.
+/// Network issues (firewall, DNS) will hit this timeout and abort cleanly.
+pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Check whether the Ollama server is reachable and responsive.
+///
+/// Hits the `/api/tags` endpoint via `ollama.list_local_models()` with a
+/// 3-second timeout. Returns `Ok(())` if the server responds (even with
+/// zero models), `Err` with a user-friendly message if it doesn't.
+///
+/// **W2 Wave Context:** This is a small, standalone fix for the startup
+/// hang reported during #116 manual testing (Scenario 2). The hang happens
+/// because `ollama-rs` does not expose a configurable request timeout, so
+/// when the server is unreachable, the HTTP request hangs indefinitely.
+/// This health check with explicit timeout is the minimum-viable fix until
+/// #120 replaces `ollama-rs` with direct reqwest.
+#[allow(dead_code)] // Called from repl.rs startup in this same PR (#116)
+pub async fn check_server_health(ollama: &Ollama) -> crate::AppResult<()> {
+    let check = async {
+        ollama.list_local_models().await.map_err(|e| {
+            format!(
+                "Failed to reach Ollama server: {e}. \
+                 Make sure Ollama is running (try `ollama serve` in another terminal)."
+            )
+        })?;
+        Ok::<(), String>(())
+    };
+
+    match tokio::time::timeout(HEALTH_CHECK_TIMEOUT, check).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e.into()),
+        Err(_elapsed) => Err(format!(
+            "Ollama server did not respond within {}s at the configured URL. \
+             Make sure Ollama is running and accessible.",
+            HEALTH_CHECK_TIMEOUT.as_secs()
+        )
+        .into()),
+    }
+}
 
 /// Detected capabilities for a specific model
 #[derive(Debug, Clone)]
@@ -80,8 +134,29 @@ mod tests {
         };
 
         assert!(caps.tools);
-        assert!(caps.completion);
         assert!(!caps.vision);
+        assert!(caps.completion);
         assert!(!caps.thinking);
+    }
+
+    #[test]
+    fn test_health_check_timeout_constant() {
+        // The 3s timeout is a deliberate UX trade-off. Make sure it
+        // doesn't drift to a value that would make the startup too slow
+        // or the timeout too tight.
+        assert_eq!(HEALTH_CHECK_TIMEOUT, Duration::from_secs(3));
+    }
+
+    #[tokio::test]
+    async fn test_health_check_returns_error_for_unreachable_server() {
+        // Point at a port that nothing is listening on. The health check
+        // should return an Err quickly (well under the 3s timeout).
+        let ollama = Ollama::new("http://127.0.0.1", 1);
+        let start = std::time::Instant::now();
+        let result = check_server_health(&ollama).await;
+        let elapsed = start.elapsed();
+        assert!(result.is_err());
+        // Should return fast (connection refused is instant), not after timeout
+        assert!(elapsed < HEALTH_CHECK_TIMEOUT);
     }
 }

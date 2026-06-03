@@ -2958,6 +2958,10 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 **Status:** ❌ NOT STARTED  
 **Depends on:** #121 (Consumer Migration — coordinator refactoring to use agnostic types)
 
+**W2 Wave Context — Cancel token in parallel tool batches:**
+
+Adopt the cancel-aware sleep pattern from #116 (`sleep_or_cancel` in `src/retry.rs`). When parallel tool execution is interrupted mid-batch, the cancel token MUST abort the in-flight tool calls and propagate cleanly to the retry loop in `core.rs`. The `classify_for_retry` infrastructure from #116 must be reused — parallel execution does not change the retry semantics, only the tool execution path.
+
 **Goal:** Execute independent tool calls in parallel for faster response times.
 
 **Problem:**
@@ -3621,12 +3625,36 @@ Features that enhance core functionality before Sprach 2.0 work begins.
 
 ### Retry Threshold with Backoff — #116 [M1]
 
-**Status:** 📋 READY  
+**Status:** 🔄 IN PROGRESS  
 **Depends on:** None  
 **Estimated effort:** 1.5–2 days  
-**Issue:** (new)
+**Issue:** #116  
+**Branch:** `feat/116-retry-threshold-backoff`
 
 **Goal:** Make server errors (500, OOM, cold start) and tool execution errors recoverable with exponential backoff, instead of immediately failing.
+
+#### W2 Wave Context
+
+**Position in chain:** W2.0 — first card in the W2 Provider Chain, no dependencies.
+
+**Upstream dependencies:** None (W1 quick wins already merged).
+
+**Downstream pending work (documented in each issue's section):**
+- **#118 (Tool Trait):** `Tool::call()` signature must remain `Result<String, Box<dyn Error>>` so the recovery pattern in #116 stays compatible. Proc macro cannot change error semantics.
+- **#119 (Agnostic Provider Types):** `src/retry.rs` will be relocated to `src/provider/retry.rs`. `classify_for_retry(&OllamaError)` gets a sibling `classify_for_retry(&ProviderError)`. `ProviderError` should carry retry semantics (either via `retry_category()` method or via variant names).
+- **#120 (OllamaProvider reqwest):** Reqwest-native errors (timeout, connect, 5xx) need explicit classification into the same `RetryCategory`. SSE parse errors → `NetworkRetry`. 429 → `RateLimitRetry`.
+- **#121 (Consumer Migration):** `core.rs` retry loops (P6.0e.5) gain +1 day effort — must migrate `classify_for_retry(&OllamaError)` to `classify_for_retry(&ProviderError)`. `custom_coordinator.rs` (P6.0e.4) gain +0.5 day — the recovery pattern (push `ChatMessage::tool(error_msg)`) must use `LlmMessage::tool` from #119 via the `recovery::push_tool_result` wrapper.
+- **#122 (OpenAI-Compatible Provider):** Uses `RateLimitRetry` variant pre-emptively added in #116. Must wire `Retry-After` header parsing. Cloud-specific non-retryable: `content_filter`, `invalid_api_key`, `insufficient_quota`.
+- **#123 (Remove ollama-rs):** `coordinator.rs` (100% coupled to `OllamaError`) gets rewritten or removed. `src/retry.rs` module is relocated in #119, so #123 just removes the last `use ollama_rs::error::OllamaError` lines. #123 effort increases from 2-3d to 3-4d due to the larger rewriter scope caused by #116.
+- **#11 (Parallel Tool Execution):** Must adopt the per-tool-error-recovery pattern from #116. `join_all` collects `Vec<Result<String, String>>`, each error becomes a `LlmMessage::tool(error_msg)`. No batch-abort on single tool failure.
+
+**W2 closure criterion (#123):** All `#[allow(dead_code)]` from W2 are resolved; no residual `OllamaError` coupling outside `src/provider/`.
+
+#### W2 dead_code policy relaxation
+
+Within the W2 mini-sprint, the project-wide `#[allow(dead_code)]` policy is **flexibilized**: code prepared for W2 future use (e.g., the `retry_after: Option<Duration>` field of `RateLimitRetry` wired in #122) is acceptable **as long as** it is resolved by the W2 closure (#123). Every `#[allow(dead_code)]` in W2 code MUST carry:
+1. A justification comment with the future W2 issue number (e.g., `// Used in #122 Retry-After header parsing`).
+2. The strict `cfg(test)` check at the W2 closure audit (per AGENTS.md "Quality Gates").
 
 **Problem:**
 - `OllamaError::InternalError` (HTTP 500) is classified as **non-recoverable** — conversations die immediately when Ollama has transient issues
@@ -3646,6 +3674,12 @@ enum RetryCategory {
     NetworkRetry { max_attempts: usize },
     /// Server errors (500, OOM, cold start) — long backoff, 3 attempts
     ServerRetry { max_attempts: usize },
+    /// Rate limiting (HTTP 429) — respects Retry-After header
+    /// Pre-emptive: wired in #122 (OpenAI-compatible provider)
+    RateLimitRetry {
+        max_attempts: usize,
+        retry_after: Option<Duration>,  // parsed from Retry-After header
+    },
     /// Parsing errors (malformed JSON from model) — no automatic retry
     NoRetry,
 }
@@ -3653,8 +3687,9 @@ enum RetryCategory {
 fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
     match category {
         ImmediateRetry { .. } => Duration::ZERO,
-        NetworkRetry { .. } => Duration::from_millis(100 * 2^attempt),  // 100ms, 200ms, 400ms...
-        ServerRetry { .. } => Duration::from_secs(5 * attempt),        // 5s, 10s, 15s
+        NetworkRetry { .. } => Duration::from_millis(100 * 2_u64.pow(attempt as u32 - 1)),
+        ServerRetry { .. } => Duration::from_secs(5 * attempt as u64),
+        RateLimitRetry { retry_after, .. } => retry_after.unwrap_or(Duration::from_secs(2)),
         NoRetry => Duration::ZERO,
     }
 }
@@ -3668,17 +3703,75 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 | Network timeout | 3 retries, 0ms delay | 5 retries with backoff (100ms→1.6s) |
 | Tool execution failure | Non-recoverable (conversation dies) | Recoverable — model sees error, can self-correct |
 | JSON parse error | Retry with 0ms | No automatic retry (model self-corrects naturally) |
+| User Ctrl+C during 15s backoff | Waits 15s | Aborts immediately (cancel-aware sleep) |
 
 **Implementation:**
 
 | File | Change |
 |------|--------|
-| `src/retry.rs` (NEW) | `RetryCategory`, `classify_for_retry()`, `retry_delay()`, retry loop logic |
-| `src/chat/coordinator.rs` | `InternalError` → `ServerRetry` (recoverable). `InternalToolError` → `ImmediateRetry`. Deprecate `is_ollama_error_recoverable()`, replace with `classify_for_retry()` |
-| `src/chat/core.rs` (lines 492-545) | Use `retry_delay()` between attempts. Show "Retrying in Xs" for backoff > 0 |
-| `src/chat/custom_coordinator.rs` (lines 759-771) | Tool `Err` → `ChatMessage::tool(error_msg)` instead of `OllamaError::ToolCallError(InternalToolError)`, so model sees the error |
+| `src/retry.rs` (NEW) | `RetryCategory`, `classify_for_retry()`, `retry_delay()`, `max_attempts()`, `is_retryable()` |
+| `src/chat/recovery.rs` (NEW) | `push_tool_result()` wrapper around `ChatMessage::tool()` — single migration point in #121 |
+| `src/chat/coordinator.rs` | Deprecate `is_ollama_error_recoverable()` (will be removed in #119). InternalError → ServerRetry. InternalToolError → ImmediateRetry. |
+| `src/chat/core.rs` (loops 565-616 and 789-852) | Use `classify_for_retry()` + `retry_delay()` + `tokio::select!` with cancel_token. UI: `"Retrying in Xs..."` |
+| `src/chat/custom_coordinator.rs` (lines 931-942) | Tool `Err` → `push_tool_result(history, error_msg)` instead of `return Err(OllamaError::ToolCallError(InternalToolError(e)))`. LLM sees the error and can self-correct. |
+| `src/query/executor.rs` (line 103) | Same classification + backoff in `execute_retry_loop()` |
+| `src/chat/mod.rs` | Re-export `recovery` module |
 
-**Related:** Issue #72 (Multi-Provider parent)
+**Design Decisions:**
+
+1. **Wrapper `recovery::push_tool_result()`** — localizes the `ChatMessage::tool()` call site. #121 swaps the implementation to `LlmMessage::tool()` in one place.
+2. **`RateLimitRetry` variant pre-emptively added** — the enum has a field `retry_after: Option<Duration>` that is unused until #122 wires up `Retry-After` header parsing. Justified by the W2 dead_code policy relaxation.
+3. **Cancel-aware sleep** — `tokio::time::sleep(delay)` runs inside `tokio::select!` with the cancel token, so Ctrl+C aborts backoff immediately. This is non-negotiable: a 15s server-retry backoff that ignores Ctrl+C is a UX regression.
+4. **Tool execution errors become recoverable** — `InternalToolError` previously was non-recoverable. Now the tool error is formatted into a human-readable message and pushed via `push_tool_result()`, allowing the LLM to see "tool X failed because Y" and try a different approach within the same turn.
+5. **No `format_recovery_message` rewrite** — that function (in `coordinator.rs`) still produces the recovery prompt for non-tool errors (UnknownTool, InvalidArgs, etc.). It is unrelated to the new `RetryCategory` infrastructure.
+6. **`MAX_RETRIES` constant in `coordinator.rs` kept** — still used for the final fallback debug log line. The new per-category limits live in `src/retry.rs` as private constants.
+7. **Forward migration to `ProviderError` is pre-planned** — the signature of `classify_for_retry(&OllamaError)` will change to `classify_for_retry(&ProviderError)` in #119, but the body (the match arms) is the same shape with different variant names.
+
+**Test Plan (15 unit tests in `#[cfg(test)]`):**
+
+1. `test_classify_server_error` — `InternalError` → `ServerRetry`
+2. `test_classify_network_error` — `ReqwestError` → `NetworkRetry`
+3. `test_classify_tool_error_internal` — `ToolCallError::InternalToolError` → `ImmediateRetry`
+4. `test_classify_tool_error_unknown` — `ToolCallError::UnknownToolName` → `ImmediateRetry`
+5. `test_classify_tool_error_invalid_args` — `ToolCallError::InvalidToolArguments` → `ImmediateRetry`
+6. `test_classify_json_error` — `JsonError` → `NoRetry`
+7. `test_classify_other_error` — `Other` → `NoRetry`
+8. `test_retry_delay_server_attempt_1` — Server attempt 1 → 5s
+9. `test_retry_delay_server_attempt_2` — Server attempt 2 → 10s
+10. `test_retry_delay_server_attempt_3` — Server attempt 3 → 15s
+11. `test_retry_delay_network_exponential` — Network: 100ms, 200ms, 400ms, 800ms, 1.6s
+12. `test_retry_delay_immediate_zero` — ImmediateRetry → Duration::ZERO
+13. `test_retry_delay_ratelimit_with_retry_after` — RateLimit with retry_after=3s → 3s
+14. `test_retry_delay_ratelimit_without_retry_after` — RateLimit with retry_after=None → 2s default
+15. `test_max_attempts_per_category` — Server=3, Network=5, Tool=3, RateLimit=3, NoRetry=0
+16. `test_is_retryable` — `NoRetry` → false, others → true
+17. `test_retry_after_field_is_unused_until_122` — the field is set but never read (will be wired in #122)
+
+Plus regression tests: existing tests in `coordinator.rs:190-218` for `classify_ollama_error` continue to pass.
+
+#### Known Limitations (resolved by #120)
+
+Manual testing of PR #197 revealed that **Scenarios 2, 3, and 4** from `MANUAL_TEST_116.md` are NOT fully mitigated by this PR. The retry infrastructure is correctly designed and the loops are in place, but the `ollama-rs` HTTP client does not surface these errors when Ollama hangs (kill -STOP, packet drop, server stopped) — it just hangs indefinitely. The `classify_for_retry(&OllamaError)` classification works, but the upstream `OllamaError` is never produced.
+
+| Scenario | What works | What's blocked | Resolved by |
+|----------|------------|----------------|-------------|
+| **1 — Tool error recovery** | ✅ LLM self-corrects within same turn | — | This PR (#116) |
+| **2 — Server 500 + linear backoff** | Retry infrastructure ready (5s/10s/15s) | `ollama-rs` hangs on Ollama stop/kill -STOP instead of returning 500 | **#120** (reqwest direct) |
+| **3 — Network timeout + exp. backoff** | Retry infrastructure ready (100ms→1.6s) | `ollama-rs` lacks configurable timeout — packet drop hangs indefinitely | **#120** (reqwest + `.timeout()`) |
+| **4 — Cancel-aware sleep** | `sleep_or_cancel()` ready with `tokio::select!` | Cancel token plumbing through `ollama-rs` is incomplete | **#120** (reqwest + cancel propagation) |
+| **5 — UX quality** | Retrying in Xs... message format | — | This PR (#116) |
+| **Bonus — startup hang** | ✅ **FIXED in this PR** | — | `check_server_health()` with 3s timeout |
+
+The `// TODO(#120)` comments in the retry loops (`core.rs` × 2, `executor.rs` × 1) document the dependency.
+
+**Acceptance criteria for #120** (must pass when #120 is implemented):
+- Scenario 2: `kill -STOP` Ollama mid-request → "Retrying in 5s..." appears → resume with `kill -CONT` → conversation completes
+- Scenario 3: `iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query → exponential backoff visible (100ms→200ms→400ms→800ms→1.6s) → graceful error after 5 attempts
+- Scenario 4: Trigger any retry, Ctrl+C during backoff → returns in <1s
+
+These criteria are also recorded in the #120 section of this document and in PR #197's body.
+
+**Related:** Issue #72 (Multi-Provider parent), #118, #119, #120, #121, #122, #123, #11
 
 ---
 
@@ -3783,7 +3876,22 @@ pub trait Tool: Send + Sync {
 **Status:** 📋 PLANNED  
 **Depends on:** #118 (error types should be compatible with new Tool trait)  
 **Estimated effort:** 1 week  
-**Merge criterion:** Types compile, `From` conversions tested, no existing files changed
+**Merge criterion:** Types compile, `From` conversions tested, no existing files changed + **ProviderError carries retry classification semantics (consumed by #120)**
+
+**W2 Wave Context — ProviderError retry semantics:**
+
+The `ProviderError` enum introduced in #119 MUST carry retry classification semantics so that `classify_for_retry(&ProviderError)` from the `src/retry.rs` infrastructure (created in #116) maps cleanly. Each variant must map to exactly one `RetryCategory`:
+
+| `ProviderError` variant | `RetryCategory` | Rationale |
+|------------------------|-----------------|-----------|
+| `Api` (HTTP 5xx) | `ServerRetry` | Cold start, OOM, transient — 5s linear backoff |
+| `Timeout` | `NetworkRetry` | Network timeout — 100ms→1.6s exponential backoff |
+| `Connection` | `NetworkRetry` | Connection refused — same as Timeout |
+| `RateLimit` | `RateLimitRetry` | HTTP 429 — respect `Retry-After` header |
+| `Config` | `NoRetry` | Bad config — retry won't help |
+| `Api` (parse error / 4xx) | `NoRetry` | Malformed response or client error |
+
+The `classify_for_retry(&OllamaError)` function in `src/retry.rs` (created in #116) will be deprecated in favor of `classify_for_retry(&ProviderError)` with the mapping above. The `From<OllamaError> for ProviderError` conversion in `src/provider/conversions.rs` MUST preserve the retry category semantics during the transition.
 
 **Goal:** Define `LlmMessage`, `LlmResponse`, `ProviderError` and bidirectional conversions from ollama-rs types.
 
@@ -3816,7 +3924,7 @@ pub trait LlmProvider: Send + Sync {
 **Status:** 📋 PLANNED  
 **Depends on:** #119 (uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
-**Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client
+**Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client + **retry acceptance criteria from #116 manual test (Scenarios 2, 3, 4) MUST pass**
 
 **Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`.
 
@@ -3839,6 +3947,16 @@ pub trait LlmProvider: Send + Sync {
 | P6.0d.6 | Keep-alive, format, options | Minor parameters | 1 day |
 
 **Key benefit over ollama-rs:** Resolves the `prompt_eval_count` bug (ollama-rs v0.3.4 ignores it) — with reqwest direct, we parse the full response JSON.
+
+**W2 Wave Context — Acceptance criteria from #116 manual test:**
+
+This issue MUST pass the following manual test scenarios from `MANUAL_TEST_116.md` (located in `~/`) before being marked as complete. These scenarios are the **reason** #120 is critical — `ollama-rs` cannot surface the errors needed for retry to work.
+
+- **Scenario 2 — Server 500 + linear backoff:** `kill -STOP` Ollama mid-request. Expect "Retrying in 5s..." → "Retrying in 10s..." → "Retrying in 15s..." (3 attempts, 5s linear backoff). Resume with `kill -CONT`. Conversation must complete successfully. Requires reqwest-direct `ProviderError::Api` mapped to `RetryCategory::ServerRetry`.
+- **Scenario 3 — Network timeout + exponential backoff:** `sudo iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query. Expect "Retrying in 100ms..." → "200ms..." → "400ms..." → "800ms..." → "1.6s..." (5 attempts, exponential backoff). Graceful error after exhaustion. Requires reqwest client with `.timeout(Duration)` configured and `ProviderError::Timeout`/`Connection` mapped to `RetryCategory::NetworkRetry`.
+- **Scenario 4 — Cancel-aware sleep:** Trigger ServerRetry via any method. Press Ctrl+C during 5s/10s/15s backoff. Expect returns in <1 second (cancel respected). Requires cancel token propagation through reqwest's `tokio::select!` with `client.request(...)` and the `CancellationToken`.
+
+The retry infrastructure (`src/retry.rs` with `classify_for_retry`, `retry_delay`, `sleep_or_cancel`, `RateLimitRetry`) introduced in #116 is already in place — #120 just needs to make `OllamaProvider` produce the right `ProviderError` variants for the retry loop to act on.
 
 ---
 
@@ -3934,7 +4052,22 @@ vision = true
 **Status:** 📋 PLANNED  
 **Depends on:** #121 (all consumers migrated)  
 **Estimated effort:** 2–3 days  
-**Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml
+**Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml + **all 5 manual test scenarios from `MANUAL_TEST_116.md` re-executed and passing** + **W2 dead_code audit clean**
+
+**W2 Wave Context — Closure criteria:**
+
+Before #123 is merged, the following acceptance criteria MUST be satisfied. These criteria validate that W2 is truly complete:
+
+- **Manual test re-execution:** All 5 scenarios from `MANUAL_TEST_116.md` MUST be re-executed and pass:
+  - Scenario 1 — Tool error recovery (LLM self-corrects)
+  - Scenario 2 — Server 500 + linear backoff (5s/10s/15s) — was blocked on #120
+  - Scenario 3 — Network timeout + exp. backoff (100ms→1.6s) — was blocked on #120
+  - Scenario 4 — Cancel-aware sleep (Ctrl+C <1s) — was blocked on #120
+  - Scenario 5 — UX quality assessment
+- **W2 dead_code audit:** Every `#[allow(dead_code)]` introduced during W2 (#116, #118, #119, #120, #121, #122, #11) MUST be resolved. No W2 dead code residual.
+- **`src/provider/retry.rs` exists:** The `src/retry.rs` from #116 was relocated to `src/provider/retry.rs` in #119. Verify the relocation happened.
+- **Zero `use ollama_rs` outside `src/provider/`:** Consumer migration in #121 + library code in #123 should leave `ollama-rs` references only in the provider layer.
+- **`RateLimitRetry.retry_after` field is used:** Wired in #122. Field must be `Option<Duration>` with `Some(...)` populated from `Retry-After` header parsing.
 
 **Goal:** Remove `ollama-rs` from `Cargo.toml`. Everything works via `OllamaProvider` (reqwest direct).
 
