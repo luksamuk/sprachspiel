@@ -47,6 +47,7 @@ pub mod serper;
 #[cfg(feature = "system-tools")]
 pub mod system;
 pub mod todo;
+pub mod tool_trait;
 pub mod weather;
 
 // Fact tools (always available)
@@ -96,6 +97,15 @@ pub use weather::*;
 
 // Fact tools are imported directly in registry.rs
 // Notes tools are imported directly in registry.rs
+// Re-export the Tool trait at the tools module level for the
+// `#[sprachspiel::tool]` proc-macro. The macro emits `impl crate::tools::Tool
+// for ...` which resolves to this re-export at the call site. Without this,
+// the macro cannot find the trait when expanded in the parent crate.
+// The `#[allow(unused_imports)]` is the W2 dead_code flexibility: the
+// re-export is unused in production today, but the moment any tool is
+// migrated to `#[sprachspiel::tool]`, the re-export becomes live.
+#[allow(unused_imports)] // W2: required by proc-macro for `crate::tools::Tool` path
+pub use tool_trait::{Parameters, Tool, ToolFunctionInfo, ToolInfo, ToolResult, ToolType};
 // Documents tools are imported directly in registry.rs
 
 pub use run_cmd::run_command;

@@ -76,9 +76,11 @@ ratatui-textarea = "0.9.1"
 tui-markdown = { version = "0.3", features = ["highlight-code"] }
 # unicode-segmentation for grapheme-aware text editing in CrosstermInput
 unicode-segmentation = "1.11"
-
 # scraper is also in ollama-rs, needed for finance tool
 scraper = { version = "0.22", optional = true }
+# schemars is needed by the Tool trait for JSON schema generation
+schemars = "0.8"
+# serde_derive is needed by the Tool trait (re-exported to derived Params structs)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
  serde_yaml = "0.9"
@@ -95,7 +97,7 @@ unicode-width = "0.2.2"
 # Mermaid diagram rendering as Unicode box-drawing text (pure Rust, no browser)
 # Optional — enabled by the "mermaid" feature flag
 mermaid-text = { version = "0.56", optional = true }
-# LaTeX formula rendering as Unicode character art (pure Rust, no browser)
+# LaTeX formula rendering as Unicode character art (pure Rust, no C dependencies)
 # Optional — enabled by the "latex" feature flag
 term-maths = { version = "1.0", optional = true, features = ["ratatui"] }
 # Database for semantic search
@@ -105,6 +107,8 @@ sqlite-vec = "0.1"
 which = "8.0"
 # Shell-style command line parsing for run_command
 shell-words = "1.1"
+# Our proc-macro crate for #[sprachspiel::tool]
+sprachspiel-tool-derive = { path = "sprachspiel-tool-derive", version = "0.1" }
 
 # Platform-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]

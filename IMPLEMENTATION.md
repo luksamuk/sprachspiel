@@ -3866,7 +3866,8 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 **Depends on:** None (can start in parallel with #116)  
 **Estimated effort:** 1–1.5 weeks  
 **Issue:** #118  
-**Branch:** `feat/118-tool-trait-proc-macro`
+**Branch:** `feat/118-tool-trait-proc-macro`  
+**PR:** #198 (open)
 
 **Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
 
