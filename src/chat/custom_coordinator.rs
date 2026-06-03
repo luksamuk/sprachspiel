@@ -939,8 +939,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // W2 Wave Context (#116): Tool execution errors are now
                         // recoverable — push the error as a tool message so the
                         // LLM can self-correct within the same turn instead of
-                        // aborting the conversation. Uses recovery::push_tool_result
-                        // wrapper (migration point in #121).
+                        // aborting the conversation.
+                        //
+                        // Note: this call site uses `ChatMessage::tool()`
+                        // directly instead of the `recovery::push_tool_result`
+                        // wrapper (see src/chat/recovery.rs) because
+                        // `self.history` is generic over `C: ChatHistory` (an
+                        // ollama-rs trait), while the wrapper is typed for
+                        // `Vec<ChatMessage>`. In #121 (Consumer Migration) this
+                        // call site migrates to the wrapper together with the
+                        // rest of the consumer migration.
                         let error_msg = format!(
                             "Error executing tool '{tool_name}': {e}. \
                              Please try again with different arguments or use a different approach."

@@ -10,6 +10,13 @@
 //! `ChatMessage::tool()` call here, #121 only needs to change ONE function
 //! body instead of all call sites.
 //!
+//! **Exception:** `src/chat/custom_coordinator.rs` uses
+//! `self.history.push(ChatMessage::tool(...))` directly because
+//! `self.history` is generic over `C: ChatHistory` (an ollama-rs trait),
+//! not `Vec<ChatMessage>`. This exception is expected to be resolved by
+//! #121 (Consumer Migration), which will replace the `ChatHistory` type
+//! with agnostic types.
+//!
 //! See: `IMPLEMENTATION.md` — W2 Provider Chain
 
 use ollama_rs::generation::chat::ChatMessage;

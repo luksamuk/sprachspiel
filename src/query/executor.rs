@@ -3,8 +3,9 @@
 //! Provides execute_query_with_retry to handle Ollama errors with retry logic.
 //!
 //! **W2 Wave Context:** This module's retry loop is migrated to the
-//! per-category classification in #116. The `is_ollama_error_recoverable()`
-//! call is replaced by `crate::retry::classify_for_retry()` + `is_retryable()`.
+//! per-category classification in #116. `MAX_RETRIES` (the pre-#116
+//! constant in `coordinator.rs`) has been replaced by per-category
+//! limits from `crate::retry::classify_for_retry()`.
 
 #![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
@@ -24,7 +25,8 @@ use crate::tools::context::{with_full_context, with_tool_context};
 
 /// Execute a query with retry logic.
 ///
-/// Handles recoverable Ollama errors by retrying up to MAX_RETRIES times.
+/// Handles recoverable Ollama errors by retrying up to the per-category
+/// limit (`RetryCategory::max_attempts()`).
 /// Automatically wraps with full context if available for the remember tool
 /// and agent spawning tools.
 #[expect(clippy::too_many_arguments)]

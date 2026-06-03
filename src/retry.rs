@@ -27,8 +27,6 @@ use tokio_util::sync::CancellationToken;
 const MAX_SERVER_RETRIES: usize = 3;
 const MAX_NETWORK_RETRIES: usize = 5;
 const MAX_TOOL_RETRIES: usize = 3;
-#[allow(dead_code)] // Used in #122 RateLimitRetry construction
-const MAX_RATELIMIT_RETRIES: usize = 3;
 
 // Server backoff: 5s, 10s, 15s (linear)
 const SERVER_BACKOFF_BASE_SECS: u64 = 5;

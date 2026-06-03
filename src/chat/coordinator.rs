@@ -8,21 +8,10 @@
 //! This file is fully coupled to `ollama_rs::error::OllamaError`. In #119
 //! (Agnostic Provider Types), `OllamaError` is replaced by `ProviderError`
 //! and the classification logic moves to `src/provider/retry.rs`.
-//! `is_ollama_error_recoverable()` is deprecated — callers should use
-//! `crate::retry::classify_for_retry()` + `is_retryable()` instead.
-//!
-//! Pending work documented in #121 (Consumer Migration) and #123 (Remove ollama-rs).
+//! Pending work documented in #121 (Consumer Migration) and #123
+//! (Remove ollama-rs).
 
 use ollama_rs::error::OllamaError;
-
-/// Maximum retry attempts for recoverable errors.
-///
-/// **W2 Wave Context:** Kept for backward compatibility with existing
-/// callers and the debug log in `core.rs`. The new per-category limits
-/// live in `src/retry.rs`. Will be removed in #121 when all callers
-/// migrate to `crate::retry::max_attempts()`.
-#[allow(dead_code)] // Kept for backward compat; will be removed in #121
-pub const MAX_RETRIES: usize = 3;
 
 /// Error classification for recovery
 #[derive(Debug, Clone)]
@@ -158,28 +147,6 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
     }
 }
 
-/// Check if an OllamaError is recoverable.
-///
-/// W2 Wave Context: Deprecated. Use `crate::retry::classify_for_retry()` and `RetryCategory::is_retryable()` instead. This function will be removed in #119 when the retry subsystem is relocated to `src/provider/retry.rs` and the error type becomes `ProviderError`.
-#[deprecated(
-    since = "0.45.0",
-    note = "Use crate::retry::classify_for_retry() + is_retryable(). Will be removed in #119."
-)]
-#[allow(dead_code)] // Kept for backward compat; will be removed in #119
-pub fn is_ollama_error_recoverable(error: &OllamaError) -> bool {
-    match error {
-        OllamaError::ToolCallError(e) => matches!(
-            e,
-            ollama_rs::error::ToolCallError::UnknownToolName
-                | ollama_rs::error::ToolCallError::InvalidToolArguments(_)
-        ),
-        OllamaError::ReqwestError(_) => true,
-        OllamaError::InternalError(_) => false,
-        OllamaError::JsonError(_) => true,
-        OllamaError::Other(_) => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,31 +181,5 @@ mod tests {
         let msg = format_recovery_message(&error);
         assert!(msg.contains("read_file"));
         assert!(msg.contains("missing field 'path'"));
-    }
-
-    #[test]
-    #[allow(deprecated)] // Tests the deprecated function for backward compat
-    fn test_is_ollama_error_recoverable() {
-        use ollama_rs::error::{OllamaError, ToolCallError};
-
-        // ToolCallError::UnknownToolName is recoverable
-        let err = OllamaError::ToolCallError(ToolCallError::UnknownToolName);
-        assert!(is_ollama_error_recoverable(&err));
-
-        // ToolCallError::InvalidToolArguments is recoverable
-        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
-        let err = OllamaError::ToolCallError(ToolCallError::InvalidToolArguments(json_err));
-        assert!(is_ollama_error_recoverable(&err));
-
-        // JsonError is recoverable
-        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
-        let err = OllamaError::JsonError(json_err);
-        assert!(is_ollama_error_recoverable(&err));
-
-        // InternalError is NOT recoverable
-        let err = OllamaError::InternalError(ollama_rs::error::InternalOllamaError {
-            message: "test".to_string(),
-        });
-        assert!(!is_ollama_error_recoverable(&err));
     }
 }
