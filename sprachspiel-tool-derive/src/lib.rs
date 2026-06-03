@@ -17,11 +17,15 @@
 //! and generates:
 //! - `pub struct foo;` (unit struct)
 //! - `__foo__Params` (struct with derived `Deserialize` + `JsonSchema`)
-//! - `impl ::sprachspiel::tools::Tool for foo` with `name`, `description`, `call`
+//! - `impl crate::tools::Tool for foo` with `name`, `description`, `call`
+//! - `impl ::ollama_rs::generation::tools::Tool for foo` (the ollama-rs side
+//!   of the dual-impl; preserved until #123 removes ollama-rs entirely)
 //!
-//! The macro emits fully-qualified paths (`::sprachspiel::tools::Tool`,
-//! `::schemars::JsonSchema`, `::serde::Deserialize`) so callers don't need
-//! to import those traits in scope.
+//! The macro emits fully-qualified paths for the derive traits
+//! (`::schemars::JsonSchema`, `::serde::Deserialize`) so callers don't
+//! need to import those traits in scope. The \`Tool\` trait is referenced
+//! as \`crate::tools::Tool\` (relative path), which resolves to the
+//! re-exported trait at \`src/tools/mod.rs:99\`.
 
 use std::collections::HashMap;
 
@@ -38,7 +42,8 @@ use syn::{
 /// Reads the function signature and docstring, generates:
 /// - `pub struct <fn_name>;` (unit struct)
 /// - `__<fn_name>__Params` (struct with derived `Deserialize` + `JsonSchema`)
-/// - `impl ::sprachspiel::tools::Tool for <fn_name>` with `name`, `description`, `call`
+/// - `impl crate::tools::Tool for <fn_name>` with `name`, `description`, `call`
+/// - `impl ::ollama_rs::generation::tools::Tool for <fn_name>` (dual-impl side)
 ///
 /// # Example
 ///
