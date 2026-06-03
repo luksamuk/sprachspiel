@@ -2,7 +2,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use std::process::Stdio;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
@@ -66,7 +66,7 @@ macro_rules! debug_log {
 /// // OCR with language and 2 minute timeout
 /// run_command("tesseract image.png stdout -l jpn", null, null, "120").await
 /// ```
-#[function]
+#[tool]
 pub async fn run_command(
     command_line: String,
     head: Option<String>,

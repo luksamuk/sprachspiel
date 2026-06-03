@@ -13,7 +13,7 @@ use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::tools::context::get_embedding;
 use crate::utils::parse_bounded_number;
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 
 /// Parse fact ID from various formats ("42" or "fact:42")
 fn parse_fact_id(id: &str) -> Result<i64, String> {
@@ -73,7 +73,7 @@ fn parse_fact_id(id: &str) -> Result<i64, String> {
 /// // Override category detection
 /// fact_add(content="User prefers Portuguese", category="fact")
 /// ```
-#[function]
+#[tool]
 pub async fn fact_add(
     content: String,
     category: Option<String>,
@@ -375,7 +375,7 @@ pub async fn fact_add(
 /// // Search project-specific facts
 /// fact_search(query="API", scope="project", limit="10")
 /// ```
-#[function]
+#[tool]
 pub async fn fact_search(
     query: String,
     category: Option<String>,
@@ -539,7 +539,7 @@ pub async fn fact_search(
 /// // Also accepts "fact:" prefix
 /// fact_remove(id="fact:42")
 /// ```
-#[function]
+#[tool]
 pub async fn fact_remove(id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("fact_remove", &[("id".to_string(), id.clone())]);
 

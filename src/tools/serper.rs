@@ -6,7 +6,7 @@
 use crate::consts::api::SERPER_API_URL;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{parse_bounded_number, post_json_with_headers};
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
@@ -81,7 +81,7 @@ pub fn is_serper_available() -> bool {
 ///
 /// # Errors
 /// Returns error message if SERPER_API_KEY is not set or API fails.
-#[function]
+#[tool]
 pub async fn web_search(
     query: String,
     num_results: Option<String>,
@@ -177,7 +177,7 @@ pub async fn web_search(
 ///
 /// # Errors
 /// Returns error message if SERPER_API_KEY is not set or API fails.
-#[function]
+#[tool]
 pub async fn web_search_news(
     query: String,
     num_results: Option<String>,

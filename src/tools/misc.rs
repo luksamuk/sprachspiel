@@ -1,3 +1,4 @@
+use sprachspiel_tool_derive::tool;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::parse_bool;
 
@@ -17,7 +18,7 @@ use crate::utils::parse_bool;
 ///
 /// # Note
 /// This tool is primarily for debugging and testing tool calling behavior.
-#[ollama_rs::function]
+#[tool]
 pub async fn test_tool(
     should_fail: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

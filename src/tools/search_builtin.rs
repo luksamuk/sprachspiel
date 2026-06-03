@@ -4,7 +4,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{format_size, parse_bounded_number};
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use ollama_rs::generation::tools::implementations::DDGSearcher;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -115,7 +115,7 @@ fn truncate_content(content: &str) -> std::borrow::Cow<'_, str> {
 ///
 /// # Errors
 /// Returns error message if search fails or is blocked by CAPTCHA.
-#[function]
+#[tool]
 pub async fn web_search(
     query: String,
     num_results: Option<String>,
@@ -201,7 +201,7 @@ pub async fn web_search(
 ///
 /// # Errors
 /// Returns error message if search fails or is blocked by CAPTCHA.
-#[function]
+#[tool]
 pub async fn web_search_news(
     query: String,
     num_results: Option<String>,
@@ -295,7 +295,7 @@ pub async fn web_search_news(
 ///
 /// # Errors
 /// Returns error message if URL is invalid, page is unreachable, or content cannot be parsed.
-#[function]
+#[tool]
 pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("web_scrape", &[("url".to_string(), url.clone())]);
 

@@ -6,6 +6,7 @@
 //! Tasks support status (pending/in_progress/done), priority (low/medium/high/critical),
 //! and tags for grouping (e.g., "bug", "feature").
 
+use sprachspiel_tool_derive::tool;
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::OnceCell;
@@ -137,7 +138,7 @@ fn parse_tags(tags: Option<String>) -> Vec<String> {
 /// todo_add("Fix login bug".to_string(), Some("high".to_string()), Some("bug,auth".to_string()))
 /// // Returns: "Added task 1: Fix login bug [pending] [high] #bug #auth"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_add(
     description: String,
     priority: Option<String>,
@@ -206,7 +207,7 @@ pub async fn todo_add(
 /// todo_update("1".to_string(), "in_progress".to_string())
 /// // Returns: "Task 1 marked as in_progress"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_update(
     task_id: String,
     status: String,
@@ -266,7 +267,7 @@ pub async fn todo_update(
 /// todo_get("1".to_string())
 /// // Returns: "Task 1: Fix login bug\nStatus: pending\nPriority: high\nTags: #bug #auth"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_get(task_id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("todo_get", &[("task_id".to_string(), task_id.clone())]);
 
@@ -332,7 +333,7 @@ pub async fn todo_get(task_id: String) -> Result<String, Box<dyn std::error::Err
 /// // Change tags only
 /// todo_edit("1".to_string(), None, None, Some("bug,frontend".to_string()))
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_edit(
     task_id: String,
     description: Option<String>,
@@ -427,7 +428,7 @@ pub async fn todo_edit(
 /// todo_delete("3".to_string())
 /// // Returns: "Deleted task 3: Fix typo"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_delete(
     task_id: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -485,7 +486,7 @@ pub async fn todo_delete(
 /// todo_list(Some("high".to_string()))         // Show high priority tasks
 /// todo_list(Some("#bug".to_string()))          // Show tasks tagged "bug"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_list(
     filter: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -554,7 +555,7 @@ pub async fn todo_list(
 /// todo_clear_done()
 /// // Returns: "Removed 3 completed tasks"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("todo_clear_done", &[]);
 
@@ -588,7 +589,7 @@ pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Sen
 /// todo_clear_all()
 /// // Returns: "Cleared 5 tasks from the list"
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn todo_clear_all() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("todo_clear_all", &[]);
 

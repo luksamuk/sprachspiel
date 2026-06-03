@@ -3,6 +3,7 @@
 //! Provides the LLM with explicit access to search and retrieve
 //! messages from conversation history, user-created notes, and imported documents.
 
+use sprachspiel_tool_derive::tool;
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
@@ -96,7 +97,7 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 /// remember(query="Wittgenstein")     // Search by topic
 /// remember(query="philosophy", limit="10")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn remember(
     id: Option<String>,
     chunk: Option<String>,

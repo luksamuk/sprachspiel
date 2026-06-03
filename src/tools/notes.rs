@@ -15,6 +15,7 @@
 //! - Quick facts (project uses PostgreSQL, API key location)
 //! - Settings and configuration snippets
 
+use sprachspiel_tool_derive::tool;
 use crate::content::types::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::project::get_project_id;
@@ -77,7 +78,7 @@ fn parse_note_id(id: &str) -> Result<i64, String> {
 /// )
 /// // Returns: "Created note 42: Architecture Decision: Database Choice\n..."
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_add(
     content: String,
     title: Option<String>,
@@ -193,7 +194,7 @@ pub async fn note_add(
 /// // Change both
 /// note_edit(id="42", title="New Title", content="New content...")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_edit(
     id: String,
     title: Option<String>,
@@ -326,7 +327,7 @@ pub async fn note_edit(
 /// note_delete(id="42")
 /// note_delete(id="note:42")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_delete(id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("note_delete", &[("id".to_string(), id.clone())]);
 

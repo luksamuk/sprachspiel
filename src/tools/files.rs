@@ -1,3 +1,4 @@
+use sprachspiel_tool_derive::tool;
 use super::files_blocklist::{BlocklistConfig, is_blocked_for_list, is_blocked_for_read};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool, parse_u32};
@@ -29,7 +30,7 @@ const MAX_RESULTS: usize = 100; // Maximum search results
 ///
 /// # Errors
 /// Returns error message if file doesn't exist, is not readable, or is too large.
-#[ollama_rs::function]
+#[tool]
 pub async fn read_file(
     path: String,
     max_lines: Option<String>,
@@ -162,7 +163,7 @@ pub async fn read_file(
 ///
 /// # Errors
 /// Returns error message if file doesn't exist, start_line is invalid, or num_lines is 0.
-#[ollama_rs::function]
+#[tool]
 pub async fn read_file_segment(
     path: String,
     start_line: String,
@@ -337,7 +338,7 @@ pub async fn read_file_segment(
 ///
 /// # Errors
 /// Returns error message if file doesn't exist or is not readable.
-#[ollama_rs::function]
+#[tool]
 pub async fn count_lines(path: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
@@ -423,7 +424,7 @@ pub async fn count_lines(path: String) -> Result<String, Box<dyn std::error::Err
 ///
 /// # Errors
 /// Returns error message if directory doesn't exist or is not accessible.
-#[ollama_rs::function]
+#[tool]
 pub async fn list_directory(
     path: String,
     recursive: Option<String>,
@@ -653,7 +654,7 @@ fn collect_entries_recursive(
 ///
 /// # Errors
 /// Returns error message for invalid regex pattern or inaccessible directory.
-#[ollama_rs::function]
+#[tool]
 pub async fn search_files(
     pattern: String,
     path: String,

@@ -11,7 +11,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::normalize_input;
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::sync::RwLock;
@@ -228,7 +228,7 @@ fn parse_hex_color(hex: &str) -> Result<(u8, u8, u8), String> {
 /// ```ignore
 /// led_get_status()
 /// ```
-#[function]
+#[tool]
 pub async fn led_get_status() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("led_get_status", &[]);
 
@@ -267,7 +267,7 @@ pub async fn led_get_status() -> Result<String, Box<dyn std::error::Error + Send
 /// led_set_power(action: "off")     // Turn off
 /// led_set_power(action: "toggle")  // Toggle state
 /// ```
-#[function]
+#[tool]
 pub async fn led_set_power(
     action: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -326,7 +326,7 @@ pub async fn led_set_power(
 /// led_set_program(program: "2")         // Set to lamp mode (numeric)
 /// led_set_program(program: "next")      // Cycle to next program
 /// ```
-#[function]
+#[tool]
 pub async fn led_set_program(
     program: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -390,7 +390,7 @@ pub async fn led_set_program(
 /// led_set_brightness(brightness: "1.0")   # Full brightness
 /// led_set_brightness(brightness: "0.1")   # 10% brightness (dim)
 /// ```
-#[function]
+#[tool]
 pub async fn led_set_brightness(
     brightness: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -462,7 +462,7 @@ pub async fn led_set_brightness(
 /// // To make more red: increase R or decrease G/B
 /// led_set_color(r: "255", g: "50", b: "0")        // More red-orange
 /// ```
-#[function]
+#[tool]
 pub async fn led_set_color(
     hex: Option<String>,
     r: Option<String>,

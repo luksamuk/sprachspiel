@@ -1,3 +1,4 @@
+use sprachspiel_tool_derive::tool;
 use super::*;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::capitalize;
@@ -22,7 +23,7 @@ use crate::utils::capitalize;
 /// # Errors
 /// Returns error message if Pokémon is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_pokemon_basic",
@@ -87,7 +88,7 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
 /// # Errors
 /// Returns error message if Pokémon is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_pokemon_stats",
@@ -149,7 +150,7 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
 /// # Errors
 /// Returns error message if Pokémon is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult<String> {
     log_tool_call(
         "fetch_pokemon_moves",
@@ -211,7 +212,7 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
 /// # Errors
 /// Returns error message if Pokémon is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_pokemon_evolution",
@@ -261,7 +262,7 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
 /// # Errors
 /// Returns error message if ability is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_ability_details",
@@ -330,7 +331,7 @@ pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
 /// # Errors
 /// Returns error message if type is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_type_effectiveness",
@@ -399,7 +400,7 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
 /// # Errors
 /// Returns error message if type is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> ToolResult<String> {
     let limit_num = limit
         .and_then(|l| l.parse::<usize>().ok())
@@ -465,7 +466,7 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
 /// # Errors
 /// Returns error message if move is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_move_details",
@@ -539,7 +540,7 @@ pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
 /// # Errors
 /// Returns error message if Pokémon is not found or API is unavailable.
 ///
-#[ollama_rs::function]
+#[tool]
 pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
         "fetch_pokemon",
