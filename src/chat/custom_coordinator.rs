@@ -361,7 +361,17 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 let name_tokens = estimate_tokens(&info.function.name);
                 let desc_tokens = estimate_tokens(&info.function.description);
                 let params_tokens = estimate_tokens(
-                    &serde_json::to_string(&info.function.parameters).unwrap_or_default(),
+                    &serde_json::to_string(&info.function.parameters).unwrap_or_else(|e| {
+                        // Every eprintln! in production code MUST have a
+                        // corresponding log::warn! (AGENTS.md steering rule).
+                        // Here the equivalent is `unwrap_or_default` for
+                        // serializing tool parameters for token estimation;
+                        // log the failure so it's not silent.
+                        log::warn!(
+                            "Failed to serialize tool parameters for token estimation: {e}"
+                        );
+                        String::new()
+                    }),
                 );
                 name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD
             })
@@ -548,7 +558,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self
     }
 
-    /// Set the format (for future use)
     /// Set model options
     pub fn options(mut self, options: ModelOptions) -> Self {
         self.options = options;
@@ -836,10 +845,19 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ChatMessageRequest::new(self.model.clone(), messages).options(self.options.clone());
 
         // Add tools - need to convert our CustomToolInfo to ollama-rs's ToolInfo
-        // We serialize ours and it's compatible
-        let tools_json = serde_json::to_string(&self.tool_infos).unwrap_or_default();
+        // We serialize ours and it's compatible. If serialization fails, log
+        // the error and fall back to an empty tools list (fail-safe: better to
+        // send a request without tools than to panic). See AGENTS.md steering
+        // rule: every silent fallback MUST have a log companion.
+        let tools_json = serde_json::to_string(&self.tool_infos).unwrap_or_else(|e| {
+            log::error!("Failed to serialize tool_infos for request: {e}");
+            String::new()
+        });
         let tools: Vec<ollama_rs::generation::tools::ToolInfo> =
-            serde_json::from_str(&tools_json).unwrap_or_default();
+            serde_json::from_str(&tools_json).unwrap_or_else(|e| {
+                log::error!("Failed to deserialize tool_infos from JSON: {e}");
+                Vec::new()
+            });
         request = request.tools(tools);
 
         if let Some(ref think) = self.think {
