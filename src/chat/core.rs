@@ -205,6 +205,9 @@ pub fn setup_coordinator(
                         view_event_sender.send(super::view::ViewEvent::PreToolContent {
                             content: cleaned,
                             thinking,
+                            // Terminal mode never streams; the content
+                            // was not yet visible to the user.
+                            already_streamed: false,
                         });
                     }
                 }

@@ -95,6 +95,15 @@ pub enum ViewEvent {
     PreToolContent {
         content: String,
         thinking: Option<String>,
+        /// `true` if the content was already streamed token-by-token via
+        /// `StreamToken` events. In that case, the draining side
+        /// (`drain_into_llm_channel`) must NOT re-emit a `ShowMarkdown`
+        /// view action — that would duplicate the text the user already
+        /// saw streaming. When `false`, the text was generated in a
+        /// subsequent round (`process_next`) where the user has not
+        /// seen it yet, so we DO emit `ShowMarkdown` to make it visible
+        /// before the tool call.
+        already_streamed: bool,
     },
     /// Context window is filling up (compaction may be needed)
     ContextNeedsCompaction { percent: u64 },
@@ -139,7 +148,14 @@ impl ViewEventReceiver {
     pub fn drain_into(&self, view: &mut dyn ChatView) {
         while let Ok(event) = self.receiver.try_recv() {
             match event {
-                ViewEvent::PreToolContent { content, thinking } => {
+                ViewEvent::PreToolContent {
+                    content,
+                    thinking,
+                    already_streamed: _,
+                } => {
+                    // The non-streaming drain path doesn't have a
+                    // streaming zone to suppress; it always renders
+                    // the pre-tool content as a stable message.
                     if let Some(thinking_text) = thinking {
                         view.show_thinking(&thinking_text);
                     }
@@ -175,18 +191,38 @@ impl ViewEventReceiver {
 
         while let Ok(event) = self.receiver.try_recv() {
             match event {
-                ViewEvent::PreToolContent { content, thinking } => {
+                ViewEvent::PreToolContent {
+                    content,
+                    thinking,
+                    already_streamed,
+                } => {
                     // Emit thinking and content as separate ViewActions,
                     // matching the behavior of drain_into().
-                    if let Some(thinking_text) = thinking {
-                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
-                            ViewAction::ShowThinking(thinking_text),
-                        ));
-                    }
-                    if !content.trim().is_empty() {
-                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
-                            ViewAction::ShowMarkdown(content),
-                        ));
+                    //
+                    // **Message-ordering fix (Hermes retest, Scenario 10):**
+                    // When `already_streamed` is true, the content was
+                    // already streamed via `StreamToken` events during
+                    // the chat round. Re-emitting `ShowMarkdown` here
+                    // would duplicate the text the user already saw —
+                    // making it look like the model explains tool results
+                    // the user hasn't seen yet. Skip `ShowMarkdown` (and
+                    // `ShowThinking` for the same reason) when
+                    // `already_streamed` is true.
+                    //
+                    // The thinking block is normally emitted via
+                    // `stream_thinking()` in the streaming path, so
+                    // re-emitting here would also duplicate it.
+                    if !already_streamed {
+                        if let Some(thinking_text) = thinking {
+                            let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                                ViewAction::ShowThinking(thinking_text),
+                            ));
+                        }
+                        if !content.trim().is_empty() {
+                            let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                                ViewAction::ShowMarkdown(content),
+                            ));
+                        }
                     }
                 }
                 ViewEvent::ContextNeedsCompaction { percent } => {
@@ -1184,6 +1220,7 @@ mod tests {
         view_event_sender.send(ViewEvent::PreToolContent {
             content: "Let me search for that.".to_string(),
             thinking: Some("I should use the weather tool.".to_string()),
+            already_streamed: false,
         });
 
         // Create LLM channel
@@ -1256,6 +1293,7 @@ mod tests {
         view_event_sender.send(ViewEvent::PreToolContent {
             content: "Content".to_string(),
             thinking: None,
+            already_streamed: false,
         });
         view_event_sender.send(ViewEvent::ContextNeedsCompaction { percent: 90 });
 
@@ -1298,6 +1336,7 @@ mod tests {
         view_event_sender.send(ViewEvent::PreToolContent {
             content: "   ".to_string(),
             thinking: Some("Thinking here".to_string()),
+            already_streamed: false,
         });
 
         // Create LLM channel
@@ -1317,5 +1356,39 @@ mod tests {
 
         // Empty content should NOT generate a ShowMarkdown event
         assert!(llm_rx.try_recv().is_err());
+    }
+
+    /// Message-ordering fix (Hermes retest Scenario 10): when
+    /// `already_streamed` is true, the content was already shown to the
+    /// user via `StreamToken` events. The drain path must NOT re-emit
+    /// `ShowMarkdown` or `ShowThinking` — that would duplicate text and
+    /// make the model look like it's explaining tool results the user
+    /// hasn't seen yet.
+    #[test]
+    fn test_drain_into_llm_channel_already_streamed_skips_emission() {
+        use super::super::llm_event::LlmEvent;
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Pre-tool content that was ALREADY streamed token-by-token.
+        // The drain path must skip both ShowMarkdown and ShowThinking
+        // (they would duplicate what the user already saw).
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "Let me search for that.".to_string(),
+            thinking: Some("I should use the weather tool.".to_string()),
+            already_streamed: true,
+        });
+
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // No events should be emitted
+        assert!(
+            llm_rx.try_recv().is_err(),
+            "PreToolContent with already_streamed=true should NOT emit any ViewActions",
+        );
     }
 }
