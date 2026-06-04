@@ -11,9 +11,9 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::normalize_input;
-use sprachspiel_tool_derive::tool;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
+use sprachspiel_tool_derive::tool;
 use std::sync::RwLock;
 
 /// Global LED endpoint (set from settings at startup)

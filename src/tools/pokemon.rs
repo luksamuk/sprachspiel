@@ -1,7 +1,7 @@
-use sprachspiel_tool_derive::tool;
 use super::*;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::capitalize;
+use sprachspiel_tool_derive::tool;
 
 /// Fetch basic information about a Pokémon.
 ///

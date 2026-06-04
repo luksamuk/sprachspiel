@@ -3,12 +3,12 @@
 //! Provides the LLM with explicit access to search and retrieve
 //! messages from conversation history, user-created notes, and imported documents.
 
-use sprachspiel_tool_derive::tool;
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::settings::{DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT};
 use crate::tools::context::{get_db, get_embedding, get_settings};
+use sprachspiel_tool_derive::tool;
 
 /// Number of chunks to show in preview for large documents
 const MAX_PREVIEW_CHUNKS: i32 = 3;

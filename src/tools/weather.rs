@@ -5,8 +5,8 @@
 
 use crate::consts::api::{OPEN_METEO_BASE, OPEN_METEO_GEOCODING};
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use sprachspiel_tool_derive::tool;
 use serde::Deserialize;
+use sprachspiel_tool_derive::tool;
 
 /// Get coordinates for a location name using Open-Meteo geocoding
 async fn get_coordinates(location: &str) -> Result<(f64, f64), String> {

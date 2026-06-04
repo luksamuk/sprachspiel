@@ -1,6 +1,6 @@
-use sprachspiel_tool_derive::tool;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::parse_bool;
+use sprachspiel_tool_derive::tool;
 
 /// Debug tool for testing tool calling and error handling.
 ///

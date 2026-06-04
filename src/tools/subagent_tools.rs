@@ -13,7 +13,6 @@
 //! - `spawn_translate_agent` — Translate text between languages
 //! - `spawn_summarize_agent` — Summarize long text
 
-use sprachspiel_tool_derive::tool;
 use crate::chat::subagent::{SubagentConfig, SubagentRunner, SubagentType};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::ocr::mode::parse_ocr_mode;
@@ -21,6 +20,7 @@ use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::security::validate_subagent_paths;
 use crate::tools::context::{get_ollama, get_settings};
 use crate::utils::expand_tilde_path;
+use sprachspiel_tool_derive::tool;
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------

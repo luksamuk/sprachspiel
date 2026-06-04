@@ -17,10 +17,10 @@
 //! - `edit_file` - Surgical edits (replace/insert/delete lines)
 //! - `append_file` - Append content to end of file
 
-use sprachspiel_tool_derive::tool;
 use super::files_blocklist::{BlocklistConfig, is_blocked_for_write};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool};
+use sprachspiel_tool_derive::tool;
 use std::path::{Path, PathBuf};
 
 /// Maximum file size for write operations (5MB)

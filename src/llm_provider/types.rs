@@ -11,9 +11,9 @@
 //! expected to be unified with `ToolInfo` in #119 (Agnostic Provider
 //! Types) when the `LlmProvider` trait is introduced.
 
-use schemars::generate::SchemaSettings;
 use schemars::Schema;
 use schemars::SchemaGenerator;
+use schemars::generate::SchemaSettings;
 
 use crate::tools::tool_trait::{Parameters, Tool};
 

@@ -15,12 +15,12 @@
 //! - Quick facts (project uses PostgreSQL, API key location)
 //! - Settings and configuration snippets
 
-use sprachspiel_tool_derive::tool;
 use crate::content::types::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::utils::truncate_chars;
+use sprachspiel_tool_derive::tool;
 
 /// Parse note ID from various formats ("42" or "note:42")
 fn parse_note_id(id: &str) -> Result<i64, String> {
