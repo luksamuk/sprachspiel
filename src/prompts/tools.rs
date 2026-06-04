@@ -524,6 +524,12 @@ mod tests {
     #[test]
     fn test_empty_blacklist() {
         let blacklist = HashSet::new();
+
+        // The `context` variable is only used inside the weather-tools
+        // and pokemon-tools cfg blocks below, so the variable itself
+        // is also gated to avoid a `unused variable` warning when
+        // those features are off.
+        #[cfg(any(feature = "weather-tools", feature = "pokemon-tools"))]
         let context = build_tool_context(&blacklist);
 
         // Should have content when features are enabled
@@ -539,9 +545,13 @@ mod tests {
         let mut blacklist = HashSet::new();
         blacklist.insert("web_search");
 
+        // Web search should be filtered if blacklisted.
+        // The `context` variable is only used inside the search-tools
+        // cfg block below, so the variable itself is also gated to
+        // avoid a `unused variable` warning when the feature is off.
+        #[cfg(feature = "search-tools")]
         let context = build_tool_context(&blacklist);
 
-        // Web search should be filtered if blacklisted
         #[cfg(feature = "search-tools")]
         {
             // With web_search blacklisted, the section may or may not appear
