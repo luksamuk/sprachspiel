@@ -34,10 +34,15 @@ impl<P: DeserializeOwned + JsonSchema> Parameters for P {}
 
 /// Tool trait: our own implementation, decoupled from `ollama-rs`.
 ///
-/// `#[sprachspiel::tool]`-generated tools implement this trait (along with
-/// `ollama_rs::generation::tools::Tool` via the dual-impl macro, so they
-/// remain compatible with `ollama_rs::coordinator::Coordinator` until
-/// #123 removes ollama-rs entirely).
+/// `#[sprachspiel::tool]`-generated tools implement this trait along with
+/// `ollama_rs::generation::tools::Tool` via the dual-impl macro. The
+/// ollama-rs impl is kept for serialization compatibility with the
+/// ollama-rs JSON shape (`ToolInfo` / `ToolCall`), used by the
+/// `CustomCoordinator` to send tool definitions to Ollama. The
+/// `ollama_rs::coordinator::Coordinator` itself is no longer used
+/// (see the registry's `ToolRegistrar` impls); the dual-impl
+/// exists purely for the trait that ollama-rs exposes for
+/// `ToolInfo`/tool-call serialization.
 ///
 /// # W2 Wave Context (Issue #118)
 ///
