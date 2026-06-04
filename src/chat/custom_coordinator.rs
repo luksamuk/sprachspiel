@@ -367,9 +367,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // Here the equivalent is `unwrap_or_default` for
                         // serializing tool parameters for token estimation;
                         // log the failure so it's not silent.
-                        log::warn!(
-                            "Failed to serialize tool parameters for token estimation: {e}"
-                        );
+                        log::warn!("Failed to serialize tool parameters for token estimation: {e}");
                         String::new()
                     }),
                 );
@@ -853,8 +851,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             log::error!("Failed to serialize tool_infos for request: {e}");
             String::new()
         });
-        let tools: Vec<ollama_rs::generation::tools::ToolInfo> =
-            serde_json::from_str(&tools_json).unwrap_or_else(|e| {
+        let tools: Vec<ollama_rs::generation::tools::ToolInfo> = serde_json::from_str(&tools_json)
+            .unwrap_or_else(|e| {
                 log::error!("Failed to deserialize tool_infos from JSON: {e}");
                 Vec::new()
             });
