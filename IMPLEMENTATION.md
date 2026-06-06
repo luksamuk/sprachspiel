@@ -162,7 +162,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 ✅ COMPLETED |
-| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
+| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | `ollama-rs` removed from Cargo.toml; #72 closed; #201 message-ordering refactor shipped (P0, blocks release) |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
@@ -3887,6 +3887,10 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 This PR achieves the migration while keeping ollama-rs as a dependency for the W2 wave (planned removal in #123). The migration uses a **dual-impl macro** (emits both `impl crate::tools::Tool` and `impl ollama_rs::Tool`) so all migrated tools work with both the ollama-rs `Coordinator` and our `CustomCoordinator` without per-tool changes. This is a **pragmatic compromise**: the project's own trait is now the primary surface, and ollama-rs becomes a downstream consumer rather than the source of truth.
 
+**Known limitation (carried into W2):**
+
+Tool calls appear batched at the end of the stream in multi-round cycles. When a chat cycle involves multiple rounds (model makes tool calls → observes results → makes more tool calls → final response), all tool calls and their results appear in a single block at the end of the chat history, with the model's thinking/text emitted first. This is caused by the Ollama API design — tool calls are aggregated in a single `done=true` chunk per round, and round ordering is lost between rounds of a multi-round cycle. The TUI cannot reconstruct the correct visual order from the Ollama stream alone. This is a **structural refactor** that requires `process_response` to return `Result<Vec<ChatRound>>` and the TUI to render `Vec<MessageGroup>`. Tracked in **#201 (P0)**, which **blocks the next release** and is the next thing to be worked on after this PR merges.
+
 **Files created:**
 
 | File | Content |
@@ -4137,6 +4141,56 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 | Streaming integration in TUI | Requires TUI first | M3 |
 
 **Related:** Issue #72
+
+---
+
+#### Cycle-Aware Message Ordering in TUI — #201 [M1] 🚨 **P0 — BLOCKS NEXT RELEASE**
+
+**Status:** 📋 NOT STARTED  
+**Depends on:** None (orthogonal to W2 Provider Chain; can be worked in parallel with #119+)  
+**Estimated effort:** 1–2 weeks (TUI render refactor + event loop + scroll + tests + manual test)  
+**Issue:** #201  
+**Branch:** TBD  
+**PR:** TBD
+
+**Goal:** Refactor the chat message storage and rendering so that **multi-round cycles** (a user prompt followed by N rounds of `[thinking? + content? + tool_calls*]` and a final response) are rendered in the correct temporal order — thinking, content, tool calls, results interleaved round by round — instead of being batched at the end of the stream.
+
+**Why this is P0:** The current TUI shows all tool calls and their results in a single block at the end of the stream, with the model's thinking/text emitted first. This is a severe UX regression that affects every multi-round interaction (the most common case for any task involving web search, file operations, or anything requiring more than one tool call). It blocks the next release and is the next thing to be worked on after #118 merges.
+
+**Root cause (Ollama API design, NOT a TUI bug):**
+
+The Ollama API streams thinking/content tokens as they are generated, but aggregates all `tool_calls` into a single `done=true` chunk at the end of each round. The protocol preserves ordering **within** a round (thinking → content → tool_calls) but loses ordering **between** rounds of a multi-round cycle. The sprachspiel TUI cannot reconstruct round ordering from the Ollama stream alone — this requires a **structural refactor** of how rounds are accumulated and rendered.
+
+**Proposed design:**
+
+```rust
+/// A single round of model output within a chat cycle.
+struct ChatRound {
+    thinking: Option<String>,         // Thinking tokens (if model supports thinking)
+    content: Option<String>,          // Visible text content
+    tool_calls: Vec<ToolCall>,        // Tool calls emitted by the model this round
+    tool_results: Vec<ToolResult>,    // Tool execution results returned by sprachspiel
+}
+
+/// A complete chat cycle (one user prompt → N rounds → final response).
+struct ChatCycle {
+    rounds: Vec<ChatRound>,           // Empty ChatRound = final response (no tool calls)
+    final_response: ChatRound,        // The last round (always present, no tool_calls)
+}
+```
+
+**Refactor steps:**
+
+1. **`process_response` refactor** — change return type from `()` to `Result<ChatCycle>`. The event loop accumulates `Vec<ChatCycle>` per session turn. Each `process_response` call returns one cycle.
+2. **TUI storage change** — `App.messages: Vec<ChatMessage>` becomes `App.messages: Vec<MessageGroup>` where each `MessageGroup` is a contíguo block of `thinking + content + tool_call + tool_result` lines. The TUI renders groups in order, with sub-blocks within a group staying together.
+3. **Scroll/render adaptation** — scroll position now tracks groups, not individual messages. Add visual separator between groups (subtle horizontal rule) to make round boundaries clear.
+4. **Session persistence** — only the final response of each cycle is persisted to SQLite (current behavior in `continuation.rs:106`). Do NOT change persistence — embeddings/retrieval work on the final response summary, not on per-round data. The cycle structure is a TUI-render concern, not a storage concern.
+5. **Tests** — unit tests for `ChatCycle` round ordering, integration test for multi-round cycle rendering, regression test for the Hermes retest prompt ("luksamuk, Sonic XA, Sprachspiel").
+6. **Manual test** — `MANUAL_TEST_201.md` with 5 scenarios: (1) multi-round web search cycle, (2) file ops cycle, (3) calculator + explanation cycle, (4) no-tool cycle, (5) error-during-tool cycle.
+
+**W2 wave ordering:** #201 is the **next thing to be worked on** after #118 merges. It is **orthogonal to the W2 Provider Chain** (it does not depend on #119-#123 and does not block them) but **blocks the next release**. W2 will not close until #201 ships, regardless of which specific W2 card finishes first.
+
+**Related:** Issue #118 (tool trait), #119 (agnostic types — `ChatRound`/`ChatCycle` may live in `src/llm_provider/types.rs` after #119), issue #199 (multi-model validation, may be subsumed by #201 manual test).
 
 ---
 

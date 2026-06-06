@@ -20,6 +20,7 @@ All notable changes to Sprachspiel will be documented in this file.
 ### Known Limitations
 
 - **DuckDuckGo may return "No results found" for some queries** — The `DdgSearcher` in `src/tools/search_builtin.rs` calls `https://html.duckduckgo.com/html/?q=...` directly. DuckDuckGo occasionally rate-limits automated traffic or shows CAPTCHA challenges, both of which can result in empty results. The tool itself works correctly; this is a third-party service limitation. Tracked in issue #200 (TBD — investigate retry/header tactics or move to MCP-based search). MCP-based search is the planned replacement (issue TBD, post-W2).
+- **Tool calls appear batched at the end of the stream in multi-round cycles** — When a chat cycle involves multiple rounds (e.g., the model makes tool calls, observes the results, then makes more tool calls, then produces a final response), all tool calls and their results appear in a single block at the end of the chat history, with the model's thinking/text emitted first. This is caused by the Ollama API design: tool calls are aggregated into a single `done=true` chunk per round, and round ordering is lost between rounds of a multi-round cycle. The TUI cannot reconstruct the correct visual order from the Ollama stream alone — this requires a structural refactor tracked in issue #201. P0, blocks the next release, and is the next thing to be worked on after this PR merges.
 
 ### Fixed
 
