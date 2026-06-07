@@ -4146,11 +4146,11 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 
 #### Cycle-Aware Message Ordering in TUI — #201 [M1] 🚨 **P0 — BLOCKS NEXT RELEASE**
 
-**Status:** 📋 NOT STARTED  
+**Status:** 🔄 IN PROGRESS  
 **Depends on:** None (orthogonal to W2 Provider Chain; can be worked in parallel with #119+)  
 **Estimated effort:** 1–2 weeks (TUI render refactor + event loop + scroll + tests + manual test)  
 **Issue:** #201  
-**Branch:** TBD  
+**Branch:** `fix/201-cycle-aware-message-ordering`  
 **PR:** TBD
 
 **Goal:** Refactor the chat message storage and rendering so that **multi-round cycles** (a user prompt followed by N rounds of `[thinking? + content? + tool_calls*]` and a final response) are rendered in the correct temporal order — thinking, content, tool calls, results interleaved round by round — instead of being batched at the end of the stream.
@@ -4161,32 +4161,34 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 
 The Ollama API streams thinking/content tokens as they are generated, but aggregates all `tool_calls` into a single `done=true` chunk at the end of each round. The protocol preserves ordering **within** a round (thinking → content → tool_calls) but loses ordering **between** rounds of a multi-round cycle. The sprachspiel TUI cannot reconstruct round ordering from the Ollama stream alone — this requires a **structural refactor** of how rounds are accumulated and rendered.
 
-**Proposed design:**
+**Implementation design (single PR, fix + MessageGroup together):**
 
-```rust
-/// A single round of model output within a chat cycle.
-struct ChatRound {
-    thinking: Option<String>,         // Thinking tokens (if model supports thinking)
-    content: Option<String>,          // Visible text content
-    tool_calls: Vec<ToolCall>,        // Tool calls emitted by the model this round
-    tool_results: Vec<ToolResult>,    // Tool execution results returned by sprachspiel
-}
+1. **`ChatMessage.round_index: usize`** — Ephemeral field (not persisted to SQLite, reset per user prompt). Tracks which round of a multi-round cycle each message belongs to. Default 0 for backward compatibility. Builder method `with_round_index(round)`.
 
-/// A complete chat cycle (one user prompt → N rounds → final response).
-struct ChatCycle {
-    rounds: Vec<ChatRound>,           // Empty ChatRound = final response (no tool calls)
-    final_response: ChatRound,        // The last round (always present, no tool_calls)
-}
-```
+2. **`App.current_round: usize`** — Incremented on `ToolCallStarted` (each tool call round). Reset to 0 on `Complete`/new prompt. Used by `insert_at_round_boundary()` and `drain_and_add_tool_messages()`.
 
-**Refactor steps:**
+3. **`App.insert_at_round_boundary(message)`** — Positions inter-round content (thinking, text from `InterTileText`) after all messages with `round_index <= message.round_index` and before the streaming zone. Replaces `insert_before_streaming_zone()` for round-aware inserts.
 
-1. **`process_response` refactor** — change return type from `()` to `Result<ChatCycle>`. The event loop accumulates `Vec<ChatCycle>` per session turn. Each `process_response` call returns one cycle.
-2. **TUI storage change** — `App.messages: Vec<ChatMessage>` becomes `App.messages: Vec<MessageGroup>` where each `MessageGroup` is a contíguo block of `thinking + content + tool_call + tool_result` lines. The TUI renders groups in order, with sub-blocks within a group staying together.
-3. **Scroll/render adaptation** — scroll position now tracks groups, not individual messages. Add visual separator between groups (subtle horizontal rule) to make round boundaries clear.
-4. **Session persistence** — only the final response of each cycle is persisted to SQLite (current behavior in `continuation.rs:106`). Do NOT change persistence — embeddings/retrieval work on the final response summary, not on per-round data. The cycle structure is a TUI-render concern, not a storage concern.
-5. **Tests** — unit tests for `ChatCycle` round ordering, integration test for multi-round cycle rendering, regression test for the Hermes retest prompt ("luksamuk, Sonic XA, Sprachspiel").
-6. **Manual test** — `MANUAL_TEST_201.md` with 5 scenarios: (1) multi-round web search cycle, (2) file ops cycle, (3) calculator + explanation cycle, (4) no-tool cycle, (5) error-during-tool cycle.
+4. **`MessageGroup`** (new `src/chat/round.rs`) — Groups `ChatMessage`s by `round_index` for rendering. `build_message_groups(messages)` returns `Vec<MessageGroup>` where each group is a contiguous block of messages from the same round. `is_final: bool` marks the last group.
+
+5. **`build_lines()` refactor** — Iterates over `MessageGroup`s instead of flat `ChatMessage`s. No visual separator between groups (user's decision).
+
+6. **Event loop updates** — `InterTileText` handler increments `current_round` and uses `insert_at_round_boundary()`. `drain_and_add_tool_messages()` assigns `round_index` to tool messages. `Complete`/`Cancelled`/`Error` reset `current_round`. `handle_key_line()` resets `current_round` at start of each prompt.
+
+**Files changed:**
+- `src/chat/tui/components/chat_area.rs` — `ChatMessage` gains `round_index`, `with_round_index()`, `build_lines()` iterates by groups
+- `src/chat/round.rs` (NEW) — `MessageGroup`, `build_message_groups()`
+- `src/chat/app.rs` — `current_round`, `insert_at_round_boundary()`, reset logic
+- `src/chat/event_loop.rs` — `InterTileText` round-aware, `drain_and_add_tool_messages` round-aware
+- `src/chat/llm_event.rs` — no change (round tracking is in the event loop, not in events)
+
+**Files NOT changed:** `custom_coordinator.rs`, `core.rs`, `session.rs`, `continuation.rs`, `repl.rs` — coordinator and persistence are untouched.
+
+**Key decisions:**
+- `round_index` is ephemeral — not persisted to SQLite, zeroed per user prompt, does not affect embeddings or retrieval.
+- No visual separator between rounds — correct ordering is sufficient.
+- No `process_response` return type change — TUI reconstructs rounds from event sequence.
+- Single PR includes both the fix and `MessageGroup` rendering refactor.
 
 **W2 wave ordering:** #201 is the **next thing to be worked on** after #118 merges. It is **orthogonal to the W2 Provider Chain** (it does not depend on #119-#123 and does not block them) but **blocks the next release**. W2 will not close until #201 ships, regardless of which specific W2 card finishes first.
 
