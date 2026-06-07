@@ -444,15 +444,6 @@ impl App {
         self.messages.len()
     }
 
-    /// Return a diagnostic summary of all messages for debug logging.
-    /// Each entry contains (msg_type, round_index, content_len).
-    pub fn messages_debug(&self) -> Vec<(&MessageType, usize, usize)> {
-        self.messages
-            .iter()
-            .map(|m| (&m.msg_type, m.round_index, m.content.len()))
-            .collect()
-    }
-
     /// Append a streaming token to the last `AssistantStreaming` message.
     ///
     /// If the last message is not `AssistantStreaming`, searches backward

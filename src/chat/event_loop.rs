@@ -362,32 +362,8 @@ pub fn handle_llm_event(
                 thinking_desc,
                 view.app().message_count(),
             );
-            // Log message state BEFORE finalize_stream
-            for (i, (msg_type, round_index, content_len)) in
-                view.app().messages_debug().iter().enumerate()
-            {
-                log::debug!(
-                    "  StreamDone BEFORE [{}]: {:?} round={} content_len={}",
-                    i,
-                    msg_type,
-                    round_index,
-                    content_len,
-                );
-            }
             // Replace the streaming message with the final markdown version
             view.stream_done(&content, thinking.as_deref(), metrics.as_ref());
-            // Log message state AFTER finalize_stream
-            for (i, (msg_type, round_index, content_len)) in
-                view.app().messages_debug().iter().enumerate()
-            {
-                log::debug!(
-                    "  StreamDone AFTER [{}]: {:?} round={} content_len={}",
-                    i,
-                    msg_type,
-                    round_index,
-                    content_len,
-                );
-            }
         }
         LlmEvent::Complete {
             session,
