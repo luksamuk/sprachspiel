@@ -3164,6 +3164,255 @@ mod tests {
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
     }
 
+    // ── Tool message round_index ordering tests ────────────────────
+
+    #[test]
+    fn test_tool_messages_get_correct_round_index_before_increment() {
+        // Simulating the InterToolText handler fix: drain tool messages
+        // BEFORE incrementing the round, so they get the correct round.
+        //
+        // Scenario: Round 0 streaming → Round 1 tools.
+        // When InterToolText for round 2 arrives, round 1 tool messages
+        // should be drained with round_index=1, NOT round_index=2.
+        let mut app = test_app();
+
+        // Round 0: user prompt + streaming content
+        app.add_message(ChatMessage::user("Search".to_string()));
+        app.append_stream_thinking("Need to search");
+        app.append_stream_token("Searching...");
+
+        // ToolCallStarted: finalize streaming, enter round 1
+        app.finalize_streaming_zone_as_is();
+        app.increment_round(); // round 0 → 1
+        assert_eq!(app.current_round(), 1);
+
+        // Tool messages for round 1 (manually added, simulating drain)
+        app.add_message(ChatMessage::tool("🔧 search(X)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result: ...".to_string()).with_round_index(1));
+
+        // InterToolText for round 2: drain BEFORE incrementing round
+        // In the real handler: prev_round = current_round() = 1
+        // drain_and_add_tool_messages(view, prev_round)
+        // Then: increment_round() → 2
+        let _prev_round = app.current_round(); // 1
+        // Simulate draining round 1 tool messages (already added above)
+        // Now increment for round 2
+        app.increment_round(); // 1 → 2
+        let round = app.current_round(); // 2
+
+        // Insert round 2 content at the round boundary
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Let me calculate".to_string()).with_round_index(round),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Calculating...".to_string()).with_round_index(round),
+        );
+
+        // Verify ordering: User, Thinking(0/streaming), Assistant(0/streaming),
+        // Tool(1), Tool(1), Thinking(2), Assistant(2)
+        assert_eq!(app.messages.len(), 7);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert!(matches!(app.messages[1].msg_type, MessageType::Thinking));
+        assert!(matches!(app.messages[2].msg_type, MessageType::Assistant));
+        assert_eq!(
+            app.messages[3].round_index, 1,
+            "Tool messages should have round_index=1"
+        );
+        assert_eq!(
+            app.messages[4].round_index, 1,
+            "Tool messages should have round_index=1"
+        );
+        assert_eq!(
+            app.messages[5].round_index, 2,
+            "Round 2 thinking should have round_index=2"
+        );
+        assert_eq!(
+            app.messages[6].round_index, 2,
+            "Round 2 content should have round_index=2"
+        );
+    }
+
+    #[test]
+    fn test_tool_messages_before_round_reset_on_complete() {
+        // Simulating the Complete handler fix: drain tool messages
+        // BEFORE resetting the round counter.
+        //
+        // Scenario: After a multi-round cycle, the final round's
+        // tool messages should get the correct round_index, not 0.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Query".to_string()));
+        // Round 0: streaming
+        app.append_stream_thinking("Thinking");
+        app.append_stream_token("Content");
+        app.finalize_streaming_zone_as_is();
+
+        // Round 1: tool messages
+        app.increment_round(); // 0 → 1
+        app.add_message(ChatMessage::tool("🔧 tool()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result".to_string()).with_round_index(1));
+
+        // Round 2: InterToolText
+        app.increment_round(); // 1 → 2
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("More thinking".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("More content".to_string()).with_round_index(2),
+        );
+
+        // Round 2: tool messages (drained before round reset)
+        // In the real handler: drain_and_add_tool_messages(view, current_round())
+        // current_round() is still 2 at this point (before reset_round)
+        let final_round = app.current_round(); // 2
+        app.add_message(ChatMessage::tool("🔧 tool2()".to_string()).with_round_index(final_round));
+        app.add_message(ChatMessage::tool("Result2".to_string()).with_round_index(final_round));
+
+        // NOW reset round (simulating Complete handler)
+        app.reset_round();
+        assert_eq!(app.current_round(), 0);
+
+        // Verify tool messages have correct round indices
+        // Round 1 tools should have round_index=1
+        let round1_tools: Vec<&ChatMessage> = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Tool && m.round_index == 1)
+            .collect();
+        assert_eq!(round1_tools.len(), 2, "Should have 2 round-1 tool messages");
+
+        // Round 2 tools should have round_index=2
+        let round2_tools: Vec<&ChatMessage> = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Tool && m.round_index == 2)
+            .collect();
+        assert_eq!(round2_tools.len(), 2, "Should have 2 round-2 tool messages");
+    }
+
+    #[test]
+    fn test_three_round_tool_call_ordering() {
+        // Full realistic 3-round tool call cycle:
+        // Round 0: streaming → ToolCallStarted
+        // Round 1: tool messages → InterToolText
+        // Round 2: tool messages → InterToolText
+        // Round 3: InterToolText → tool messages
+        // Then Complete (drain before reset)
+        let mut app = test_app();
+
+        // ── Round 0: streaming ──
+        app.add_message(ChatMessage::user("What's the weather?".to_string()));
+        app.append_stream_thinking("Need to search");
+        app.append_stream_token("Searching...");
+
+        // ToolCallStarted: finalize streaming, enter round 1
+        app.finalize_streaming_zone_as_is();
+        app.increment_round(); // 0 → 1
+
+        // Round 1 tool messages (drained at InterToolText for round 2)
+        // Simulated here with add_message for simplicity
+        app.add_message(ChatMessage::tool("🔧 search(weather)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Sunny, 28°C".to_string()).with_round_index(1));
+
+        // ── Round 2: InterToolText ──
+        // drain_and_add_tool_messages with prev_round=1 (already added)
+        app.increment_round(); // 1 → 2
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Let me calculate".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Based on weather...".to_string()).with_round_index(2),
+        );
+
+        // Round 2 tool messages
+        app.add_message(ChatMessage::tool("🔧 calc(temp)".to_string()).with_round_index(2));
+        app.add_message(ChatMessage::tool("= 28".to_string()).with_round_index(2));
+
+        // ── Round 3: InterToolText ──
+        app.increment_round(); // 2 → 3
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Final analysis".to_string()).with_round_index(3),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("The result is".to_string()).with_round_index(3),
+        );
+
+        // Verify overall ordering:
+        // User(0), Thinking(stream), Asst(stream), Tool(1), Tool(1),
+        // Thinking(2), Asst(2), Tool(2), Tool(2), Thinking(3), Asst(3)
+        assert_eq!(app.messages.len(), 11);
+
+        // Round 0: user + streaming content
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert!(matches!(app.messages[1].msg_type, MessageType::Thinking));
+        assert!(matches!(app.messages[2].msg_type, MessageType::Assistant));
+
+        // Round 1: tool messages (correctly positioned after round 0 content)
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].round_index, 1);
+
+        // Round 2: thinking + content + tools (correctly after round 1 tools)
+        assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 2);
+        assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[6].round_index, 2);
+        assert_eq!(app.messages[7].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[7].round_index, 2);
+        assert_eq!(app.messages[8].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[8].round_index, 2);
+
+        // Round 3: thinking + content (correctly after round 2 content)
+        assert_eq!(app.messages[9].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[9].round_index, 3);
+        assert_eq!(app.messages[10].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[10].round_index, 3);
+    }
+
+    #[test]
+    fn test_tool_messages_positioned_before_next_round_content() {
+        // Verify that tool messages from round N appear BEFORE
+        // inter-tool content from round N+1, even when inserted
+        // via add_message (appended at end) followed by insert_at_round_boundary
+        // for the next round.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Searching...".to_string()).with_round_index(0),
+        );
+
+        // Round 1: tool messages via add_message (appended at end)
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result".to_string()).with_round_index(1));
+
+        // Round 2: InterToolText inserted via insert_at_round_boundary
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Inter-round thinking".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Inter-round content".to_string()).with_round_index(2),
+        );
+
+        // Verify order: User, Assistant(0), Tool(1), Tool(1), Thinking(2), Assistant(2)
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].round_index, 0);
+        // Tool messages appear before round 2 content
+        assert_eq!(app.messages[2].round_index, 1);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        // Round 2 content appears after round 1 tools
+        assert_eq!(app.messages[4].round_index, 2);
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 2);
+        assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
+    }
+
     // ── ScrollState tests ──────────────────────────────────────────────
 
     #[test]
