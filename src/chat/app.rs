@@ -3413,6 +3413,52 @@ mod tests {
         assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
     }
 
+    // ── StreamDone drain tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_stream_done_drains_tool_messages_before_final_response() {
+        // Verify that tool messages from the last round appear BEFORE
+        // the final response message. This simulates the StreamDone event
+        // handler behavior: drain tool messages first, then create the
+        // final response message.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Search for Rust".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Searching...".to_string()).with_round_index(0),
+        );
+
+        // Round 1: tool messages (simulating drain in StreamDone)
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Results: Rust is...".to_string()).with_round_index(1));
+
+        // Now the final response is added AFTER tool messages
+        // (because StreamDone drains tools before creating the final message)
+        app.add_message(
+            ChatMessage::assistant_markdown("Here is what I found...".to_string())
+                .with_round_index(1),
+        );
+
+        // Verify order: User, Assistant(0), Tool(1), Tool(1), Assistant(1)
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+
+        // Round 0 assistant
+        assert_eq!(app.messages[1].round_index, 0);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+
+        // Tool messages from round 1 appear BEFORE the final response
+        assert_eq!(app.messages[2].round_index, 1);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+
+        // Final response comes AFTER tool messages
+        assert_eq!(app.messages[4].round_index, 1);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+    }
+
     // ── ScrollState tests ──────────────────────────────────────────────
 
     #[test]

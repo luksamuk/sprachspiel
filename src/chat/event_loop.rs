@@ -348,6 +348,10 @@ pub fn handle_llm_event(
             thinking,
             metrics,
         } => {
+            // Drain any pending tool messages from the last round BEFORE
+            // creating the final response message. This ensures tool
+            // messages appear before the final answer, not after it.
+            drain_and_add_tool_messages(view, view.app().current_round());
             // Replace the streaming message with the final markdown version
             view.stream_done(&content, thinking.as_deref(), metrics.as_ref());
         }

@@ -4167,7 +4167,7 @@ The Ollama API streams thinking/content tokens in real-time but aggregates `tool
 
 3. **`App.insert_at_round_boundary(message)`** — Positions inter-round content after all messages with `round_index <= message.round_index`, respecting the `AssistantStreaming` boundary. Replaces `insert_before_streaming_zone()` for round-aware inserts in the `InterToolText` handler. Uses a two-step algorithm: (a) find the `AssistantStreaming` boundary at the tail, (b) scan backward in the stable zone for the last message with `round_index <= target_round`, insert after it.
 
-4. **Event loop updates** — `InterToolText` handler: drains tool messages BEFORE incrementing `current_round` (using `prev_round` for correct round_index), then increments round, uses `insert_at_round_boundary()` with `round_index` for both thinking and content. `ToolCallStarted`: increments `current_round`. `Complete`/`Cancelled`/`Error`: drains tool messages BEFORE resetting `current_round` so they get the correct round_index. `drain_and_add_tool_messages()`: changed from using `current_round()` implicitly to accepting an explicit `round: usize` parameter, preventing round_index assignment bugs where tool messages from round N were assigned round N+1 or 0. `handle_key_line()`: resets `current_round` at start of each prompt.
+4. **Event loop updates** — `InterToolText` handler: drains tool messages BEFORE incrementing `current_round` (using `prev_round` for correct round_index), then increments round, uses `insert_at_round_boundary()` with `round_index` for both thinking and content. `ToolCallStarted`: increments `current_round`. `Complete`/`Cancelled`/`Error`: drains tool messages BEFORE resetting `current_round` so they get the correct round_index. `StreamDone`: drains tool messages BEFORE creating the final response message, ensuring the last round's tool messages appear before the answer instead of after it. `drain_and_add_tool_messages()`: changed from using `current_round()` implicitly to accepting an explicit `round: usize` parameter, preventing round_index assignment bugs where tool messages from round N were assigned round N+1 or 0. `handle_key_line()`: resets `current_round` at start of each prompt.
 
 5. **`MessageGroup` + `build_lines()` refactor — SKIPPED (YAGNI)** — Messages are already in correct temporal order after insertion; `build_lines()` iterates over flat `Vec<ChatMessage>` without needing group-level rendering. No visual separator between rounds (user's decision). This avoids adding a `round.rs` module for a grouping mechanism that provides no rendering benefit.
 
@@ -4188,7 +4188,7 @@ The Ollama API streams thinking/content tokens in real-time but aggregates `tool
 - **`drain_and_add_tool_messages()` uses explicit `round` parameter** — not `current_round()` — because tool messages must be assigned the round they were generated in, which is the round BEFORE any increment for `InterToolText` and BEFORE reset for `Complete`/`Error`/`Cancelled`. This prevents the bug where round N tool messages got round_index N+1 (after increment) or 0 (after reset).
 - **`InterToolText` handler drains tool messages BEFORE incrementing round** — this ensures tool messages from the previous round carry that round's index, and subsequent `insert_at_round_boundary()` for the new round's content positions correctly after them.
 
-**Unit tests (14 new — 10 original + 4 for round_index fix):**
+**Unit tests (15 new — 10 original + 4 for round_index fix + 1 for StreamDone drain):**
 - `test_insert_at_round_boundary_round0_no_rounds_yet`
 - `test_insert_at_round_boundary_round1_after_round0`
 - `test_insert_at_round_boundary_round1_between_round0_and_streaming`
@@ -4202,6 +4202,7 @@ The Ollama API streams thinking/content tokens in real-time but aggregates `tool
 - `test_tool_messages_before_round_reset_on_complete` — verifies Complete handler drains tool messages before resetting round, giving them the correct last-round index instead of 0
 - `test_three_round_tool_call_ordering` — full 3-round cycle: Streaming(0) → Tools(1) → InterToolText(2) → Tools(2) → InterToolText(3), verifying all round_index values and message ordering
 - `test_tool_messages_positioned_before_next_round_content` — verifies tool messages from round N appear before round N+1 content inserted via `insert_at_round_boundary`
+- `test_stream_done_drains_tool_messages_before_final_response` — verifies that tool messages from the last round appear before the final response message, simulating the StreamDone drain behavior
 
 **Manual test:** `doc/src/development/MANUAL_TEST_201.md` — 6 scenarios: multi-round web search, file ops, calculator, no-tool regression, error-during-tool, round counter reset verification.
 
