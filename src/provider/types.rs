@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Tool type discriminator (re-exported for convenience).
+#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all(deserialize = "PascalCase"))]
 pub enum ToolType {
@@ -16,6 +17,7 @@ pub enum ToolType {
 }
 
 /// Tool function info (name, description, JSON schema parameters).
+#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolFunctionInfo {
     pub name: String,
@@ -36,6 +38,7 @@ pub struct ToolFunctionInfo {
 ///   }
 /// }
 /// ```
+#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolInfo {
     #[serde(rename = "type")]
@@ -45,6 +48,7 @@ pub struct ToolInfo {
 
 impl ToolInfo {
     /// Create a new `ToolInfo` for the given `Tool` type.
+    #[allow(dead_code)] // Consumed by #120
     pub fn new<P, T>() -> Self
     where
         P: serde::de::DeserializeOwned + schemars::JsonSchema,
@@ -171,6 +175,7 @@ pub struct LlmToolCall {
 }
 
 /// A tool result to send back to the LLM.
+#[allow(dead_code)] // Consumed by #121
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmToolResult {
     pub tool_call_id: String,
@@ -181,6 +186,7 @@ pub struct LlmToolResult {
 /// Response from an LLM chat completion.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessageResponse`.
+#[allow(dead_code)] // Consumed by #120/#121
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {
     pub model: String,
@@ -216,6 +222,7 @@ pub struct LlmStreamChunk {
 /// Capabilities reported by a model/provider.
 ///
 /// Based on llama-swap feature flags for OpenAI-compatible backends.
+#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     pub completion: bool,
@@ -344,6 +351,7 @@ impl RetryCategory {
 /// Calculate the backoff delay for a given retry category and attempt number.
 ///
 /// `attempt` is 1-indexed: the first retry is attempt 1.
+#[allow(dead_code)] // Consumed by #120/#121
 pub fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
     match category {
         RetryCategory::ImmediateRetry { .. } => Duration::ZERO,
