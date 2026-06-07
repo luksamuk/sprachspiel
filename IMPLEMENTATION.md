@@ -4148,47 +4148,56 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 
 **Status:** 🔄 IN PROGRESS  
 **Depends on:** None (orthogonal to W2 Provider Chain; can be worked in parallel with #119+)  
-**Estimated effort:** 1–2 weeks (TUI render refactor + event loop + scroll + tests + manual test)  
+**Estimated effort:** 1–2 weeks (TUI event loop + tests + manual test)  
 **Issue:** #201  
 **Branch:** `fix/201-cycle-aware-message-ordering`  
-**PR:** TBD
+**PR:** #202
 
-**Goal:** Refactor the chat message storage and rendering so that **multi-round cycles** (a user prompt followed by N rounds of `[thinking? + content? + tool_calls*]` and a final response) are rendered in the correct temporal order — thinking, content, tool calls, results interleaved round by round — instead of being batched at the end of the stream.
-
-**Why this is P0:** The current TUI shows all tool calls and their results in a single block at the end of the stream, with the model's thinking/text emitted first. This is a severe UX regression that affects every multi-round interaction (the most common case for any task involving web search, file operations, or anything requiring more than one tool call). It blocks the next release and is the next thing to be worked on after #118 merges.
+**Goal:** Fix UX regression where tool calls and their results from multiple rounds appear in a single block at the end of the chat history, with the model's thinking/text content emitted first. In a multi-round cycle (model searches → observes results → searches again → final response), tool indicators are now correctly positioned after the content of the round they belong to, making the model's reasoning flow readable.
 
 **Root cause (Ollama API design, NOT a TUI bug):**
 
-The Ollama API streams thinking/content tokens as they are generated, but aggregates all `tool_calls` into a single `done=true` chunk at the end of each round. The protocol preserves ordering **within** a round (thinking → content → tool_calls) but loses ordering **between** rounds of a multi-round cycle. The sprachspiel TUI cannot reconstruct round ordering from the Ollama stream alone — this requires a **structural refactor** of how rounds are accumulated and rendered.
+The Ollama API streams thinking/content tokens in real-time but aggregates `tool_calls` into a single `done=true` chunk per round. The TUI event loop had no mechanism to group messages by round — `insert_before_streaming_zone()` positioned inter-round content before ALL tool messages regardless of which round they belonged to.
 
-**Implementation design (single PR, fix + MessageGroup together):**
+**Implementation (completed, single PR):**
 
-1. **`ChatMessage.round_index: usize`** — Ephemeral field (not persisted to SQLite, reset per user prompt). Tracks which round of a multi-round cycle each message belongs to. Default 0 for backward compatibility. Builder method `with_round_index(round)`.
+1. **`ChatMessage.round_index: usize`** — Ephemeral field (default 0, not persisted to SQLite, reset per user prompt). Tracks which round of a multi-round cycle each message belongs to. Builder method `with_round_index(round)`.
 
-2. **`App.current_round: usize`** — Incremented on `ToolCallStarted` (each tool call round). Reset to 0 on `Complete`/new prompt. Used by `insert_at_round_boundary()` and `drain_and_add_tool_messages()`.
+2. **`App.current_round: usize`** — Incremented on `ToolCallStarted` and `InterToolText`. Reset to 0 on `Complete`/`Cancelled`/`Error` and on each new user prompt (`handle_key_line`). Accessor methods: `current_round()`, `increment_round()`, `reset_round()`.
 
-3. **`App.insert_at_round_boundary(message)`** — Positions inter-round content (thinking, text from `InterTileText`) after all messages with `round_index <= message.round_index` and before the streaming zone. Replaces `insert_before_streaming_zone()` for round-aware inserts.
+3. **`App.insert_at_round_boundary(message)`** — Positions inter-round content after all messages with `round_index <= message.round_index`, respecting the `AssistantStreaming` boundary. Replaces `insert_before_streaming_zone()` for round-aware inserts in the `InterToolText` handler. Uses a two-step algorithm: (a) find the `AssistantStreaming` boundary at the tail, (b) scan backward in the stable zone for the last message with `round_index <= target_round`, insert after it.
 
-4. **`MessageGroup`** (new `src/chat/round.rs`) — Groups `ChatMessage`s by `round_index` for rendering. `build_message_groups(messages)` returns `Vec<MessageGroup>` where each group is a contiguous block of messages from the same round. `is_final: bool` marks the last group.
+4. **Event loop updates** — `InterToolText` handler: increments `current_round`, uses `insert_at_round_boundary()` with `round_index` for both thinking and content. `ToolCallStarted`: increments `current_round`, drains tool messages with `round_index`. `Complete`/`Cancelled`/`Error`: resets `current_round`. `drain_and_add_tool_messages()`: assigns `current_round` to tool messages via `with_round_index(round)`. `handle_key_line()`: resets `current_round` at start of each prompt.
 
-5. **`build_lines()` refactor** — Iterates over `MessageGroup`s instead of flat `ChatMessage`s. No visual separator between groups (user's decision).
-
-6. **Event loop updates** — `InterTileText` handler increments `current_round` and uses `insert_at_round_boundary()`. `drain_and_add_tool_messages()` assigns `round_index` to tool messages. `Complete`/`Cancelled`/`Error` reset `current_round`. `handle_key_line()` resets `current_round` at start of each prompt.
+5. **`MessageGroup` + `build_lines()` refactor — SKIPPED (YAGNI)** — Messages are already in correct temporal order after insertion; `build_lines()` iterates over flat `Vec<ChatMessage>` without needing group-level rendering. No visual separator between rounds (user's decision). This avoids adding a `round.rs` module for a grouping mechanism that provides no rendering benefit.
 
 **Files changed:**
-- `src/chat/tui/components/chat_area.rs` — `ChatMessage` gains `round_index`, `with_round_index()`, `build_lines()` iterates by groups
-- `src/chat/round.rs` (NEW) — `MessageGroup`, `build_message_groups()`
-- `src/chat/app.rs` — `current_round`, `insert_at_round_boundary()`, reset logic
-- `src/chat/event_loop.rs` — `InterTileText` round-aware, `drain_and_add_tool_messages` round-aware
-- `src/chat/llm_event.rs` — no change (round tracking is in the event loop, not in events)
+- `src/chat/tui/components/chat_area.rs` — `ChatMessage` gains `round_index: usize` (default 0), `with_round_index()` builder, `round_index: 0` in all constructors
+- `src/chat/app.rs` — `current_round: usize`, `insert_at_round_boundary()`, `current_round()`, `increment_round()`, `reset_round()`, 10 new unit tests
+- `src/chat/event_loop.rs` — `InterToolText` round-aware, `ToolCallStarted` round increment, `Complete`/`Cancelled`/`Error` round reset, `drain_and_add_tool_messages` round assignment, `handle_key_line` round reset
 
-**Files NOT changed:** `custom_coordinator.rs`, `core.rs`, `session.rs`, `continuation.rs`, `repl.rs` — coordinator and persistence are untouched.
+**Files NOT changed:** `custom_coordinator.rs`, `core.rs`, `session.rs`, `continuation.rs`, `repl.rs`, `llm_event.rs` — coordinator, persistence, and event types are untouched.
 
 **Key decisions:**
 - `round_index` is ephemeral — not persisted to SQLite, zeroed per user prompt, does not affect embeddings or retrieval.
 - No visual separator between rounds — correct ordering is sufficient.
 - No `process_response` return type change — TUI reconstructs rounds from event sequence.
-- Single PR includes both the fix and `MessageGroup` rendering refactor.
+- No `MessageGroup`/`round.rs` — messages are correctly ordered after insertion, `build_lines()` flat iteration is sufficient (YAGNI).
+- `insert_at_round_boundary()` only excludes `AssistantStreaming` from the round-index search (not `Thinking`), because finalized `Thinking` blocks from `InterToolText` are stable content that should participate in the round boundary.
+- `insert_before_streaming_zone()` is preserved for `ViewAction` handlers (round-0 content, compact separator) that don't need round awareness.
+
+**Unit tests (10 new):**
+- `test_insert_at_round_boundary_round0_no_rounds_yet`
+- `test_insert_at_round_boundary_round1_after_round0`
+- `test_insert_at_round_boundary_round1_between_round0_and_streaming`
+- `test_insert_at_round_boundary_round2_after_round1`
+- `test_insert_at_round_boundary_all_same_round`
+- `test_insert_at_round_boundary_multiround_realistic`
+- `test_round_lifecycle_increment_and_reset`
+- `test_round_index_default_zero`
+- `test_with_round_index_builder`
+
+**Manual test:** `doc/src/development/MANUAL_TEST_201.md` — 6 scenarios: multi-round web search, file ops, calculator, no-tool regression, error-during-tool, round counter reset verification.
 
 **W2 wave ordering:** #201 is the **next thing to be worked on** after #118 merges. It is **orthogonal to the W2 Provider Chain** (it does not depend on #119-#123 and does not block them) but **blocks the next release**. W2 will not close until #201 ships, regardless of which specific W2 card finishes first.
 
