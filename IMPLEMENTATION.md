@@ -162,7 +162,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 ✅ COMPLETED |
-| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | `ollama-rs` removed from Cargo.toml; #72 closed; #201 message-ordering refactor shipped (P0, blocks release) |
+| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | `ollama-rs` removed from Cargo.toml; #72 closed; #201 message-ordering shipped ✅ |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
@@ -4144,9 +4144,9 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 
 ---
 
-#### Cycle-Aware Message Ordering in TUI — #201 [M1] 🚨 **P0 — BLOCKS NEXT RELEASE**
+#### Cycle-Aware Message Ordering in TUI — #201 [M1] 🚨 **P0 — BLOCKS NEXT RELEASE** ✅ **MERGED**
 
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED  
 **Depends on:** None (orthogonal to W2 Provider Chain; can be worked in parallel with #119+)  
 **Estimated effort:** 1–2 weeks (TUI event loop + tests + manual test)  
 **Issue:** #201  
@@ -4206,7 +4206,7 @@ The Ollama API streams thinking/content tokens in real-time but aggregates `tool
 
 **Manual test:** completed via `tu` terminal debugger with glm-5.1 model — verified multi-round web search, pre-tool content preservation, and StreamDone drain ordering.
 
-**W2 wave ordering:** #201 is the **next thing to be worked on** after #118 merges. It is **orthogonal to the W2 Provider Chain** (it does not depend on #119-#123 and does not block them) but **blocks the next release**. W2 will not close until #201 ships, regardless of which specific W2 card finishes first.
+**Merged:** PR #202 merged 2026-06-07. Two root causes fixed: (1) drain tool messages with correct round_index before round increment/reset, (2) `finalize_streaming_zone_as_is()` converts ALL `AssistantStreaming` blocks to preserve pre-tool content. No release blocker remains.
 
 **Related:** Issue #118 (tool trait), #119 (agnostic types — `ChatRound`/`ChatCycle` may live in `src/llm_provider/types.rs` after #119), issue #199 (multi-model validation, may be subsumed by #201 manual test).
 
