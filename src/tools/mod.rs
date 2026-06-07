@@ -13,7 +13,6 @@
 //! - `led-tools` — LED strip control (Raspberry Pi Pico W)
 //! - `pokemon-tools` — Pokédex lookup
 //! - `search-tools` — built-in web search
-//! - `serper-tools` — Serper.dev API search
 //! - `system-tools` — system info commands
 //! - `document-tools` — document import (PDF, DOCX, etc.)
 //!
@@ -42,11 +41,10 @@ pub mod registry;
 pub mod remember;
 #[cfg(feature = "search-tools")]
 pub mod search_builtin;
-#[cfg(feature = "serper-tools")]
-pub mod serper;
 #[cfg(feature = "system-tools")]
 pub mod system;
 pub mod todo;
+pub mod tool_trait;
 pub mod weather;
 
 // Fact tools (always available)
@@ -94,8 +92,11 @@ pub use search_builtin::*;
 pub use system::*;
 pub use weather::*;
 
-// Fact tools are imported directly in registry.rs
-// Notes tools are imported directly in registry.rs
+// Re-export the Tool trait at the tools module level for the
+// `#[sprachspiel::tool]` proc-macro. The macro emits `impl crate::tools::Tool
+// for ...` which resolves to this re-export at the call site. Without this,
+// the macro cannot find the trait when expanded in the parent crate.
+pub use tool_trait::{Tool, ToolResult};
 // Documents tools are imported directly in registry.rs
 
 pub use run_cmd::run_command;

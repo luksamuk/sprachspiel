@@ -4,7 +4,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use chrono::Datelike;
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -217,7 +217,7 @@ const PROJECT_MARKERS: &[(&str, &str)] = &[
 /// - ISO 8601 format
 /// - Unix timestamp
 ///
-#[function]
+#[tool]
 pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_current_datetime", &[]);
 
@@ -267,7 +267,7 @@ pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error 
 /// This tool does NOT replace AGENTS.md - it provides dynamic state.
 /// Follow AGENTS.md for conventions and coding guidelines.
 ///
-#[function]
+#[tool]
 pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_project_context", &[]);
 

@@ -9,7 +9,6 @@ use crate::settings::Settings;
     feature = "pokemon-tools",
     feature = "weather-tools",
     feature = "calc-tools",
-    feature = "serper-tools",
     feature = "search-tools",
     feature = "system-tools",
     feature = "file-tools",
@@ -52,21 +51,22 @@ use super::skill_tools::{skill_list, skill_view};
 use super::subagent_tools::{
     spawn_ocr_agent, spawn_summarize_agent, spawn_translate_agent, spawn_vision_agent,
 };
-/// Trait for tool registration - implemented by both Coordinator types
+/// Trait for tool registration - implemented by the coordinator types
+/// that need to consume tools.
+///
+/// The bound is `crate::tools::Tool` (our own trait). The dual-impl
+/// macro (in `sprachspiel-tool-derive`) ensures that every
+/// `#[sprachspiel::tool]` tool also implements `ollama_rs::Tool`, so
+/// they remain compatible with the parts of ollama-rs that consume
+/// tools directly (e.g., `ollama_rs::Ollama::chat` with `tools: Vec<ToolInfo>`).
 pub trait ToolRegistrar: Sized {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
-}
-
-impl<C: ollama_rs::history::ChatHistory> ToolRegistrar for ollama_rs::coordinator::Coordinator<C> {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
-        self.add_tool(tool)
-    }
+    fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self;
 }
 
 impl<C: ollama_rs::history::ChatHistory> ToolRegistrar
     for crate::chat::custom_coordinator::CustomCoordinator<C>
 {
-    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
+    fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self {
         self.add_tool(tool)
     }
 }
@@ -311,64 +311,16 @@ fn register_finance_tools<C: ToolRegistrar>(
     (coord, count)
 }
 
-/// Register search tools (Serper API preferred)
-#[cfg(feature = "serper-tools")]
-fn register_search_tools_serper<C: ToolRegistrar>(
+/// Register search tools (DuckDuckGo)
+#[cfg(feature = "search-tools")]
+fn register_search_tools<C: ToolRegistrar>(
     coordinator: C,
     is_allowed: impl Fn(&str) -> bool,
 ) -> (C, usize) {
     let mut count = 0;
     let mut coord = coordinator;
 
-    if super::serper::is_serper_available() {
-        log::debug!("🔑 [Serper] API key found - enabling Google Search via Serper");
-        register_if_allowed!(
-            coord,
-            count,
-            is_allowed,
-            "web_search",
-            super::serper::web_search
-        );
-        register_if_allowed!(
-            coord,
-            count,
-            is_allowed,
-            "web_search_news",
-            super::serper::web_search_news
-        );
-        // web_scrape is always available with search-tools, even when using Serper
-        #[cfg(feature = "search-tools")]
-        register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
-    } else {
-        #[cfg(feature = "search-tools")]
-        {
-            log::debug!(
-                "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
-            );
-            register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
-            register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
-            register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
-        }
-        #[cfg(not(feature = "search-tools"))]
-        {
-            log::debug!(
-                "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
-            );
-        }
-    }
-
-    (coord, count)
-}
-
-/// Register search tools (DuckDuckGo fallback when Serper not enabled)
-#[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-fn register_search_tools_ddg<C: ToolRegistrar>(
-    coordinator: C,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
+    log::debug!("🔍 [Search] Using DuckDuckGo (no API key required)");
     register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
     register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
     register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
@@ -615,32 +567,9 @@ fn get_finance_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     tools
 }
 
-/// Get search tool names (Serper API)
-#[cfg(feature = "serper-tools")]
-fn get_search_tool_names_serper(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
-
-    if super::serper::is_serper_available() {
-        push_if_allowed!(tools, is_allowed, "web_search");
-        push_if_allowed!(tools, is_allowed, "web_search_news");
-        // web_scrape is always available with search-tools, even when using Serper
-        #[cfg(feature = "search-tools")]
-        push_if_allowed!(tools, is_allowed, "web_scrape");
-    } else {
-        #[cfg(feature = "search-tools")]
-        {
-            push_if_allowed!(tools, is_allowed, "web_search");
-            push_if_allowed!(tools, is_allowed, "web_search_news");
-            push_if_allowed!(tools, is_allowed, "web_scrape");
-        }
-    }
-
-    tools
-}
-
-/// Get search tool names (DuckDuckGo fallback)
-#[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-fn get_search_tool_names_ddg(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
+/// Get search tool names (DuckDuckGo)
+#[cfg(feature = "search-tools")]
+fn get_search_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     let mut tools = Vec::new();
     push_if_allowed!(tools, is_allowed, "web_search");
     push_if_allowed!(tools, is_allowed, "web_search_news");
@@ -798,18 +727,10 @@ where
         tool_count += n;
     }
 
-    // Search tools (Serper preferred, with DDG fallback)
-    #[cfg(feature = "serper-tools")]
+    // Search tools (DuckDuckGo)
+    #[cfg(feature = "search-tools")]
     {
-        let (c, n) = register_search_tools_serper(coordinator, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-
-    // DDG fallback when serper-tools not enabled
-    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-    {
-        let (c, n) = register_search_tools_ddg(coordinator, is_allowed);
+        let (c, n) = register_search_tools(coordinator, is_allowed);
         coordinator = c;
         tool_count += n;
     }
@@ -904,16 +825,10 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
         tools.extend(get_finance_tool_names(is_allowed));
     }
 
-    // Search tools (Serper)
-    #[cfg(feature = "serper-tools")]
+    // Search tools (DuckDuckGo)
+    #[cfg(feature = "search-tools")]
     {
-        tools.extend(get_search_tool_names_serper(is_allowed));
-    }
-
-    // Search tools (DDG fallback)
-    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-    {
-        tools.extend(get_search_tool_names_ddg(is_allowed));
+        tools.extend(get_search_tool_names(is_allowed));
     }
 
     // System tools

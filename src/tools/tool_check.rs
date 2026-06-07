@@ -2,7 +2,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::external::{ExternalToolsConfig, Platform, load_tools_config};
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 use which;
 
 /// Get the external tools configuration (cached).
@@ -53,7 +53,7 @@ fn get_platform() -> &'static Platform {
 /// check_tool_availability("tesseract".to_string()).await
 /// // Returns: "✗ tesseract is not installed. Install with: sudo apt install tesseract-ocr"
 /// ```
-#[function]
+#[tool]
 pub async fn check_tool_availability(
     tool: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

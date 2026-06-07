@@ -1,0 +1,11 @@
+error: tool function must be documented
+ --> tests/ui/no_docs.rs:5:11
+  |
+5 | pub async fn no_docs(x: i32) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+  |           ^^
+
+error[E0601]: `main` function not found in crate `$CRATE`
+ --> tests/ui/no_docs.rs:7:2
+  |
+7 | }
+  |  ^ consider adding a `main` function to `$DIR/tests/ui/no_docs.rs`

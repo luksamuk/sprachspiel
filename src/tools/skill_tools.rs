@@ -5,7 +5,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::skills::{get_available_skill_names, get_skill_content, load_skill_indexes};
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 ///
 /// Returns a list of skill names and descriptions from the SKILLS INDEX.
 /// Use this to discover what skills are available before loading one with skill_view.
@@ -25,7 +25,7 @@ use ollama_rs::function;
 /// // - ocr-images (builtin): Process images with OCR
 /// // ...
 /// ```
-#[function]
+#[tool]
 pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("skill_list", &[]);
 
@@ -84,7 +84,7 @@ pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + S
 /// // When asked to process PDF files:
 /// // 1. Check tool availability...
 /// ```
-#[function]
+#[tool]
 pub async fn skill_view(name: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("skill_view", &[("name".to_string(), name.clone())]);
 

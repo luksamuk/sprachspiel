@@ -20,6 +20,7 @@ use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::utils::truncate_chars;
+use sprachspiel_tool_derive::tool;
 
 /// Parse note ID from various formats ("42" or "note:42")
 fn parse_note_id(id: &str) -> Result<i64, String> {
@@ -77,7 +78,7 @@ fn parse_note_id(id: &str) -> Result<i64, String> {
 /// )
 /// // Returns: "Created note 42: Architecture Decision: Database Choice\n..."
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_add(
     content: String,
     title: Option<String>,
@@ -193,7 +194,7 @@ pub async fn note_add(
 /// // Change both
 /// note_edit(id="42", title="New Title", content="New content...")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_edit(
     id: String,
     title: Option<String>,
@@ -326,7 +327,7 @@ pub async fn note_edit(
 /// note_delete(id="42")
 /// note_delete(id="note:42")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn note_delete(id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("note_delete", &[("id".to_string(), id.clone())]);
 

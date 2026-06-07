@@ -540,10 +540,10 @@ ollama_port = 11434
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
-#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
+#   - web_search, web_search_news, web_scrape (DuckDuckGo - may fail due to CAPTCHA)
 #
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Note: DuckDuckGo tools may be blocked by CAPTCHA. MCP-based search is
+# planned post-W2 (issue TBD); until then, this is the only web search option.
 # Default: [] (all tools enabled)
 blacklist = []
 

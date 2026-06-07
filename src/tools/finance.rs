@@ -3,8 +3,8 @@
 //! Provides stock information via Google Finance web scraping.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use ollama_rs::function;
 use once_cell::sync::Lazy;
+use sprachspiel_tool_derive::tool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -104,7 +104,7 @@ impl StockScraper {
 ///
 /// * exchange - The stock exchange MIC code (e.g., "NASDAQ", "NYSE", "BVMF")
 /// * ticker - The stock ticker symbol (e.g., "AAPL", "GOOGL", "PETR4")
-#[function]
+#[tool]
 pub async fn get_stock_quote(
     exchange: String,
     ticker: String,

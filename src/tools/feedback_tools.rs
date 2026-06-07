@@ -4,6 +4,7 @@
 //! as good, bad, or provide corrections. Feedback is weighted at 30% of user
 //! feedback (configurable via `llm_feedback_weight`) and adjusts message importance.
 
+use sprachspiel_tool_derive::tool;
 use std::str::FromStr;
 
 use crate::db::feedback_ops::insert_feedback_signal;
@@ -37,7 +38,7 @@ use crate::tools::context::{get_db, get_settings};
 /// feedback_submit("15", "bad", None)
 /// feedback_submit("7", "correction", Some("The capital is Canberra, not Sydney"))
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn feedback_submit(
     item_id: String,
     signal_type: String,

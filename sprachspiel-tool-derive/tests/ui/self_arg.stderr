@@ -1,0 +1,11 @@
+error: self argument is not allowed
+ --> tests/ui/self_arg.rs:6:23
+  |
+6 | pub async fn has_self(&self, x: i32) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+  |                       ^^^^^
+
+error[E0601]: `main` function not found in crate `$CRATE`
+ --> tests/ui/self_arg.rs:8:2
+  |
+8 | }
+  |  ^ consider adding a `main` function to `$DIR/tests/ui/self_arg.rs`

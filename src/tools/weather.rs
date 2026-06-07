@@ -5,8 +5,8 @@
 
 use crate::consts::api::{OPEN_METEO_BASE, OPEN_METEO_GEOCODING};
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use ollama_rs::function;
 use serde::Deserialize;
+use sprachspiel_tool_derive::tool;
 
 /// Get coordinates for a location name using Open-Meteo geocoding
 async fn get_coordinates(location: &str) -> Result<(f64, f64), String> {
@@ -50,7 +50,7 @@ async fn get_coordinates(location: &str) -> Result<(f64, f64), String> {
 ///
 /// # Errors
 /// Returns error message if location is not found or API is unavailable.
-#[function]
+#[tool]
 pub async fn get_weather(
     location: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -153,7 +153,7 @@ Source: Open-Meteo"#,
 ///
 /// # Errors
 /// Returns error message if location is not found or API is unavailable.
-#[function]
+#[tool]
 pub async fn get_current_weather(
     location: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -240,7 +240,7 @@ Source: Open-Meteo"#,
 ///
 /// # Errors
 /// Returns error message if location is not found or API is unavailable.
-#[function]
+#[tool]
 pub async fn get_weather_forecast(
     location: String,
     days: Option<String>,

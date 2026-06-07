@@ -21,6 +21,7 @@ use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_wit
 use crate::project::get_project_id;
 use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
+use sprachspiel_tool_derive::tool;
 use std::fs;
 
 /// Import a document file for semantic search and retrieval.
@@ -113,7 +114,7 @@ use std::fs;
 ///     None
 /// )
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn import_document(
     path: String,
     scope: Option<String>,

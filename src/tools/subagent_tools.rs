@@ -20,6 +20,7 @@ use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::security::validate_subagent_paths;
 use crate::tools::context::{get_ollama, get_settings};
 use crate::utils::expand_tilde_path;
+use sprachspiel_tool_derive::tool;
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ use std::path::PathBuf;
 /// spawn_ocr_agent("/tmp/table.png", Some("table"))
 /// spawn_ocr_agent("/tmp/formula.png", Some("formula"))
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn spawn_ocr_agent(
     file_path: String,
     ocr_mode: Option<String>,
@@ -163,7 +164,7 @@ pub async fn spawn_ocr_agent(
 /// spawn_vision_agent("Describe this image", "/tmp/photo.png")
 /// spawn_vision_agent("Compare these screenshots", "/tmp/a.png,/tmp/b.png")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn spawn_vision_agent(
     prompt: String,
     file_path: String,
@@ -266,7 +267,7 @@ pub async fn spawn_vision_agent(
 /// ```ignore
 /// spawn_translate_agent("Translate to Portuguese: Hello world")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn spawn_translate_agent(
     prompt: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -343,7 +344,7 @@ pub async fn spawn_translate_agent(
 /// ```ignore
 /// spawn_summarize_agent("Summarize this long text in bullet points: ...")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn spawn_summarize_agent(
     prompt: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

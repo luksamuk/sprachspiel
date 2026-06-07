@@ -1,0 +1,11 @@
+error: functions with generics are not supported by the tool macro
+ --> tests/ui/generics.rs:5:26
+  |
+5 | pub async fn has_generics<T>(x: T) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+  |                          ^^^
+
+error[E0601]: `main` function not found in crate `$CRATE`
+ --> tests/ui/generics.rs:7:2
+  |
+7 | }
+  |  ^ consider adding a `main` function to `$DIR/tests/ui/generics.rs`

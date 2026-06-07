@@ -22,6 +22,7 @@ mod embeddings;
 pub mod external;
 mod facts;
 mod feedback;
+mod llm_provider;
 pub mod logging;
 mod macros;
 mod markdown;

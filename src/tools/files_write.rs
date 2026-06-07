@@ -20,6 +20,7 @@
 use super::files_blocklist::{BlocklistConfig, is_blocked_for_write};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool};
+use sprachspiel_tool_derive::tool;
 use std::path::{Path, PathBuf};
 
 /// Maximum file size for write operations (5MB)
@@ -63,7 +64,7 @@ const MAX_WRITE_SIZE: usize = 5_242_880;
 /// write_file("output.txt", "Hello, World!", "false", null)
 /// write_file("src/main.rs", code_content, "true")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn write_file(
     path: String,
     content: String,
@@ -183,7 +184,7 @@ pub async fn write_file(
 /// // Delete lines 5-10
 /// edit_file("script.py", "delete_lines", null, null, null, null, "5", "10", null)
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn edit_file(
     path: String,
     operation: String,
@@ -348,7 +349,7 @@ pub async fn edit_file(
 /// // Create if not exists, then append
 /// append_file("output.txt", "First line\n", "true")
 /// ```
-#[ollama_rs::function]
+#[tool]
 pub async fn append_file(
     path: String,
     content: String,

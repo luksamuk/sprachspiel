@@ -1,22 +1,137 @@
-//! Web search using ollama-rs built-in DDGSearcher
+//! Web search using our own DuckDuckGo scraper.
 //!
-//! Uses DuckDuckGo HTML interface which does not require CAPTCHA.
+//! Replaces `ollama_rs::generation::tools::implementations::DDGSearcher` with
+//! a hand-rolled implementation using `reqwest` and `scraper` (both already
+//! in the dep tree). See `DdgSearcher` below for details.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{format_size, parse_bounded_number};
-use ollama_rs::function;
-use ollama_rs::generation::tools::implementations::DDGSearcher;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use sprachspiel_tool_derive::tool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-static SEARCHER: once_cell::sync::Lazy<Arc<Mutex<DDGSearcher>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(DDGSearcher::default())));
+static SEARCHER: once_cell::sync::Lazy<Arc<Mutex<DdgSearcher>>> =
+    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(DdgSearcher::new())));
 
-#[derive(serde::Deserialize)]
-struct SearchResult {
-    title: String,
-    link: String,
-    snippet: String,
+/// A single search result returned by `DdgSearcher::search`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchResult {
+    /// Result title
+    pub title: String,
+    /// Result URL
+    pub link: String,
+    /// Result snippet / description
+    pub snippet: String,
+}
+
+/// Lightweight DuckDuckGo HTML scraper.
+///
+/// Replacement for `ollama_rs::generation::tools::implementations::DDGSearcher`
+/// that avoids the ollama-rs dependency for search. Uses `reqwest` to fetch
+/// the DuckDuckGo HTML interface and `scraper` to parse results.
+///
+/// # Usage
+///
+/// ```no_run
+/// use sprachspiel::tools::search_builtin::DdgSearcher;
+/// # async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// let searcher = DdgSearcher::new();
+/// let results = searcher.search("rust programming").await?;
+/// for r in results {
+///     println!("{} ({})\n  {}\n", r.title, r.link, r.snippet);
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Caveats
+///
+/// - DuckDuckGo may rate-limit or CAPTCHA automated traffic.
+/// - CSS selectors may break if DuckDuckGo changes their HTML structure.
+pub struct DdgSearcher {
+    client: reqwest::Client,
+}
+
+impl DdgSearcher {
+    /// Create a new DdgSearcher with a default reqwest client.
+    pub fn new() -> Self {
+        let client = reqwest::Client::builder()
+            .user_agent(concat!(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ",
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self { client }
+    }
+
+    /// Perform a search and return up to ~30 results.
+    pub async fn search(
+        &self,
+        query: &str,
+    ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "https://html.duckduckgo.com/html/?q={}",
+            urlencoding::encode(query)
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("DuckDuckGo request failed: {}", e))?;
+
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("DuckDuckGo body read failed: {}", e))?;
+
+        let document = scraper::Html::parse_document(&body);
+        let result_selector = scraper::Selector::parse(".web-result")
+            .map_err(|e| format!("Invalid selector: {:?}", e))?;
+        let title_selector = scraper::Selector::parse(".result__a")
+            .map_err(|e| format!("Invalid selector: {:?}", e))?;
+        let url_selector = scraper::Selector::parse(".result__url")
+            .map_err(|e| format!("Invalid selector: {:?}", e))?;
+        let snippet_selector = scraper::Selector::parse(".result__snippet")
+            .map_err(|e| format!("Invalid selector: {:?}", e))?;
+
+        let mut results = Vec::new();
+        for element in document.select(&result_selector) {
+            let title = element
+                .select(&title_selector)
+                .next()
+                .map(|e| e.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+            let link = element
+                .select(&url_selector)
+                .next()
+                .map(|e| e.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+            let snippet = element
+                .select(&snippet_selector)
+                .next()
+                .map(|e| e.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+            if !title.is_empty() {
+                results.push(SearchResult {
+                    title,
+                    link,
+                    snippet,
+                });
+            }
+        }
+        Ok(results)
+    }
+}
+
+impl Default for DdgSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Maximum content size in characters (prevents memory issues with huge pages)
@@ -115,7 +230,7 @@ fn truncate_content(content: &str) -> std::borrow::Cow<'_, str> {
 ///
 /// # Errors
 /// Returns error message if search fails or is blocked by CAPTCHA.
-#[function]
+#[tool]
 pub async fn web_search(
     query: String,
     num_results: Option<String>,
@@ -201,7 +316,7 @@ pub async fn web_search(
 ///
 /// # Errors
 /// Returns error message if search fails or is blocked by CAPTCHA.
-#[function]
+#[tool]
 pub async fn web_search_news(
     query: String,
     num_results: Option<String>,
@@ -295,7 +410,7 @@ pub async fn web_search_news(
 ///
 /// # Errors
 /// Returns error message if URL is invalid, page is unreachable, or content cannot be parsed.
-#[function]
+#[tool]
 pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("web_scrape", &[("url".to_string(), url.clone())]);
 

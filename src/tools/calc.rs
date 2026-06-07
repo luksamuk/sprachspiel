@@ -1,11 +1,11 @@
-//! Calculator tool using ollama-rs built-in implementation
+//! Calculator tool
 //!
 //! Provides mathematical expression evaluation using the `calc` crate.
 //! Supports basic arithmetic, exponents, percentages, and mathematical functions.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::normalize_input;
-use ollama_rs::function;
+use sprachspiel_tool_derive::tool;
 
 /// Evaluate a mathematical expression.
 ///
@@ -25,7 +25,7 @@ use ollama_rs::function;
 ///
 /// # Errors
 /// Returns error message for invalid expressions, syntax errors, or math errors.
-#[function]
+#[tool]
 pub async fn calculate(
     expression: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
