@@ -477,8 +477,11 @@ pub async fn run_chat_repl_tui(
         }
 
         // Drain tool messages from the global callback and insert them
-        // at the end of the message list.
-        event_loop::drain_and_add_tool_messages(&mut view);
+        // at the end of the message list. Use the current round index
+        // since this is a catch-all drain on every event loop tick —
+        // late-arriving messages should be grouped with the active round.
+        let current_round = view.app().current_round();
+        event_loop::drain_and_add_tool_messages(&mut view, current_round);
 
         // Re-render after each event or tick — but skip during streaming
         // when no real event was processed, since stream_token() and

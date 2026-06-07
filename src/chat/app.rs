@@ -251,6 +251,14 @@ impl ScrollState {
 pub struct App {
     /// Chat messages displayed in the chat area
     messages: Vec<ChatMessage>,
+    /// Current round index in a multi-round LLM tool-call cycle.
+    ///
+    /// Incremented on each `ToolCallStarted` event, reset to 0 on each new
+    /// user prompt (`handle_key_line`) and on `Complete`/`Cancelled`/`Error`.
+    /// Used by `insert_at_round_boundary()` to position inter-round content
+    /// (thinking, text from `InterToolText`) after all messages of the
+    /// previous round. Ephemeral — not persisted to SQLite.
+    current_round: usize,
     /// Text editor widget for input (replaces InputState)
     textarea: TextArea<'static>,
     /// Whether input is disabled (e.g., during LLM processing)
@@ -397,6 +405,7 @@ impl App {
 
         let app = Self {
             messages: Vec::new(),
+            current_round: 0,
             textarea,
             input_disabled: false,
             disabled_reason: None,
@@ -430,6 +439,11 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Return the number of messages in the chat area.
+    pub fn message_count(&self) -> usize {
+        self.messages.len()
+    }
+
     /// Append a streaming token to the last `AssistantStreaming` message.
     ///
     /// If the last message is not `AssistantStreaming`, searches backward
@@ -437,14 +451,17 @@ impl App {
     /// messages) for an existing `AssistantStreaming` block. If found, appends
     /// to it. Otherwise creates a new one.
     ///
-    /// This handles the case where content and thinking tokens arrive
-    /// interleaved from the LLM: content tokens should append to the
-    /// existing `AssistantStreaming` block even when the last message
-    /// is a `Thinking` block.
+    /// **Round-awareness:** Streaming tokens are always round 0 (final response).
+    /// If the last `AssistantStreaming` block has `round_index > 0` (inserted via
+    /// InterToolText), streaming tokens must NOT append to it — they belong to a
+    /// different round. Instead, a new `AssistantStreaming` block is created.
     pub fn append_stream_token(&mut self, token: &str) {
-        // Happy path: last message is AssistantStreaming — append directly
+        // Happy path: last message is AssistantStreaming — append directly,
+        // but only if it's a streaming block (round 0). Stable blocks
+        // (round > 0, from InterToolText) must not receive streaming tokens.
         if let Some(last) = self.messages.last_mut()
             && last.msg_type == MessageType::AssistantStreaming
+            && last.round_index == 0
         {
             last.content.push_str(token);
             return;
@@ -455,19 +472,25 @@ impl App {
         let zone_len = self.messages.len().saturating_sub(streaming_start);
 
         // Interleaved tokens: search backward within the streaming zone
-        // for an existing AssistantStreaming block to append to.
+        // for an existing AssistantStreaming block (round 0) to append to.
+        // Skip blocks with round_index > 0 — those are stable InterToolText blocks.
         if let Some(prev_streaming) = self
             .messages
             .iter_mut()
             .rev()
             .take(zone_len)
-            .find(|m| m.msg_type == MessageType::AssistantStreaming)
+            .find(|m| m.msg_type == MessageType::AssistantStreaming && m.round_index == 0)
         {
             prev_streaming.content.push_str(token);
             return;
         }
 
         // No streaming message yet — create one
+        log::debug!(
+            "append_stream_token: creating NEW AssistantStreaming, messages_len={}, streaming_start={}",
+            self.messages.len(),
+            streaming_start,
+        );
         self.messages
             .push(ChatMessage::assistant_streaming(token.to_string()));
         self.scroll.reset_to_bottom();
@@ -480,14 +503,17 @@ impl App {
     /// for an existing `Thinking` block. If found, appends to it. Otherwise
     /// creates a new one.
     ///
-    /// This handles the case where content and thinking tokens arrive
-    /// interleaved from the LLM: thinking tokens should append to the
-    /// existing `Thinking` block even when the last message is an
-    /// `AssistantStreaming` block.
+    /// **Round-awareness:** Streaming thinking tokens are always round 0 (final
+    /// response). If the last `Thinking` block has `round_index > 0` (inserted
+    /// via InterToolText), streaming thinking tokens must NOT append to it —
+    /// they belong to a different round. Instead, a new `Thinking` block is created.
     pub fn append_stream_thinking(&mut self, token: &str) {
-        // Happy path: last message is Thinking — append directly
+        // Happy path: last message is Thinking — append directly,
+        // but only if it's a streaming block (round 0). Stable blocks
+        // (round > 0, from InterToolText) must not receive streaming tokens.
         if let Some(last) = self.messages.last_mut()
             && last.msg_type == MessageType::Thinking
+            && last.round_index == 0
         {
             last.content.push_str(token);
             return;
@@ -498,39 +524,52 @@ impl App {
         let zone_len = self.messages.len().saturating_sub(streaming_start);
 
         // Interleaved tokens: search backward within the streaming zone
-        // for an existing Thinking block to append to.
+        // for an existing Thinking block (round 0) to append to.
+        // Skip blocks with round_index > 0 — those are stable InterToolText blocks.
         if let Some(prev_thinking) = self
             .messages
             .iter_mut()
             .rev()
             .take(zone_len)
-            .find(|m| m.msg_type == MessageType::Thinking)
+            .find(|m| m.msg_type == MessageType::Thinking && m.round_index == 0)
         {
             prev_thinking.content.push_str(token);
             return;
         }
 
         // No thinking message yet — create one
+        log::debug!(
+            "append_stream_thinking: creating NEW Thinking(0), messages_len={}, streaming_start={}, token_len={}",
+            self.messages.len(),
+            streaming_start,
+            token.len(),
+        );
         self.messages.push(ChatMessage::thinking(token.to_string()));
         self.scroll.reset_to_bottom();
     }
 
     /// Returns the start index of the streaming zone.
     ///
-    /// The streaming zone is the contiguous tail of `Thinking` and
-    /// `AssistantStreaming` messages. Everything before this index is
-    /// stable (User, Assistant, Tool, System, Error, Banner) and must
-    /// not be modified by streaming operations.
+    /// The streaming zone is the contiguous tail of streaming-eligible
+    /// messages: `Thinking` with `round_index == 0` and `AssistantStreaming`.
+    /// Everything before this index is stable and must not be modified by
+    /// streaming operations.
+    ///
+    /// **Round-awareness:** `Thinking` blocks with `round_index > 0` are
+    /// stable inter-round blocks (inserted via InterToolText) and must NOT
+    /// be included in the streaming zone. Including them would cause
+    /// `finalize_stream()` to consolidate inter-round thinking into a
+    /// single block, merging thinking from different rounds.
     fn streaming_zone_start(&self) -> usize {
         self.messages
             .iter()
             .enumerate()
             .rev()
             .find(|(_, m)| {
-                !matches!(
-                    m.msg_type,
-                    MessageType::Thinking | MessageType::AssistantStreaming
-                )
+                // Streaming-eligible: round-0 Thinking and any AssistantStreaming
+                let is_streaming_eligible = matches!(m.msg_type, MessageType::AssistantStreaming)
+                    || (m.msg_type == MessageType::Thinking && m.round_index == 0);
+                !is_streaming_eligible
             })
             .map(|(i, _)| i + 1)
             .unwrap_or(0)
@@ -581,6 +620,93 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Insert a message after all messages with `round_index <= message.round_index`,
+    /// respecting the streaming zone boundary (only `AssistantStreaming` messages).
+    ///
+    /// This is the round-aware replacement for `insert_before_streaming_zone()`
+    /// when dealing with inter-round content from multi-round LLM tool call cycles.
+    /// When a multi-round tool cycle occurs (e.g., model searches → observes results →
+    /// searches again), inter-round content (thinking, text from `InterToolText`)
+    /// must appear AFTER all messages of the previous round and BEFORE messages
+    /// of subsequent rounds.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Find the boundary before any `AssistantStreaming` messages at the tail.
+    ///    (Unlike `streaming_zone_start()`, this does NOT include `Thinking` blocks,
+    ///    because finalized Thinking content from `InterToolText` should be treated
+    ///    as stable for round boundary purposes.)
+    /// 2. Within the stable zone (before `AssistantStreaming`), find the last message
+    ///    with `round_index <= target_round`. Insert after that message.
+    /// 3. If no `AssistantStreaming` zone exists, search all messages.
+    /// 4. Fallback: if no message has `round_index <= target_round`, insert at
+    ///    position 0 (all messages have higher round_index).
+    pub fn insert_at_round_boundary(&mut self, message: ChatMessage) {
+        let target_round = message.round_index;
+
+        // Find the boundary before AssistantStreaming messages at the tail.
+        // We only exclude AssistantStreaming (actively streaming, incomplete content)
+        // from the round-boundary search. Finalized Thinking blocks from
+        // InterToolText are stable content and should participate in the search.
+        let stream_boundary = self
+            .messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, m)| m.msg_type != MessageType::AssistantStreaming)
+            .map(|(i, _)| i + 1)
+            .unwrap_or(0);
+
+        let search_end = if stream_boundary < self.messages.len() {
+            stream_boundary
+        } else {
+            self.messages.len()
+        };
+
+        if search_end == 0 {
+            // All messages are AssistantStreaming — insert at position 0
+            self.messages.insert(0, message);
+        } else {
+            // Find the last message in the stable zone with round_index <= target_round
+            let insert_pos = self.messages[..search_end]
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.round_index <= target_round)
+                .map(|(i, _)| i + 1)
+                .unwrap_or(0);
+
+            self.messages.insert(insert_pos, message);
+        }
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Get the current round index.
+    ///
+    /// Used by the event loop to assign round_index to tool messages
+    /// before they are drained into the chat area.
+    pub fn current_round(&self) -> usize {
+        self.current_round
+    }
+
+    /// Increment the current round index.
+    ///
+    /// Called on `ToolCallStarted` — each tool call round increments
+    /// the counter so that inter-round content from subsequent rounds
+    /// can be positioned correctly.
+    pub fn increment_round(&mut self) {
+        self.current_round += 1;
+    }
+
+    /// Reset the current round index to 0.
+    ///
+    /// Called on `Complete`, `Cancelled`, `Error`, and at the start of
+    /// each new user prompt (`handle_key_line`). Round tracking is
+    /// ephemeral — it does not persist across LLM interactions.
+    pub fn reset_round(&mut self) {
+        self.current_round = 0;
+    }
+
     /// Finalize the current streaming zone by converting all
     /// `AssistantStreaming` messages to stable `Assistant`.
     ///
@@ -588,22 +714,42 @@ impl App {
     /// `StreamBlockDone`/`StreamDone` arrive (e.g., on `ToolCallStarted`).
     /// Preserves the streamed content as-is without authoritative final data.
     /// Thinking blocks remain unchanged (already stream-accumulated).
+    ///
+    /// Preserves `round_index` on converted messages so that round-aware
+    /// ordering is maintained after the zone is finalized.
+    ///
+    /// **Note:** This method converts ALL `AssistantStreaming` messages in
+    /// the entire list, not just those within the streaming zone. This is
+    /// necessary because tool messages may have been added between the
+    /// streaming zone boundary and earlier `AssistantStreaming` blocks,
+    /// pushing the streaming zone start past them. If we only converted
+    /// within the zone, `AssistantStreaming(0)` (the pre-tool content)
+    /// would remain unconverted and later be replaced by `finalize_stream()`
+    /// with the final response, destroying the pre-tool content.
     pub fn finalize_streaming_zone_as_is(&mut self) {
-        let streaming_start = self.streaming_zone_start();
-        for i in streaming_start..self.messages.len() {
+        let mut converted = 0;
+        for i in 0..self.messages.len() {
             if self.messages[i].msg_type == MessageType::AssistantStreaming {
                 let content = self.messages[i].content.clone();
-                self.messages[i] = ChatMessage::assistant_markdown(content);
+                let round = self.messages[i].round_index;
+                self.messages[i] = ChatMessage::assistant_markdown(content).with_round_index(round);
+                converted += 1;
             }
         }
+        log::debug!(
+            "finalize_streaming_zone_as_is: total_messages={}, converted={}",
+            self.messages.len(),
+            converted,
+        );
         self.scroll.reset_to_bottom();
     }
 
     /// Check whether the streaming zone is non-empty.
     ///
-    /// Returns `true` if there are Thinking or AssistantStreaming
-    /// messages at the tail of the message list, indicating that
-    /// content is currently being displayed via streaming events.
+    /// Returns `true` if there are streaming-eligible messages
+    /// (round-0 `Thinking` or `AssistantStreaming`) at the tail
+    /// of the message list, indicating that content is currently
+    /// being displayed via streaming events.
     /// Used to avoid duplicating content that's already being shown.
     pub fn has_streaming_zone(&self) -> bool {
         self.streaming_zone_start() < self.messages.len()
@@ -620,17 +766,45 @@ impl App {
     /// `AssistantStreaming` with the final markdown-rendered `Assistant`.
     ///
     /// Only `Thinking` blocks in the **streaming zone** (the contiguous tail
-    /// of `Thinking`/`AssistantStreaming` messages) are consolidated or removed.
-    /// `Thinking` blocks from earlier tool-call rounds (preceded by `Tool`,
-    /// `Assistant`, `User`, etc.) are preserved intact.
+    /// of round-0 `Thinking` and `AssistantStreaming` messages) are consolidated
+    /// or removed. `Thinking` blocks from earlier tool-call rounds (preceded
+    /// by `Tool`, `Assistant`, `User`, etc., or with `round_index > 0`) are
+    /// preserved intact.
     pub fn finalize_stream(&mut self, content: &str, thinking: Option<&str>) {
         // Determine the streaming zone boundary using shared helper
         let streaming_start = self.streaming_zone_start();
+        let thinking_desc = thinking.as_ref().map_or_else(
+            || "None".to_string(),
+            |t| format!("Some({} chars)", t.len()),
+        );
+        log::debug!(
+            "finalize_stream: streaming_start={}, messages_len={}, content_len={}, thinking={}",
+            streaming_start,
+            self.messages.len(),
+            content.len(),
+            thinking_desc,
+        );
 
         // Collect Thinking positions within the streaming zone only
         let thinking_positions: Vec<usize> = (streaming_start..self.messages.len())
             .filter(|&i| self.messages[i].msg_type == MessageType::Thinking)
             .collect();
+
+        log::debug!(
+            "finalize_stream: thinking_positions={:?} (within streaming zone {}..{})",
+            thinking_positions,
+            streaming_start,
+            self.messages.len(),
+        );
+
+        for &pos in &thinking_positions {
+            log::debug!(
+                "  Thinking at [{}]: round={}, content_len={}",
+                pos,
+                self.messages[pos].round_index,
+                self.messages[pos].content.len(),
+            );
+        }
 
         if !thinking_positions.is_empty() {
             if let Some(thinking_content) = thinking {
@@ -651,7 +825,7 @@ impl App {
             } else {
                 // No thinking in final response — remove Thinking blocks
                 // in the streaming zone only. Tool-call Thinking blocks
-                // before the streaming zone are preserved.
+                // before the streaming zone (or with round_index > 0) are preserved.
                 for &pos in thinking_positions.iter().rev() {
                     self.messages.remove(pos);
                 }
@@ -665,9 +839,18 @@ impl App {
             .iter()
             .rposition(|m| m.msg_type == MessageType::AssistantStreaming)
         {
+            log::debug!(
+                "finalize_stream: replacing AssistantStreaming at [{}] with content_len={}",
+                pos,
+                content.len(),
+            );
             self.messages[pos] = ChatMessage::assistant_markdown(content.to_string());
         } else {
             // No streaming message found — just add the final one
+            log::debug!(
+                "finalize_stream: NO AssistantStreaming found, pushing content_len={}",
+                content.len(),
+            );
             self.messages
                 .push(ChatMessage::assistant_markdown(content.to_string()));
         }
@@ -2380,6 +2563,436 @@ mod tests {
         assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
     }
 
+    // ── insert_at_round_boundary tests ────────────────────────────
+
+    #[test]
+    fn test_insert_at_round_boundary_round0_no_rounds_yet() {
+        // Inserting a round-0 message into empty messages — append
+        let mut app = test_app();
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Think".to_string()).with_round_index(0),
+        );
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].round_index, 0);
+    }
+
+    #[test]
+    fn test_insert_at_round_boundary_round1_after_round0() {
+        // Round 0 messages exist. Insert round-1 content after them.
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Search for X".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Let me search".to_string()).with_round_index(0),
+        );
+        app.add_message(ChatMessage::tool("🔧 search(X)".to_string()).with_round_index(0));
+        app.add_message(ChatMessage::tool("Result: ...".to_string()).with_round_index(0));
+
+        // InterToolText for round 1 inserts after round 0
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Now let me refine".to_string()).with_round_index(1),
+        );
+        assert_eq!(app.messages.len(), 5);
+        // Round 1 thinking should be after all round 0 messages
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[4].round_index, 1);
+    }
+
+    #[test]
+    fn test_insert_at_round_boundary_round1_between_round0_and_streaming() {
+        // Round 0 content finalized, then round 1 content inserted.
+        // In production, streaming zone is finalized by ToolCallStarted before
+        // InterToolText arrives, so there's no streaming zone when round boundary
+        // insertion happens. We simulate this realistic scenario.
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Pre-tool".to_string()).with_round_index(0),
+        );
+        app.add_message(ChatMessage::tool("🔧 tool1()".to_string()).with_round_index(0));
+
+        // Round 0 streaming was finalized by ToolCallStarted, then thinking
+        // arrived via InterToolText for round 1
+        app.add_message(ChatMessage::thinking("More thinking".to_string()).with_round_index(0));
+        app.add_message(
+            ChatMessage::assistant_markdown("Streaming".to_string()).with_round_index(0),
+        );
+        app.finalize_streaming_zone_as_is(); // ToolCallStarted finalizes the zone
+
+        // Insert round-1 inter-tool content after round-0 messages
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Between rounds".to_string()).with_round_index(1),
+        );
+
+        // Should be: User, Assistant(0), Tool(0), Thinking(0), Assistant(0), Assistant(1)
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[5].content, "Between rounds");
+        assert_eq!(app.messages[5].round_index, 1);
+    }
+
+    #[test]
+    fn test_insert_at_round_boundary_round2_after_round1() {
+        // Multi-round: round 0 and round 1 content exist, insert round 2.
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Round 0 text".to_string()).with_round_index(0),
+        );
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(0));
+        app.add_message(
+            ChatMessage::assistant_markdown("Round 1 text".to_string()).with_round_index(1),
+        );
+        app.add_message(ChatMessage::tool("🔧 calc()".to_string()).with_round_index(1));
+
+        // Insert round-2 inter-tool content after round 1
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Round 2 thinking".to_string()).with_round_index(2),
+        );
+
+        // Should be: User, Asst(0), Tool(0), Asst(1), Tool(1), Thinking(2)
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 2);
+    }
+
+    #[test]
+    fn test_insert_at_round_boundary_all_same_round() {
+        // All messages have round_index 0. Insert a round-0 message
+        // should append after them (since round_index <= 0 matches all).
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("A".to_string()).with_round_index(0));
+
+        app.insert_at_round_boundary(ChatMessage::tool("Result".to_string()).with_round_index(0));
+
+        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].round_index, 0);
+    }
+
+    #[test]
+    fn test_round_lifecycle_increment_and_reset() {
+        // Test current_round, increment_round, reset_round lifecycle
+        let mut app = test_app();
+        assert_eq!(app.current_round(), 0);
+
+        app.increment_round(); // ToolCallStarted: round 0 → round 1
+        assert_eq!(app.current_round(), 1);
+
+        app.increment_round(); // Second tool round: round 1 → round 2
+        assert_eq!(app.current_round(), 2);
+
+        app.reset_round(); // Complete: back to 0
+        assert_eq!(app.current_round(), 0);
+    }
+
+    #[test]
+    fn test_round_index_default_zero() {
+        // ChatMessage constructors default round_index to 0
+        assert_eq!(ChatMessage::user("hi".into()).round_index, 0);
+        assert_eq!(
+            ChatMessage::assistant_markdown("resp".into()).round_index,
+            0
+        );
+        assert_eq!(ChatMessage::thinking("think".into()).round_index, 0);
+        assert_eq!(ChatMessage::tool("tool".into()).round_index, 0);
+        assert_eq!(ChatMessage::system("info".into()).round_index, 0);
+        assert_eq!(ChatMessage::error("err".into()).round_index, 0);
+        assert_eq!(ChatMessage::separator().round_index, 0);
+    }
+
+    #[test]
+    fn test_with_round_index_builder() {
+        // with_round_index sets the round_index
+        let msg = ChatMessage::tool("🔧 search()".to_string()).with_round_index(3);
+        assert_eq!(msg.round_index, 3);
+        assert_eq!(msg.msg_type, MessageType::Tool);
+        assert_eq!(msg.content, "🔧 search()");
+    }
+
+    #[test]
+    fn test_insert_at_round_boundary_multiround_realistic() {
+        // Simulate a realistic multi-round tool call cycle:
+        // User → (think + stream) → [ToolCallStarted round 1]
+        // → tool messages round 1 → [InterToolText round 2]
+        // → tool messages round 2 → [StreamDone]
+        let mut app = test_app();
+
+        // Round 0: user prompt + streaming content
+        app.add_message(ChatMessage::user(
+            "Search for weather in São Paulo".to_string(),
+        ));
+        app.append_stream_thinking("I need to search");
+        app.append_stream_token("Let me check the weather");
+
+        // ToolCallStarted: finalize streaming, enter round 1
+        app.finalize_streaming_zone_as_is();
+        app.increment_round();
+        assert_eq!(app.current_round(), 1);
+
+        // Drain tool messages for round 1
+        app.add_message(ChatMessage::tool("🔧 weather(São Paulo)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Sunny, 28°C".to_string()).with_round_index(1));
+
+        // InterToolText for round 2: model processes results and calls another tool
+        app.increment_round(); // round 2
+        assert_eq!(app.current_round(), 2);
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("The weather is nice, let me suggest activities".to_string())
+                .with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Based on the weather".to_string()).with_round_index(2),
+        );
+
+        // Verify ordering: User(0), Thinking(streaming→stable), Asst(streaming→stable),
+        // Tool(1), Tool(1), Thinking(2), Asst(2)
+        assert_eq!(app.messages.len(), 7);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        // Messages 1-2 are the finalized streaming zone (thinking + asst from round 0)
+        assert!(matches!(app.messages[1].msg_type, MessageType::Thinking));
+        assert!(matches!(app.messages[2].msg_type, MessageType::Assistant));
+        // Round 1 tool messages
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[4].round_index, 1);
+        // Round 2 inter-tool text
+        assert_eq!(app.messages[5].round_index, 2);
+        assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[6].round_index, 2);
+        assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
+
+        // Reset at end of cycle
+        app.reset_round();
+        assert_eq!(app.current_round(), 0);
+    }
+
+    // ── Regression tests for round-aware streaming zone ──────────
+
+    #[test]
+    fn test_streaming_zone_excludes_round_gt0_thinking() {
+        // Thinking blocks with round_index > 0 (from InterToolText) must
+        // NOT be included in the streaming zone. Otherwise finalize_stream()
+        // would consolidate inter-round thinking into a single block.
+        let mut app = test_app();
+
+        // Stable inter-round Thinking (round 2) — NOT streaming
+        app.add_message(ChatMessage::thinking("Round 2 thinking".to_string()).with_round_index(2));
+        // Streaming zone starts AFTER the stable Thinking block
+        app.append_stream_thinking("Stream thinking");
+        app.append_stream_token("Stream content");
+
+        // Streaming zone should only include round-0 Thinking + AssistantStreaming
+        let zone_start = app.streaming_zone_start();
+        // The stable Thinking(round=2) should NOT be in the streaming zone
+        assert_eq!(
+            app.messages[zone_start].msg_type,
+            MessageType::Thinking,
+            "Streaming zone should start at the streaming Thinking block"
+        );
+        assert_eq!(
+            app.messages[zone_start].round_index, 0,
+            "Streaming zone Thinking should be round 0"
+        );
+    }
+
+    #[test]
+    fn test_append_stream_thinking_creates_new_block_after_stable_thinking() {
+        // When a Thinking block with round_index > 0 is the last message,
+        // append_stream_thinking should create a NEW block instead of appending
+        // to the stable block.
+        let mut app = test_app();
+
+        // Add a stable inter-round Thinking block
+        app.add_message(ChatMessage::thinking("Round 2 thinking".to_string()).with_round_index(2));
+
+        // Now stream thinking tokens (round 0, final response)
+        app.append_stream_thinking("Final ");
+
+        // Should create a NEW Thinking block, not append to round 2 block
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Round 2 thinking");
+        assert_eq!(app.messages[0].round_index, 2);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[1].content, "Final ");
+        assert_eq!(app.messages[1].round_index, 0);
+    }
+
+    #[test]
+    fn test_append_stream_token_creates_new_block_after_stable_thinking() {
+        // When a Thinking block with round_index > 0 is the last message,
+        // append_stream_token should create a NEW AssistantStreaming block
+        // instead of trying to append to the Thinking block.
+        let mut app = test_app();
+
+        // Add a stable inter-round Thinking block
+        app.add_message(ChatMessage::thinking("Round 2 thinking".to_string()).with_round_index(2));
+
+        // Now stream content tokens (round 0, final response)
+        app.append_stream_token("Final content");
+
+        // Should create a NEW AssistantStreaming block
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].round_index, 2);
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[1].content, "Final content");
+        assert_eq!(app.messages[1].round_index, 0);
+    }
+
+    #[test]
+    fn test_finalize_stream_preserves_inter_round_thinking() {
+        // Multi-round tool call cycle with inter-round Thinking blocks.
+        // finalize_stream should NOT consolidate inter-round Thinking into
+        // a single block — each round's Thinking should be preserved separately.
+        let mut app = test_app();
+
+        // Round 0 streaming (then finalized by ToolCallStarted)
+        app.add_message(ChatMessage::user("Search for X".to_string()));
+        app.append_stream_thinking("I need to search");
+        app.append_stream_token("Let me check");
+        app.finalize_streaming_zone_as_is();
+
+        // Round 1 tool messages
+        app.increment_round(); // round 1
+        app.add_message(ChatMessage::tool("🔧 search(X)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result: ...".to_string()).with_round_index(1));
+
+        // Round 2 inter-round content (InterToolText)
+        app.increment_round(); // round 2
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("The search result shows...".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Based on the results".to_string()).with_round_index(2),
+        );
+
+        // Round 2 tool messages
+        app.add_message(ChatMessage::tool("🔧 calc(42)".to_string()).with_round_index(2));
+        app.add_message(ChatMessage::tool("= 42".to_string()).with_round_index(2));
+
+        // Round 3: Final response streaming starts
+        app.append_stream_thinking("Final thinking");
+        app.append_stream_token("Final answer");
+
+        // Verify inter-round Thinking is preserved BEFORE finalize
+        let inter_round_thinking = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Thinking && m.round_index > 0)
+            .count();
+        assert!(
+            inter_round_thinking > 0,
+            "Should have inter-round Thinking blocks before finalize"
+        );
+
+        // Finalize the stream
+        app.finalize_stream("Final answer", Some("Final thinking"));
+
+        // Inter-round Thinking should STILL be preserved after finalize
+        let inter_round_thinking_after = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Thinking && m.round_index > 0)
+            .count();
+        assert_eq!(
+            inter_round_thinking, inter_round_thinking_after,
+            "Inter-round Thinking blocks must be preserved by finalize_stream"
+        );
+
+        // Verify the round-2 Thinking content is intact and not merged
+        let round2_thinking: Vec<&str> = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Thinking && m.round_index > 0)
+            .map(|m| m.content.as_str())
+            .collect();
+        assert!(
+            round2_thinking.iter().any(|c| c.contains("search result")),
+            "Round 2 thinking content must be preserved: {:?}",
+            round2_thinking
+        );
+    }
+
+    #[test]
+    fn test_finalize_stream_removes_round0_thinking_preserves_round_gt0() {
+        // When finalize_stream is called with thinking: None, it removes
+        // round-0 Thinking blocks but preserves round > 0 blocks.
+        let mut app = test_app();
+
+        // Inter-round Thinking (round 2) — must be preserved
+        app.add_message(
+            ChatMessage::thinking("Inter-round thinking".to_string()).with_round_index(2),
+        );
+        app.add_message(
+            ChatMessage::assistant_markdown("Inter-round content".to_string()).with_round_index(2),
+        );
+
+        // Streaming Thinking (round 0) — must be REMOVED
+        app.append_stream_thinking("Stream thinking");
+        app.append_stream_token("Stream content");
+
+        // Finalize with thinking: None — streaming Thinking should be removed
+        app.finalize_stream("Final content", None);
+
+        // Round-0 Thinking gone, round-2 Thinking preserved
+        let thinking_count = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Thinking)
+            .count();
+        assert_eq!(thinking_count, 1, "Only inter-round Thinking should remain");
+
+        let remaining_thinking = app
+            .messages
+            .iter()
+            .find(|m| m.msg_type == MessageType::Thinking)
+            .unwrap();
+        assert_eq!(remaining_thinking.round_index, 2);
+        assert_eq!(remaining_thinking.content, "Inter-round thinking");
+    }
+
+    #[test]
+    fn test_streaming_zone_with_interleaved_stable_and_streaming_thinking() {
+        // After InterToolText inserts Thinking(round=2), then streaming
+        // starts, the streaming zone should start AFTER the stable block.
+        let mut app = test_app();
+
+        // Stable inter-round Thinking and content
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Let me check".to_string()).with_round_index(0),
+        );
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(0));
+        app.add_message(
+            ChatMessage::thinking("Inter-round thinking".to_string()).with_round_index(2),
+        );
+        app.add_message(
+            ChatMessage::assistant_markdown("More content".to_string()).with_round_index(2),
+        );
+
+        // Streaming starts — should go AFTER stable content
+        app.append_stream_thinking("Final thinking");
+        app.append_stream_token("Final answer");
+
+        // Verify message order: User, Assistant(0), Tool(0), Thinking(2), Assistant(2), Thinking(0), AssistantStreaming(0)
+        assert_eq!(app.messages.len(), 7);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].round_index, 0);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[3].round_index, 2);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[4].round_index, 2);
+        //Streaming zone starts here
+        assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 0);
+        assert_eq!(app.messages[6].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[6].round_index, 0);
+    }
+
     // ── has_streaming_zone tests ────────────────────────────────────
 
     #[test]
@@ -2387,6 +3000,19 @@ mod tests {
         let mut app = test_app();
         app.append_stream_thinking("Thinking");
         assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false_stable_thinking_only() {
+        // Inter-round Thinking (round > 0) should NOT count as streaming zone
+        let mut app = test_app();
+        app.add_message(
+            ChatMessage::thinking("Inter-round thinking".to_string()).with_round_index(2),
+        );
+        assert!(
+            !app.has_streaming_zone(),
+            "Stable Thinking (round > 0) should not be part of streaming zone"
+        );
     }
 
     #[test]
@@ -2603,6 +3229,301 @@ mod tests {
         assert_eq!(app.messages[2].content, "Boa noite");
         assert_eq!(app.messages[3].msg_type, MessageType::Tool);
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+    }
+
+    // ── Tool message round_index ordering tests ────────────────────
+
+    #[test]
+    fn test_tool_messages_get_correct_round_index_before_increment() {
+        // Simulating the InterToolText handler fix: drain tool messages
+        // BEFORE incrementing the round, so they get the correct round.
+        //
+        // Scenario: Round 0 streaming → Round 1 tools.
+        // When InterToolText for round 2 arrives, round 1 tool messages
+        // should be drained with round_index=1, NOT round_index=2.
+        let mut app = test_app();
+
+        // Round 0: user prompt + streaming content
+        app.add_message(ChatMessage::user("Search".to_string()));
+        app.append_stream_thinking("Need to search");
+        app.append_stream_token("Searching...");
+
+        // ToolCallStarted: finalize streaming, enter round 1
+        app.finalize_streaming_zone_as_is();
+        app.increment_round(); // round 0 → 1
+        assert_eq!(app.current_round(), 1);
+
+        // Tool messages for round 1 (manually added, simulating drain)
+        app.add_message(ChatMessage::tool("🔧 search(X)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result: ...".to_string()).with_round_index(1));
+
+        // InterToolText for round 2: drain BEFORE incrementing round
+        // In the real handler: prev_round = current_round() = 1
+        // drain_and_add_tool_messages(view, prev_round)
+        // Then: increment_round() → 2
+        let _prev_round = app.current_round(); // 1
+        // Simulate draining round 1 tool messages (already added above)
+        // Now increment for round 2
+        app.increment_round(); // 1 → 2
+        let round = app.current_round(); // 2
+
+        // Insert round 2 content at the round boundary
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Let me calculate".to_string()).with_round_index(round),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Calculating...".to_string()).with_round_index(round),
+        );
+
+        // Verify ordering: User, Thinking(0/streaming), Assistant(0/streaming),
+        // Tool(1), Tool(1), Thinking(2), Assistant(2)
+        assert_eq!(app.messages.len(), 7);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert!(matches!(app.messages[1].msg_type, MessageType::Thinking));
+        assert!(matches!(app.messages[2].msg_type, MessageType::Assistant));
+        assert_eq!(
+            app.messages[3].round_index, 1,
+            "Tool messages should have round_index=1"
+        );
+        assert_eq!(
+            app.messages[4].round_index, 1,
+            "Tool messages should have round_index=1"
+        );
+        assert_eq!(
+            app.messages[5].round_index, 2,
+            "Round 2 thinking should have round_index=2"
+        );
+        assert_eq!(
+            app.messages[6].round_index, 2,
+            "Round 2 content should have round_index=2"
+        );
+    }
+
+    #[test]
+    fn test_tool_messages_before_round_reset_on_complete() {
+        // Simulating the Complete handler fix: drain tool messages
+        // BEFORE resetting the round counter.
+        //
+        // Scenario: After a multi-round cycle, the final round's
+        // tool messages should get the correct round_index, not 0.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Query".to_string()));
+        // Round 0: streaming
+        app.append_stream_thinking("Thinking");
+        app.append_stream_token("Content");
+        app.finalize_streaming_zone_as_is();
+
+        // Round 1: tool messages
+        app.increment_round(); // 0 → 1
+        app.add_message(ChatMessage::tool("🔧 tool()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result".to_string()).with_round_index(1));
+
+        // Round 2: InterToolText
+        app.increment_round(); // 1 → 2
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("More thinking".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("More content".to_string()).with_round_index(2),
+        );
+
+        // Round 2: tool messages (drained before round reset)
+        // In the real handler: drain_and_add_tool_messages(view, current_round())
+        // current_round() is still 2 at this point (before reset_round)
+        let final_round = app.current_round(); // 2
+        app.add_message(ChatMessage::tool("🔧 tool2()".to_string()).with_round_index(final_round));
+        app.add_message(ChatMessage::tool("Result2".to_string()).with_round_index(final_round));
+
+        // NOW reset round (simulating Complete handler)
+        app.reset_round();
+        assert_eq!(app.current_round(), 0);
+
+        // Verify tool messages have correct round indices
+        // Round 1 tools should have round_index=1
+        let round1_tools: Vec<&ChatMessage> = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Tool && m.round_index == 1)
+            .collect();
+        assert_eq!(round1_tools.len(), 2, "Should have 2 round-1 tool messages");
+
+        // Round 2 tools should have round_index=2
+        let round2_tools: Vec<&ChatMessage> = app
+            .messages
+            .iter()
+            .filter(|m| m.msg_type == MessageType::Tool && m.round_index == 2)
+            .collect();
+        assert_eq!(round2_tools.len(), 2, "Should have 2 round-2 tool messages");
+    }
+
+    #[test]
+    fn test_three_round_tool_call_ordering() {
+        // Full realistic 3-round tool call cycle:
+        // Round 0: streaming → ToolCallStarted
+        // Round 1: tool messages → InterToolText
+        // Round 2: tool messages → InterToolText
+        // Round 3: InterToolText → tool messages
+        // Then Complete (drain before reset)
+        let mut app = test_app();
+
+        // ── Round 0: streaming ──
+        app.add_message(ChatMessage::user("What's the weather?".to_string()));
+        app.append_stream_thinking("Need to search");
+        app.append_stream_token("Searching...");
+
+        // ToolCallStarted: finalize streaming, enter round 1
+        app.finalize_streaming_zone_as_is();
+        app.increment_round(); // 0 → 1
+
+        // Round 1 tool messages (drained at InterToolText for round 2)
+        // Simulated here with add_message for simplicity
+        app.add_message(ChatMessage::tool("🔧 search(weather)".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Sunny, 28°C".to_string()).with_round_index(1));
+
+        // ── Round 2: InterToolText ──
+        // drain_and_add_tool_messages with prev_round=1 (already added)
+        app.increment_round(); // 1 → 2
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Let me calculate".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Based on weather...".to_string()).with_round_index(2),
+        );
+
+        // Round 2 tool messages
+        app.add_message(ChatMessage::tool("🔧 calc(temp)".to_string()).with_round_index(2));
+        app.add_message(ChatMessage::tool("= 28".to_string()).with_round_index(2));
+
+        // ── Round 3: InterToolText ──
+        app.increment_round(); // 2 → 3
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Final analysis".to_string()).with_round_index(3),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("The result is".to_string()).with_round_index(3),
+        );
+
+        // Verify overall ordering:
+        // User(0), Thinking(stream), Asst(stream), Tool(1), Tool(1),
+        // Thinking(2), Asst(2), Tool(2), Tool(2), Thinking(3), Asst(3)
+        assert_eq!(app.messages.len(), 11);
+
+        // Round 0: user + streaming content
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert!(matches!(app.messages[1].msg_type, MessageType::Thinking));
+        assert!(matches!(app.messages[2].msg_type, MessageType::Assistant));
+
+        // Round 1: tool messages (correctly positioned after round 0 content)
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].round_index, 1);
+
+        // Round 2: thinking + content + tools (correctly after round 1 tools)
+        assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 2);
+        assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[6].round_index, 2);
+        assert_eq!(app.messages[7].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[7].round_index, 2);
+        assert_eq!(app.messages[8].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[8].round_index, 2);
+
+        // Round 3: thinking + content (correctly after round 2 content)
+        assert_eq!(app.messages[9].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[9].round_index, 3);
+        assert_eq!(app.messages[10].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[10].round_index, 3);
+    }
+
+    #[test]
+    fn test_tool_messages_positioned_before_next_round_content() {
+        // Verify that tool messages from round N appear BEFORE
+        // inter-tool content from round N+1, even when inserted
+        // via add_message (appended at end) followed by insert_at_round_boundary
+        // for the next round.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Searching...".to_string()).with_round_index(0),
+        );
+
+        // Round 1: tool messages via add_message (appended at end)
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Result".to_string()).with_round_index(1));
+
+        // Round 2: InterToolText inserted via insert_at_round_boundary
+        app.insert_at_round_boundary(
+            ChatMessage::thinking("Inter-round thinking".to_string()).with_round_index(2),
+        );
+        app.insert_at_round_boundary(
+            ChatMessage::assistant_markdown("Inter-round content".to_string()).with_round_index(2),
+        );
+
+        // Verify order: User, Assistant(0), Tool(1), Tool(1), Thinking(2), Assistant(2)
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].round_index, 0);
+        // Tool messages appear before round 2 content
+        assert_eq!(app.messages[2].round_index, 1);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        // Round 2 content appears after round 1 tools
+        assert_eq!(app.messages[4].round_index, 2);
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].round_index, 2);
+        assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
+    }
+
+    // ── StreamDone drain tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_stream_done_drains_tool_messages_before_final_response() {
+        // Verify that tool messages from the last round appear BEFORE
+        // the final response message. This simulates the StreamDone event
+        // handler behavior: drain tool messages first, then create the
+        // final response message.
+        let mut app = test_app();
+
+        // Round 0: user message
+        app.add_message(ChatMessage::user("Search for Rust".to_string()));
+        app.add_message(
+            ChatMessage::assistant_markdown("Searching...".to_string()).with_round_index(0),
+        );
+
+        // Round 1: tool messages (simulating drain in StreamDone)
+        app.add_message(ChatMessage::tool("🔧 search()".to_string()).with_round_index(1));
+        app.add_message(ChatMessage::tool("Results: Rust is...".to_string()).with_round_index(1));
+
+        // Now the final response is added AFTER tool messages
+        // (because StreamDone drains tools before creating the final message)
+        app.add_message(
+            ChatMessage::assistant_markdown("Here is what I found...".to_string())
+                .with_round_index(1),
+        );
+
+        // Verify order: User, Assistant(0), Tool(1), Tool(1), Assistant(1)
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+
+        // Round 0 assistant
+        assert_eq!(app.messages[1].round_index, 0);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+
+        // Tool messages from round 1 appear BEFORE the final response
+        assert_eq!(app.messages[2].round_index, 1);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+
+        // Final response comes AFTER tool messages
+        assert_eq!(app.messages[4].round_index, 1);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
     }
 
     // ── ScrollState tests ──────────────────────────────────────────────
