@@ -439,6 +439,20 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Return the number of messages in the chat area.
+    pub fn message_count(&self) -> usize {
+        self.messages.len()
+    }
+
+    /// Return a diagnostic summary of all messages for debug logging.
+    /// Each entry contains (msg_type, round_index, content_len).
+    pub fn messages_debug(&self) -> Vec<(&MessageType, usize, usize)> {
+        self.messages
+            .iter()
+            .map(|m| (&m.msg_type, m.round_index, m.content.len()))
+            .collect()
+    }
+
     /// Append a streaming token to the last `AssistantStreaming` message.
     ///
     /// If the last message is not `AssistantStreaming`, searches backward
@@ -481,6 +495,11 @@ impl App {
         }
 
         // No streaming message yet — create one
+        log::debug!(
+            "append_stream_token: creating NEW AssistantStreaming, messages_len={}, streaming_start={}",
+            self.messages.len(),
+            streaming_start,
+        );
         self.messages
             .push(ChatMessage::assistant_streaming(token.to_string()));
         self.scroll.reset_to_bottom();
@@ -528,6 +547,12 @@ impl App {
         }
 
         // No thinking message yet — create one
+        log::debug!(
+            "append_stream_thinking: creating NEW Thinking(0), messages_len={}, streaming_start={}, token_len={}",
+            self.messages.len(),
+            streaming_start,
+            token.len(),
+        );
         self.messages.push(ChatMessage::thinking(token.to_string()));
         self.scroll.reset_to_bottom();
     }
@@ -701,15 +726,30 @@ impl App {
     ///
     /// Preserves `round_index` on converted messages so that round-aware
     /// ordering is maintained after the zone is finalized.
+    ///
+    /// **Note:** This method converts ALL `AssistantStreaming` messages in
+    /// the entire list, not just those within the streaming zone. This is
+    /// necessary because tool messages may have been added between the
+    /// streaming zone boundary and earlier `AssistantStreaming` blocks,
+    /// pushing the streaming zone start past them. If we only converted
+    /// within the zone, `AssistantStreaming(0)` (the pre-tool content)
+    /// would remain unconverted and later be replaced by `finalize_stream()`
+    /// with the final response, destroying the pre-tool content.
     pub fn finalize_streaming_zone_as_is(&mut self) {
-        let streaming_start = self.streaming_zone_start();
-        for i in streaming_start..self.messages.len() {
+        let mut converted = 0;
+        for i in 0..self.messages.len() {
             if self.messages[i].msg_type == MessageType::AssistantStreaming {
                 let content = self.messages[i].content.clone();
                 let round = self.messages[i].round_index;
                 self.messages[i] = ChatMessage::assistant_markdown(content).with_round_index(round);
+                converted += 1;
             }
         }
+        log::debug!(
+            "finalize_streaming_zone_as_is: total_messages={}, converted={}",
+            self.messages.len(),
+            converted,
+        );
         self.scroll.reset_to_bottom();
     }
 
@@ -742,11 +782,38 @@ impl App {
     pub fn finalize_stream(&mut self, content: &str, thinking: Option<&str>) {
         // Determine the streaming zone boundary using shared helper
         let streaming_start = self.streaming_zone_start();
+        let thinking_desc = thinking.as_ref().map_or_else(
+            || "None".to_string(),
+            |t| format!("Some({} chars)", t.len()),
+        );
+        log::debug!(
+            "finalize_stream: streaming_start={}, messages_len={}, content_len={}, thinking={}",
+            streaming_start,
+            self.messages.len(),
+            content.len(),
+            thinking_desc,
+        );
 
         // Collect Thinking positions within the streaming zone only
         let thinking_positions: Vec<usize> = (streaming_start..self.messages.len())
             .filter(|&i| self.messages[i].msg_type == MessageType::Thinking)
             .collect();
+
+        log::debug!(
+            "finalize_stream: thinking_positions={:?} (within streaming zone {}..{})",
+            thinking_positions,
+            streaming_start,
+            self.messages.len(),
+        );
+
+        for &pos in &thinking_positions {
+            log::debug!(
+                "  Thinking at [{}]: round={}, content_len={}",
+                pos,
+                self.messages[pos].round_index,
+                self.messages[pos].content.len(),
+            );
+        }
 
         if !thinking_positions.is_empty() {
             if let Some(thinking_content) = thinking {
@@ -781,9 +848,18 @@ impl App {
             .iter()
             .rposition(|m| m.msg_type == MessageType::AssistantStreaming)
         {
+            log::debug!(
+                "finalize_stream: replacing AssistantStreaming at [{}] with content_len={}",
+                pos,
+                content.len(),
+            );
             self.messages[pos] = ChatMessage::assistant_markdown(content.to_string());
         } else {
             // No streaming message found — just add the final one
+            log::debug!(
+                "finalize_stream: NO AssistantStreaming found, pushing content_len={}",
+                content.len(),
+            );
             self.messages
                 .push(ChatMessage::assistant_markdown(content.to_string()));
         }

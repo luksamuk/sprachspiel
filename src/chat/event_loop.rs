@@ -352,8 +352,42 @@ pub fn handle_llm_event(
             // creating the final response message. This ensures tool
             // messages appear before the final answer, not after it.
             drain_and_add_tool_messages(view, view.app().current_round());
+            let thinking_desc = thinking.as_ref().map_or_else(
+                || "None".to_string(),
+                |t| format!("Some({} chars)", t.len()),
+            );
+            log::debug!(
+                "StreamDone: content_len={}, thinking={}, messages_before={}",
+                content.len(),
+                thinking_desc,
+                view.app().message_count(),
+            );
+            // Log message state BEFORE finalize_stream
+            for (i, (msg_type, round_index, content_len)) in
+                view.app().messages_debug().iter().enumerate()
+            {
+                log::debug!(
+                    "  StreamDone BEFORE [{}]: {:?} round={} content_len={}",
+                    i,
+                    msg_type,
+                    round_index,
+                    content_len,
+                );
+            }
             // Replace the streaming message with the final markdown version
             view.stream_done(&content, thinking.as_deref(), metrics.as_ref());
+            // Log message state AFTER finalize_stream
+            for (i, (msg_type, round_index, content_len)) in
+                view.app().messages_debug().iter().enumerate()
+            {
+                log::debug!(
+                    "  StreamDone AFTER [{}]: {:?} round={} content_len={}",
+                    i,
+                    msg_type,
+                    round_index,
+                    content_len,
+                );
+            }
         }
         LlmEvent::Complete {
             session,
@@ -368,6 +402,11 @@ pub fn handle_llm_event(
             // Drain tool messages BEFORE resetting round so they get
             // the correct round_index for the last round of the cycle.
             drain_and_add_tool_messages(view, view.app().current_round());
+            log::debug!(
+                "Complete: messages_count={}, current_round={}",
+                view.app().message_count(),
+                view.app().current_round(),
+            );
             view.app_mut().reset_round();
             *cancel_token = None;
             *llm_tx = None;
