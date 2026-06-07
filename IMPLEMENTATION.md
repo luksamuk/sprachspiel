@@ -4204,7 +4204,7 @@ The Ollama API streams thinking/content tokens in real-time but aggregates `tool
 - `test_tool_messages_positioned_before_next_round_content` — verifies tool messages from round N appear before round N+1 content inserted via `insert_at_round_boundary`
 - `test_stream_done_drains_tool_messages_before_final_response` — verifies that tool messages from the last round appear before the final response message, simulating the StreamDone drain behavior
 
-**Manual test:** `doc/src/development/MANUAL_TEST_201.md` — 6 scenarios: multi-round web search, file ops, calculator, no-tool regression, error-during-tool, round counter reset verification.
+**Manual test:** completed via `tu` terminal debugger with glm-5.1 model — verified multi-round web search, pre-tool content preservation, and StreamDone drain ordering.
 
 **W2 wave ordering:** #201 is the **next thing to be worked on** after #118 merges. It is **orthogonal to the W2 Provider Chain** (it does not depend on #119-#123 and does not block them) but **blocks the next release**. W2 will not close until #201 ships, regardless of which specific W2 card finishes first.
 
