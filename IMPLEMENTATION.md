@@ -3922,7 +3922,7 @@ Tool calls appear batched at the end of the stream in multi-round cycles. When a
 
 #### Agnostic Provider Types — #119 [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Depends on:** #118 (error types should be compatible with new Tool trait)  
 **Estimated effort:** 1 week  
 **Merge criterion:** Types compile, `From` conversions tested, no existing files changed + **ProviderError carries retry classification semantics (consumed by #120)**
