@@ -76,6 +76,17 @@ pub struct ChatMessage {
     pub msg_type: MessageType,
     /// Message content (plain text during streaming, markdown after completion).
     pub content: String,
+    /// Which round of a multi-round LLM tool-call cycle this message belongs to.
+    ///
+    /// Ephemeral — not persisted to SQLite, reset to 0 on each new user prompt.
+    /// Round 0 = initial content before any tool call; round 1 = content after
+    /// the first tool call results arrive; round N = content after the Nth tool
+    /// call results. Used by `insert_at_round_boundary()` to position inter-round
+    /// content (thinking, text) after all messages of the previous round.
+    ///
+    /// Default is 0 for backward compatibility with messages created by helpers
+    /// that don't specify a round.
+    pub round_index: usize,
 }
 
 impl ChatMessage {
@@ -84,6 +95,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::User,
             content,
+            round_index: 0,
         }
     }
 
@@ -92,6 +104,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::AssistantStreaming,
             content,
+            round_index: 0,
         }
     }
 
@@ -100,6 +113,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Assistant,
             content,
+            round_index: 0,
         }
     }
 
@@ -108,6 +122,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Thinking,
             content,
+            round_index: 0,
         }
     }
 
@@ -116,6 +131,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Tool,
             content,
+            round_index: 0,
         }
     }
 
@@ -124,6 +140,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::System,
             content,
+            round_index: 0,
         }
     }
 
@@ -132,6 +149,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Error,
             content,
+            round_index: 0,
         }
     }
 
@@ -143,6 +161,7 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Separator,
             content: String::new(),
+            round_index: 0,
         }
     }
 
@@ -154,7 +173,18 @@ impl ChatMessage {
         Self {
             msg_type: MessageType::Banner,
             content,
+            round_index: 0,
         }
+    }
+
+    /// Set the round index for this message.
+    ///
+    /// Round index tracks which round of a multi-round LLM tool-call cycle
+    /// this message belongs to. Used by `insert_at_round_boundary()` for
+    /// correct ordering during streaming.
+    pub fn with_round_index(mut self, round_index: usize) -> Self {
+        self.round_index = round_index;
+        self
     }
 }
 

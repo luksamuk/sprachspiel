@@ -246,6 +246,8 @@ pub async fn handle_key_line(
     }
 
     // Send as user message to LLM (non-blocking)
+    // Reset round counter — each user prompt starts a fresh LLM cycle.
+    view.app_mut().reset_round();
     view.set_llm_state(LlmState::Thinking);
     spawn_llm_task(&line, state, llm_tx, llm_rx, cancel_token);
     LoopAction::Continue
@@ -266,6 +268,7 @@ pub fn handle_interrupt(
         token.cancel();
         view.app_mut()
             .add_message(ChatMessage::system("Cancelled.".to_string()));
+        view.app_mut().reset_round();
         view.set_llm_state(LlmState::Idle);
         *llm_tx = None;
         *llm_rx = None;
@@ -355,6 +358,7 @@ pub fn handle_llm_event(
             state.session = *session;
             view.update_status_tokens(used_tokens, max_tokens, percent);
             view.set_llm_state(LlmState::Idle);
+            view.app_mut().reset_round();
             drain_and_add_tool_messages(view);
             *cancel_token = None;
             *llm_tx = None;
@@ -365,6 +369,7 @@ pub fn handle_llm_event(
             let clean = strip_ansi_codes(&error);
             view.app_mut().add_message(ChatMessage::error(clean));
             view.set_llm_state(LlmState::Idle);
+            view.app_mut().reset_round();
             drain_and_add_tool_messages(view);
             *cancel_token = None;
             *llm_tx = None;
@@ -372,6 +377,7 @@ pub fn handle_llm_event(
         }
         LlmEvent::Cancelled => {
             // LLM was cancelled — already handled by Ctrl+C branch
+            view.app_mut().reset_round();
             drain_and_add_tool_messages(view);
             *cancel_token = None;
             *llm_tx = None;
@@ -381,23 +387,33 @@ pub fn handle_llm_event(
             content, thinking, ..
         } => {
             // Inter-tool block arrived from process_next().
-            // Display immediately as stable blocks before tools.
+            // This is round N+1 content (after previous tool results).
+            // Increment round counter so inter-round content is positioned
+            // after all messages of the previous round.
+            view.app_mut().increment_round();
+            let round = view.app().current_round();
+
+            // Insert thinking and content at the round boundary.
             // Insert thinking BEFORE content so pre-tool
             // reasoning appears above tool call indicators.
             if let Some(thinking_content) = thinking {
-                view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
+                view.app_mut().insert_at_round_boundary(
+                    ChatMessage::thinking(thinking_content).with_round_index(round),
+                );
             }
             if !content.trim().is_empty() {
-                view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                view.app_mut().insert_at_round_boundary(
+                    ChatMessage::assistant_markdown(content).with_round_index(round),
+                );
             }
             view.app_mut().set_llm_state(LlmState::ToolCall);
             // Drain any tool messages that arrived for this round.
             drain_and_add_tool_messages(view);
         }
         LlmEvent::ToolCallStarted => {
-            // Tool calls detected — finalize streaming and transition
+            // Tool calls detected — finalize streaming and transition.
+            // Increment round counter: we're entering the next tool call round.
+            view.app_mut().increment_round();
             view.app_mut().finalize_streaming_zone_as_is();
             view.set_llm_state(LlmState::ToolCall);
             // Drain any tool messages that arrived before this event
@@ -474,11 +490,15 @@ pub fn handle_llm_event(
 
 /// Drain any pending tool messages and append them at the end.
 ///
-/// This helper centralizes the insertion logic so tool messages always
-/// appear after all LLM messages and before any further rendering.
+/// Tool messages receive the current `round_index` from `App` so they
+/// are grouped with the correct round in multi-round tool call cycles.
+/// This ensures that tool call/result messages for round N appear
+/// after all content from round N, not batched at the end.
 pub fn drain_and_add_tool_messages(view: &mut RatatuiView) {
+    let round = view.app().current_round();
     for msg in view.drain_tool_messages() {
-        view.app_mut().add_message(ChatMessage::tool(msg));
+        view.app_mut()
+            .add_message(ChatMessage::tool(msg).with_round_index(round));
     }
 }
 
