@@ -13,7 +13,7 @@
 //!
 //! # Key structs
 //!
-//! - [`ModelSettings`] — model, host, port, per-subcommand overrides
+//! - [`ModelSettings`] — model, per-subcommand overrides
 //! - [`ToolSettings`] — tool blacklist
 //! - [`FeedbackSettings`] — RRF boost, LLM feedback weight, decay, reinforcement
 //! - [`FactSettings`] — auto-extraction toggle, max facts per response, notification
@@ -29,12 +29,6 @@ pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 
 /// Default model for code mode (optimized for coding with tools)
 pub const DEFAULT_CODE_MODEL: &str = "qwen2.5-coder:7b";
-
-/// Default LLM server host
-pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
-
-/// Default LLM server port
-pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
 
 /// Default semantic search threshold for fact deduplication (cosine similarity).
 ///
@@ -98,12 +92,6 @@ pub struct ModelSettings {
     /// Default model preset name (used by query subcommand if not specified)
     #[serde(default = "default_model")]
     pub default: String,
-    /// LLM server host address (config key: ollama_host)
-    #[serde(default = "default_ollama_host")]
-    pub ollama_host: String,
-    /// LLM server port (config key: ollama_port)
-    #[serde(default = "default_ollama_port")]
-    pub ollama_port: u16,
     /// Global default for thinking mode (used as fallback for all subcommands)
     #[serde(default)]
     pub thinking: Option<bool>,
@@ -406,6 +394,9 @@ pub const SAMPLE_CONFIG: &str = r#"# Sprachspiel Configuration File
 # MODEL CONFIGURATION
 # =============================================================================
 # Configure which AI models to use for different tasks.
+#
+# NOTE: LLM provider configuration (host, port, timeouts) has moved to models.toml
+# under the [provider] section. See ~/.config/sprachspiel/models.toml for the new format.
 
 [model]
 
@@ -421,14 +412,6 @@ default = "qwen3.5:4b"
 # Model capability takes precedence: if the model doesn't support thinking, this is ignored.
 # If not specified, subcommand defaults are used (true for query, false for others).
 # thinking = false
-
-# LLM server connection settings.
-# Change these if your LLM server is not running on the default localhost.
-# The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
-# Default: "127.0.0.1"
-ollama_host = "127.0.0.1"
-# Default: 11434
-ollama_port = 11434
 
 # -----------------------------------------------------------------------------
 # PER-SUBCOMMAND MODEL OVERRIDES (Optional)
@@ -780,8 +763,6 @@ impl Default for ModelSettings {
     fn default() -> Self {
         ModelSettings {
             default: default_model(),
-            ollama_host: default_ollama_host(),
-            ollama_port: default_ollama_port(),
             thinking: None,
             query: SubcommandModelConfig::default(),
             chat: SubcommandModelConfig::default(),
@@ -805,14 +786,6 @@ impl Default for DisplaySettings {
 
 fn default_model() -> String {
     DEFAULT_MODEL.to_string()
-}
-
-fn default_ollama_host() -> String {
-    DEFAULT_OLLAMA_HOST.to_string()
-}
-
-fn default_ollama_port() -> u16 {
-    DEFAULT_OLLAMA_PORT
 }
 
 fn default_skin() -> String {
@@ -985,17 +958,15 @@ impl Settings {
     }
 
     /// Create an Ollama client using the configured host and port
-    pub fn ollama_client(&self) -> Ollama {
-        if self.model.ollama_host != DEFAULT_OLLAMA_HOST
-            || self.model.ollama_port != DEFAULT_OLLAMA_PORT
-        {
-            Ollama::new(
-                normalize_host(&self.model.ollama_host),
-                self.model.ollama_port,
-            )
-        } else {
-            Ollama::default()
-        }
+    ///
+    /// **DEPRECATED** (#120): This method is kept for backward compatibility during
+    /// the transition. Use `crate::provider::factory::build_provider()` instead.
+    /// The provider config is now read from `models.toml` under `[provider]`.
+    /// This will be removed in #121 (Consumer Migration).
+    #[deprecated(note = "Use provider factory (#120). Will be removed in #121.")]
+    pub fn ollama_client(&self) -> ollama_rs::Ollama {
+        // Fallback: use the default if not configured
+        ollama_rs::Ollama::default()
     }
 
     /// Create a sample config file if it doesn't exist
@@ -1021,8 +992,7 @@ mod tests {
     fn test_default_settings() {
         let settings = Settings::default();
         assert_eq!(settings.model.default, "qwen3.5:4b");
-        assert_eq!(settings.model.ollama_host, "127.0.0.1");
-        assert_eq!(settings.model.ollama_port, 11434);
+        // ollama_host/port removed in #120 - now in models.toml [provider]
         assert_eq!(settings.display.skin, "dark");
         assert!(settings.display.show_tool_calls);
         // These should be false by default
@@ -1056,8 +1026,6 @@ mod tests {
         let sample = r#"
 [model]
 default = "qwen3-coder"
-ollama_host = "192.168.1.100"
-ollama_port = 8080
 
 [tools]
 blacklist = ["web_search", "fetch_page"]
@@ -1071,8 +1039,6 @@ skin = "light"
 
         let settings: Settings = toml::from_str(sample).unwrap();
         assert_eq!(settings.model.default, "qwen3-coder");
-        assert_eq!(settings.model.ollama_host, "192.168.1.100");
-        assert_eq!(settings.model.ollama_port, 8080);
         assert!(settings.is_tool_blacklisted("web_search"));
         assert!(settings.output.plain_default);
         assert_eq!(settings.display.skin, "light");

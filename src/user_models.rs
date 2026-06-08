@@ -2,6 +2,27 @@
 //!
 //! Allows users to define custom models or override built-in model parameters
 //! via a TOML file at ~/.config/sprachspiel/models.toml
+//!
+//! New format (breaking change from #120):
+//! ```toml
+//! [provider."my-ollama"]
+//! kind = "ollama"
+//! base_url = "http://localhost:11434"
+//! connect_timeout_secs = 5
+//! read_timeout_secs = 300
+//! stream_idle_timeout_secs = 60
+//! max_retries = 3
+//! retry_base_delay_ms = 2000
+//! retry_max_delay_ms = 16000
+//! retry_jitter_percent = 20
+//!
+//! [models.glm-5.1]
+//! model_id = "glm-5.1:cloud"
+//! num_ctx = 202757
+//! thinking = true
+//! tools = true
+//! provider = "my-ollama"
+//! ```
 
 #![expect(clippy::print_stderr)] // CLI model management output
 use std::collections::HashMap;
@@ -10,23 +31,103 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::ModelConfig;
 
-#[derive(Debug, Clone, Deserialize, Default)]
+/// Provider kind enumeration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    Ollama,
+    OpenAICompatible,
+}
+
+impl Default for ProviderKind {
+    fn default() -> Self {
+        ProviderKind::Ollama
+    }
+}
+
+/// Provider configuration.
+///
+/// All timeouts are in seconds/milliseconds as indicated.
+/// Defaults (used when field is omitted):
+/// - connect_timeout_secs = 5
+/// - read_timeout_secs = 300
+/// - stream_idle_timeout_secs = 60
+/// - max_retries = 3
+/// - retry_base_delay_ms = 2000
+/// - retry_max_delay_ms = 16000
+/// - retry_jitter_percent = 20
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub kind: ProviderKind,
+    pub base_url: String,
+
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_secs: u64,
+
+    #[serde(default = "default_read_timeout")]
+    pub read_timeout_secs: u64,
+
+    #[serde(default = "default_stream_idle_timeout")]
+    pub stream_idle_timeout_secs: u64,
+
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+
+    #[serde(default = "default_retry_base_delay_ms")]
+    pub retry_base_delay_ms: u64,
+
+    #[serde(default = "default_retry_max_delay_ms")]
+    pub retry_max_delay_ms: u64,
+
+    #[serde(default = "default_retry_jitter_percent")]
+    pub retry_jitter_percent: u8,
+
+    // Future: OpenAI-compatible specific
+    pub api_key_env: Option<String>,
+}
+
+fn default_connect_timeout() -> u64 { 5 }
+fn default_read_timeout() -> u64 { 300 }
+fn default_stream_idle_timeout() -> u64 { 60 }
+fn default_max_retries() -> u32 { 3 }
+fn default_retry_base_delay_ms() -> u64 { 2000 }
+fn default_retry_max_delay_ms() -> u64 { 16000 }
+fn default_retry_jitter_percent() -> u8 { 20 }
+
+impl ProviderConfig {
+    /// Normalize base_url to ensure it has a scheme (http:// or https://)
+    pub fn normalize_base_url(&mut self) {
+        let trimmed = self.base_url.trim();
+        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            self.base_url = format!("http://{}", trimmed);
+        }
+    }
+}
+
+/// User model configuration.
+///
+/// The `provider` field is required and must match a key in the `[provider]` section.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserModelConfig {
-    pub model_id: Option<String>,
+    pub model_id: String,
     pub num_ctx: Option<u32>,
     pub temperature: Option<f32>,
     pub top_k: Option<u32>,
     pub top_p: Option<f32>,
     pub repeat_penalty: Option<f32>,
     pub thinking: Option<bool>,
+    pub tools: Option<bool>,
+    pub provider: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+/// Complete user models file structure.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserModelsFile {
+    pub provider: HashMap<String, ProviderConfig>,
     pub models: HashMap<String, UserModelConfig>,
 }
 
@@ -55,61 +156,76 @@ pub fn get_user_models_path() -> PathBuf {
     }
 }
 
-fn load_user_models_internal() -> HashMap<String, UserModelConfig> {
+fn load_user_models_internal() -> Result<UserModelsFile, String> {
     let path = get_user_models_path();
 
     if !path.exists() {
-        return HashMap::new();
+        return Err(format!("Models file not found at {}", path.display()));
     }
 
-    match fs::read_to_string(&path) {
-        Ok(contents) => match toml::from_str::<UserModelsFile>(&contents) {
-            Ok(file) => {
-                let mut valid_models = HashMap::new();
-                for (name, config) in file.models {
-                    let is_builtin = ModelConfig::is_builtin_valid(&name);
-                    if config.model_id.is_none() && !is_builtin {
-                        eprintln!(
-                            "Warning: User model '{}' is missing 'model_id' field. Skipping.",
-                            name
-                        );
-                        continue;
-                    }
-                    valid_models.insert(name, config);
-                }
-                valid_models
-            }
-            Err(e) => {
-                eprintln!(
-                    "Warning: Failed to parse user models file '{}': {}",
-                    path.display(),
-                    e
-                );
-                HashMap::new()
-            }
-        },
-        Err(e) => {
-            eprintln!(
-                "Warning: Failed to read user models file '{}': {}",
-                path.display(),
-                e
-            );
-            HashMap::new()
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read models file '{}': {}", path.display(), e))?;
+
+    let mut file: UserModelsFile = toml::from_str(&contents)
+        .map_err(|e| format!("Failed to parse models file '{}': {}", path.display(), e))?;
+
+    // Validate: provider section must exist
+    if file.provider.is_empty() {
+        return Err("Missing [provider] section in models.toml".to_string());
+    }
+
+    // Validate: at least one model must exist
+    if file.models.is_empty() {
+        return Err("No models defined in models.toml".to_string());
+    }
+
+    // Normalize base_url for all providers
+    for (_, provider_config) in &mut file.provider {
+        provider_config.normalize_base_url();
+    }
+
+    // Validate: all model providers exist
+    for (model_name, model_config) in &file.models {
+        if !file.provider.contains_key(&model_config.provider) {
+            return Err(format!(
+                "Model '{}' references unknown provider '{}'",
+                model_name, model_config.provider
+            ));
         }
     }
+
+    // Model name uniqueness is guaranteed by HashMap keys
+
+    Ok(file)
 }
 
-static USER_MODELS: LazyLock<HashMap<String, UserModelConfig>> =
-    LazyLock::new(load_user_models_internal);
+/// Cached loaded models file (panics on error - configuration errors should be caught at startup)
+static USER_MODELS_FILE: LazyLock<UserModelsFile> = LazyLock::new(|| {
+    load_user_models_internal().unwrap_or_else(|e| {
+        eprintln!("Error loading models.toml: {}", e);
+        std::process::exit(1);
+    })
+});
 
+/// Get the complete parsed models file (providers + models).
+pub fn get_user_models_file() -> &'static UserModelsFile {
+    &USER_MODELS_FILE
+}
+
+/// Get provider configs.
+pub fn get_providers() -> &'static HashMap<String, ProviderConfig> {
+    &USER_MODELS_FILE.provider
+}
+
+/// Get user-defined model configs.
 pub fn get_user_models() -> &'static HashMap<String, UserModelConfig> {
-    &USER_MODELS
+    &USER_MODELS_FILE.models
 }
 
 pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> ModelConfig {
     match built_in {
         Some(bi) => ModelConfig {
-            model_id: user.model_id.clone().unwrap_or_else(|| bi.model_id.clone()),
+            model_id: user.model_id.clone(),
             num_ctx: user.num_ctx.unwrap_or(bi.num_ctx),
             temperature: user.temperature.unwrap_or(bi.temperature),
             top_k: user.top_k.or(bi.top_k),
@@ -118,7 +234,7 @@ pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> 
             thinking: user.thinking.unwrap_or(bi.thinking),
         },
         None => ModelConfig {
-            model_id: user.model_id.clone().unwrap_or_default(),
+            model_id: user.model_id.clone(),
             num_ctx: user.num_ctx.unwrap_or(UserModelDefaults::NUM_CTX),
             temperature: user.temperature.unwrap_or(UserModelDefaults::TEMPERATURE),
             top_k: user.top_k,
@@ -237,13 +353,15 @@ mod tests {
         };
 
         let user = UserModelConfig {
-            model_id: None,
+            model_id: "test:1b".to_string(),
             num_ctx: Some(16384),
             temperature: None,
             top_k: None,
             top_p: None,
             repeat_penalty: None,
             thinking: None,
+            tools: None,
+            provider: "test".to_string(),
         };
 
         let merged = merge_configs(Some(&built_in), &user);
@@ -257,13 +375,15 @@ mod tests {
     #[test]
     fn test_user_only_model_no_ctx() {
         let user = UserModelConfig {
-            model_id: Some("custom-model:7b".to_string()),
+            model_id: "custom-model:7b".to_string(),
             num_ctx: None,
             temperature: None,
             top_k: None,
             top_p: None,
             repeat_penalty: Some(1.05),
             thinking: Some(true),
+            tools: None,
+            provider: "test".to_string(),
         };
 
         let merged = merge_configs(None, &user);
@@ -276,33 +396,66 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_user_models_file() {
+    fn test_parse_user_models_file_new_format() {
         let toml_content = r#"
-[models.my-custom]
-model_id = "llama3:8b"
-temperature = 0.7
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "localhost:11434"
+connect_timeout_secs = 10
+read_timeout_secs = 600
 
-[models.my-coder]
-model_id = "phi3:mini"
-num_ctx = 16384
+[models.glm-5.1]
+model_id = "glm-5.1:cloud"
+num_ctx = 202757
+thinking = true
+tools = true
+provider = "my-ollama"
 "#;
 
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
-        assert_eq!(parsed.models.len(), 2);
-        assert!(parsed.models.contains_key("my-custom"));
-        assert!(parsed.models.contains_key("my-coder"));
+        
+        assert_eq!(parsed.provider.len(), 1);
+        assert!(parsed.provider.contains_key("my-ollama"));
+        
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        assert_eq!(prov.kind, ProviderKind::Ollama);
+        assert_eq!(prov.base_url, "http://localhost:11434"); // normalized
+        assert_eq!(prov.connect_timeout_secs, 10);
+        assert_eq!(prov.read_timeout_secs, 600);
+        
+        assert_eq!(parsed.models.len(), 1);
+        let model = parsed.models.get("glm-5.1").unwrap();
+        assert_eq!(model.model_id, "glm-5.1:cloud");
+        assert_eq!(model.provider, "my-ollama");
+    }
 
-        let custom = parsed.models.get("my-custom").unwrap();
-        assert_eq!(custom.model_id, Some("llama3:8b".to_string()));
-        assert_eq!(custom.temperature, Some(0.7));
-        assert_eq!(custom.num_ctx, None);
+    #[test]
+    fn test_provider_defaults() {
+        let toml_content = r#"
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "http://localhost:11434"
+
+[models.test]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+
+        let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        
+        // Check defaults are applied
+        assert_eq!(prov.connect_timeout_secs, 5);
+        assert_eq!(prov.read_timeout_secs, 300);
+        assert_eq!(prov.stream_idle_timeout_secs, 60);
+        assert_eq!(prov.max_retries, 3);
+        assert_eq!(prov.retry_base_delay_ms, 2000);
+        assert_eq!(prov.retry_max_delay_ms, 16000);
+        assert_eq!(prov.retry_jitter_percent, 20);
     }
 
     #[test]
     fn test_get_model_config_by_model_id_translategemma() {
-        // "translategemma:4b" is the model_id in the builtin "translategemma" config.
-        // It should be found via model_id lookup even though there's no config key
-        // named "translategemma:4b".
         let config = get_model_config("translategemma:4b");
         assert!(
             config.is_some(),
@@ -316,7 +469,6 @@ num_ctx = 16384
 
     #[test]
     fn test_get_model_config_by_model_id_glm_ocr() {
-        // "glm-ocr:bf16" is the model_id in the builtin "glm-ocr" config.
         let config = get_model_config("glm-ocr:bf16");
         assert!(config.is_some(), "glm-ocr:bf16 should resolve via model_id");
         let config = config.unwrap();
@@ -327,7 +479,6 @@ num_ctx = 16384
 
     #[test]
     fn test_get_model_config_by_key_still_works() {
-        // Exact config key lookups should still work normally
         let config = get_model_config("translategemma");
         assert!(config.is_some());
         assert_eq!(config.unwrap().model_id, "translategemma:4b");

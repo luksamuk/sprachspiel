@@ -97,10 +97,13 @@ pub async fn run_chat_repl_tui(
         let session_name = session.name.as_deref().unwrap_or(&session.id);
         let sandbox_status = crate::external::get_sandbox_status();
         let version = env!("CARGO_PKG_VERSION");
-        let server_url = format!(
-            "{}:{}",
-            settings.model.ollama_host, settings.model.ollama_port
-        );
+        // Get server URL from provider config (use first provider or "ollama" by name)
+        let providers = crate::user_models::get_providers();
+        let server_url = providers
+            .values()
+            .next()
+            .map(|p| p.base_url.clone())
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
 
         let (fact_count, note_count, doc_count) = if let Some(db_ref) = &state.db {
             (
