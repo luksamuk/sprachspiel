@@ -64,7 +64,7 @@ pub trait Tool: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm_provider::types::ToolInfo as ProviderToolInfo;
+    use crate::provider::types::ToolInfo as ProviderToolInfo;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
 

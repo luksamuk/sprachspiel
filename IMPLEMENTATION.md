@@ -3922,10 +3922,10 @@ Tool calls appear batched at the end of the stream in multi-round cycles. When a
 
 #### Agnostic Provider Types — #119 [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** ✅ COMPLETED (PR #203)  
 **Depends on:** #118 (error types should be compatible with new Tool trait)  
 **Estimated effort:** 1 week  
-**Merge criterion:** Types compile, `From` conversions tested, no existing files changed + **ProviderError carries retry classification semantics (consumed by #120)**
+**Merge criterion:** Types compile, `From` conversions tested, no existing files changed + **ProviderError carries retry classification semantics (consumed by #120)** — **MET**
 
 **W2 Wave Context — ProviderError retry semantics:**
 
@@ -3944,27 +3944,41 @@ The `classify_for_retry(&OllamaError)` function in `src/retry.rs` (created in #1
 
 **Goal:** Define `LlmMessage`, `LlmResponse`, `ProviderError` and bidirectional conversions from ollama-rs types.
 
-**Files to create:**
+**Files created:**
 
 | File | Content |
 |------|---------|
 | `src/provider/mod.rs` | Module exports, `LlmProvider` trait definition |
-| `src/provider/types.rs` | `LlmMessage`, `LlmRole`, `LlmResponse`, `ToolCallInfo`, `ProviderError`, `ProviderCapabilities`, `ProviderOptions` |
-| `src/provider/conversions.rs` | `From<ollama_rs::ChatMessage>` / `Into<ollama_rs::ChatMessage>`, `From<OllamaError> for ProviderError` |
+| `src/provider/types.rs` | `LlmMessage`, `LlmRole`, `LlmResponse`, `ToolCallInfo`, `ProviderError`, `ProviderCapabilities`, `ProviderOptions`, `RetryCategory`, `retry_delay()` |
+| `src/provider/conversions.rs` | `From<ollama_rs::ChatMessage>` / `Into<ollama_rs::ChatMessage>`, `From<OllamaError> for ProviderError`, unit tests |
 
 **LlmProvider trait:**
 
 ```rust
 pub trait LlmProvider: Send + Sync {
-    async fn chat(&self, messages: Vec<LlmMessage>, tools: Vec<ToolInfo>, options: ProviderOptions) -> ProviderResult<LlmResponse>;
-    async fn generate(&self, prompt: &str, images: Vec<String>, options: ProviderOptions) -> ProviderResult<String>;
-    async fn embed(&self, text: &str, model: &str, dimensions: Option<usize>) -> ProviderResult<Vec<f32>>;
-    async fn detect_capabilities(&self, model: &str) -> ProviderResult<ProviderCapabilities>;
+    async fn chat(&self, messages: Vec<LlmMessage>, tools: Vec<ToolInfo>, options: ProviderOptions) -> Result<LlmResponse, ProviderError>;
+    async fn chat_stream(&self, messages: Vec<LlmMessage>, tools: Vec<ToolInfo>, options: ProviderOptions) -> Result<Pin<Box<dyn Stream<Item = Result<LlmStreamChunk, ProviderError>> + Send>>, ProviderError>;
+    async fn generate(&self, prompt: &str, images: Vec<String>, audio: Vec<String>, options: ProviderOptions) -> Result<String, ProviderError>;
+    async fn embed(&self, text: &str, model: &str, dimensions: Option<usize>) -> Result<Vec<f32>, ProviderError>;
+    async fn detect_capabilities(&self, model: &str) -> Result<ProviderCapabilities, ProviderError>;
     fn provider_name(&self) -> &str;
+    async fn is_available(&self) -> bool;
 }
 ```
 
-**No existing files are modified in this phase.** Types are defined + conversions are implemented, but business code still uses ollama-rs directly.
+**No existing files were modified in this phase.** Types are defined + conversions are implemented, but business code still uses ollama-rs directly. All dead code in `src/provider/` annotated with `#[allow(dead_code)] // Consumed by #120/#121` per W2 policy.
+
+**Implementation Summary:**
+- `LlmMessage` with `LlmRole` (User, Assistant, System, Tool) — supports text, images, audio (base64), tool calls/results
+- `LlmResponse` with `content`, `tool_calls`, `model`, `finish_reason`, `usage`
+- `LlmToolCall` / `LlmToolResult` — structured tool interactions
+- `ProviderError` with retry classification: `RetryCategory` enum + `retry_delay()` helper
+- `ProviderOptions` — temperature, top_p, top_k, max_tokens, stop_sequences, seed, think, audio
+- `ProviderCapabilities` — tools, vision, audio_in, audio_out, insert, stream, thinking, embeddings, model_list
+- `LlmStreamChunk` — streaming response chunks
+- `ToolInfo`, `ToolFunctionInfo`, `ToolType` — tool schema definitions
+- Bidirectional conversions with `ollama_rs` types (lossless roundtrip tested)
+- Unit tests: `test_roundtrip_user_text`, `test_roundtrip_assistant_with_tool_calls`, `test_roundtrip_tool_result`, `test_provider_error_retry_categories`
 
 ---
 
