@@ -20,8 +20,6 @@
 
 use std::path::PathBuf;
 
-use crate::user_models::get_user_models_path;
-
 /// Default error type for the models upgrade module.
 pub type AppError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -42,11 +40,6 @@ pub enum ModelsMigration {
         /// The provider name to set.
         provider: String,
     },
-    /// Warning: a model has the same key as another model (TOML parsing
-    /// will have already collapsed them — this is reported for awareness).
-    DuplicateModel {
-        model_name: String,
-    },
 }
 
 /// Result of a migration run.
@@ -56,8 +49,6 @@ pub struct ModelsUpgradeReport {
     pub added_providers: usize,
     /// Number of `AddProviderField` actions taken.
     pub added_provider_fields: usize,
-    /// Number of warnings (currently only duplicate model names).
-    pub warnings: usize,
     /// Path to the backup file, or `None` if no backup was created.
     pub backup_path: Option<PathBuf>,
     /// Whether the run was a dry-run.
@@ -101,7 +92,6 @@ pub fn run_models_upgrade(
         let report = ModelsUpgradeReport {
             added_providers: 0,
             added_provider_fields: 0,
-            warnings: 0,
             backup_path: None,
             dry_run,
         };
@@ -114,13 +104,11 @@ pub fn run_models_upgrade(
     // Separate migrations by type
     let mut providers_to_add: Vec<&ModelsMigration> = Vec::new();
     let mut fields_to_add: Vec<&ModelsMigration> = Vec::new();
-    let mut warnings: Vec<&ModelsMigration> = Vec::new();
 
     for m in &migrations {
         match m {
             ModelsMigration::AddProvider { .. } => providers_to_add.push(m),
             ModelsMigration::AddProviderField { .. } => fields_to_add.push(m),
-            ModelsMigration::DuplicateModel { .. } => warnings.push(m),
         }
     }
 
@@ -128,7 +116,11 @@ pub fn run_models_upgrade(
     let _ = action_verb; // Used in output below
 
     if !providers_to_add.is_empty() {
-        output.push(format!("{} {} provider(s):", action_verb, providers_to_add.len()));
+        output.push(format!(
+            "{} {} provider(s):",
+            action_verb,
+            providers_to_add.len()
+        ));
         for m in &providers_to_add {
             if let ModelsMigration::AddProvider { name, .. } = m {
                 output.push(format!("  - [provider.\"{name}\"]"));
@@ -138,21 +130,20 @@ pub fn run_models_upgrade(
     }
 
     if !fields_to_add.is_empty() {
-        output.push(format!("{} provider = \"...\" to {} model(s):",
-            action_verb, fields_to_add.len()));
+        output.push(format!(
+            "{} provider = \"...\" to {} model(s):",
+            action_verb,
+            fields_to_add.len()
+        ));
         for m in &fields_to_add {
-            if let ModelsMigration::AddProviderField { model_name, provider } = m {
-                output.push(format!("  - [models.\"{model_name}\"] -> provider = \"{provider}\""));
-            }
-        }
-        output.push(String::new());
-    }
-
-    if !warnings.is_empty() {
-        output.push(format!("⚠ {} warning(s):", warnings.len()));
-        for m in &warnings {
-            if let ModelsMigration::DuplicateModel { model_name } = m {
-                output.push(format!("  - Duplicate model name: \"{model_name}\" (resolve manually)"));
+            if let ModelsMigration::AddProviderField {
+                model_name,
+                provider,
+            } = m
+            {
+                output.push(format!(
+                    "  - [models.\"{model_name}\"] -> provider = \"{provider}\""
+                ));
             }
         }
         output.push(String::new());
@@ -170,7 +161,6 @@ pub fn run_models_upgrade(
     let report = ModelsUpgradeReport {
         added_providers: providers_to_add.len(),
         added_provider_fields: fields_to_add.len(),
-        warnings: warnings.len(),
         backup_path: None,
         dry_run,
     };
@@ -198,7 +188,8 @@ fn detect_migrations(content: &str, models_path: &PathBuf) -> Vec<ModelsMigratio
     };
 
     // 1. Check if [provider] section is missing or empty
-    let has_providers = doc.get("provider")
+    let has_providers = doc
+        .get("provider")
         .and_then(|item| item.as_table_like())
         .map(|t| !t.is_empty())
         .unwrap_or(false);
@@ -221,7 +212,10 @@ fn detect_migrations(content: &str, models_path: &PathBuf) -> Vec<ModelsMigratio
         vec!["my-ollama".to_string()]
     };
 
-    let default_provider = provider_names.first().cloned().unwrap_or_else(|| "my-ollama".to_string());
+    let default_provider = provider_names
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "my-ollama".to_string());
 
     if let Some(models_table) = doc.get("models").and_then(|item| item.as_table_like()) {
         for (model_name, model_item) in models_table.iter() {
@@ -272,7 +266,10 @@ fn apply_migrations(
                     }
                 }
             }
-            ModelsMigration::AddProviderField { model_name, provider } => {
+            ModelsMigration::AddProviderField {
+                model_name,
+                provider,
+            } => {
                 // Navigate to [models."<model_name>"] and add provider field
                 if let Some(models_table) = doc.get_mut("models").and_then(|i| i.as_table_mut()) {
                     if let Some(model_item) = models_table.get_mut(model_name) {
@@ -281,9 +278,6 @@ fn apply_migrations(
                         }
                     }
                 }
-            }
-            ModelsMigration::DuplicateModel { .. } => {
-                // No auto-fix; warning only.
             }
         }
     }
@@ -307,7 +301,10 @@ fn ensure_provider_table(doc: &mut toml_edit::DocumentMut) {
 /// Create a backup file (`.bak` or `.bak.YYYYMMDD-HHMMSS`).
 fn create_backup(path: &PathBuf) -> Result<PathBuf, AppError> {
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let stem = path.file_name().and_then(|s| s.to_str()).unwrap_or("models.toml");
+    let stem = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("models.toml");
 
     let backup_path = parent.join(format!("{stem}.bak"));
     let final_path = if backup_path.exists() {
@@ -352,7 +349,9 @@ mod tests {
 model_id = "test:1b"
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
-        assert!(migrations.iter().any(|m| matches!(m, ModelsMigration::AddProvider { name, .. } if name == "my-ollama")));
+        assert!(migrations.iter().any(
+            |m| matches!(m, ModelsMigration::AddProvider { name, .. } if name == "my-ollama")
+        ));
     }
 
     #[test]
@@ -388,8 +387,8 @@ provider = "my-ollama"
     fn test_full_migration_via_file() {
         // Test the full end-to-end flow: create a temp file, run upgrade,
         // verify the result.
-        let tmp = std::env::temp_dir().join(format!("sprach_models_test_{}.toml",
-            std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("sprach_models_test_{}.toml", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
         let content = r#"

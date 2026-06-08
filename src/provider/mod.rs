@@ -6,11 +6,10 @@
 //! W2 Wave Context: Foundation of the Provider Chain (#119 → #123).
 
 pub mod conversions;
-pub mod types;
 pub mod factory;
 pub mod ollama;
 pub mod ollama_api;
-pub mod streaming;
+pub mod types;
 
 #[allow(unused_imports)] // Re-exported for #120/#121 consumers
 pub use types::{
@@ -45,12 +44,13 @@ pub trait LlmProvider: Send + Sync {
     ///
     /// Default implementation returns `Err(ProviderError::Unsupported)`.
     /// Providers that support streaming (Ollama, OpenAI-compatible) MUST override this.
+    #[allow(unused_variables)] // Default impl does not consume parameters
     async fn chat_stream(
         &self,
-        model: &str,
-        messages: Vec<LlmMessage>,
-        tools: Vec<ToolInfo>,
-        options: ProviderOptions,
+        _model: &str,
+        _messages: Vec<LlmMessage>,
+        _tools: Vec<ToolInfo>,
+        _options: ProviderOptions,
     ) -> Result<
         Pin<Box<dyn futures::Stream<Item = Result<LlmStreamChunk, ProviderError>> + Send>>,
         ProviderError,

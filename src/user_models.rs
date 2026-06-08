@@ -90,13 +90,27 @@ pub struct ProviderConfig {
     pub api_key_env: Option<String>,
 }
 
-fn default_connect_timeout() -> u64 { 5 }
-fn default_read_timeout() -> u64 { 300 }
-fn default_stream_idle_timeout() -> u64 { 60 }
-fn default_max_retries() -> u32 { 3 }
-fn default_retry_base_delay_ms() -> u64 { 2000 }
-fn default_retry_max_delay_ms() -> u64 { 16000 }
-fn default_retry_jitter_percent() -> u8 { 20 }
+fn default_connect_timeout() -> u64 {
+    5
+}
+fn default_read_timeout() -> u64 {
+    300
+}
+fn default_stream_idle_timeout() -> u64 {
+    60
+}
+fn default_max_retries() -> u32 {
+    3
+}
+fn default_retry_base_delay_ms() -> u64 {
+    2000
+}
+fn default_retry_max_delay_ms() -> u64 {
+    16000
+}
+fn default_retry_jitter_percent() -> u8 {
+    20
+}
 
 impl ProviderConfig {
     /// Normalize base_url to ensure it has a scheme (http:// or https://)
@@ -206,11 +220,6 @@ static USER_MODELS_FILE: LazyLock<UserModelsFile> = LazyLock::new(|| {
         std::process::exit(1);
     })
 });
-
-/// Get the complete parsed models file (providers + models).
-pub fn get_user_models_file() -> &'static UserModelsFile {
-    &USER_MODELS_FILE
-}
 
 /// Get provider configs.
 pub fn get_providers() -> &'static HashMap<String, ProviderConfig> {
@@ -428,10 +437,10 @@ provider = "my-ollama"
 "#;
 
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
-        
+
         assert_eq!(parsed.provider.len(), 1);
         assert!(parsed.provider.contains_key("my-ollama"));
-        
+
         let prov = parsed.provider.get("my-ollama").unwrap();
         assert_eq!(prov.kind, ProviderKind::Ollama);
         // Note: URL normalization happens in load_user_models_internal, not in
@@ -439,7 +448,7 @@ provider = "my-ollama"
         assert_eq!(prov.base_url, "localhost:11434");
         assert_eq!(prov.connect_timeout_secs, 10);
         assert_eq!(prov.read_timeout_secs, 600);
-        
+
         assert_eq!(parsed.models.len(), 1);
         let model = parsed.models.get("glm-5.1").unwrap();
         assert_eq!(model.model_id, "glm-5.1:cloud");
@@ -481,7 +490,7 @@ provider = "my-ollama"
 
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
         let prov = parsed.provider.get("my-ollama").unwrap();
-        
+
         // Check defaults are applied
         assert_eq!(prov.connect_timeout_secs, 5);
         assert_eq!(prov.read_timeout_secs, 300);

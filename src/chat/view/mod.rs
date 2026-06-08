@@ -597,7 +597,10 @@ impl WelcomeInfo {
         let mut lines = Vec::new();
 
         // Model is shown in the status bar/modeline — no need to duplicate in banner
-        lines.push(format!("Provider: {}", truncate_str(&self.provider_name, 30)));
+        lines.push(format!(
+            "Provider: {}",
+            truncate_str(&self.provider_name, 30)
+        ));
 
         // Capabilities
         let tools_status = if self.tools_enabled {

@@ -91,7 +91,6 @@ pub async fn run_chat_repl_tui(
     {
         let session = &state.session;
         let model_config = &state.model_config;
-        let settings = &state.settings;
 
         let project = session.project_id.as_deref().unwrap_or("anonymous");
         let session_name = session.name.as_deref().unwrap_or(&session.id);
@@ -103,10 +102,7 @@ pub async fn run_chat_repl_tui(
         let provider_name = crate::user_models::get_provider_for_model(&model_config.model_id)
             .or_else(|| {
                 // Fallback: use the first provider defined in models.toml
-                crate::user_models::get_providers()
-                    .keys()
-                    .next()
-                    .cloned()
+                crate::user_models::get_providers().keys().next().cloned()
             })
             .unwrap_or_else(|| "default".to_string());
 

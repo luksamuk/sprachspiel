@@ -710,9 +710,7 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
 
 fn handle_models(args: ModelsArgs) -> AppResult<()> {
     match args.action {
-        ModelsAction::Upgrade(upgrade_args) => {
-            handle_models_upgrade(upgrade_args)
-        }
+        ModelsAction::Upgrade(upgrade_args) => handle_models_upgrade(upgrade_args),
     }
 }
 

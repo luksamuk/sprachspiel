@@ -109,19 +109,3 @@ pub struct ModelShowResponse {
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
-
-/// Tags response from /api/tags
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TagsResponse {
-    pub models: Vec<TagModel>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TagModel {
-    pub name: String,
-    pub model: String,
-    pub modified_at: String,
-    pub size: u64,
-    pub digest: String,
-    pub details: Option<serde_json::Value>,
-}

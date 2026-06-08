@@ -19,7 +19,6 @@
 //! - [`FactSettings`] — auto-extraction toggle, max facts per response, notification
 
 #![expect(clippy::print_stderr)] // Settings output
-use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -42,17 +41,6 @@ pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.4;
 
 /// Default semantic weight for hybrid RRF retrieval (vector similarity).
 pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.6;
-
-/// Normalize host string to ensure it has a scheme (http:// or https://)
-/// This handles cases where users configure just an IP address like "192.168.1.100"
-pub fn normalize_host(host: &str) -> String {
-    let trimmed = host.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        trimmed.to_string()
-    } else {
-        format!("http://{}", trimmed)
-    }
-}
 
 /// Application settings loaded from config file
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -13,8 +13,8 @@
 //!   accumulated and then JSON-parsed. `id` field is present and required for
 //!   correlation with subsequent `tool` role messages.
 
-use crate::user_models::{ProviderConfig as UserProviderConfig, ProviderKind};
 use crate::provider::types::ProviderError;
+use crate::user_models::{ProviderConfig as UserProviderConfig, ProviderKind};
 use std::collections::HashMap;
 
 use crate::provider::ollama::OllamaProvider;
@@ -28,12 +28,17 @@ use crate::provider::ollama::OllamaProvider;
 /// # Returns
 /// * `Ok(Box<dyn LlmProvider>)` on success
 /// * `Err(ProviderError)` if provider not found or initialization fails
+#[allow(dead_code)] // W2: Used in #121 (Consumer Migration) to instantiate providers from models.toml
 pub fn build_provider(
     provider_name: &str,
     all_providers: &HashMap<String, UserProviderConfig>,
 ) -> Result<Box<dyn crate::provider::LlmProvider + Send + Sync>, ProviderError> {
-    let config = all_providers.get(provider_name)
-        .ok_or_else(|| ProviderError::Config(format!("Provider '{}' not found in models.toml", provider_name)))?;
+    let config = all_providers.get(provider_name).ok_or_else(|| {
+        ProviderError::Config(format!(
+            "Provider '{}' not found in models.toml",
+            provider_name
+        ))
+    })?;
 
     match config.kind {
         ProviderKind::Ollama => {
@@ -47,12 +52,11 @@ pub fn build_provider(
                 retry_max_delay_ms: config.retry_max_delay_ms,
                 retry_jitter_percent: config.retry_jitter_percent,
             };
-            OllamaProvider::new(ollama_config).map(|p| Box::new(p) as Box<dyn crate::provider::LlmProvider + Send + Sync>)
+            OllamaProvider::new(ollama_config)
+                .map(|p| Box::new(p) as Box<dyn crate::provider::LlmProvider + Send + Sync>)
         }
-        ProviderKind::OpenAICompatible => {
-            Err(ProviderError::Unsupported(
-                "OpenAICompatibleProvider not yet implemented (see #122)".to_string()
-            ))
-        }
+        ProviderKind::OpenAICompatible => Err(ProviderError::Unsupported(
+            "OpenAICompatibleProvider not yet implemented (see #122)".to_string(),
+        )),
     }
 }
