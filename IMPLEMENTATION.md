@@ -4054,42 +4054,96 @@ pub trait LlmProvider: Send + Sync {
 
 #### OllamaProvider (reqwest direct) — #120 [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS (PR #204)  
 **Depends on:** #119 (uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client + **retry acceptance criteria from #116 manual test (Scenarios 2, 3, 4) MUST pass**
 
-**Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`.
+**Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`. Introduces **named providers** in `models.toml` (breaking change: `ollama_host`/`ollama_port` removed from `config.toml`).
 
-**Files to create:**
+**Files to create/modify:**
 
 | File | Content |
 |------|---------|
-| `src/provider/ollama.rs` | `OllamaProvider` struct, `LlmProvider` impl |
-| `src/provider/ollama_api.rs` | Ollama API request/response structs (serde), endpoint URLs |
+| `src/user_models.rs` | **MODIFY** — Parse `[provider."name"]` and `[models."name"]` with `provider = "name"`; remove `ollama_host`/`ollama_port` fallback |
+| `src/settings.rs` | **MODIFY** — Remove `ollama_host`/`ollama_port` from `ModelSettings` and `SAMPLE_CONFIG` |
+| `src/provider/factory.rs` | **NEW** — `build_provider(name, all_providers) -> Result<Box<dyn LlmProvider>>`; `ProviderKind::Ollama` | `OpenAICompatible` (unimplemented!) |
+| `src/provider/ollama.rs` | **NEW** — `OllamaProvider` struct, `LlmProvider` impl |
+| `src/provider/ollama_api.rs` | **NEW** — Ollama API request/response structs (serde), endpoint URLs |
+| `src/provider/streaming.rs` | **NEW** — NDJSON parser with idle timeout for chat_stream |
+| `src/provider/mod.rs` | **MODIFY** — Export factory, types |
+| `src/main.rs` / `src/repl.rs` | **MODIFY** — Use `factory::build_provider()` instead of `settings.ollama_client()` |
+| `src/chat/model_switch.rs` | **MODIFY** — `switch_model()` receives `&dyn LlmProvider` |
 
-**Sub-deliverables (each testable independently):**
+**Sub-deliverables (each testable independently, sequential commits):**
 
-| Sub | Endpoint | Description | Effort |
-|-----|----------|-------------|--------|
-| P6.0d.1 | `POST /api/chat` | Send messages, receive response with/without tool_calls | 1 week |
-| P6.0d.2 | Tool calling | Parse `tool_calls` from response, format tool results in next request | 3-5 days |
-| P6.0d.3 | `POST /api/generate` | Vision/OCR (base64 images) | 2-3 days |
-| P6.0d.4 | `POST /api/embed` | Embeddings with `dimensions` parameter (server-side Matryoshka) | 2 days |
-| P6.0d.5 | `GET /api/show` | Capability detection | 1 day |
-| P6.0d.6 | Keep-alive, format, options | Minor parameters | 1 day |
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| 1 | Provider config parsing + factory + breaking change config format | 1 week |
+| 2 | `POST /api/chat` + `chat_stream` (NDJSON, idle timeout, retry, shared client) | 1 week |
+| 3 | Tool calling (parse/format `tool_calls`) | 3-5 days |
+| 4 | `POST /api/generate` (vision/OCR images + format) | 2-3 days |
+| 5 | `POST /api/embed` (Matryoshka `dimensions` parameter) | 2 days |
+| 6 | `GET /api/show` / `/api/tags` → `detect_capabilities()` + full integration | 1-2 days |
 
-**Key benefit over ollama-rs:** Resolves the `prompt_eval_count` bug (ollama-rs v0.3.4 ignores it) — with reqwest direct, we parse the full response JSON.
+**Breaking Changes (Config Format):**
+
+```toml
+# models.toml (NEW FORMAT - REQUIRED)
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "http://localhost:11434"
+connect_timeout_secs = 5
+read_timeout_secs = 300
+stream_idle_timeout_secs = 60
+max_retries = 3
+retry_base_delay_ms = 2000
+retry_max_delay_ms = 16000
+retry_jitter_percent = 20
+
+[models.glm-5.1]
+model_id = "glm-5.1:cloud"
+num_ctx = 202757
+thinking = true
+tools = true
+provider = "my-ollama"
+
+# config.toml — olama_host/port REMOVED from [model]
+[model]
+default = "glm-5.1"
+thinking = false
+```
+
+**Defaults (Docstrings on Struct):**
+- `connect_timeout_secs = 5`
+- `read_timeout_secs = 300` 
+- `stream_idle_timeout_secs = 60`
+- `max_retries = 3`
+- `retry_base_delay_ms = 2000`
+- `retry_max_delay_ms = 16000`
+- `retry_jitter_percent = 20`
+
+**Key Features:**
+- Shared `reqwest::Client` singleton — connection pooling, keep-alive
+- NDJSON streaming parser with **idle timeout (60s default)** — prevents hangs
+- Exponential backoff retry with **±20% jitter** + **`Retry-After` header parsing** (P0 for #122)
+- `base_url` auto-normalization: `localhost:11434` → `http://localhost:11434`
+- Health check: lazy in chat (first use), immediate in query/embed
 
 **W2 Wave Context — Acceptance criteria from #116 manual test:**
 
 This issue MUST pass the following manual test scenarios from `MANUAL_TEST_116.md` (located in `~/`) before being marked as complete. These scenarios are the **reason** #120 is critical — `ollama-rs` cannot surface the errors needed for retry to work.
 
-- **Scenario 2 — Server 500 + linear backoff:** `kill -STOP` Ollama mid-request. Expect "Retrying in 5s..." → "Retrying in 10s..." → "Retrying in 15s..." (3 attempts, 5s linear backoff). Resume with `kill -CONT`. Conversation must complete successfully. Requires reqwest-direct `ProviderError::Api` mapped to `RetryCategory::ServerRetry`.
-- **Scenario 3 — Network timeout + exponential backoff:** `sudo iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query. Expect "Retrying in 100ms..." → "200ms..." → "400ms..." → "800ms..." → "1.6s..." (5 attempts, exponential backoff). Graceful error after exhaustion. Requires reqwest client with `.timeout(Duration)` configured and `ProviderError::Timeout`/`Connection` mapped to `RetryCategory::NetworkRetry`.
-- **Scenario 4 — Cancel-aware sleep:** Trigger ServerRetry via any method. Press Ctrl+C during 5s/10s/15s backoff. Expect returns in <1 second (cancel respected). Requires cancel token propagation through reqwest's `tokio::select!` with `client.request(...)` and the `CancellationToken`.
+- **Scenario 2 — Server 500 + linear backoff:** `kill -STOP` Ollama mid-request. Expect "Retrying in 5s..." → "Retrying in 10s..." → "Retrying in 15s..." (3 attempts, 5s linear backoff). Resume with `kill -CONT`. Conversation must complete successfully. Requires `ProviderError::Api` mapped to `RetryCategory::ServerRetry`.
+- **Scenario 3 — Network timeout + exponential backoff:** `sudo iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query. Expect "Retrying in 100ms..." → "200ms..." → "400ms..." → "800ms..." → "1.6s..." (5 attempts, exponential backoff). Graceful error after exhaustion. Requires reqwest client with `.timeout(Duration)` and `ProviderError::Timeout`/`Connection` mapped to `RetryCategory::NetworkRetry`.
+- **Scenario 4 — Cancel-aware sleep:** Trigger ServerRetry via any method. Press Ctrl+C during 5s/10s/15s backoff. Expect returns in <1 second (cancel respected). Requires cancel token propagation through reqwest's `tokio::select!`.
 
-The retry infrastructure (`src/retry.rs` with `classify_for_retry`, `retry_delay`, `sleep_or_cancel`, `RateLimitRetry`) introduced in #116 is already in place — #120 just needs to make `OllamaProvider` produce the right `ProviderError` variants for the retry loop to act on.
+The retry infrastructure (`RetryCategory`, `retry_delay`, `sleep_or_cancel`) from #116 is in place — #120 makes `OllamaProvider` produce the right `ProviderError` variants for the retry loop.
+
+**OpenAI-Compatible Placeholder:**
+- `ProviderKind::OpenAICompatible` exists in enum
+- `build_provider()` returns `Err(anyhow!("OpenAICompatibleProvider not yet implemented (see #122)"))`
+- No feature flag — compiles, errors at runtime if referenced
 
 ---
 
