@@ -134,16 +134,16 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153, #157, #182, #193 |
-| **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148, #151, #152, #153, #157, #182, #193, #204, #205 |
+| **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns, diff rendering, DiffWidget | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict, T3-Phase3 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151, #136) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → W6 (Responsive Chat Rebuild: #145→#148) ✅ COMPLETED → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151, #136) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132, #204, #205) → W6 (Responsive Chat Rebuild: #145→#148) ✅ COMPLETED → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
-**M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience. **Design inputs:** R-32 (ratatui-cheese widget adoption — Help, Fieldset, Select/MultiSelect, List+Paginator; Palette evaluation; direct dependency `ratatui-cheese = "0.7"`), R-33 (first-run onboarding wizard — OnboardingWizard state machine, sub-item of #16). Both evaluated in `doc/m2-ratatui-cheese-evaluation.md` (absorbed into research icebox).
+**M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience. **Design inputs:** R-32 (ratatui-cheese widget adoption — Help, Fieldset, Select/MultiSelect, List+Paginator; Palette evaluation; direct dependency `ratatui-cheese = "0.7"`), R-33 (first-run onboarding wizard — OnboardingWizard state machine, sub-item of #16). Both evaluated in `doc/m2-ratatui-cheese-evaluation.md` (absorbed into research icebox). **Additional M2 design inputs from competitive benchmark (R-34):** Pinned Messages, Notes/Scratchpad, Context Panel, and Jump Navigation (R-35, R-36) are TUI features that depend on #16 sidebar panels. Diff rendering and DiffWidget depend on the TUI widget infrastructure. **LaTeX rendering (R-37)** is evaluated for M2/M3 via `term-maths` crate with native ratatui MathWidget.
 
 **M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123. T3-Phase0 (#151) has NO dependency on #107 or #136 — re-embedding uses the existing background embedding recovery pipeline (normalized items get `has_embedding=0`, then re-embedded on startup). The previous `Depends on: W4.4 (#107)` was artificial. The previous "Joint PR with #136" was decoupled (#136 now depends on #106 and #135, after which it becomes W4.7). T3-Phase0 also includes continuation thinking fix (5th data loss path) and embedding consistency fix (see R5-R7). #157 (Norm Correction) is a W4.x addendum — ~20 lines of Rust, 1 SQL migration, depends on #133 (diagnostics). #182 (System Prompt Clarifications) is an independent prompt-only fix (Instruction Hierarchy + Language Note + TOOL USAGE reformulation + token optimization) — can be done in any wave.
 
@@ -165,7 +165,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | `ollama-rs` removed from Cargo.toml; #72 closed; #201 message-ordering shipped ✅ |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
-| **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
+| **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking, file write tools | #132, #74, #75, #76, #13, #14, #49, #50, #52, #204, #205 | All items completed or deferred to M2 |
 | **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | ✅ COMPLETED — All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 | **W7** | Thinking Trace Pipeline & Retrieval | Preserve thinking content, T3 Struct pipeline, thinking-aware retrieval | #152, #153, #137 | Thinking traces preserved and transformable; retrieval includes thinking context; RRF adapts to d_eff with trace awareness |
 
@@ -744,6 +744,76 @@ loop {
 | Terminal redraws/sec during streaming | ~thousands | ~8 (tokens/sec) |
 
 **Reference:** Issue #193
+
+---
+
+### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
+
+**Status:** ❌ NOT STARTED
+**Issue:** #204
+**Depends on:** None (independent quick wins)
+
+**Goal:** Fix the three most critical gaps in Sprachspiel's file write tools identified in the competitive benchmark against Hermes, Claude Code, and OpenCode:
+
+1. **Write tools are invisible to the LLM** — `write_file`, `edit_file`, and `append_file` are not mentioned in the system prompt. The LLM must "discover" them from the tool list.
+2. **`edit_file` has no uniqueness check** — `edit_replace()` silently replaces ALL occurrences of the search string. All competitors reject multi-match and ask for more context.
+3. **Result format is opaque** — `"Successfully edited 'foo': 42 lines -> 45 lines (+3). Operation: replace"` gives no diff, no `+N/-M` breakdown.
+
+**Motivation (Competitive Benchmark):**
+
+- **Hermes**: 8-strategy fuzzy matching, uniqueness check, auto-lint delta, unified diff in output, "Did you mean?" hints on failure
+- **Claude Code**: Exact matching with multi-match rejection, must-read-before-edit enforcement, mtime+content staleness check, structured patch output for UI
+- **OpenCode**: Uniqueness enforcement, must-read-before-edit, mtime staleness check, `{diff, additions, removals}` metadata
+
+Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zero prompt guidance for write tools.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Add `### FILE WRITE TOOLS` section to system prompt with "read before edit" guidance, edit vs write preference, uniqueness explanation | `src/prompts/tools.rs` | ❌ NOT STARTED |
+| 2 | Add uniqueness check in `edit_replace()`: if `search` appears >1x, reject with error showing line numbers of first 3 occurrences | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 3 | Improve result format: `"+N/-M lines (X→Y). Operation: Z"` instead of `"X lines -> Y lines (+Z). Operation: W"` | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 4 | Tests for uniqueness check (multi-match rejection, single-match pass, zero-match error) | `src/tools/files_write.rs` | ❌ NOT STARTED |
+
+**Cross-refs:** R-34 (file I/O benchmark), #205 (file session state + staleness), #13, #50
+
+---
+
+### 🔴 PRIORITY: File Session State + Staleness Detection — #205 [M1]
+
+**Status:** ❌ NOT STARTED
+**Issue:** #205
+**Supersedes:** #13 (File Session State) and #50 (Staleness Detection)
+**Depends on:** #204 (Phase 1 — prompt guidance prepares the LLM for staleness errors)
+
+**Goal:** Track which files have been read in the current session and detect when a file has been modified externally before editing. This prevents the LLM from operating on stale content.
+
+**Architectural Context:**
+- #118 (Tool Trait + `#[sprachspiel::tool]`) is CLOSED. The proc-macro generates unit structs, so tools are currently stateless.
+- **Approach A (implement now):** `Lazy<Arc<Mutex<FileSessionState>>>` global state. Works because session state is inherently global, lock contention is minimal, and migration to Approach B is straightforward.
+- **Approach B (post-#121):** State injection via tool struct fields. When Consumer Migration enables stateful tool structs, migrate `FILE_SESSION_STATE` to in-constructor injection.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Create `src/tools/file_state.rs` with `FileSessionState`, `ReadFileEntry`, `StaleReason`, `FILE_SESSION_STATE` global | New file | ❌ NOT STARTED |
+| 2 | Add `record_read()` calls in `read_file`, `read_file_segment`, `search_files` | `src/tools/files.rs` | ❌ NOT STARTED |
+| 3 | Add `record_edit()` calls and re-record-after-write in `write_file`, `edit_file`, `append_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 4 | Must-read-before-edit check: `has_been_read()` before `edit_file` and `write_file` (overwrite) | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 5 | Staleness check: `check_stale()` before `edit_file` and `write_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 6 | Module export in `src/tools/mod.rs` | `src/tools/mod.rs` | ❌ NOT STARTED |
+| 7 | Unit tests for `record_read`, `record_edit`, `check_stale`, `has_been_read` | `src/tools/file_state.rs` | ❌ NOT STARTED |
+
+**Design Decisions:**
+
+1. **mtime+size without hash.** Claude Code and OpenCode both use mtime-only or mtime+size. If mtime and size match, content is almost certainly the same. Hash (seahash) adds a dependency for minimal benefit. Can be added later as defense-in-depth.
+2. **Must-read-before-edit for `edit_file` AND `write_file` (overwrite of existing file).** Claude Code enforces read-before-write too. Creating new files does not require a prior read.
+3. **Re-record-after-write.** After a write, record the new mtime+size as the known state. Without this, the next edit of the same file fails with stale false-positive.
+4. **Clear LLM error messages.** "File 'foo.rs' has not been read in this session. Use read_file first." and "File 'foo.rs' has been modified since it was last read. Re-read the file before editing."
+
+**Cross-refs:** R-34 (file I/O benchmark), #204 (quick wins — prompt guidance prerequisite), #13, #50, #118 (Tool Trait — CLOSED)
 
 ---
 

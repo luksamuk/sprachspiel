@@ -751,3 +751,85 @@
 - **Cross-refs:** #16 (TUI — parent issue), #117 (Interaction Modes — uses Select/MultiSelect), R-32 (ratatui-cheese widgets)
 - **Milestone:** M2 (design phase; implementation in parallel with TUI)
 - **Revisit when:** TUI panel system (#16) has basic layout working
+
+---
+
+### R-34: File I/O Competitive Benchmark — Diff Rendering & Writing Tool Gaps
+
+- **Source:** Competitive benchmark analysis of Hermes (Python), Claude Code (TypeScript), and OpenCode (Go) file I/O tools against Sprachspiel
+- **Current state:** Sprachspiel has 3 critical gaps:
+  1. **Zero diff rendering** — edit_file returns only `"42 lines -> 45 lines (+3)"`, no diff shown. All competitors show unified diff.
+  2. **Write tools invisible to LLM** — write_file, edit_file, append_file are not in the system prompt. LLM must discover them from the tool list.
+  3. **edit_file fragile** — plain text search with no fuzzy matching, no uniqueness check, no "Did you mean?" feedback.
+- **Quick wins implemented:** #204 (prompt guidance, uniqueness check, result format) and #205 (file session state + staleness detection) address items 1-3 and 5-6 from the benchmark prioritization.
+- **Deferred items (M2+):**
+  - Diff output in tool result (add `similar` crate for unified diff) — ~1 day, M2
+  - DiffWidget ratatui (side-by-side, syntax highlighting) — ~1-2 weeks, M2, depends on #16
+  - Fuzzy matching in edit_file (subset of Hermes' 8-strategy chain) — ~2-3 days, M2
+  - Auto-lint delta (syntax checking on write) — ~1-2 days, M3+
+- **Key architectural decision:** Diff is for the **human operator** in the TUI, not for the LLM. Follow Claude Code/OpenCode model — send summary text to LLM, structured diff metadata to UI. The LLM gets `"Successfully edited file X: +5/-3 lines"`; the TUI renders the visual diff.
+- **Why deferred:** Diff rendering requires the TUI (#16) which is M2. Fuzzy matching and auto-lint are M2+ priority.
+- **Prerequisite:** #204 (prompt guidance + uniqueness check + result format) and #205 (session state + staleness) are immediate — those are M1. Diff rendering, DiffWidget, and fuzzy matching depend on TUI infrastructure.
+- **Cross-refs:** #204, #205, #13, #50, #16 (TUI)
+- **Milestone:** M1 (quick wins), M2 (diff rendering + DiffWidget + fuzzy matching), M3+ (auto-lint)
+- **Revisit when:** #204 and #205 are merged; TUI panel system (#16) is ready for DiffWidget
+
+---
+
+### R-35: TUI Pinned Messages & Scratchpad (Notes)
+
+- **Source:** @shadcn wishlist (30 May 2026) — pinned messages as checklist + navigation, notes as scratchpad
+- **Current state:** No pinned messages, no notes panel in TUI
+- **Proposed features (M2):**
+  1. **Pinned Messages** — Pin assistant messages to sidebar as checklist with `[ ]`/`[x]` status. Click navigates to original message. Keybinding: `p` to pin/unpin, `P` to open pin list. Storage: SQLite `pinned_messages` table (message_id, session_id, resolved, created_at).
+  2. **Notes / Scratchpad** — Freeform textarea in side panel for thoughts, code snippets, URLs, TODOs. Persist per session and/or project. Keybinding: `n` to toggle. Could integrate with Hermes memory system. Storage: SQLite `notes` table.
+- **Use cases:** Pin action plans for later execution, pin debugging findings, pin follow-ups. Draft prompts before sending, paste logs for reference, keep ad-hoc TODO lists.
+- **Wireframe:** See `m2-tui-improvements/shadcn-wishlist-wireframe.jpg` for the original layout showing sidebar with pinned messages and notes panel.
+- **Why deferred:** Both features require TUI sidebar panel infrastructure (#16).
+- **Prerequisite:** #16 (TUI — sidebar panel system)
+- **Cross-refs:** #16, #117 (TUI Interaction Modes), R-36, R-37
+- **Milestone:** M2
+- **Revisit when:** TUI sidebar panels are implemented in #16
+
+---
+
+### R-36: TUI Context Panel & Jump Navigation
+
+- **Source:** @shadcn wishlist sidebar design showing environment info (branch, files, worker status)
+- **Current state:** No context panel, no jump navigation in TUI
+- **Proposed features (M2):**
+  1. **Context Panel** — Sidebar showing: current git branch, modified files (git status), worker status (idle/running), last command executed, token context usage. Provides at-a-glance session awareness.
+  2. **Jump Navigation** — From pinned messages or message index, click/key shortcut navigates directly to the referenced message in the chat scroll. Keybinding: `g` + number to jump to Nth message, `/` for search in chat history. Implementation: scroll-to-anchor by message ID.
+- **Why deferred:** Both features require TUI panel infrastructure (#16).
+- **Prerequisite:** #16 (TUI — sidebar panel system) and R-35 (pinned messages for jump targets)
+- **Cross-refs:** #16, #117, R-35
+- **Milestone:** M2
+- **Revisit when:** TUI sidebar panels are implemented in #16
+
+---
+
+### R-37: LaTeX Math Rendering in Terminal
+
+- **Source:** Terminal math rendering research — evaluation of Rust crates for displaying LaTeX formulas in the terminal
+- **Current state:** No math rendering in TUI. Formulas are displayed as raw LaTeX source text.
+- **Recommended approach (A): Unicode Grid via `term-maths`**
+  - Crate: `term-maths` v1.0.0 — native ratatui `MathWidget`, Unicode box-drawing + math symbols
+  - No C/JS dependencies, ~1.8-8.5MB, works in any terminal
+  - Best coverage: fractions, integrals, summations, matrices, Greek letters, sub/superscripts
+  - Requires JuliaMono font for best symbol coverage (other monospace fonts work with fallback glyphs)
+  - **Effort:** Low — add dependency + use MathWidget
+- **Alternative approach (B): High-fidelity image rendering**
+  - Stack: RaTeX (PNG) + ratatui-image (Kitty/Sixel display)
+  - Pixel-perfect (>99.5% KaTeX syntax coverage), identical to web rendering
+  - **Much heavier:** RaTeX workspace + tiny-skia + font data + image crate
+  - Only works in Kitty/Sixel-capable terminals, needs halfblocks fallback
+  - **Effort:** High — complex pipeline, protocol detection, fallback rendering
+- **Hybrid approach (C): `term-maths` as default + enhanced mode for Kitty/Sixel terminals**
+  - Always functional (term-maths works everywhere)
+  - Enhanced rendering in capable terminals via image pipeline
+  - **Effort:** Medium — two code paths
+- **Why deferred:** M2 TUI (#16) prerequisite. Math rendering is a nice-to-have, not a blocker.
+- **Prerequisite:** #16 (TUI — widget infrastructure)
+- **Cross-refs:** #16, R-35, R-36
+- **Milestone:** M2 (Approach A) or M3 (Approach B/C)
+- **Revisit when:** TUI widget system is working in #16; evaluate term-maths quality in practice
