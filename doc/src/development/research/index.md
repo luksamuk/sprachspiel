@@ -11,6 +11,7 @@ This directory contains research documents that informed the development of Spra
 | [OpenClaw-RL Analysis](./openclaw-rl-analysis.md) | Original analysis of OpenClaw-RL framework |
 | [Effective Agents Analysis](./effective-agents-analysis.md) | Research on effective agent architectures |
 | [Context Management Research](./context_management_research.md) | Research on context management approaches |
+| [OpenAI Streaming Tool Calls](./openai-streaming-tool-calls.md) | Investigation of tool call streaming differences between Ollama native (`/api/chat`) and OpenAI-compatible (`/v1/chat/completions`) — informs #122 design |
 
 ## Research Summary
 

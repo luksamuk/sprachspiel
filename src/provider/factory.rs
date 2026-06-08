@@ -1,4 +1,17 @@
 //! Provider factory — creates `LlmProvider` implementations from configuration.
+//!
+//! # Tool call streaming
+//!
+//! The two provider kinds have **fundamentally different** tool call streaming
+//! behaviors. See `doc/src/development/research/openai-streaming-tool-calls.md`
+//! for the full investigation. Short version:
+//!
+//! - `OllamaProvider` (native `/api/chat`): tool calls arrive **complete** in one
+//!   chunk. `arguments` is already a JSON object. No `id` field.
+//! - `OpenAICompatibleProvider` (OpenAI `/v1/chat/completions`): tool calls arrive
+//!   **incrementally** over multiple chunks. `arguments` is a string that must be
+//!   accumulated and then JSON-parsed. `id` field is present and required for
+//!   correlation with subsequent `tool` role messages.
 
 use crate::user_models::{ProviderConfig as UserProviderConfig, ProviderKind};
 use crate::provider::types::ProviderError;
