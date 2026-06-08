@@ -97,13 +97,18 @@ pub async fn run_chat_repl_tui(
         let session_name = session.name.as_deref().unwrap_or(&session.id);
         let sandbox_status = crate::external::get_sandbox_status();
         let version = env!("CARGO_PKG_VERSION");
-        // Get server URL from provider config (use first provider or "ollama" by name)
-        let providers = crate::user_models::get_providers();
-        let server_url = providers
-            .values()
-            .next()
-            .map(|p| p.base_url.clone())
-            .unwrap_or_else(|| "http://localhost:11434".to_string());
+        // Get provider name from the current model's configuration (#120).
+        // For built-in models (no provider field), we look up the first
+        // available provider as a fallback.
+        let provider_name = crate::user_models::get_provider_for_model(&model_config.model_id)
+            .or_else(|| {
+                // Fallback: use the first provider defined in models.toml
+                crate::user_models::get_providers()
+                    .keys()
+                    .next()
+                    .cloned()
+            })
+            .unwrap_or_else(|| "default".to_string());
 
         let (fact_count, note_count, doc_count) = if let Some(db_ref) = &state.db {
             (
@@ -131,7 +136,7 @@ pub async fn run_chat_repl_tui(
             session_name,
             session.anonymous,
             version,
-            &server_url,
+            &provider_name,
             fact_count,
             note_count,
             doc_count,

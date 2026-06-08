@@ -49,6 +49,10 @@ pub enum Commands {
     /// Manage configuration files
     #[command(visible_alias = "cfg")]
     Config(ConfigArgs),
+
+    /// Manage models.toml (provider config, model entries)
+    #[command(visible_alias = "m")]
+    Models(ModelsArgs),
 }
 
 /// Arguments for the translate subcommand
@@ -255,6 +259,68 @@ EXAMPLES:
 "#
 )]
 pub struct UpgradeArgs {
+    /// Show what would be added without modifying the file
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip creating a backup file
+    #[arg(long)]
+    pub no_backup: bool,
+}
+
+/// Arguments for the `sprach models` subcommand
+#[derive(Args, Debug, Clone)]
+pub struct ModelsArgs {
+    #[command(subcommand)]
+    pub action: ModelsAction,
+}
+
+/// Subcommands available under `sprach models`
+#[derive(Subcommand, Debug, Clone)]
+pub enum ModelsAction {
+    /// Merge missing fields into models.toml (e.g., add `provider` to models
+    /// that don't have one, create a default `[provider]` block if missing).
+    #[command(visible_alias = "up")]
+    Upgrade(ModelsUpgradeArgs),
+}
+
+/// Arguments for `sprach models upgrade`
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Migrate models.toml to current format (adds provider field, creates [provider] section)",
+    long_about = r#"
+Migrate ~/.config/sprachspiel/models.toml to the current format.
+
+This command handles migrations that can't be done with simple field
+defaults, specifically:
+
+1. **Missing `[provider]` section**: If models.toml has no providers
+   defined, a default `[provider."my-ollama"]` block is created with
+   `base_url = "http://127.0.0.1:11434"`.
+
+2. **Models without `provider` field**: Any model entry that doesn't
+   reference a named provider gets `provider = "<first_available>"`
+   added automatically (using the first provider defined in the file).
+
+3. **Duplicate model names**: Detected but not auto-fixed — reported
+   as warnings for the user to resolve manually.
+
+The command is purely additive — it never modifies or removes existing
+values. Provider field additions only happen for models that don't
+have one already.
+
+A backup file (`models.toml.bak`, or `models.toml.bak.YYYYMMDD-HHMMSS`
+if `.bak` already exists) is created by default. Use `--no-backup` to
+skip the backup, or `--dry-run` to preview changes without modifying
+the file.
+
+EXAMPLES:
+  sprach models upgrade               # Migrate with backup
+  sprach models upgrade --dry-run     # Show what would be added
+  sprach models upgrade --no-backup   # Skip the backup file
+"#
+)]
+pub struct ModelsUpgradeArgs {
     /// Show what would be added without modifying the file
     #[arg(long)]
     pub dry_run: bool,

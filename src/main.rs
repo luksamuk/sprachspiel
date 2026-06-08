@@ -58,8 +58,9 @@ use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
-    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, QueryArgs, Shell,
-    TranslateArgs, TranslationStyle, UpgradeArgs, build_translation_prompt, parse_language_pair,
+    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, ModelsAction,
+    ModelsArgs, ModelsUpgradeArgs, QueryArgs, Shell, TranslateArgs, TranslationStyle, UpgradeArgs,
+    build_translation_prompt, parse_language_pair,
 };
 use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
@@ -192,6 +193,7 @@ async fn main() -> AppResult<()> {
             }
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
             Commands::Config(args) => return handle_config(args.clone(), &settings),
+            Commands::Models(args) => return handle_models(args.clone()),
         }
     }
 
@@ -701,6 +703,37 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
         Err(e) => {
             eprintln!("Error: {e}");
             log::error!("Config upgrade failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn handle_models(args: ModelsArgs) -> AppResult<()> {
+    match args.action {
+        ModelsAction::Upgrade(upgrade_args) => {
+            handle_models_upgrade(upgrade_args)
+        }
+    }
+}
+
+fn handle_models_upgrade(args: ModelsUpgradeArgs) -> AppResult<()> {
+    use crate::commands::models_upgrade::run_models_upgrade;
+
+    let models_path = match crate::user_models::get_user_models_path().canonicalize() {
+        Ok(p) => p,
+        Err(_) => crate::user_models::get_user_models_path(),
+    };
+
+    match run_models_upgrade(models_path, args.dry_run, args.no_backup) {
+        Ok((_report, output)) => {
+            for line in &output {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            log::error!("Models upgrade failed: {e}");
             std::process::exit(1);
         }
     }

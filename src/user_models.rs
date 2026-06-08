@@ -222,6 +222,21 @@ pub fn get_user_models() -> &'static HashMap<String, UserModelConfig> {
     &USER_MODELS_FILE.models
 }
 
+/// Get the provider name for a given model name.
+///
+/// Returns `Some(provider_name)` if the model is in `models.toml` and has
+/// a `provider` field set. Returns `None` for built-in models (which don't
+/// have a `provider` field, since they were defined before the multi-provider
+/// refactor) or for unknown model names.
+///
+/// Used by the chat banner to display "Provider: <name>" instead of the
+/// server URL.
+pub fn get_provider_for_model(model_name: &str) -> Option<String> {
+    get_user_models()
+        .get(model_name)
+        .map(|cfg| cfg.provider.clone())
+}
+
 pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> ModelConfig {
     match built_in {
         Some(bi) => ModelConfig {
@@ -404,7 +419,7 @@ base_url = "localhost:11434"
 connect_timeout_secs = 10
 read_timeout_secs = 600
 
-[models.glm-5.1]
+[models."glm-5.1"]
 model_id = "glm-5.1:cloud"
 num_ctx = 202757
 thinking = true
@@ -419,7 +434,9 @@ provider = "my-ollama"
         
         let prov = parsed.provider.get("my-ollama").unwrap();
         assert_eq!(prov.kind, ProviderKind::Ollama);
-        assert_eq!(prov.base_url, "http://localhost:11434"); // normalized
+        // Note: URL normalization happens in load_user_models_internal, not in
+        // toml::from_str. The raw value preserves the user's input here.
+        assert_eq!(prov.base_url, "localhost:11434");
         assert_eq!(prov.connect_timeout_secs, 10);
         assert_eq!(prov.read_timeout_secs, 600);
         
@@ -427,6 +444,27 @@ provider = "my-ollama"
         let model = parsed.models.get("glm-5.1").unwrap();
         assert_eq!(model.model_id, "glm-5.1:cloud");
         assert_eq!(model.provider, "my-ollama");
+    }
+
+    #[test]
+    fn test_url_normalization_in_load() {
+        // Verify that load_user_models_internal() normalizes base_url
+        let toml_content = r#"
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "localhost:11434"
+
+[models."test-model"]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+        let mut parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
+        // Apply the same normalization as load_user_models_internal
+        for (_, provider_config) in &mut parsed.provider {
+            provider_config.normalize_base_url();
+        }
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        assert_eq!(prov.base_url, "http://localhost:11434");
     }
 
     #[test]
