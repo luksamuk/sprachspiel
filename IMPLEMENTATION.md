@@ -4147,6 +4147,53 @@ The retry infrastructure (`RetryCategory`, `retry_delay`, `sleep_or_cancel`) fro
 
 ---
 
+#### #120 PR #206 — Code Review Findings (2026-06-11)
+
+PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are categorized below as **(A) Resolved in PR #206**, **(B) Deferred to #121**, or **(C) Deferred to #122**.
+
+**A. Resolved in PR #206 (this PR):**
+
+| # | Issue | File | Action |
+|---|-------|------|--------|
+| A1 | **BUG CRÍTICO:** `OllamaToolCallFunction.arguments: String` breaks tool calls in Ollama native (deserializes as `String` but Ollama sends JSON object) | `src/provider/ollama_api.rs:27`, `ollama.rs:307,412` | Change to `serde_json::Value` |
+| A2 | **BUG ESTRUTURAL:** `LazyLock<USER_MODELS_FILE>` with `process::exit(1)` crashes `cargo test --lib` when `models.toml` is missing | `src/user_models.rs:216-222` | Return `UserModelsFile::default()` (empty HashMaps); caller decides |
+| A3 | **Clippy 7 errors:** `derivable_impls` on `ProviderKind`, `for_kv_map` on provider iter, `if_same_then_else` on classify_error | `user_models.rs:40, 197`, `ollama.rs:27` | Derive `Default`, use `.values_mut()`, consolidate if |
+| A4 | **Docstring stale:** `long_about` mentions duplicate model detection that doesn't exist (Pitfall 11) | `src/translate/cli.rs:305-306` | Remove duplicate claim from docstring |
+| A5 | **factory.rs module docstring inconsistent with impl** (says "JSON object" for Ollama but struct has `String`) | `src/provider/factory.rs:15` | Update after A1 |
+| A6 | **`ModelsUpgradeReport` 3 dead code fields** (Pitfall 2/3) | `src/commands/models_upgrade.rs:47-53` | Remove struct; return `Vec<String>` only |
+| A7 | **`let _ = action_verb;` dead code literal** | `models_upgrade.rs:116` | Remove line |
+| A8 | **`provider_name()` inherent method duplicates trait method** | `src/provider/ollama.rs:55-58` | Replace with `const PROVIDER_NAME: &str = "ollama";` |
+| A9 | **Dead Cargo.toml deps:** `anyhow`, `bytes`, `tracing` (optional w/o feature) | `Cargo.toml` | Remove if confirmed unused |
+| A10 | **Division by zero in `backoff_delay`** (retry_base_delay_ms == 0) | `src/provider/ollama.rs:177-179` | Guard with `if retry_base_delay_ms == 0` |
+| A11 | **`rand::random::<u64>() % 0` panic** (jitter_range == 0) | `src/provider/ollama.rs:184` | Guard with `if jitter_range.is_zero() { return delay; }` |
+| A12 | **`unwrap_or_default()` silent in production** (embeddings) | `src/provider/ollama.rs:556` | Add `log::warn!` companion |
+| A13 | **`#![allow(clippy::print_stdout)]` module-level** | `src/commands/models_upgrade.rs:18-19` | Use `#[expect(...)]` |
+| A14 | **`eprintln!` without `log::error!` companion** | `src/user_models.rs:219` | Add `log::error!` before |
+| A15 | **`process::exit(1)` in `handle_models_upgrade`** inconsistent with rest of code | `src/main.rs:733-735` | Return `Err(...)` |
+| A16 | **Streaming silently drops malformed NDJSON lines** | `src/provider/ollama.rs:394` | Add `log::warn!` with counter |
+| A17 | **Integration test for `build_provider`** (or `#[cfg(test)]` mock) | `tests/provider_factory.rs` (new) | Add smoke test calling `build_provider("my-ollama", &cfg).provider_name()` |
+| A18 | **TUI rendering glitch:** `/session forget` shows as `sessiontforget` | (view/welcome line) | Investigate and fix width/truncation |
+| A19 | **`SMOKE_TEST.md` outdated:** references `/forget` instead of `/session forget` | `SMOKE_TEST.md` | Update docs |
+
+**B. Deferred to #121 (Consumer Migration):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| B1 | **`Settings::ollama_client()` deprecated regression:** returns `Ollama::default()` ignoring custom host/port (regression for users with custom config) | #121 migrates all 5 call sites; method will be **removed** in #121. Documented limitation: users with custom `ollama_host`/`ollama_port` in `config.toml` must migrate to `models.toml` `[provider]` block before upgrading. |
+| B2 | **`#[allow(dead_code)]` chain on `factory::build_provider` → `OllamaProvider::new` → `provider_name`** | All 3 annotations justified by "Used in #121". Integration test (A17) provides call site. |
+| B3 | **`LlmProvider` trait `#[allow(dead_code)] // Consumed by #120`** | Comment is now factually wrong (it's consumed BY this PR). Corrected in this PR to `// Consumed by OllamaProvider in this PR; build_provider call site in #121`. |
+| B4 | **`RateLimit retry_after: Option<Duration>` claim 'Will be populated from header'** in #116 | Header parsing is #122 work. Remove claim from #120 code or mark as `#122 TODO`. |
+
+**C. Deferred to #122 (OpenAI-Compatible Provider):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| C1 | **`tracing` optional dependency without feature flag** | If `tracing` is genuinely unused in the PR, remove. If it will be used in #122 for instrumented spans, add `tracing` feature flag. |
+
+**Merge criterion update:** PR #206 is mergeable when all A1-A19 are resolved and clippy passes. B1-B4 are documented as limitations to be resolved in #121; C1 in #122.
+
+---
+
 #### Streaming SSE
 
 **Status:** 📋 PLANNED  
