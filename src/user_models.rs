@@ -36,17 +36,12 @@ use serde::{Deserialize, Serialize};
 use crate::config::ModelConfig;
 
 /// Provider kind enumeration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
+    #[default]
     Ollama,
     OpenAICompatible,
-}
-
-impl Default for ProviderKind {
-    fn default() -> Self {
-        ProviderKind::Ollama
-    }
 }
 
 /// Provider configuration.
@@ -194,7 +189,7 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
     }
 
     // Normalize base_url for all providers
-    for (_, provider_config) in &mut file.provider {
+    for provider_config in file.provider.values_mut() {
         provider_config.normalize_base_url();
     }
 
@@ -213,11 +208,15 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
     Ok(file)
 }
 
-/// Cached loaded models file (panics on error - configuration errors should be caught at startup)
+/// Cached loaded models file. Returns an empty `UserModelsFile` on load
+/// failure (missing file, parse error, validation error) so that the
+/// process does not abort — callers that need a valid config check
+/// `get_providers().is_empty()` or use `get_user_models_path()` to
+/// surface the error contextually.
 static USER_MODELS_FILE: LazyLock<UserModelsFile> = LazyLock::new(|| {
     load_user_models_internal().unwrap_or_else(|e| {
-        eprintln!("Error loading models.toml: {}", e);
-        std::process::exit(1);
+        log::error!("Failed to load models.toml: {e}");
+        UserModelsFile::default()
     })
 });
 

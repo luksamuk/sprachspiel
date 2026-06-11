@@ -3593,11 +3593,9 @@ dependencies = [
 name = "sprachspiel"
 version = "0.44.0"
 dependencies = [
- "anyhow",
  "async-stream",
  "async-trait",
  "base64",
- "bytes",
  "calc",
  "chrono",
  "clap 4.5.59",
@@ -3636,7 +3634,6 @@ dependencies = [
  "tokio-util",
  "toml 0.8.23",
  "toml_edit 0.22.27",
- "tracing",
  "tui-markdown",
  "unicode-segmentation",
  "unicode-width 0.2.2",

@@ -243,18 +243,18 @@ Via chat with a model that supports tools:
 
 **Verify shortcut behavior and destructive command safety.**
 
-### 6.6.1 /search and /forget Confirmation
+### 6.6.1 /search and /session forget Confirmation
 
 - [ ] `/f test query` → "Unknown command" (shortcut `/f` removed in PR #154)
 - [ ] `/search test query` → executes search
-- [ ] `/forget` → shows warning (requires --yes) ← **Issue #85: /forget confirmation**
-- [ ] `/forget --yes` → executes forget, no `FOREIGN KEY constraint` warning ← **Bug fix: save_sqlite FK**
+- [ ] `/session forget` → shows warning (requires --yes) ← **Issue #85: /session forget confirmation**
+- [ ] `/session forget --yes` → executes forget, no `FOREIGN KEY constraint` warning ← **Bug fix: save_sqlite FK**
 
-### 6.6.2 Todo After /forget — No FK Warning
+### 6.6.2 Todo After /session forget — No FK Warning
 
 **Bug fix:** `save_sqlite()` now calls `ensure_conversation_exists()` before FK-dependent INSERTs.
 
-- [ ] `/forget --yes` → new session ID generated
+- [ ] `/session forget --yes` → new session ID generated
 - [ ] `/todo add FK test` → adds todo without `FOREIGN KEY constraint failed` warning
 - [ ] `/todo list` → shows the task, no FK warning
 
@@ -1375,7 +1375,7 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 - [ ] `/tools` → shows "Tools: disabled" as Info (toggle) or "Tools: enabled" as Success
 - [ ] `/retrieval` → shows toggle status as Info message
 - [ ] `/undo` with empty history → shows Error message with ✗ icon
-- [ ] `/forget` (without --yes) → shows **two** outputs: Warning (⚠ icon) + Warning (⚠ icon)
+- [ ] `/session forget` (without --yes) → shows **two** outputs: Warning (⚠ icon) + Warning (⚠ icon)
 
 ### 22.2 Fact Commands
 
@@ -1437,7 +1437,7 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 
 > **Critical:** Commands that return `Vec<CommandOutput>` with multiple items must render ALL items in sequence.
 
-- [ ] `/forget` (without --yes) → renders 2 warnings (both visible, not just one)
+- [ ] `/session forget` (without --yes) → renders 2 warnings (both visible, not just one)
 - [ ] `/save mysession` → renders Success message
 - [ ] `/load mysession` → renders Success message + Info about loaded session
 - [ ] `/undo` (with messages in history) → renders Info "Removed N message(s)" + Info "Last message: ..." + Info "(Press ↑ to retrieve...)"
@@ -1716,7 +1716,7 @@ The script above runs automated tests. The following tests must be run manually:
 3. **Section 5**: Memory (interactive tests with model >= 4b)
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
-6. **Section 6.6**: Command Safety (/forget, /search, skills)
+6. **Section 6.6**: Command Safety ( /session forget, /search, skills)
 7. **Section 9**: Database (schema v13, norm_correction FLOAT verification)
 8. **Section 10**: File Tools (via LLM)
 9. **Section 10.5**: run_command Error Messages

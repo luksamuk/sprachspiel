@@ -36,6 +36,7 @@ impl SummarizeProcessor {
         let model_config = crate::user_models::resolve_model_config(model_id);
 
         // Initialize Ollama with settings
+        #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
         let ollama = settings.ollama_client();
 
         let model_options = model_config.build_model_options();

@@ -302,9 +302,6 @@ defaults, specifically:
    reference a named provider gets `provider = "<first_available>"`
    added automatically (using the first provider defined in the file).
 
-3. **Duplicate model names**: Detected but not auto-fixed — reported
-   as warnings for the user to resolve manually.
-
 The command is purely additive — it never modifies or removes existing
 values. Provider field additions only happen for models that don't
 have one already.

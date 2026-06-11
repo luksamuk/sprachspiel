@@ -18,7 +18,7 @@
 #![allow(clippy::print_stdout)] // User-facing CLI output
 #![allow(clippy::print_stderr)] // User-facing CLI output
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Default error type for the models upgrade module.
 pub type AppError = Box<dyn std::error::Error + Send + Sync>;
@@ -42,30 +42,14 @@ pub enum ModelsMigration {
     },
 }
 
-/// Result of a migration run.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelsUpgradeReport {
-    /// Number of `AddProvider` actions taken.
-    pub added_providers: usize,
-    /// Number of `AddProviderField` actions taken.
-    pub added_provider_fields: usize,
-    /// Path to the backup file, or `None` if no backup was created.
-    pub backup_path: Option<PathBuf>,
-    /// Whether the run was a dry-run.
-    pub dry_run: bool,
-}
-
-/// Run the models upgrade. Returns a report and a vector of every line
-/// of user-facing output.
-///
-/// This function is pure-ish: it does not perform any I/O of its own.
-/// The handler in `main.rs` is responsible for writing the returned
+/// Run the models upgrade. Returns a vector of every line of user-facing
+/// output. The handler in `main.rs` is responsible for writing the returned
 /// `Vec<String>` to stdout.
 pub fn run_models_upgrade(
     models_path: PathBuf,
     dry_run: bool,
     no_backup: bool,
-) -> Result<(ModelsUpgradeReport, Vec<String>), AppError> {
+) -> Result<Vec<String>, AppError> {
     let mut output: Vec<String> = Vec::new();
 
     if !models_path.exists() {
@@ -89,13 +73,7 @@ pub fn run_models_upgrade(
 
     if migrations.is_empty() {
         output.push("Models file is already up to date.".to_string());
-        let report = ModelsUpgradeReport {
-            added_providers: 0,
-            added_provider_fields: 0,
-            backup_path: None,
-            dry_run,
-        };
-        return Ok((report, output));
+        return Ok(output);
     }
 
     output.push(format!("Models file: {}", models_path.display()));
@@ -113,7 +91,6 @@ pub fn run_models_upgrade(
     }
 
     let action_verb = if dry_run { "Would add" } else { "Adding" };
-    let _ = action_verb; // Used in output below
 
     if !providers_to_add.is_empty() {
         output.push(format!(
@@ -158,18 +135,11 @@ pub fn run_models_upgrade(
         }
     }
 
-    let report = ModelsUpgradeReport {
-        added_providers: providers_to_add.len(),
-        added_provider_fields: fields_to_add.len(),
-        backup_path: None,
-        dry_run,
-    };
-
-    Ok((report, output))
+    Ok(output)
 }
 
 /// Detect what migrations need to be applied to the models.toml content.
-fn detect_migrations(content: &str, models_path: &PathBuf) -> Vec<ModelsMigration> {
+fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> {
     let mut migrations = Vec::new();
 
     let doc: toml_edit::DocumentMut = match content.parse() {
@@ -205,7 +175,7 @@ fn detect_migrations(content: &str, models_path: &PathBuf) -> Vec<ModelsMigratio
     let provider_names: Vec<String> = if has_providers {
         doc.get("provider")
             .and_then(|item| item.as_table_like())
-            .map(|t| t.iter().filter_map(|(k, _)| Some(k.to_string())).collect())
+            .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
             .unwrap_or_default()
     } else {
         // We just added "my-ollama" above
@@ -242,7 +212,7 @@ fn detect_migrations(content: &str, models_path: &PathBuf) -> Vec<ModelsMigratio
 /// Apply the detected migrations to the file.
 fn apply_migrations(
     content: &str,
-    models_path: &PathBuf,
+    models_path: &Path,
     migrations: &[ModelsMigration],
 ) -> Result<(), AppError> {
     let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e| {
@@ -271,12 +241,11 @@ fn apply_migrations(
                 provider,
             } => {
                 // Navigate to [models."<model_name>"] and add provider field
-                if let Some(models_table) = doc.get_mut("models").and_then(|i| i.as_table_mut()) {
-                    if let Some(model_item) = models_table.get_mut(model_name) {
-                        if let Some(model_table) = model_item.as_table_mut() {
-                            model_table.insert("provider", toml_edit::value(provider.as_str()));
-                        }
-                    }
+                if let Some(models_table) = doc.get_mut("models").and_then(|i| i.as_table_mut())
+                    && let Some(model_item) = models_table.get_mut(model_name)
+                    && let Some(model_table) = model_item.as_table_mut()
+                {
+                    model_table.insert("provider", toml_edit::value(provider.as_str()));
                 }
             }
         }
@@ -299,7 +268,7 @@ fn ensure_provider_table(doc: &mut toml_edit::DocumentMut) {
 }
 
 /// Create a backup file (`.bak` or `.bak.YYYYMMDD-HHMMSS`).
-fn create_backup(path: &PathBuf) -> Result<PathBuf, AppError> {
+fn create_backup(path: &Path) -> Result<PathBuf, AppError> {
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let stem = path
         .file_name()
@@ -340,7 +309,7 @@ base_url = "http://127.0.0.1:11434"
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
     #[test]
     fn test_detect_no_provider_section() {

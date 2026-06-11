@@ -290,6 +290,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         }
     };
 
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let model_options = model_config.build_model_options();
 
@@ -513,6 +514,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     // Check if the model supports vision capabilities (required for OCR).
     // Abort unless the user passes --force to override the capability check.
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
@@ -723,16 +725,15 @@ fn handle_models_upgrade(args: ModelsUpgradeArgs) -> AppResult<()> {
     };
 
     match run_models_upgrade(models_path, args.dry_run, args.no_backup) {
-        Ok((_report, output)) => {
+        Ok(output) => {
             for line in &output {
                 println!("{line}");
             }
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error: {e}");
             log::error!("Models upgrade failed: {e}");
-            std::process::exit(1);
+            Err(format!("{e}").into())
         }
     }
 }
@@ -819,6 +820,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     // Check if the model supports vision capabilities.
     // Abort unless the user passes --force to override the capability check.
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;

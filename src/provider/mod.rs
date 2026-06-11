@@ -28,7 +28,7 @@ use std::pin::Pin;
 ///
 /// Implementations: `OllamaProvider` (#120), `OpenAICompatibleProvider` (#122).
 /// Business code should depend on this trait, not concrete providers.
-#[allow(dead_code)] // Consumed by #120
+#[allow(dead_code)] // Consumed by OllamaProvider in this PR; build_provider call site in #121
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Send a chat completion request with optional tools.

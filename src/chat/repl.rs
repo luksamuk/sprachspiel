@@ -51,6 +51,7 @@ fn init_chat_database(
     ollama_rs::Ollama,
     Option<String>,
 ) {
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
 
     if args.anonymous {
@@ -594,6 +595,7 @@ pub async fn run_chat_repl(
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let pre_init_ollama = settings.ollama_client();
     if let Err(e) = check_server_health(&pre_init_ollama).await {
         log::error!("Ollama health check failed: {e}");

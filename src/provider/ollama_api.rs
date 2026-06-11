@@ -24,7 +24,11 @@ pub struct OllamaToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaToolCallFunction {
     pub name: String,
-    pub arguments: String, // JSON string
+    /// Tool call arguments. Ollama native API sends this as a JSON object
+    /// (e.g. `{"location":"London"}`), NOT as a string. Storing as
+    /// `serde_json::Value` handles both shapes transparently via serde.
+    #[serde(default)]
+    pub arguments: serde_json::Value,
 }
 
 /// Chat request to /api/chat

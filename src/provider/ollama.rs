@@ -38,6 +38,9 @@ pub struct OllamaProvider {
     config: OllamaProviderConfig,
 }
 
+/// Identifier returned by [`OllamaProvider::provider_name`].
+const PROVIDER_NAME: &str = "ollama";
+
 impl OllamaProvider {
     /// Create a new OllamaProvider with the given configuration.
     #[allow(dead_code)] // W2: Called from factory::build_provider (used in #121)
@@ -49,12 +52,6 @@ impl OllamaProvider {
             .map_err(|e| ProviderError::Config(format!("Failed to create HTTP client: {}", e)))?;
 
         Ok(Self { client, config })
-    }
-
-    /// Get the provider name.
-    #[allow(dead_code)] // W2: Used in #121 (Consumer Migration) for logging/error messages
-    pub fn provider_name(&self) -> &'static str {
-        "ollama"
     }
 
     /// Build the full API URL for an endpoint.
@@ -81,7 +78,7 @@ impl OllamaProvider {
                         .map(|t| OllamaToolCall {
                             function: OllamaToolCallFunction {
                                 name: t.name.clone(),
-                                arguments: t.arguments.to_string(),
+                                arguments: t.arguments.clone(),
                             },
                         })
                         .collect()
@@ -134,12 +131,11 @@ impl OllamaProvider {
             if code == 429 {
                 ProviderError::RateLimit {
                     message: err.to_string(),
-                    retry_after: None, // Will be populated from header in chat()
-                }
-            } else if code >= 500 {
-                ProviderError::Api {
-                    status: code,
-                    body: err.to_string(),
+                    // NOTE: `retry_after` is not populated from the Retry-After
+                    // header in the current implementation. Header parsing is
+                    // tracked for #122 (OpenAI-Compatible Provider) and will be
+                    // backported here.
+                    retry_after: None,
                 }
             } else {
                 ProviderError::Api {
@@ -173,15 +169,27 @@ impl OllamaProvider {
         let base = Duration::from_millis(self.config.retry_base_delay_ms);
         let max_delay = Duration::from_millis(self.config.retry_max_delay_ms);
 
-        let exp_delay = base
-            * 2_u32.pow((attempt - 1).min(
-                self.config.retry_max_delay_ms as u32 / self.config.retry_base_delay_ms as u32,
-            ));
+        // Guard: if base is 0, skip exponential backoff (no delay)
+        if self.config.retry_base_delay_ms == 0 {
+            return max_delay;
+        }
+
+        // Clamp the exponent to avoid u32 overflow on `2_u32.pow(...)`.
+        // `2^31` already exceeds any realistic max_delay, so 32 is a safe cap.
+        let max_exponent = (self.config.retry_max_delay_ms / self.config.retry_base_delay_ms)
+            .min(32) as u32;
+        let exp_delay = base * 2_u32.pow((attempt - 1).min(max_exponent));
         let delay = exp_delay.min(max_delay);
 
-        // Add jitter: ±retry_jitter_percent%
+        // Add jitter: ±retry_jitter_percent%.
+        // Guard: if jitter_range is zero (delay=0 OR percent=0), skip jitter
+        // to avoid `random() % 0` panic.
         let jitter_range = delay * self.config.retry_jitter_percent as u32 / 100;
-        let jitter = rand::random::<u64>() % (jitter_range.as_millis() as u64 + 1);
+        let jitter = if jitter_range.is_zero() {
+            0
+        } else {
+            rand::random::<u64>() % (jitter_range.as_millis() as u64 + 1)
+        };
 
         delay + Duration::from_millis(jitter)
     }
@@ -304,8 +312,7 @@ impl crate::provider::LlmProvider for OllamaProvider {
                                         .map(|t| LlmToolCall {
                                             id: t.function.name.clone(),
                                             name: t.function.name,
-                                            arguments: serde_json::from_str(&t.function.arguments)
-                                                .unwrap_or_default(),
+                                            arguments: t.function.arguments,
                                         })
                                         .collect()
                                 }),
@@ -387,46 +394,64 @@ impl crate::provider::LlmProvider for OllamaProvider {
                                 buffer.push_str(&String::from_utf8_lossy(&bytes));
 
                                 // Process complete lines
+                                let mut parse_errors: u32 = 0;
                                 while let Some(pos) = buffer.find('\n') {
                                     let line: String = buffer.drain(..=pos).collect();
                                     let line = line.trim_end();
 
-                                    if let Ok(chat_resp) = serde_json::from_str::<ChatResponse>(line) {
-                                        if chat_resp.done {
-                                            yield Ok(LlmStreamChunk {
-                                                content: None,
-                                                thinking: None,
-                                                tool_calls: None,
-                                                done: true,
-                                                done_reason: chat_resp.done_reason,
-                                                eval_count: chat_resp.eval_count,
-                                                prompt_eval_count: chat_resp.prompt_eval_count,
+                                    match serde_json::from_str::<ChatResponse>(line) {
+                                        Ok(chat_resp) => {
+                                            if chat_resp.done {
+                                                yield Ok(LlmStreamChunk {
+                                                    content: None,
+                                                    thinking: None,
+                                                    tool_calls: None,
+                                                    done: true,
+                                                    done_reason: chat_resp.done_reason,
+                                                    eval_count: chat_resp.eval_count,
+                                                    prompt_eval_count: chat_resp.prompt_eval_count,
+                                                });
+                                                return;
+                                            }
+
+                                            let tool_calls = chat_resp.message.tool_calls.map(|tc| {
+                                                tc.into_iter().map(|t| LlmToolCall {
+                                                    id: t.function.name.clone(),
+                                                    name: t.function.name,
+                                                    arguments: t.function.arguments,
+                                                }).collect()
                                             });
-                                            return;
+
+                                            yield Ok(LlmStreamChunk {
+                                                content: if chat_resp.message.content.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(chat_resp.message.content)
+                                                },
+                                                thinking: chat_resp.message.thinking,
+                                                tool_calls,
+                                                done: false,
+                                                done_reason: None,
+                                                eval_count: None,
+                                                prompt_eval_count: None,
+                                            });
                                         }
-
-                                        let tool_calls = chat_resp.message.tool_calls.map(|tc| {
-                                            tc.into_iter().map(|t| LlmToolCall {
-                                                id: t.function.name.clone(),
-                                                name: t.function.name,
-                                                arguments: serde_json::from_str(&t.function.arguments).unwrap_or_default(),
-                                            }).collect()
-                                        });
-
-                                        yield Ok(LlmStreamChunk {
-                                            content: if chat_resp.message.content.is_empty() {
-                                                None
-                                            } else {
-                                                Some(chat_resp.message.content)
-                                            },
-                                            thinking: chat_resp.message.thinking,
-                                            tool_calls,
-                                            done: false,
-                                            done_reason: None,
-                                            eval_count: None,
-                                            prompt_eval_count: None,
-                                        });
+                                        Err(e) => {
+                                            // Malformed NDJSON line — log once per chunk
+                                            // to avoid log spam on persistent parse errors.
+                                            parse_errors += 1;
+                                            if parse_errors == 1 {
+                                                log::warn!(
+                                                    "Dropping malformed NDJSON line from Ollama stream: {e}"
+                                                );
+                                            }
+                                        }
                                     }
+                                }
+                                if parse_errors > 1 {
+                                    log::warn!(
+                                        "Total {parse_errors} malformed NDJSON lines dropped in this chunk"
+                                    );
                                 }
                             }
                             Some(Err(e)) => {
@@ -553,7 +578,13 @@ impl crate::provider::LlmProvider for OllamaProvider {
                                 ProviderError::Other(format!("JSON parse error: {}", e))
                             })?;
 
-                            Ok(embed_resp.embeddings.first().cloned().unwrap_or_default())
+                            match embed_resp.embeddings.first().cloned() {
+                                Some(embedding) => Ok(embedding),
+                                None => {
+                                    log::warn!("Ollama embed returned empty embeddings array");
+                                    Ok(Vec::new())
+                                }
+                            }
                         }
                         Ok(Err(e)) => Err(self.classify_error(e)),
                         Err(_) => Err(ProviderError::Timeout("Request timeout".to_string())),
@@ -658,7 +689,7 @@ impl crate::provider::LlmProvider for OllamaProvider {
     }
 
     fn provider_name(&self) -> &str {
-        "ollama"
+        PROVIDER_NAME
     }
 
     async fn is_available(&self) -> bool {
