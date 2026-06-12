@@ -4217,7 +4217,7 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 **Status:** 📋 PLANNED  
 **Depends on:** #118 (Tool trait) + #119 (agnostic types) + #120 (OllamaProvider)  
 **Estimated effort:** 2–3 weeks  
-**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`)
+**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`) AND no `#[allow(dead_code)]` annotations on `src/provider/{ollama,factory}.rs` chain (P6.0e.10).
 
 **Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types.
 
@@ -4234,6 +4234,7 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 | P6.0e.7 | `query/*.rs` | 4 | 1 day | P6.0e.4 |
 | P6.0e.8 | `vision/processor.rs`, `ocr/processor.rs`, `summarize/processor.rs` | 3 | 1 day | P6.0e.3 |
 | P6.0e.9 | `main.rs` — provider construction | 1 | 0.5 day | P6.0e.6 |
+| P6.0e.10 | Remove `#[allow(dead_code)]` from `factory::build_provider`, `OllamaProvider::new`, `provider_name` (chain reachable via P6.0e.9 + P6.0e.5) | 1 | 0.1 day | P6.0e.9 |
 
 ---
 

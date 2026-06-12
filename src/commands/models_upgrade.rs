@@ -14,9 +14,12 @@
 //!
 //! Invalid TOML is reported with the parser error and the process aborts
 //! — the command never overwrites a file it cannot parse.
-
-#![allow(clippy::print_stdout)] // User-facing CLI output
-#![allow(clippy::print_stderr)] // User-facing CLI output
+//!
+//! This module returns user-facing messages as `Vec<String>` (not via
+//! `println!`/`eprintln!`). If a future change introduces direct prints,
+//! the `clippy::print_stdout`/`clippy::print_stderr` lints (configured
+//! as `warn` crate-wide in `Cargo.toml`) will surface a warning at
+//! build time.
 
 use std::path::{Path, PathBuf};
 

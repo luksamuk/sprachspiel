@@ -74,6 +74,25 @@ pub async fn run_chat_repl_tui(
 
     let theme = super::tui::markdown::MarkdownTheme::from_config(&state.settings.display.skin);
 
+    // Provider name resolution: model → first provider → bail-out.
+    // Per PR #206 review: failing silently with "default" masks user
+    // configuration error. Bail out with a clear message instead.
+    // Resolved BEFORE the TUI is initialized so the error propagates
+    // without leaving the terminal in raw mode.
+    let provider_name = crate::user_models::get_provider_for_model(&state.model_config.model_id)
+        .or_else(|| {
+            // Built-in models have no `provider` field — fall back to the
+            // first provider defined in models.toml.
+            crate::user_models::get_providers().keys().next().cloned()
+        })
+        .ok_or_else(|| {
+            format!(
+                "Cannot determine provider for model '{}': no providers defined in models.toml. \
+                 Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.",
+                state.model_config.model_id
+            )
+        })?;
+
     // Create the TUI view (see RatatuiView::new() for initialization details)
     let mut view = RatatuiView::new(theme, model_names);
 
@@ -96,15 +115,6 @@ pub async fn run_chat_repl_tui(
         let session_name = session.name.as_deref().unwrap_or(&session.id);
         let sandbox_status = crate::external::get_sandbox_status();
         let version = env!("CARGO_PKG_VERSION");
-        // Get provider name from the current model's configuration (#120).
-        // For built-in models (no provider field), we look up the first
-        // available provider as a fallback.
-        let provider_name = crate::user_models::get_provider_for_model(&model_config.model_id)
-            .or_else(|| {
-                // Fallback: use the first provider defined in models.toml
-                crate::user_models::get_providers().keys().next().cloned()
-            })
-            .unwrap_or_else(|| "default".to_string());
 
         let (fact_count, note_count, doc_count) = if let Some(db_ref) = &state.db {
             (
