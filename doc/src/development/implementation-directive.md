@@ -550,7 +550,7 @@ pub fn on_content_access(conn: &Connection, item_id: i64) -> Result<()> {
 
 **Rationale:**
 - LLM self-verification is consistently beaten by simple majority voting (Wu et al. 2025: up to -16.7% worse than baseline)
-- Only ~3% of decisions change per reflection step (Chan et al. 2025), and some correct→incorrect reversions occur
+- Verification steps rarely change outcomes — predominantly confirmatory rechecks (Long et al. 2026, arXiv:2602.03485), and some correct→incorrect reversions occur
 - Recovery rate from self-correction attempts: 2.7-19.5% (Wu et al. 2025) — weak signal
 - User signals remain the ground truth; LLM signals are supplementary
 - A 30% discount factor (configurable via `llm_feedback_weight = 0.3`) balances signal contribution against noise, consistent with empirical range of 20-40% from both papers
@@ -648,7 +648,7 @@ Users can export their feedback history:
 | Krishnamurthy et al. 2026 | Referenced | LLM self-assessment noise analysis |
 | Drori 2025 | Referenced | Binary feedback: no partial credit for negative signals |
 | Wu et al. 2025 | Referenced | LLM confidence calibration and over-estimation |
-| Chan et al. 2025 | Referenced | Calibrated self-evaluation in agent systems |
+| Long et al. 2026 | Referenced | Self-verification dilemma: rechecks rarely change outcomes (arXiv:2602.03485) |
 
 ### 7.2 Analysis Documents
 
@@ -671,7 +671,7 @@ Users can export their feedback history:
 | Krishnamurthy 2026 | LLM self-assessment is noisy | Discount LLM-originated feedback (ADR-004) |
 | Drori 2025 | No partial credit for negative signals | Symmetric Good/Bad magnitude (ADR-005) |
 | Wu 2025 | LLM confidence systematically over-estimated | Weight user signals above LLM signals |
-| Chan 2025 | Calibrated self-evaluation possible with discounting | 0.3 weight factor for LLM self-feedback |
+| Long 2026 | Self-verification predominantly confirmatory — discount LLM self-feedback | 0.3 weight factor for LLM self-feedback |
 
 ---
 
