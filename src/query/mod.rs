@@ -242,6 +242,14 @@ pub async fn run_query(
         std::process::exit(1);
     }
 
+    // Bail-out: detect broken config before reaching resolve_model_config's
+    // process::exit(1). Per PR #206 review: failing silently with "default"
+    // or generic "Unknown model" masks user configuration errors.
+    if let Err(e) = crate::user_models::require_providers() {
+        eprintln!("\x1B[31mError: {}\x1B[0m", e);
+        return Err(e.into());
+    }
+
     // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output).
     // Must be set before any tool call display occurs.
     crate::debug_tools::set_plain_mode(plain.unwrap_or(false));

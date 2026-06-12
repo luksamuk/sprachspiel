@@ -810,6 +810,14 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
         settings.model.default.clone()
     };
 
+    // Bail-out: detect broken config before reaching resolve_model_config's
+    // process::exit(1). Per PR #206 review: failing silently with "default"
+    // or generic "Unknown model" masks user configuration errors.
+    if let Err(e) = user_models::require_providers() {
+        eprintln!("Error: {}", e);
+        return Err(e.into());
+    }
+
     let model_config = user_models::resolve_model_config(&model_name);
     let model_id = model_config.model_id.clone();
 

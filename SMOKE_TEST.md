@@ -429,6 +429,70 @@ the system prompt injection. Since staleness is based on `decay_score`, `last_ac
 - [ ] Verify that the `get_staleness_label()` function exists in `src/facts/prompt.rs` (code review)
 - [ ] Verify that `build_facts_section()` calls `get_staleness_label()` for each fact (code review)
 
+### 11.3 Provider Configuration Bail-out (PR #206 — E1)
+
+**Verify that all entry points (`sprach chat`, `sprach query`, `sprach summarize`,
+`sprach vision`) fail fast with a clear error when `models.toml` is missing or
+has its `[provider.*]` block commented out.**
+
+This catches the bug where the bail-out in `repl_tui.rs:82` was unreachable
+because `resolve_model_config`'s `process::exit(1)` fired first with a generic
+"Unknown model" message.
+
+**Pré-condições:**
+- `~/.config/sprachspiel/models.toml` exists with at least one model entry
+
+**Procedimento:**
+```bash
+# Backup
+cp ~/.config/sprachspiel/models.toml ~/.config/sprachspiel/models.toml.bak.bailout
+
+# Comentar o bloco [provider.*] (qualquer um)
+sed -i 's/^\[provider/#[provider/' ~/.config/sprachspiel/models.toml
+
+# Testar chat
+sprach chat
+echo "Exit: $?"  # Expected: 1
+
+# Testar query
+sprach query "test"
+echo "Exit: $?"  # Expected: 1
+
+# Testar summarize
+sprach summarize "test text"
+echo "Exit: $?"  # Expected: 1
+
+# Testar vision (com arquivo PNG dummy)
+touch /tmp/test.png
+sprach vision /tmp/test.png
+echo "Exit: $?"  # Expected: 1
+```
+
+**Resultado esperado (todos os modos):**
+```
+[ERROR sprach::user_models] Failed to load models.toml: Missing [provider."name"] section in models.toml at <path>. Add at least one [provider."my-ollama"] block with `kind = "ollama"` and `base_url = "http://127.0.0.1:11434"`. Run `sprach models upgrade` to migrate an existing config.
+Error: Cannot determine provider: no providers defined in models.toml. Add a [provider."name"] section or run `sprach models upgrade` to migrate.
+```
+
+**Para `sprach chat` especificamente, esperado adicional:**
+```
+[ERROR sprach::chat::repl] No providers configured in models.toml
+Error: No providers configured in models.toml.
+Hint: Add a [provider."name"] section or run `sprach models upgrade` to migrate.
+Error: "Cannot start chat: models.toml is missing providers. Add a [provider.\"name\"] section or run `sprach models upgrade`."
+```
+
+**Cleanup:**
+```bash
+mv ~/.config/sprachspiel/models.toml.bak.bailout ~/.config/sprachspiel/models.toml
+rm -f /tmp/test.png
+```
+
+- [ ] `sprach chat` retorna exit 1 com mensagem de bail-out
+- [ ] `sprach query` retorna exit 1 com mensagem de bail-out
+- [ ] `sprach summarize` retorna exit 1 com mensagem de bail-out
+- [ ] `sprach vision` retorna exit 1 com mensagem de bail-out
+
 ---
 
 ## 12. Truncation Warnings in Tool Outputs (Issue #71)
@@ -1721,8 +1785,9 @@ The script above runs automated tests. The following tests must be run manually:
 8. **Section 10**: File Tools (via LLM)
 9. **Section 10.5**: run_command Error Messages
 10. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
-11. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
-12. **Section 13**: Performance (verify response time)
+11. **Section 11.3**: Provider Configuration Bail-out (PR #206 E1 — all 4 entry points)
+12. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
+13. **Section 13**: Performance (verify response time)
 13. **Section 15**: Feedback Commands (interactive feedback tests)
 14. **Section 16**: Content Prune & Context Decay Stats (interactive tests)
 15. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)

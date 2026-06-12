@@ -4190,7 +4190,23 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 |---|-------|--------|
 | C1 | **`tracing` optional dependency without feature flag** | If `tracing` is genuinely unused in the PR, remove. If it will be used in #122 for instrumented spans, add `tracing` feature flag. |
 
-**Merge criterion update:** PR #206 is mergeable when all A1-A19 are resolved and clippy passes. B1-B4 are documented as limitations to be resolved in #121; C1 in #122.
+**D. Pre-existing clippy limitations (W2 follow-up):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| D1 | **`src/chat/command_handlers.rs:28` imports `DocumentEntry`/`DocumentListData` without `#[cfg(feature = "document-tools")]`** | Pre-existing: imports are unconditionally pulled in, but their USES are gated by `#[cfg(feature = "document-tools")]` (line 3023, etc.). When compiling `--no-default-features --features X` (X ≠ document-tools), the import is "unused" — 1 error per individual feature. |
+| D2 | **`src/chat/tui/markdown.rs` has unused items gated by `#[cfg(feature = "...")]`** | Pre-existing: variables `lang` (lines 270, 1523) and `render_mermaid` (line 1426) and function `mermaid_style` (line 888) trigger "unused" errors when features are turned off individually. |
+| D3 | **`src/markdown/standalone.rs:59` and `src/markdown/table.rs:115` have unused items** | Pre-existing: `render_special` (standalone) and `lang` (table) trigger "unused" errors in feature-gated builds. |
+| D4 | **`src/tools/weather.rs` uses `crate::utils::fetch_json` (gated by `search-tools`) but `pub mod weather;` in `src/tools/mod.rs:14` is unconditional** | Pre-existing: this combination causes compile errors in any feature combination that lacks `search-tools`. `pub mod weather;` should be `#[cfg(feature = "weather-tools")]` and the body should also gate its functions with `#[cfg(feature = "weather-tools")]`. |
+| D5 | **`src/tools/weather.rs` has unfulfilled `#[expect(dead_code)]` annotations** (lines 361, 366, 369, 385, etc.) | Pre-existing: when the module is compiled WITHOUT `weather-tools` (which still happens because D4 is unfixed), these expectations are unfulfilled. |
+
+**E. Follow-up (PR #120 review, Hefesto round 3):**
+
+| # | Issue | Resolution |
+|---|-------|-----------|
+| E1 | **Provider bail-out was unreachable in `repl_tui.rs:82`** | The earlier `resolve_model_config` call (in `repl.rs:638`, `query/context.rs:119`, `summarize/processor.rs:36`, `main.rs::handle_vision`, `model_switch.rs:56`) used `process::exit(1)` with a generic "Unknown model" message when `models.toml` was missing the `[provider]` block, masking the actual config error. **Resolution:** new `user_models::require_providers()` helper called at every entry point; pre-parse heuristic in `load_user_models_internal` detects the common user error (commented-out `[provider.*]`) before TOML parse fails with the generic `missing field 'provider'` message. Both fixes preserve `cargo clippy --all-features` clean. |
+
+**Merge criterion update:** PR #206 is mergeable when all A1-A19 are resolved and clippy passes. B1-B4 are documented as limitations to be resolved in #121; C1 in #122. D1-D5 are pre-existing feature-gating bugs to be fixed in a W2 close-out PR (not blocking). E1 is the bail-out fix from this round.
 
 ---
 

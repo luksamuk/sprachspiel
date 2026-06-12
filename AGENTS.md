@@ -30,6 +30,20 @@ cargo fmt                                # Format code
 cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity
 ```
 
+> **⚠️ Clippy feature matrix caveat:** `cargo clippy --all-features` and
+> `cargo clippy` (default features) both pass clean. However, individual
+> features (e.g., `cargo clippy --no-default-features --features weather-tools`)
+> expose **9+ errors** due to pre-existing feature-gating issues in
+> `src/chat/command_handlers.rs`, `src/chat/tui/markdown.rs`,
+> `src/markdown/*.rs`, and `src/tools/weather.rs`. These are NOT regressions
+> from PR #206. They must be fixed in a follow-up PR (likely W2 close-out).
+>
+> For now, the smoke test runs `cargo clippy` (default features) which
+> passes, but this is **insufficient** for production confidence. The
+> feature matrix should be exercised before tagging a release. See
+> `IMPLEMENTATION.md` "PR #206 review findings" → "D. Pre-existing clippy
+> limitations (W2 follow-up)" for the full list.
+
 ## Compilation Features
 
 - **Default:** weather-tools, file-tools, calc-tools, serper-tools, system-tools, skills-tools

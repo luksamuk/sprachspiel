@@ -52,6 +52,12 @@ pub async fn switch_model(
         ));
     }
 
+    // Bail-out: detect broken config before reaching resolve_model_config's
+    // process::exit(1). If the user is mid-session and models.toml becomes
+    // invalid, we want to surface the configuration error gracefully via
+    // the TUI error channel rather than aborting the process.
+    user_models::require_providers()?;
+
     // 2. Resolve model configuration
     let model_config = user_models::resolve_model_config(model_name);
 
