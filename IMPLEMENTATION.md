@@ -4246,19 +4246,32 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 
 #### Consumer Migration — #121 [M1]
 
-**Status:** 📋 PLANNED  
-**Depends on:** #118 (Tool trait) + #119 (agnostic types) + #120 (OllamaProvider)  
-**Estimated effort:** 2–3 weeks  
-**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`) AND no `#[allow(dead_code)]` annotations on `src/provider/{ollama,factory}.rs` chain (P6.0e.10).
+**Status:** 🔄 IN PROGRESS (branch `feat/121-consumer-migration-openai`)  
+**Depends on:** #118 (Tool trait) ✅ + #119 (agnostic types) ✅ + #120 (OllamaProvider) ✅  
+**Estimated effort:** 2–3 weeks (revised: ~5 weeks for OpenAI-first strategy)  
+**Issue:** #121  
+**Branch:** `feat/121-consumer-migration-openai`  
+**Merge criterion:** No `use ollama_rs` in business modules AND `OpenAICompatibleProvider` is the default for all backends (Ollama, llama.cpp, vLLM) AND `models upgrade` migrates old `kind="ollama"` configs automatically.
 
-**Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types.
+**Strategic Shift (vs. original plan):** This PR implements the **OpenAI-First strategy** (R2 from planning session). The default provider is now `OpenAICompatibleProvider` (OpenAI-spec HTTP), not Ollama's native `/api/chat`. Ollama is reached through `http://localhost:11434/v1`, llama.cpp through llama-swap, etc. The `OllamaProvider` introduced in #120 is **removed**; `ProviderKind::Ollama` is kept as a deprecated alias in `factory.rs` for backward compat (returns a runtime error if used, prompting user to run `sprach models upgrade`).
+
+**Why OpenAI-First:** Maintaining two HTTP transports (Ollama native + OpenAI compat) creates permanent maintenance debt. The OpenAI-spec API is the de facto standard for local LLM serving (Ollama, llama.cpp, vLLM, llama-swap, LM Studio all expose it). Issue [ollama/ollama#11325](https://github.com/ollama/ollama/issues/11325) was closed as "not planned" — Ollama's OpenAI-compat does NOT support `top_k`, `min_p`, etc. — so a unified path requires the strict OpenAI-subset of parameters.
+
+**Breaking changes in `models.toml`:**
+
+1. **`kind` default changes from `"ollama"` to `"openai"`** — existing configs with `kind = "ollama"` are auto-migrated by `sprach models upgrade`.
+2. **`base_url` requires `/v1` suffix** — e.g., `http://localhost:11434/v1` for Ollama; the migration adds it automatically.
+3. **Fields removed from `UserModelConfig`:** `top_k`, `repeat_penalty`, `think` — not supported by OpenAI API nor by Ollama's OpenAI-compat endpoint. They were Ollama-native only and cannot be tunneled through the OpenAI-spec body.
+4. **New field added:** `seed` (cross-provider, optional) — supported by both OpenAI spec and Ollama's `/v1/chat/completions`.
+
+**Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types, with OpenAI-compatible HTTP as the single transport.
 
 **Sub-deliverables (each mergable independently):**
 
 | Sub | Component | Files | Effort | Prerequisite |
 |-----|-----------|-------|--------|-------------|
-| P6.0e.1 | `capabilities.rs` → `LlmProvider::detect_capabilities()` | 1 | 0.5 day | P6.0d |
-| P6.0e.2 | `embeddings/client.rs` → `LlmProvider::embed()` | 1 | 1 day | P6.0d |
+| P6.0e.1 | `capabilities.rs` → `LlmProvider::detect_capabilities()` + auto-detect `num_ctx` via `/v1/models` and `/api/show` fallback | 1 | 0.5-1 day | P6.0d |
+| P6.0e.2 | `embeddings/client.rs` → `LlmProvider::embed()` (uses `/v1/embeddings`) | 1 | 1 day | P6.0d |
 | P6.0e.3 | `subagent.rs` → `LlmProvider::chat()/generate()` | 1 | 1-2 days | P6.0d |
 | P6.0e.4 | `custom_coordinator.rs` → uses `LlmProvider` + agnostic types | 1 | 1 week | P6.0b+c+d |
 | P6.0e.5 | `core.rs` → receives `Box<dyn LlmProvider>` | 1 | 0.5 day | P6.0e.4 |
@@ -4267,6 +4280,22 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 | P6.0e.8 | `vision/processor.rs`, `ocr/processor.rs`, `summarize/processor.rs` | 3 | 1 day | P6.0e.3 |
 | P6.0e.9 | `main.rs` — provider construction | 1 | 0.5 day | P6.0e.6 |
 | P6.0e.10 | Remove `#[allow(dead_code)]` from `factory::build_provider`, `OllamaProvider::new`, `provider_name` (chain reachable via P6.0e.9 + P6.0e.5) | 1 | 0.1 day | P6.0e.9 |
+| **P6.0e.new1** | `OpenAICompatibleProvider` with SSE streaming, tool calling, embeddings, `/v1/models`, **Retry-After header parsing** | 4 | 1.5-2 weeks | P6.0d |
+| **P6.0e.11** | `models upgrade` migration: `kind="ollama"` → `openai`, add `/v1` suffix to `base_url` | 1 | 0.3 day | P6.0e.9 |
+| **P6.0e.12** | Remove `OllamaProvider` source; keep `ProviderKind::Ollama` as deprecated alias | 1 | 0.1 day | P6.0e.11 |
+
+**B items from #120 review (resolved in #121):**
+- **B1**: `Settings::ollama_client()` deprecated regression — **REMOVED in #121**; all 5 call sites migrated to `factory::build_provider()`.
+- **B2**: `#[allow(dead_code)]` chain on `factory::build_provider` → `OllamaProvider::new` → `provider_name` — **RESOLVED** when `OpenAICompatibleProvider::new` becomes the new factory target.
+- **B3**: `LlmProvider` trait `#[allow(dead_code)]` — **REMOVED**; trait is now consumed by `OpenAICompatibleProvider` directly.
+- **B4**: `Retry-After` header parsing — **IMPLEMENTED in #121** via `OpenAICompatibleProvider::classify_error()` reading `Retry-After` from HTTP headers on 429 responses. Wires up the previously-unused `retry_after: Option<Duration>` field on `ProviderError::RateLimit`.
+
+**Acceptance criteria:**
+- 35 files in `src/` no longer contain `use ollama_rs` (verified by `rg 'use ollama_rs' src/`)
+- `cargo clippy --all-features -- -D warnings` clean
+- `cargo test --all-features` passing
+- Manual test against llama-swap (Ollama + llama.cpp + vLLM) passes
+- `models upgrade` migrates existing configs correctly
 
 ---
 

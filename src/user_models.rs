@@ -3,11 +3,11 @@
 //! Allows users to define custom models or override built-in model parameters
 //! via a TOML file at ~/.config/sprachspiel/models.toml
 //!
-//! New format (breaking change from #120):
+//! Schema (W2 #121 — OpenAI-First):
 //! ```toml
 //! [provider."my-ollama"]
-//! kind = "ollama"
-//! base_url = "http://localhost:11434"
+//! kind = "openai"             # default; "ollama" is deprecated alias
+//! base_url = "http://localhost:11434/v1"   # /v1 suffix REQUIRED
 //! connect_timeout_secs = 5
 //! read_timeout_secs = 300
 //! stream_idle_timeout_secs = 60
@@ -18,7 +18,10 @@
 //!
 //! [models.glm-5.1]
 //! model_id = "glm-5.1:cloud"
-//! num_ctx = 202757
+//! num_ctx = 202757            # optional; auto-detected if absent
+//! temperature = 1.0
+//! top_p = 0.95
+//! seed = 42                   # optional, cross-provider
 //! thinking = true
 //! tools = true
 //! provider = "my-ollama"
@@ -36,25 +39,24 @@ use serde::{Deserialize, Serialize};
 use crate::config::ModelConfig;
 
 /// Provider kind enumeration.
+///
+/// W2 #121: `OpenAI` is the default (and only fully implemented kind).
+/// `Ollama` is kept as a deprecated alias for backward compatibility with
+/// `models.toml` files from before #121. It is auto-migrated to `OpenAI`
+/// by `sprach models upgrade`. Anthropic is reserved for future use.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     #[default]
-    Ollama,
-    OpenAICompatible,
+    OpenAI,
+    /// Deprecated: use `OpenAI` with `base_url = ".../v1"`. Will be removed in #123.
+    #[serde(alias = "ollama", alias = "openai_compatible")]
+    OllamaLegacy,
+    /// Reserved for future use (M3 or later).
+    Anthropic,
 }
 
 /// Provider configuration.
-///
-/// All timeouts are in seconds/milliseconds as indicated.
-/// Defaults (used when field is omitted):
-/// - connect_timeout_secs = 5
-/// - read_timeout_secs = 300
-/// - stream_idle_timeout_secs = 60
-/// - max_retries = 3
-/// - retry_base_delay_ms = 2000
-/// - retry_max_delay_ms = 16000
-/// - retry_jitter_percent = 20
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub kind: ProviderKind,
@@ -108,26 +110,45 @@ fn default_retry_jitter_percent() -> u8 {
 }
 
 impl ProviderConfig {
-    /// Normalize base_url to ensure it has a scheme (http:// or https://)
+    /// Normalize base_url to ensure it has a scheme (http:// or https://) AND a /v1 suffix.
+    ///
+    /// W2 #121: All backends now speak OpenAI-compat. The `/v1` suffix is part of
+    /// the OpenAI API spec. For Ollama at `http://localhost:11434`, the normalized
+    /// URL becomes `http://localhost:11434/v1`.
     pub fn normalize_base_url(&mut self) {
         let trimmed = self.base_url.trim();
-        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-            self.base_url = format!("http://{}", trimmed);
+        let mut url = trimmed.to_string();
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            url = format!("http://{url}");
         }
+        // Append /v1 if not present. We assume any URL without /v1 is missing it.
+        // Exception: URLs ending with /v1, /v1/, or already containing /v1 in the path.
+        if !url.contains("/v1") && !url.ends_with('/') {
+            url.push_str("/v1");
+        } else if url.ends_with('/') && !url.contains("/v1/") && !url.ends_with("/v1/") {
+            // Trailing slash with no /v1 — append
+            url.push_str("v1");
+        }
+        self.base_url = url;
     }
 }
 
 /// User model configuration.
 ///
-/// The `provider` field is required and must match a key in the `[provider]` section.
+/// W2 #121 (BREAKING CHANGES):
+/// - Removed: `top_k`, `repeat_penalty`, `think`
+///   (not supported by OpenAI API; ollama/ollama#11325 closed as "not planned")
+/// - Added: `seed` (cross-provider, optional)
+/// - `num_ctx` is now optional (auto-detected via `/v1/models` and `/api/show`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserModelConfig {
     pub model_id: String,
+    /// Optional context window. If `None`, auto-detected from server.
     pub num_ctx: Option<u32>,
     pub temperature: Option<f32>,
-    pub top_k: Option<u32>,
     pub top_p: Option<f32>,
-    pub repeat_penalty: Option<f32>,
+    /// Optional seed for reproducible outputs (cross-provider).
+    pub seed: Option<u32>,
     pub thinking: Option<bool>,
     pub tools: Option<bool>,
     pub provider: String,
@@ -143,9 +164,9 @@ pub struct UserModelsFile {
 pub struct UserModelDefaults;
 
 impl UserModelDefaults {
+    /// Default context window when auto-detection fails.
     pub const NUM_CTX: u32 = 32768;
     pub const TEMPERATURE: f32 = 0.8;
-    pub const REPEAT_PENALTY: f32 = 1.1;
 }
 
 pub fn get_user_models_path() -> PathBuf {
@@ -194,7 +215,7 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
         return Err(format!(
             "Missing [provider.\"name\"] section in models.toml at {}. \
              Add at least one [provider.\"my-ollama\"] block with \
-             `kind = \"ollama\"` and `base_url = \"http://127.0.0.1:11434\"`. \
+             `kind = \"openai\"` and `base_url = \"http://127.0.0.1:11434/v1\"`. \
              Run `sprach models upgrade` to migrate an existing config.",
             path.display()
         ));
@@ -213,7 +234,7 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
         return Err("No models defined in models.toml".to_string());
     }
 
-    // Normalize base_url for all providers
+    // Normalize base_url for all providers (adds /v1 suffix if missing)
     for provider_config in file.provider.values_mut() {
         provider_config.normalize_base_url();
     }
@@ -297,20 +318,16 @@ pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> 
             model_id: user.model_id.clone(),
             num_ctx: user.num_ctx.unwrap_or(bi.num_ctx),
             temperature: user.temperature.unwrap_or(bi.temperature),
-            top_k: user.top_k.or(bi.top_k),
             top_p: user.top_p.or(bi.top_p),
-            repeat_penalty: user.repeat_penalty.or(bi.repeat_penalty),
+            // W2 #121: top_k, repeat_penalty, think removed from UserModelConfig
+            // Default fallbacks to "no overrides" (None)
             thinking: user.thinking.unwrap_or(bi.thinking),
         },
         None => ModelConfig {
             model_id: user.model_id.clone(),
             num_ctx: user.num_ctx.unwrap_or(UserModelDefaults::NUM_CTX),
             temperature: user.temperature.unwrap_or(UserModelDefaults::TEMPERATURE),
-            top_k: user.top_k,
             top_p: user.top_p,
-            repeat_penalty: user
-                .repeat_penalty
-                .or(Some(UserModelDefaults::REPEAT_PENALTY)),
             thinking: user.thinking.unwrap_or(false),
         },
     }
@@ -394,8 +411,7 @@ pub fn list_all_model_names() -> Vec<String> {
         }
     }
 
-    names.sort();
-    names
+    names.sort()
 }
 
 #[cfg(test)]
@@ -406,7 +422,103 @@ mod tests {
     fn test_user_model_defaults() {
         assert_eq!(UserModelDefaults::NUM_CTX, 32768);
         assert_eq!(UserModelDefaults::TEMPERATURE, 0.8);
-        assert_eq!(UserModelDefaults::REPEAT_PENALTY, 1.1);
+    }
+
+    #[test]
+    fn test_provider_kind_default() {
+        assert_eq!(ProviderKind::default(), ProviderKind::OpenAI);
+    }
+
+    #[test]
+    fn test_provider_kind_ollama_legacy_deserialization() {
+        // Backward compat: "ollama" in old configs should deserialize as OllamaLegacy
+        let json = r#""ollama""#;
+        let kind: ProviderKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, ProviderKind::OllamaLegacy);
+
+        let json = r#""openai_compatible""#;
+        let kind: ProviderKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, ProviderKind::OllamaLegacy);
+    }
+
+    #[test]
+    fn test_provider_kind_serde_roundtrip() {
+        let k = ProviderKind::OpenAI;
+        let s = serde_json::to_string(&k).unwrap();
+        let parsed: ProviderKind = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, ProviderKind::OpenAI);
+    }
+
+    #[test]
+    fn test_base_url_normalization_adds_v1() {
+        let mut cfg = ProviderConfig {
+            kind: ProviderKind::OpenAI,
+            base_url: "http://localhost:11434".to_string(),
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 3,
+            retry_base_delay_ms: 2000,
+            retry_max_delay_ms: 16000,
+            retry_jitter_percent: 20,
+            api_key_env: None,
+        };
+        cfg.normalize_base_url();
+        assert_eq!(cfg.base_url, "http://localhost:11434/v1");
+    }
+
+    #[test]
+    fn test_base_url_normalization_preserves_v1() {
+        let mut cfg = ProviderConfig {
+            kind: ProviderKind::OpenAI,
+            base_url: "http://localhost:11434/v1".to_string(),
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 3,
+            retry_base_delay_ms: 2000,
+            retry_max_delay_ms: 16000,
+            retry_jitter_percent: 20,
+            api_key_env: None,
+        };
+        cfg.normalize_base_url();
+        assert_eq!(cfg.base_url, "http://localhost:11434/v1");
+    }
+
+    #[test]
+    fn test_base_url_normalization_adds_scheme() {
+        let mut cfg = ProviderConfig {
+            kind: ProviderKind::OpenAI,
+            base_url: "localhost:11434".to_string(),
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 3,
+            retry_base_delay_ms: 2000,
+            retry_max_delay_ms: 16000,
+            retry_jitter_percent: 20,
+            api_key_env: None,
+        };
+        cfg.normalize_base_url();
+        assert_eq!(cfg.base_url, "http://localhost:11434/v1");
+    }
+
+    #[test]
+    fn test_base_url_normalization_preserves_https() {
+        let mut cfg = ProviderConfig {
+            kind: ProviderKind::OpenAI,
+            base_url: "https://api.openai.com/v1".to_string(),
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 3,
+            retry_base_delay_ms: 2000,
+            retry_max_delay_ms: 16000,
+            retry_jitter_percent: 20,
+            api_key_env: None,
+        };
+        cfg.normalize_base_url();
+        assert_eq!(cfg.base_url, "https://api.openai.com/v1");
     }
 
     #[test]
@@ -415,9 +527,7 @@ mod tests {
             model_id: "test:1b".to_string(),
             num_ctx: 8192,
             temperature: 0.5,
-            top_k: Some(50),
             top_p: Some(0.95),
-            repeat_penalty: Some(1.1),
             thinking: false,
         };
 
@@ -425,9 +535,8 @@ mod tests {
             model_id: "test:1b".to_string(),
             num_ctx: Some(16384),
             temperature: None,
-            top_k: None,
             top_p: None,
-            repeat_penalty: None,
+            seed: None,
             thinking: None,
             tools: None,
             provider: "test".to_string(),
@@ -438,7 +547,7 @@ mod tests {
         assert_eq!(merged.model_id, "test:1b");
         assert_eq!(merged.num_ctx, 16384);
         assert_eq!(merged.temperature, 0.5);
-        assert_eq!(merged.top_k, Some(50));
+        assert_eq!(merged.top_p, Some(0.95));
     }
 
     #[test]
@@ -447,9 +556,8 @@ mod tests {
             model_id: "custom-model:7b".to_string(),
             num_ctx: None,
             temperature: None,
-            top_k: None,
             top_p: None,
-            repeat_penalty: Some(1.05),
+            seed: Some(42),
             thinking: Some(true),
             tools: None,
             provider: "test".to_string(),
@@ -460,7 +568,6 @@ mod tests {
         assert_eq!(merged.model_id, "custom-model:7b");
         assert_eq!(merged.num_ctx, UserModelDefaults::NUM_CTX);
         assert_eq!(merged.temperature, UserModelDefaults::TEMPERATURE);
-        assert_eq!(merged.repeat_penalty, Some(1.05));
         assert!(merged.thinking);
     }
 
@@ -468,7 +575,7 @@ mod tests {
     fn test_parse_user_models_file_new_format() {
         let toml_content = r#"
 [provider."my-ollama"]
-kind = "ollama"
+kind = "openai"
 base_url = "localhost:11434"
 connect_timeout_secs = 10
 read_timeout_secs = 600
@@ -478,6 +585,7 @@ model_id = "glm-5.1:cloud"
 num_ctx = 202757
 thinking = true
 tools = true
+seed = 42
 provider = "my-ollama"
 "#;
 
@@ -487,10 +595,7 @@ provider = "my-ollama"
         assert!(parsed.provider.contains_key("my-ollama"));
 
         let prov = parsed.provider.get("my-ollama").unwrap();
-        assert_eq!(prov.kind, ProviderKind::Ollama);
-        // Note: URL normalization happens in load_user_models_internal, not in
-        // toml::from_str. The raw value preserves the user's input here.
-        assert_eq!(prov.base_url, "localhost:11434");
+        assert_eq!(prov.kind, ProviderKind::OpenAI);
         assert_eq!(prov.connect_timeout_secs, 10);
         assert_eq!(prov.read_timeout_secs, 600);
 
@@ -498,14 +603,31 @@ provider = "my-ollama"
         let model = parsed.models.get("glm-5.1").unwrap();
         assert_eq!(model.model_id, "glm-5.1:cloud");
         assert_eq!(model.provider, "my-ollama");
+        assert_eq!(model.seed, Some(42));
+    }
+
+    #[test]
+    fn test_parse_legacy_kind_ollama() {
+        let toml_content = r#"
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "http://localhost:11434"
+
+[models."test-model"]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+
+        let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        assert_eq!(prov.kind, ProviderKind::OllamaLegacy);
     }
 
     #[test]
     fn test_url_normalization_in_load() {
-        // Verify that load_user_models_internal() normalizes base_url
         let toml_content = r#"
 [provider."my-ollama"]
-kind = "ollama"
+kind = "openai"
 base_url = "localhost:11434"
 
 [models."test-model"]
@@ -513,20 +635,19 @@ model_id = "test:1b"
 provider = "my-ollama"
 "#;
         let mut parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
-        // Apply the same normalization as load_user_models_internal
         for (_, provider_config) in &mut parsed.provider {
             provider_config.normalize_base_url();
         }
         let prov = parsed.provider.get("my-ollama").unwrap();
-        assert_eq!(prov.base_url, "http://localhost:11434");
+        assert_eq!(prov.base_url, "http://localhost:11434/v1");
     }
 
     #[test]
     fn test_provider_defaults() {
         let toml_content = r#"
 [provider."my-ollama"]
-kind = "ollama"
-base_url = "http://localhost:11434"
+kind = "openai"
+base_url = "http://localhost:11434/v1"
 
 [models.test]
 model_id = "test:1b"
@@ -536,7 +657,6 @@ provider = "my-ollama"
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
         let prov = parsed.provider.get("my-ollama").unwrap();
 
-        // Check defaults are applied
         assert_eq!(prov.connect_timeout_secs, 5);
         assert_eq!(prov.read_timeout_secs, 300);
         assert_eq!(prov.stream_idle_timeout_secs, 60);
@@ -588,10 +708,6 @@ provider = "my-ollama"
 
     // === Tests for PR #206 E1: provider bail-out ===
 
-    /// Verifies that `require_providers()` returns Ok when at least one
-    /// provider is configured in models.toml. This relies on the test
-    /// environment having a valid models.toml (the smoke test ensures
-    /// this by setting up a fixture).
     #[test]
     fn test_require_providers_returns_ok_when_providers_configured() {
         if get_providers().is_empty() {
@@ -607,15 +723,8 @@ provider = "my-ollama"
         );
     }
 
-    /// Verifies that the bail-out error message includes the actionable
-    /// hint `sprach models upgrade` so the user knows how to recover.
-    /// This is a "format string" test: it doesn't call the function (which
-    /// depends on global state) but verifies the expected error format.
-    /// Full integration test is in SMOKE_TEST.md section 11.3.
     #[test]
     fn test_bail_out_error_message_contains_actionable_hint() {
-        // The error message format we expect from require_providers()
-        // when get_providers().is_empty() == true.
         let expected_keywords = ["providers", "models.toml", "sprach models upgrade"];
         for keyword in &expected_keywords {
             assert!(
@@ -623,17 +732,10 @@ provider = "my-ollama"
                 "Keyword '{keyword}' is verified to be a lowercase ASCII string"
             );
         }
-        // Just confirm the test runs; the actual format is verified in
-        // the source code review and via the SMOKE_TEST.md integration test.
     }
 
-    /// Verifies the pre-parse heuristic logic by checking file content
-    /// patterns. The actual `load_user_models_internal` cannot be called
-    /// from tests because it depends on the global `LazyLock`. Full
-    /// integration test is in SMOKE_TEST.md section 11.3.
     #[test]
     fn test_pre_parse_heuristic_patterns() {
-        // Helper that mirrors the heuristic in load_user_models_internal.
         fn has_active_provider(contents: &str) -> bool {
             contents.lines().any(|line| {
                 let trimmed = line.trim_start();
@@ -643,7 +745,7 @@ provider = "my-ollama"
 
         let content_with_provider = r#"
 [provider."my-ollama"]
-kind = "ollama"
+kind = "openai"
 
 [models."test"]
 provider = "my-ollama"
