@@ -143,10 +143,14 @@ impl CompatOllama {
     ///
     /// Delegates to [`OpenAICompatibleProvider::probe_embedding`].
     /// See that method for details.
+    ///
+    /// W2 #121 extension: returns the actual response dim count
+    /// (not just `Ok(())`), so the caller can compare against the
+    /// alias's declared `dimensions` for strict-verify.
     pub async fn probe_embedding(
         &self,
         model: &str,
-    ) -> Result<(), crate::provider::types::ProviderError> {
+    ) -> Result<usize, crate::provider::types::ProviderError> {
         self.inner.probe_embedding(model).await
     }
 

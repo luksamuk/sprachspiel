@@ -142,28 +142,32 @@ impl OpenAICompatibleProvider {
     /// Probe the embedding endpoint (W2 #121).
     ///
     /// Sends a minimal POST to `/v1/embeddings` with a short test
-    /// text (`"test"`, truncated to 256 dims) to verify the
-    /// `model` is actually served by this provider.
+    /// text (`"test"`) and returns the actual response dim count.
+    /// The probe does NOT pass `dimensions` in the request body
+    /// (adaptive — some providers reject it). The caller compares
+    /// the response dim count against the alias's declared
+    /// `dimensions` to verify a strict match.
     ///
     /// Returns:
-    /// - `Ok(())` if the call succeeded (any 2xx status)
+    /// - `Ok(dim_count)` if the call succeeded (any 2xx status)
     /// - `Err(ProviderError::Api { status, body })` on 4xx/5xx
     /// - `Err(ProviderError::Http(_))` on network errors
     ///
-    /// This is called once at startup by the embedding
-    /// initialization path when `[embedding].probe = true` in
+    /// This is called once at startup by the indexing
+    /// initialization path when `[indexing].probe = true` in
     /// `config.toml`. Set the flag to `false` to skip the probe
     /// (useful for cold-start scenarios).
-    pub async fn probe_embedding(&self, model: &str) -> Result<(), ProviderError> {
+    pub async fn probe_embedding(&self, model: &str) -> Result<usize, ProviderError> {
         let url = self.url("/embeddings");
         let request = EmbeddingsRequest {
             model: model.to_string(),
             input: "test".to_string(),
-            // Use smallest meaningful dimension to keep the probe
-            // fast and bandwidth-light. Servers that support
-            // Matryoshka truncation (nomic, bge) honor this; others
-            // ignore and return full dims.
-            dimensions: Some(256),
+            // ADAPTIVE: do not pass `dimensions` in the request
+            // body. Some providers (older llama.cpp, certain vLLM
+            // builds) reject it with 400. The response dim count
+            // is the ground truth; the caller compares it against
+            // the alias's declared `dimensions` for strict verify.
+            dimensions: None,
             encoding_format: "float".to_string(),
         };
 
@@ -184,7 +188,20 @@ impl OpenAICompatibleProvider {
                 body,
             });
         }
-        Ok(())
+
+        let emb_resp: EmbeddingsResponse = response
+            .json()
+            .await
+            .map_err(|e| ProviderError::Other(format!("Failed to parse embeddings response: {e}")))?;
+
+        let dim = emb_resp
+            .data
+            .into_iter()
+            .next()
+            .map(|e| e.embedding.len())
+            .ok_or_else(|| ProviderError::Other("Empty embeddings response".to_string()))?;
+
+        Ok(dim)
     }
 
     /// Build request headers (including auth if API key is set).

@@ -162,7 +162,7 @@ pub fn init_database_core(
 /// `dimensions` in the request body (adaptive — some providers
 /// reject it); the response's vector dim count is compared
 /// against the alias's declared `dimensions`. Mismatch is a
-/// fatal error.
+/// fatal error (strict verify).
 ///
 /// Returns `Ok(())` if:
 /// - `probe = false` (skip probe, trust config)
@@ -185,19 +185,27 @@ pub async fn run_indexing_probe(
         "Probing indexing endpoint for model '{model_id}' (1 POST /v1/embeddings, ~30s timeout)..."
     );
     match provider.probe_embedding(model_id).await {
-        Ok(()) => {
-            // The probe currently doesn't return the response dim
-            // count (it only returns Ok(())). The dim verification
-            // is wired in Commit 6 when the probe is refactored
-            // to return the response dim.
-            //
-            // For now, the strict-verify (response dim == alias
-            // dimensions) check is logged but not enforced. The
-            // Commit 6 plumbing brings the dim back through the
-            // probe path and adds the strict check.
+        Ok(response_dim) => {
+            if response_dim as u32 != dimensions {
+                let msg = format!(
+                    "Error: Probe indexing dim mismatch: alias declares dimensions={dimensions}, \
+                     but provider returned {response_dim} dimensions for model '{model_id}'. \
+                     The model may not support Matryoshka truncation, or the alias is \
+                     misconfigured.\n\
+                     \n\
+                     To fix:\n\
+                     - If the model naturally returns {response_dim} dimensions, update the \
+                       alias's `dimensions = {response_dim}` in models.toml.\n\
+                     - If the alias should use Matryoshka truncation to {dimensions} dims, \
+                       verify the model server is configured for it.\n\
+                     - Set [indexing].probe = false to skip the probe and trust the config."
+                );
+                log::error!("{}", msg);
+                return Err(msg);
+            }
             log::info!(
                 "Indexing probe OK: provider serves /v1/embeddings for '{model_id}' \
-                 (declared dimensions: {dimensions}; strict dim verify pending Commit 6)"
+                 with {response_dim} dimensions (matches alias's dimensions = {dimensions})"
             );
             Ok(())
         }

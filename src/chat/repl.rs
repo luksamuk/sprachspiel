@@ -41,15 +41,20 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 ///
-/// W2 #121: the embedding provider is **decoupled** from the chat
-/// provider. The chat provider is the one for the model the user
-/// is chatting with; the embedding provider is the one for the
-/// embedding model declared in `[embedding].model` of `config.toml`.
-/// They are resolved independently and may be different servers.
+/// W2 #121 extension: the chat subcommand's embedding setup is
+/// fully wired to the new alias-based indexing config. The flow is:
+///   1. Resolve the alias from `[indexing].model` via
+///      `Settings::resolve_indexing_model()` — this returns
+///      `(model_cfg, provider_cfg, model_id, dimensions)`.
+///   2. Build a separate `Ollama` (shim) for the resolved
+///      embedding provider (may differ from the chat provider).
+///   3. Probe the embedding endpoint with strict dim verify
+///      (response dim must match the alias's declared dimensions).
+///   4. Initialize the database and the `EmbeddingClient`.
 async fn init_chat_database(
     settings: &Settings,
     ollama: &crate::provider::Ollama,
-    chat_model_name: &str,
+    _chat_model_name: &str,
     anonymous: bool,
     db_path: Option<PathBuf>,
 ) -> (
@@ -67,19 +72,65 @@ async fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    // W2 #121 extension (TRANSITIONAL): the old
-    // `resolve_embedding_provider` is gone (it operated on
-    // `ProviderConfig.embedding` which no longer exists). The new
-    // alias-based `resolve_indexing_model` is added in the next
-    // commit and the wiring below is updated to use it. Until then,
-    // we bail out with a clear "not yet migrated" error.
-    let msg = String::from(
-        "Error: W2 #121 extension: [indexing] alias resolver is not yet wired. \
-         This is a transitional state during the embedding configuration refactor. \
-         See PR #207 for progress.",
+    // W2 #121 extension: resolve the indexing alias to (model_cfg,
+    // provider_cfg, model_id, dimensions). Bail fast with a clear
+    // error if the alias is missing/misconfigured.
+    let (_model_cfg, provider_cfg, model_id, dimensions) = match settings
+        .resolve_indexing_model()
+    {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("\x1B[31m{e}\x1B[0m");
+            return (None, None, ollama, Some(e));
+        }
+    };
+
+    // Build a separate Ollama (shim) for the embedding provider.
+    let embedding_ollama = crate::provider::Ollama::from_provider_config(provider_cfg);
+
+    // W2 #121 extension: probe the embedding endpoint with
+    // strict dim verify (response dim == alias's declared dimensions).
+    if let Err(msg) = crate::db::run_indexing_probe(
+        &embedding_ollama,
+        model_id,
+        dimensions,
+        settings.indexing_probe_enabled(),
+    )
+    .await
+    {
+        eprintln!("\x1B[31m{msg}\x1B[0m");
+        return (None, None, ollama, Some(msg));
+    }
+
+    let result = crate::db::init_database_core(
+        crate::db::IndexingInit {
+            provider: embedding_ollama,
+            model_id: model_id.to_string(),
+            dimensions,
+            probe: false, // already probed above
+        },
+        false,
+        false,
+        db_path,
     );
-    eprintln!("\x1B[31m{msg}\x1B[0m");
-    return (None, None, ollama, Some(msg));
+
+    let error_detail = if result.db.is_none() {
+        // Error already logged and formatted in init_database_core
+        if let Some(ref detail) = result.error_detail {
+            eprintln!("\x1B[31m{detail}\x1B[0m");
+            Some(detail.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // NOTE: normalize_inline_thinking() is called in the background spawn
+    // (repl_tui.rs), not here. It runs before embedding recovery to ensure
+    // normalized items (has_embedding=0) are picked up for regeneration.
+
+    (result.db, result.embedding, ollama, error_detail)
 }
 
 /// Run startup tasks (decay cycles).
