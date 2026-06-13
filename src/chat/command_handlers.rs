@@ -3223,7 +3223,7 @@ mod tests {
     use crate::capabilities::ModelCapabilities;
     use crate::config::ModelConfig;
     use crate::settings::Settings;
-    use ollama_rs::Ollama;
+    use crate::provider::Ollama;
 
     fn create_test_state() -> ReplState {
         let session = ChatSession::new("test-model".to_string(), None, false);

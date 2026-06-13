@@ -92,6 +92,11 @@ pub struct OpenAICompatibleProvider {
 }
 
 impl OpenAICompatibleProvider {
+    /// Access the underlying reqwest client (used by the ollama_rs shim).
+    pub fn as_client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     /// Create a new `OpenAICompatibleProvider`.
     pub fn new(config: OpenAICompatibleConfig) -> Result<Self, ProviderError> {
         let api_key = config.api_key.clone().or_else(|| {
@@ -150,32 +155,30 @@ impl OpenAICompatibleProvider {
                     "role": role,
                 });
 
-                if let Some(content) = m.content {
-                    if role == "tool" {
-                        // Tool messages in OpenAI use `content` as the tool result.
-                        obj["content"] = serde_json::Value::String(content);
-                    } else {
+                if role == "tool" {
+                    // Tool messages in OpenAI use `content` as the tool result.
+                    obj["content"] = serde_json::Value::String(m.content.clone());
+                } else if let Some(images) = m.images.clone() {
+                    if !images.is_empty() {
                         // Vision support: include images in user messages.
-                        if let Some(images) = m.images {
-                            let mut parts = vec![serde_json::json!({
-                                "type": "text",
-                                "text": content,
-                            })];
-                            for img in images {
-                                parts.push(serde_json::json!({
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": format!("data:image/png;base64,{img}"),
-                                    },
-                                }));
-                            }
-                            obj["content"] = serde_json::Value::Array(parts);
-                        } else {
-                            obj["content"] = serde_json::Value::String(content);
+                        let mut parts = vec![serde_json::json!({
+                            "type": "text",
+                            "text": m.content.clone(),
+                        })];
+                        for img in images {
+                            parts.push(serde_json::json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:image/png;base64,{img}"),
+                                },
+                            }));
                         }
+                        obj["content"] = serde_json::Value::Array(parts);
+                    } else {
+                        obj["content"] = serde_json::Value::String(m.content.clone());
                     }
                 } else {
-                    obj["content"] = serde_json::Value::String(String::new());
+                    obj["content"] = serde_json::Value::String(m.content.clone());
                 }
 
                 if let Some(name) = m.name {
@@ -324,7 +327,7 @@ impl OpenAICompatibleProvider {
             (capped_ms as f64 * (self.config.retry_jitter_percent as f64 / 100.0)) as u64
         };
         let jitter = if jitter_range > 0 {
-            fastrand::u64(0..=jitter_range)
+            rand::random::<u64>() % (jitter_range + 1)
         } else {
             0
         };

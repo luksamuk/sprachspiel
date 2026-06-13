@@ -411,7 +411,8 @@ pub fn list_all_model_names() -> Vec<String> {
         }
     }
 
-    names.sort()
+    names.sort();
+    names
 }
 
 #[cfg(test)]

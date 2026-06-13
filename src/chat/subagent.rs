@@ -8,12 +8,12 @@
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
 //! - `/api/chat`: For text-based tasks (Translate, Summarize)
 
-use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::models::ModelOptions;
 
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
+use crate::provider::Ollama;
 
 use std::path::PathBuf;
 
@@ -116,7 +116,7 @@ impl SubagentConfig {
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
         let config_key = model.into();
         let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
-            .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
+            .map(|mc| (mc.model_id.clone(), mc.build_provider_options()))
             .unwrap_or_else(|| (config_key.clone(), ModelOptions::default().temperature(0.0)));
         Self {
             model: resolved_model,
@@ -139,13 +139,13 @@ impl SubagentConfig {
 /// detection, continuation tags), `SubagentRunner` is intentionally minimal:
 /// just an Ollama client, a config, and a `run()` method.
 pub struct SubagentRunner {
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     config: SubagentConfig,
 }
 
 impl SubagentRunner {
     /// Create a new runner with the given Ollama client and config.
-    pub fn new(ollama: Ollama, config: SubagentConfig) -> Self {
+    pub fn new(ollama: crate::provider::Ollama, config: SubagentConfig) -> Self {
         Self { ollama, config }
     }
 

@@ -58,7 +58,7 @@ use super::subagent_tools::{
 /// macro (in `sprachspiel-tool-derive`) ensures that every
 /// `#[sprachspiel::tool]` tool also implements `ollama_rs::Tool`, so
 /// they remain compatible with the parts of ollama-rs that consume
-/// tools directly (e.g., `ollama_rs::Ollama::chat` with `tools: Vec<ToolInfo>`).
+/// tools directly (e.g., `crate::provider::Ollama::chat` with `tools: Vec<ToolInfo>`).
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self;
 }

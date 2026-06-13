@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
@@ -31,7 +31,7 @@ pub struct QueryContext {
     pub prompt_type: PromptType,
     pub prompt_name: String,
     pub system_prompt: String,
-    pub ollama: Ollama,
+    pub ollama: crate::provider::Ollama,
 }
 
 /// Builder for QueryContext

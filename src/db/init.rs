@@ -24,7 +24,7 @@ pub struct DatabaseInitResult {
 /// Core database initialization logic shared between modes.
 ///
 /// # Arguments
-/// * `ollama` - Ollama client instance
+/// * `provider` - LlmProvider instance for embedding generation
 /// * `skip_persistence` - If true, skip database creation (anonymous/code mode)
 /// * `use_debug` - Enable debug logging (unused, kept for API compatibility)
 /// * `db_path` - Optional custom database path (overrides default XDG path)
@@ -32,7 +32,7 @@ pub struct DatabaseInitResult {
 /// # Returns
 /// `DatabaseInitResult` with db/embedding on success, or error details on failure.
 pub fn init_database_core(
-    ollama: ollama_rs::Ollama,
+    provider: crate::provider::Ollama,
     skip_persistence: bool,
     _use_debug: bool,
     db_path: Option<PathBuf>,
@@ -58,7 +58,7 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            let embedding = Arc::new(EmbeddingClient::new(ollama));
+            let embedding = Arc::new(EmbeddingClient::new(provider));
             DatabaseInitResult {
                 db: Some(Arc::new(db)),
                 embedding: Some(embedding),

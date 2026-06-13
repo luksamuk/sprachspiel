@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use indicatif::ProgressBar;
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};
@@ -35,7 +35,7 @@ pub async fn execute_query_with_retry(
     messages: Vec<ChatMessage>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
@@ -64,7 +64,7 @@ async fn execute_with_context(
     messages: Vec<ChatMessage>,
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
@@ -79,7 +79,7 @@ async fn execute_with_context(
 async fn execute_without_context(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,

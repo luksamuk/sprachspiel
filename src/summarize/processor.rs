@@ -44,7 +44,9 @@ impl SummarizeProcessor {
         #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
         let ollama = settings.ollama_client();
 
-        let model_options = model_config.build_model_options();
+        let provider_options = model_config.build_provider_options();
+        // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+        let model_options = crate::chat::core::convert_provider_to_model(&provider_options);
 
         // Build coordinator WITHOUT tools (security requirement)
         let mut coordinator = CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])

@@ -9,7 +9,7 @@ mod executor;
 
 use std::sync::Arc;
 
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
@@ -48,7 +48,7 @@ pub struct QueryResult {
 
 /// Context for building a chat coordinator
 pub struct ChatContext {
-    pub ollama: Ollama,
+    pub ollama: crate::provider::Ollama,
     pub model_id: String,
     pub model_options: ModelOptions,
     pub use_think: bool,
@@ -160,14 +160,8 @@ pub fn print_debug_info(
         log::debug!("Context Window:    auto");
     }
     log::debug!("Temperature:       {}", model_config.temperature);
-    if let Some(top_k) = model_config.top_k {
-        log::debug!("Top K:             {}", top_k);
-    }
     if let Some(top_p) = model_config.top_p {
         log::debug!("Top P:             {}", top_p);
-    }
-    if let Some(rp) = model_config.repeat_penalty {
-        log::debug!("Repeat Penalty:    {}", rp);
     }
     log::debug!("Detected Capabilities:");
     log::debug!("  Tools:      {}", capabilities.tools);

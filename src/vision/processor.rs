@@ -4,7 +4,7 @@
 //! Uses /api/generate endpoint with images array for multi-image support.
 
 #![expect(clippy::print_stdout)] // CLI subcommand output
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
@@ -26,7 +26,7 @@ impl VisionProcessor {
         &self,
         args: &VisionArgs,
         model: &str,
-        ollama: &Ollama,
+        ollama: &crate::provider::Ollama,
         model_options: ModelOptions,
         show_spinner: bool,
     ) -> VisionResult<VisionOutput> {
@@ -103,7 +103,7 @@ impl VisionProcessor {
         prompt: &str,
         images: Vec<Image>,
         model_options: ModelOptions,
-        ollama: &Ollama,
+        ollama: &crate::provider::Ollama,
     ) -> VisionResult<String> {
         let mut request =
             GenerationRequest::new(model.to_string(), prompt.to_string()).options(model_options);

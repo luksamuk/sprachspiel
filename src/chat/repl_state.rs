@@ -58,7 +58,7 @@ pub struct ReplState {
     pub cli_soulless: bool,
 
     // External clients (immutable after init)
-    pub ollama: ollama_rs::Ollama,
+    pub ollama: crate::provider::Ollama,
     pub db: Option<Arc<Database>>,
     pub embedding_client: Option<Arc<EmbeddingClient>>,
 
@@ -81,7 +81,7 @@ pub struct ReplStateBuilder {
     agents_md: Option<String>,
     cli_code: bool,
     cli_soulless: bool,
-    ollama: Option<ollama_rs::Ollama>,
+    ollama: Option<crate::provider::Ollama>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
     settings: Option<Settings>,
@@ -141,7 +141,7 @@ impl ReplStateBuilder {
         self
     }
 
-    pub fn ollama(mut self, ollama: ollama_rs::Ollama) -> Self {
+    pub fn ollama(mut self, ollama: crate::provider::Ollama) -> Self {
         self.ollama = Some(ollama);
         self
     }
@@ -247,7 +247,7 @@ mod tests {
     fn test_replstate_builder_requires_settings() {
         use crate::capabilities::ModelCapabilities;
         use crate::config::ModelConfig;
-        use ollama_rs::Ollama;
+        use crate::provider::Ollama;
 
         let session = ChatSession::new("test-model".to_string(), None, false);
         let model_config = ModelConfig::get_default();

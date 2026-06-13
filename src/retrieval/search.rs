@@ -10,7 +10,7 @@
 //! for rendering via `ChatView`. This separation keeps search logic independent of rendering.
 
 use chrono::{DateTime, Utc};
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
@@ -160,7 +160,7 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
 pub async fn run_search(
     db: &Database,
-    ollama: &Ollama,
+    ollama: &crate::provider::Ollama,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,

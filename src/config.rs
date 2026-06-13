@@ -113,14 +113,14 @@ impl ModelConfig {
         ProviderOptions {
             temperature: Some(self.temperature),
             top_p: self.top_p,
-            // W2 #121: top_k, repeat_penalty removed (not OpenAI-spec)
-            top_k: None,
+            // W2 #121: top_k, repeat_penalty removed (not OpenAI-portable)
             repeat_penalty: None,
             num_predict: None,
             stop_sequences: None,
             think: Some(self.thinking),
             format: None,
             audio_format: None,
+            seed: None,
         }
     }
 }

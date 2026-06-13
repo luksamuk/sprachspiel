@@ -58,7 +58,11 @@ pub trait Tool: Send + Sync {
     /// Call the tool. Returning an `Err` will propagate it to the caller.
     /// To allow the LLM to recover from the error, return the error as a
     /// string via `Ok(error_message)`.
-    fn call(&mut self, parameters: Self::Params) -> impl Future<Output = ToolResult> + Send + Sync;
+    /// W2 #121: bound changed from `Send + Sync` to `Send` because
+    /// `LlmProvider::embed`/`chat` (via async_trait) returns
+    /// `Pin<Box<dyn Future + Send>>` which is not Sync. This is safe
+    /// because the tool future is always awaited on a single thread.
+    fn call(&mut self, parameters: Self::Params) -> impl Future<Output = ToolResult> + Send;
 }
 
 #[cfg(test)]

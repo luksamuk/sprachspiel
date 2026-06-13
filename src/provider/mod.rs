@@ -7,11 +7,16 @@
 //! `OpenAICompatibleProvider`, which talks to Ollama via `/v1/chat/completions`
 //! and also handles OpenAI, llama.cpp, vLLM, LM Studio, llama-swap, etc.
 
-pub mod conversions;
 pub mod factory;
+pub mod ollama_shim;
 pub mod openai_compat;
 pub mod openai_types;
 pub mod types;
+
+/// Re-export of `crate::provider::Ollama`-compatible shim. Production code
+/// that needs a HTTP provider uses `Ollama` (the shim) or `LlmProvider`
+/// (the trait) diretamente. W2 #121: prefer `LlmProvider` for new code.
+pub use ollama_shim::CompatOllama as Ollama;
 
 #[allow(unused_imports)]
 pub use types::{

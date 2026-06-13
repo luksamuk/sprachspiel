@@ -266,7 +266,7 @@ struct ContextCheckResult {
 /// A coordinator for managing chat interactions with event callbacks.
 pub struct CustomCoordinator<C: ChatHistory> {
     model: String,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     options: ModelOptions,
     history: C,
     tool_infos: Vec<CustomToolInfo>,
@@ -299,7 +299,7 @@ pub struct CustomCoordinator<C: ChatHistory> {
 
 impl<C: ChatHistory> CustomCoordinator<C> {
     /// Creates a new `CustomCoordinator` instance.
-    pub fn new(ollama: Ollama, model: String, history: C) -> Self {
+    pub fn new(ollama: crate::provider::Ollama, model: String, history: C) -> Self {
         Self {
             model,
             ollama,
@@ -724,13 +724,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             match chunk_result {
                 Ok(chunk) => {
                     // Stream content tokens
-                    if !chunk.message.content.is_empty() {
-                        on_token(chunk.message.content.clone());
-                        full_content.push_str(&chunk.message.content);
+                    // W2 #121: shim returns ChatMessage (the message itself),
+                    // not ChatMessageResponseChunk. Use the chunk directly.
+                    if !chunk.content.is_empty() {
+                        on_token(chunk.content.clone());
+                        full_content.push_str(&chunk.content);
                     }
 
                     // Stream thinking tokens
-                    if let Some(ref thinking) = chunk.message.thinking {
+                    if let Some(ref thinking) = chunk.thinking {
                         on_thinking(thinking.clone());
                         if let Some(ref mut accumulated) = full_thinking {
                             accumulated.push_str(thinking);
@@ -740,21 +742,20 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     }
 
                     // Collect tool calls from the response
-                    if !chunk.message.tool_calls.is_empty() {
-                        tool_calls = chunk.message.tool_calls.clone();
+                    if !chunk.tool_calls.is_empty() {
+                        tool_calls = chunk.tool_calls.clone();
                     }
 
-                    // Capture metadata from any chunk
-                    if !chunk.model.is_empty() {
-                        model = chunk.model.clone();
-                    }
-                    if !chunk.created_at.is_empty() {
-                        created_at = chunk.created_at.clone();
-                    }
+                    // W2 #121: shim returns ChatMessage per chunk, not
+                    // ChatMessageResponseChunk. Metadata (model, created_at)
+                    // is set on the final response. Use the model from
+                    // the original request.
+                    model = self.model.clone();
+                    created_at = String::new();
 
-                    // On final chunk, capture final_data
-                    if chunk.done {
-                        final_data = chunk.final_data.clone();
+                    // On final chunk (empty content + no tool_calls), mark done
+                    if chunk.content.is_empty() && chunk.tool_calls.is_empty() {
+                        // End of stream
                     }
                 }
                 Err(()) => {

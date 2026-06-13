@@ -6,7 +6,7 @@
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::user_models;
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 
 /// Result of a model switch operation
 pub struct ModelSwitchResult {
@@ -39,7 +39,7 @@ pub struct ModelSwitchResult {
 /// `Ok(ModelSwitchResult)` on success, or error message on failure.
 pub async fn switch_model(
     model_name: &str,
-    ollama: &Ollama,
+    ollama: &crate::provider::Ollama,
     current_capabilities: &ModelCapabilities,
     current_think: bool,
     current_tools: bool,

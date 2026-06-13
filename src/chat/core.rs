@@ -27,6 +27,7 @@
 use std::sync::Arc;
 
 use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::models::ModelOptions;
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
@@ -35,6 +36,7 @@ use crate::context_overflow::{
     is_prompt_too_long_error, max_chunk_tokens, pre_prune_messages, split_into_chunks,
 };
 use crate::facts::prompt::build_facts_section;
+use crate::provider::types::ProviderOptions;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
     build_system_prompt,
@@ -56,6 +58,24 @@ use super::{ContinuationTag, parse_continuation_tag};
 use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// W2 #121: Convert `ProviderOptions` (agnostic) to legacy
+/// `ModelOptions` (ollama-rs). The CustomCoordinator still uses
+/// `ModelOptions` for now; this is removed in the P6.0e.4 commit
+/// that migrates `custom_coordinator.rs` to LlmProvider.
+pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
+    let mut out = ModelOptions::default();
+    if let Some(t) = opts.temperature {
+        out = out.temperature(t);
+    }
+    if let Some(p) = opts.top_p {
+        out = out.top_p(p);
+    }
+    if let Some(n) = opts.num_predict {
+        out = out.num_predict(n);
+    }
+    out
+}
 
 /// Token usage metrics for a chat response
 #[derive(Debug, Clone, Default)]
@@ -139,7 +159,7 @@ pub fn build_session_system_prompt(
 /// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
-    ollama: ollama_rs::Ollama,
+    ollama: crate::provider::Ollama,
     model_config: &ModelConfig,
     model_options: ollama_rs::models::ModelOptions,
     think_enabled: bool,
@@ -395,7 +415,7 @@ pub fn process_chat_response(
 /// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -410,7 +430,9 @@ pub async fn send_message(
     continuation_tag: Option<&ContinuationTag>,
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
-    let model_options = model_config.build_model_options();
+    let provider_options = model_config.build_provider_options();
+    // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+    let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -678,7 +700,7 @@ pub async fn send_message(
 /// delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message_stream(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -695,7 +717,9 @@ pub async fn send_message_stream(
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
-    let model_options = model_config.build_model_options();
+    let provider_options = model_config.build_provider_options();
+    // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+    let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -1015,7 +1039,7 @@ pub async fn send_message_stream(
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &ChatSession,
     _settings: &Settings,
@@ -1210,7 +1234,7 @@ pub async fn compact_conversation(
 /// indirection for recursive async functions (the future size would
 /// otherwise be infinite).
 fn compact_recursive<'a>(
-    ollama: &'a ollama_rs::Ollama,
+    ollama: &'a crate::provider::Ollama,
     model_config: &'a ModelConfig,
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1353,7 +1377,7 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// and the summary is returned, but the TUI shows no intermediate content
 /// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1362,7 +1386,8 @@ async fn compact_with_llm(
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
-    let model_options = model_cfg.build_model_options();
+    let provider_options = model_cfg.build_provider_options();
+    let model_options = convert_provider_to_model(&provider_options);
 
     let mut coordinator =
         CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])

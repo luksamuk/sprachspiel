@@ -952,9 +952,9 @@ impl Settings {
     /// The provider config is now read from `models.toml` under `[provider]`.
     /// This will be removed in #121 (Consumer Migration).
     #[deprecated(note = "Use provider factory (#120). Will be removed in #121.")]
-    pub fn ollama_client(&self) -> ollama_rs::Ollama {
+    pub fn ollama_client(&self) -> crate::provider::Ollama {
         // Fallback: use the default if not configured
-        ollama_rs::Ollama::default()
+        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
     }
 
     /// Create a sample config file if it doesn't exist

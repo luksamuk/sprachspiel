@@ -48,7 +48,7 @@ fn init_chat_database(
 ) -> (
     Option<Arc<crate::db::Database>>,
     Option<Arc<crate::embeddings::EmbeddingClient>>,
-    ollama_rs::Ollama,
+    crate::provider::Ollama,
     Option<String>,
 ) {
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
@@ -728,7 +728,7 @@ pub async fn run_chat_repl(
         .agents_md(agents_md.clone())
         .cli_code(cli_code)
         .cli_soulless(cli_soulless)
-        .ollama(ollama.clone())
+        .ollama(ollama)
         .db(db.clone())
         .embedding_client(embedding_client.clone())
         .settings(settings.clone())

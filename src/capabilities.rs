@@ -15,7 +15,7 @@
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
 
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 use ollama_rs::models::ModelInfo;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.
@@ -38,7 +38,7 @@ pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// This health check with explicit timeout is the minimum-viable fix until
 /// #120 replaces `ollama-rs` with direct reqwest.
 #[allow(dead_code)] // Called from repl.rs startup in this same PR (#116)
-pub async fn check_server_health(ollama: &Ollama) -> crate::AppResult<()> {
+pub async fn check_server_health(ollama: &crate::provider::Ollama) -> crate::AppResult<()> {
     let check = async {
         ollama.list_local_models().await.map_err(|e| {
             format!(
@@ -90,7 +90,7 @@ impl ModelCapabilities {
     ///
     /// # Returns
     /// Detected capabilities for the model
-    pub async fn detect(ollama: &Ollama, model_name: &str) -> crate::AppResult<Self> {
+    pub async fn detect(ollama: &crate::provider::Ollama, model_name: &str) -> crate::AppResult<Self> {
         let info: ModelInfo = ollama
             .show_model_info(model_name.to_string())
             .await
@@ -108,7 +108,7 @@ impl ModelCapabilities {
     ///
     /// Prints a warning on detection failure and returns default capabilities
     /// with completion enabled (safe fallback for most operations).
-    pub async fn detect_or_default(ollama: &Ollama, model_name: &str) -> Self {
+    pub async fn detect_or_default(ollama: &crate::provider::Ollama, model_name: &str) -> Self {
         match Self::detect(ollama, model_name).await {
             Ok(caps) => caps,
             Err(e) => {
