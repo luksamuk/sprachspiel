@@ -197,10 +197,20 @@ impl CompatOllama {
     ///
     /// Policy: assume a permissive default set so that capability-driven
     /// code paths (tool calling, embeddings, etc.) engage. The user is
-    /// responsible for disabling capabilities they do not want in
-    /// `models.toml` (e.g. `thinking = false`, `tools = false`). Errors
-    /// from the model itself (refusal, tool-call failure, missing
-    /// embedding endpoint) are surfaced to the caller as usual.
+    /// responsável for disabling capabilities they do not want in
+    /// `models.toml` (e.g. `thinking = false`, `tools = false`,
+    /// `vision = false`). Errors from the model itself (refusal,
+    /// tool-call failure, missing embedding endpoint) are surfaced
+    /// to the caller as usual.
+    ///
+    /// W2 #121 extension (capability universality): the previous
+    /// default omitted `vision`, which caused `NoVisionCapability`
+    /// errors for vision-capable models (e.g. kimi-k2.6:cloud
+    /// which supports vision in the Ollama cloud fleet). The user
+    /// is now responsible for declaring `vision = false` if the
+    /// model does NOT support vision; otherwise vision capability
+    /// is assumed. This mirrors the `tools` and `thinking`
+    /// behavior.
     pub async fn show_model_info(
         &self,
         _name: String,
@@ -215,6 +225,7 @@ impl CompatOllama {
                 "completion".to_string(),
                 "tools".to_string(),
                 "thinking".to_string(),
+                "vision".to_string(),
             ],
         })
     }
