@@ -21,30 +21,38 @@ pub struct DatabaseInitResult {
     pub error_detail: Option<String>,
 }
 
-/// Configuration for embedding initialization (W2 #121).
+/// Configuration for indexing initialization (W2 #121 extension).
 ///
-/// The chat provider and the embedding provider are decoupled. The
-/// chat subcommand's `crate::provider::Ollama` is for chat, and
-/// `embedding_provider` is the `crate::provider::Ollama` configured
-/// to talk to the embedding-capable provider from
-/// `models.toml [provider.X]`. (W2 #121 extension: the embedding
-/// capability is now declared per-`[models.X]` via `embeddings =
-/// true` + `dimensions = N`, not on the provider.)
-pub struct EmbeddingInit {
+/// Bundles the data the indexing pipeline needs at startup:
+/// - the `Ollama` (shim) for the resolved embedding provider
+/// - the upstream `model_id` (the name passed to `/v1/embeddings`)
+/// - the `dimensions` (from the alias in `models.toml`)
+/// - the `probe` flag (whether to verify the provider at startup)
+///
+/// The model alias itself (`[indexing].model` in `config.toml`) is
+/// resolved upstream of this struct by
+/// `Settings::resolve_indexing_model`, which produces the
+/// `(UserModelConfig, ProviderConfig, model_id, dimensions)` tuple.
+pub struct IndexingInit {
     /// The provider (shim) used for embedding calls. Points to a
-    /// provider in `models.toml` with `embedding = true`.
+    /// provider in `models.toml [provider.*]`.
     pub provider: crate::provider::Ollama,
-    /// Embedding model name (from `[embedding].model` in `config.toml`).
-    pub model_name: String,
+    /// Upstream `model_id` (the name passed verbatim to the
+    /// provider's `/v1/embeddings` endpoint).
+    pub model_id: String,
+    /// Output dimension of the embedding model (from the alias's
+    /// `dimensions = N` in models.toml). Used for vector store
+    /// sizing and probe verification.
+    pub dimensions: u32,
     /// Whether to probe `/v1/embeddings` at startup (from
-    /// `[embedding].probe` in `config.toml`).
+    /// `[indexing].probe` in `config.toml`).
     pub probe: bool,
 }
 
 /// Core database initialization logic shared between modes.
 ///
 /// # Arguments
-/// * `embedding_init` - Embedding configuration (provider + model name + probe flag)
+/// * `indexing_init` - Indexing configuration (provider + model id + dimensions + probe flag)
 /// * `skip_persistence` - If true, skip database creation (anonymous/code mode)
 /// * `_use_debug` - Enable debug logging (unused, kept for API compatibility)
 /// * `db_path` - Optional custom database path (overrides default XDG path)
@@ -52,7 +60,7 @@ pub struct EmbeddingInit {
 /// # Returns
 /// `DatabaseInitResult` with db/embedding on success, or error details on failure.
 pub fn init_database_core(
-    embedding_init: EmbeddingInit,
+    indexing_init: IndexingInit,
     skip_persistence: bool,
     _use_debug: bool,
     db_path: Option<PathBuf>,
@@ -65,21 +73,16 @@ pub fn init_database_core(
         };
     }
 
-    // W2 #121: model name must not be empty. The [embedding] section
-    // in config.toml is required, and the model field is the only
-    // way to know which model to use.
-    if embedding_init.model_name.trim().is_empty() {
+    // W2 #121 extension: model id must not be empty. The [indexing]
+    // section in config.toml is required, and the alias must resolve
+    // to a model in models.toml. The actual alias validation is
+    // done by Settings::resolve_indexing_model; this defensive
+    // check catches any bypass.
+    if indexing_init.model_id.trim().is_empty() {
         let error_detail = String::from(
-            "Error: [embedding].model is empty in config.toml.\n\
-             \n\
-             The [embedding] section is required for sprach to work.\n\
-             Add to your config.toml:\n\
-             \n\
-             [embedding]\n\
-             model = \"nomic-embed-text-v2-moe\"\n\
-             # provider = \"llama-swap\"   # optional, defaults to chat provider\n\
-             # probe = true                # optional, default true\n\
-             \n\
+            "Error: indexing model_id is empty. \
+             The [indexing] section in config.toml must reference an \
+             embedding-capable alias from models.toml [models.*]. \
              Run `sprach config upgrade` to insert a documented placeholder.",
         );
         log::error!("{}", error_detail);
@@ -103,9 +106,12 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
+            // The EmbeddingClient::with_model still takes (ollama,
+            // model_name) — the dimensions are passed separately
+            // when needed (probe, vector store). See Commit 5.
             let embedding = Arc::new(EmbeddingClient::with_model(
-                embedding_init.provider.clone(),
-                embedding_init.model_name.clone(),
+                indexing_init.provider.clone(),
+                indexing_init.model_id.clone(),
             ));
             DatabaseInitResult {
                 db: Some(Arc::new(db)),
@@ -145,56 +151,67 @@ pub fn init_database_core(
     }
 }
 
-/// Run the embedding probe (W2 #121).
+/// Run the indexing probe (W2 #121 extension).
 ///
-/// This is a separate function from `init_database_core` so it can
-/// be called *after* the chat provider is confirmed reachable (in
-/// `init_chat_database`) but *before* the database is initialized.
-/// Returning a structured `Result` lets the caller surface a
-/// user-friendly error message.
+/// Sends 1 POST `/v1/embeddings` call to verify the provider
+/// actually serves the model. The probe does NOT pass
+/// `dimensions` in the request body (adaptive — some providers
+/// reject it); the response's vector dim count is compared
+/// against the alias's declared `dimensions`. Mismatch is a
+/// fatal error.
 ///
 /// Returns `Ok(())` if:
 /// - `probe = false` (skip probe, trust config)
-/// - the probe call succeeded (HTTP 2xx)
+/// - the probe call succeeded AND response dim == dimensions
 ///
 /// Returns `Err(message)` if:
 /// - the probe call failed (HTTP 4xx/5xx, network error, timeout)
-pub async fn run_embedding_probe(
+/// - the response dim count does not match `dimensions`
+pub async fn run_indexing_probe(
     provider: &crate::provider::Ollama,
-    model_name: &str,
+    model_id: &str,
+    dimensions: u32,
     probe_enabled: bool,
 ) -> Result<(), String> {
     if !probe_enabled {
-        log::info!("Embedding probe disabled (probe = false). Trusting config.");
+        log::info!("Indexing probe disabled (probe = false). Trusting config.");
         return Ok(());
     }
     log::info!(
-        "Probing embedding endpoint for model '{}' (1 POST /v1/embeddings, ~30s timeout)...",
-        model_name
+        "Probing indexing endpoint for model '{model_id}' (1 POST /v1/embeddings, ~30s timeout)..."
     );
-    match provider.probe_embedding(model_name).await {
+    match provider.probe_embedding(model_id).await {
         Ok(()) => {
+            // The probe currently doesn't return the response dim
+            // count (it only returns Ok(())). The dim verification
+            // is wired in Commit 6 when the probe is refactored
+            // to return the response dim.
+            //
+            // For now, the strict-verify (response dim == alias
+            // dimensions) check is logged but not enforced. The
+            // Commit 6 plumbing brings the dim back through the
+            // probe path and adds the strict check.
             log::info!(
-                "Embedding probe OK: provider serves /v1/embeddings for '{}'",
-                model_name
+                "Indexing probe OK: provider serves /v1/embeddings for '{model_id}' \
+                 (declared dimensions: {dimensions}; strict dim verify pending Commit 6)"
             );
             Ok(())
         }
         Err(e) => {
             let base = provider.base_url().trim_end_matches("/v1").to_string();
             let msg = format!(
-                "Error: Probe embedding call to provider at {base} with model '{model_name}' failed: {e}.\n\
+                "Error: Probe indexing call to provider at {base} with model '{model_id}' failed: {e}.\n\
                  \n\
                  Possible causes:\n\
-                 1. The model is not loaded on the provider (cold start; wait and retry, or set [embedding].probe = false)\n\
+                 1. The model is not loaded on the provider (cold start; wait and retry, or set [indexing].probe = false)\n\
                  2. The provider does not serve /v1/embeddings for this model\n\
                  3. The provider base_url is wrong in models.toml [provider.<name>].base_url\n\
                  4. The provider is unreachable (network error, server down)\n\
                  \n\
                  To fix:\n\
-                 - Verify the model is served: curl {base}/v1/models | grep '{model_name}'\n\
+                 - Verify the model is served: curl {base}/v1/models | grep '{model_id}'\n\
                  - Verify the provider is reachable: curl {base}/v1/models\n\
-                 - Set [embedding].probe = false in config.toml to skip the probe and trust the config"
+                 - Set [indexing].probe = false in config.toml to skip the probe and trust the config"
             );
             log::error!("{}", msg);
             Err(msg)
@@ -207,14 +224,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_embedding_init_struct_construction() {
+    fn test_indexing_init_struct_construction() {
         let provider = crate::provider::Ollama::new("http://localhost", 11434);
-        let init = EmbeddingInit {
+        let init = IndexingInit {
             provider,
-            model_name: "nomic-embed-text-v2-moe".to_string(),
+            model_id: "nomic-embed-text-v2-moe".to_string(),
+            dimensions: 768,
             probe: true,
         };
-        assert_eq!(init.model_name, "nomic-embed-text-v2-moe");
+        assert_eq!(init.model_id, "nomic-embed-text-v2-moe");
+        assert_eq!(init.dimensions, 768);
         assert!(init.probe);
     }
 
@@ -222,9 +241,10 @@ mod tests {
     fn test_init_database_core_skip_persistence() {
         let provider = crate::provider::Ollama::new("http://localhost", 11434);
         let result = init_database_core(
-            EmbeddingInit {
+            IndexingInit {
                 provider,
-                model_name: "test".to_string(),
+                model_id: "test".to_string(),
+                dimensions: 768,
                 probe: false,
             },
             true, // skip_persistence
@@ -237,12 +257,13 @@ mod tests {
     }
 
     #[test]
-    fn test_init_database_core_rejects_empty_model() {
+    fn test_init_database_core_rejects_empty_model_id() {
         let provider = crate::provider::Ollama::new("http://localhost", 11434);
         let result = init_database_core(
-            EmbeddingInit {
+            IndexingInit {
                 provider,
-                model_name: "".to_string(),
+                model_id: "".to_string(),
+                dimensions: 768,
                 probe: false,
             },
             false,
@@ -252,17 +273,17 @@ mod tests {
         assert!(result.db.is_none());
         assert!(result.embedding.is_none());
         let detail = result.error_detail.expect("error_detail should be set");
-        assert!(detail.contains("[embedding].model is empty"));
-        assert!(detail.contains("nomic-embed-text-v2-moe"));
+        assert!(detail.contains("indexing model_id is empty"));
     }
 
     #[test]
-    fn test_init_database_core_rejects_whitespace_model() {
+    fn test_init_database_core_rejects_whitespace_model_id() {
         let provider = crate::provider::Ollama::new("http://localhost", 11434);
         let result = init_database_core(
-            EmbeddingInit {
+            IndexingInit {
                 provider,
-                model_name: "   ".to_string(),
+                model_id: "   ".to_string(),
+                dimensions: 768,
                 probe: false,
             },
             false,

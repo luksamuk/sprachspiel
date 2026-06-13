@@ -160,11 +160,22 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
+        // W2 #121 extension (TRANSITIONAL): the query subcommand's
+        // wiring is reworked in Commit 6 (along with the chat
+        // subcommand). For now, use a placeholder IndexingInit with
+        // the model's upstream model_id when resolvable, or empty
+        // string if the resolver fails (in which case the init will
+        // bail out below with a clear error).
+        let (model_id, dimensions) = match settings.resolve_indexing_model() {
+            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+            Err(_) => (String::new(), 768),
+        };
         let result = crate::db::init_database_core(
-            crate::db::EmbeddingInit {
+            crate::db::IndexingInit {
                 provider: ollama.clone(),
-                model_name: settings.indexing_model_alias().to_string(),
-                probe: settings.indexing_probe_enabled(),
+                model_id,
+                dimensions,
+                probe: false, // query subcommand skips the probe (one-shot)
             },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
