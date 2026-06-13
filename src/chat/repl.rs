@@ -273,6 +273,25 @@ pub async fn handle_user_message_stream(
                     break;
                 }
 
+                // W2 #121 fix: send LlmEvent::Error DIRECTLY to the event
+                // loop's main channel. The ChannelView::show_error path
+                // goes through a forwarding task that competes with
+                // LlmEvent::Complete for the same channel — under load
+                // (e.g. concurrent tool result draining + completion)
+                // the ShowError message can be silently dropped by
+                // ChannelView's try_send, leaving the user with no
+                // indication that the cycle failed.
+                //
+                // Sending LlmEvent::Error directly bypasses the
+                // forwarding task and the ChannelView, guaranteeing
+                // the error reaches the TUI. The event loop's
+                // LlmEvent::Error handler (event_loop.rs) renders it
+                // with the same ⛔ prefix as ChannelView::show_error.
+                let formatted = format_tool_error(&error_str);
+                let _ = llm_tx
+                    .send(super::llm_event::LlmEvent::Error(formatted))
+                    .await;
+
                 match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
                     OverflowHandleResult::NotOverflow => {
                         view.show_error(&format_tool_error(&error_str));

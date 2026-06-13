@@ -389,14 +389,22 @@ pub fn handle_llm_event(
             *llm_rx = None;
         }
         LlmEvent::Error(error) => {
-            // Strip ANSI codes — the TUI renderer applies its own styling.
-            let clean = strip_ansi_codes(&error);
-            view.app_mut().add_message(ChatMessage::error(clean));
-            view.set_llm_state(LlmState::Idle);
+            // W2 #121 fix: route through view.show_error() so the
+            // user gets the same ⛔ ERROR (interrupts input) prefix
+            // as ChannelView::show_error. Previously we just called
+            // add_message(ChatMessage::error) which used the default
+            // ✗ marker — easy to miss in scrollback.
+            view.show_error(&error);
             // Drain tool messages BEFORE resetting round so they get
             // the correct round_index for the last active round.
             drain_and_add_tool_messages(view, view.app().current_round());
+            log::debug!(
+                "Complete (after error): messages_count={}, current_round={}",
+                view.app().message_count(),
+                view.app().current_round(),
+            );
             view.app_mut().reset_round();
+            view.set_llm_state(LlmState::Idle);
             *cancel_token = None;
             *llm_tx = None;
             *llm_rx = None;
