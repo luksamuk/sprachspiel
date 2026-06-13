@@ -57,23 +57,17 @@ pub enum ModelsMigration {
         /// Original base_url.
         old_url: String,
     },
-    /// Provider is missing the `embedding = true` flag (W2 #121).
+    /// A model is declared as embedding-only (`embeddings = true`)
+    /// but has no `dimensions` field (W2 #121 extension).
     ///
-    /// This is a **warning-only** migration: the upgrader never
-    /// auto-adds the flag. It surfaces the warning so the user can
-    /// decide whether their provider actually serves `/v1/embeddings`.
-    /// If it does, the user can manually add `embedding = true`.
-    ///
-    /// We do NOT query `/v1/models` here — the user has the option
-    /// to check that themselves. The hardcoded list of well-known
-    /// embedding model fragments (see
-    /// `crate::provider::embedding_models`) is the only source of
-    /// "is this a known embedding model" — and per user policy it
-    /// is never exposed in user-facing error messages or hard-fail
-    /// the upgrade.
-    MissingEmbeddingFlag {
-        /// Provider name.
-        name: String,
+    /// This is a **warning-only** migration. The upgrader never
+    /// auto-adds `dimensions` (the user must know what dim count the
+    /// model actually produces). The startup probe will fail-fast
+    /// with a clear error if the alias's dimensions is missing
+    /// when the indexing pipeline is initialized.
+    MissingDimensions {
+        /// Model alias (key under `[models.*]`).
+        alias: String,
     },
 }
 
@@ -127,7 +121,7 @@ pub fn run_models_upgrade(
             ModelsMigration::AddProviderField { .. } => fields_to_add.push(m),
             ModelsMigration::MigrateProviderKind { .. } => kinds_to_migrate.push(m),
             ModelsMigration::AppendV1Suffix { .. } => urls_to_fix.push(m),
-            ModelsMigration::MissingEmbeddingFlag { .. } => embedding_warnings.push(m),
+            ModelsMigration::MissingDimensions { .. } => embedding_warnings.push(m),
         }
     }
 
@@ -203,20 +197,23 @@ pub fn run_models_upgrade(
     }
 
     // W2 #121: warn when a [provider.*] block is missing `embedding = true`.
-    // The provider MIGHT serve /v1/embeddings but we don't auto-add the flag.
-    // We do NOT query /v1/models (the user can do that themselves).
+    // W2 #121 extension: warn when an embedding model is missing
+    // its `dimensions` field. The startup probe will fail-fast if
+    // the alias is referenced from [indexing] and the dimensions
+    // don't match the provider's response; this warning is just
+    // informational.
     if !embedding_warnings.is_empty() {
         output.push(format!(
-            "WARN: {} provider(s) do not declare `embedding = true`:",
+            "WARN: {} embedding model(s) do not declare `dimensions`:",
             embedding_warnings.len()
         ));
         for m in &embedding_warnings {
-            if let ModelsMigration::MissingEmbeddingFlag { name } = m {
+            if let ModelsMigration::MissingDimensions { alias } = m {
                 output.push(format!(
-                    "  - [provider.\"{name}\"]: no `embedding = true` flag. \
-                     If this provider serves /v1/embeddings, \
-                     add `embedding = true` to enable embedding support. \
-                     See `sprach config upgrade` for the [embedding] section."
+                    "  - [models.\"{alias}\"]: no `dimensions = N` field. \
+                     Add `dimensions = <N>` (e.g. 768 for nomic-embed-text-v2-moe, \
+                     256 for Matryoshka-truncated) so [indexing] can use this \
+                     model."
                 ));
             }
         }
@@ -308,25 +305,14 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                     });
                 }
             }
-
-            // 2c. W2 #121: detect if the provider is missing
-            // `embedding = true` while it serves a known embedding
-            // model. This is a WARNING-only migration; we do not
-            // auto-add the flag.
-            if let Some(embedding_item) = provider_table_inner.get("embedding") {
-                if let Some(embedding_bool) = embedding_item.as_bool()
-                    && !embedding_bool
-                {
-                    // User explicitly set `embedding = false`. Don't
-                    // warn — they made an informed decision.
-                }
-            } else {
-                // `embedding` field is absent. Schedule a warning
-                // (we don't add it; we just inform the user).
-                migrations.push(ModelsMigration::MissingEmbeddingFlag {
-                    name: provider_name.to_string(),
-                });
-            }
+            // W2 #121 extension: the old `embedding = true` field
+            // on `[provider.*]` was REMOVED. The capability now
+            // lives on the model (`[models.*].embeddings = true`).
+            // No migration needed; users who had `embedding = true`
+            // on the provider will need to manually move it to the
+            // embedding-capable models. The models loader (Commit
+            // 1) silently ignores the `embedding` field on the
+            // provider, so no parse error.
         }
     }
 
@@ -357,6 +343,22 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                 migrations.push(ModelsMigration::AddProviderField {
                     model_name: model_name.to_string(),
                     provider: default_provider.clone(),
+                });
+            }
+
+            // W2 #121 extension: warn if the model has
+            // `embeddings = true` but no `dimensions`. The startup
+            // probe will fail-fast with a clear error if this
+            // alias is referenced from `[indexing]`. This warning
+            // is informational only; we never auto-add dimensions.
+            let has_embeddings = model_table
+                .get("embeddings")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let has_dimensions = model_table.contains_key("dimensions");
+            if has_embeddings && !has_dimensions {
+                migrations.push(ModelsMigration::MissingDimensions {
+                    alias: model_name.to_string(),
                 });
             }
         }
@@ -428,10 +430,13 @@ fn apply_migrations(
                     provider_inner.insert("base_url", toml_edit::value(normalized));
                 }
             }
-            ModelsMigration::MissingEmbeddingFlag { .. } => {
-                // W2 #121: warning-only. We do NOT auto-add
-                // `embedding = true`. The user must do it manually
-                // after confirming the provider serves /v1/embeddings.
+            ModelsMigration::MissingDimensions { .. } => {
+                // W2 #121 extension: warning-only. We do NOT
+                // auto-add `dimensions` (the user must know what
+                // dim count the model actually produces). The
+                // startup probe will fail-fast with a clear
+                // error if this alias is referenced from
+                // [indexing] and the dimensions don't match.
                 // This arm is a no-op.
             }
         }
@@ -605,72 +610,74 @@ provider = "my-ollama"
     }
 
     #[test]
-    fn test_detect_missing_embedding_flag() {
-        // W2 #121: provider without `embedding = true` flag is
-        // detected as MissingEmbeddingFlag (warning-only).
+    fn test_detect_missing_dimensions() {
+        // W2 #121 extension: a model with `embeddings = true` but
+        // no `dimensions` is detected as MissingDimensions
+        // (warning-only).
         let content = r#"
 [provider."my-llama-swap"]
 kind = "openai"
 base_url = "http://localhost:12434/v1"
 
-[models.test]
-model_id = "test:1b"
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
 provider = "my-llama-swap"
+embeddings = true
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
         assert!(
             migrations
                 .iter()
-                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { name } if name == "my-llama-swap")),
-            "Should detect missing embedding flag, migrations: {:?}",
+                .any(|m| matches!(m, ModelsMigration::MissingDimensions { alias } if alias == "nomic")),
+            "Should detect missing dimensions, migrations: {:?}",
             migrations
         );
     }
 
     #[test]
-    fn test_no_missing_embedding_flag_when_present() {
-        // W2 #121: provider WITH `embedding = true` is fine.
+    fn test_no_missing_dimensions_when_present() {
+        // W2 #121 extension: model WITH `embeddings = true` and
+        // `dimensions = N` is fine.
         let content = r#"
 [provider."my-llama-swap"]
 kind = "openai"
 base_url = "http://localhost:12434/v1"
-embedding = true
 
-[models.test]
-model_id = "test:1b"
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "my-llama-swap"
+embeddings = true
+dimensions = 768
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingDimensions { .. })),
+            "Should NOT report missing dimensions when present, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
+    fn test_no_missing_dimensions_for_chat_models() {
+        // W2 #121 extension: chat models (embeddings = false or
+        // absent) don't need dimensions.
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
 provider = "my-llama-swap"
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
         assert!(
             !migrations
                 .iter()
-                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { .. })),
-            "Should NOT report missing embedding flag when present, migrations: {:?}",
-            migrations
-        );
-    }
-
-    #[test]
-    fn test_no_missing_embedding_flag_when_explicitly_false() {
-        // W2 #121: provider with `embedding = false` is also fine
-        // (user made an informed decision). Only the absence of
-        // the flag triggers the warning.
-        let content = r#"
-[provider."my-llama-swap"]
-kind = "openai"
-base_url = "http://localhost:12434/v1"
-embedding = false
-
-[models.test]
-model_id = "test:1b"
-provider = "my-llama-swap"
-"#;
-        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
-        assert!(
-            !migrations
-                .iter()
-                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { .. })),
-            "Should NOT report missing embedding flag when explicitly false, migrations: {:?}",
+                .any(|m| matches!(m, ModelsMigration::MissingDimensions { .. })),
+            "Should NOT report missing dimensions for chat models, migrations: {:?}",
             migrations
         );
     }
