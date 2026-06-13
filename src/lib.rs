@@ -14,6 +14,7 @@
 pub mod capabilities;
 pub mod chat;
 pub mod clipboard;
+pub mod commands;
 pub mod config;
 pub mod consts;
 pub mod content;

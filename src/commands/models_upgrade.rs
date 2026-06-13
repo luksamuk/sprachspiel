@@ -57,6 +57,24 @@ pub enum ModelsMigration {
         /// Original base_url.
         old_url: String,
     },
+    /// Provider is missing the `embedding = true` flag (W2 #121).
+    ///
+    /// This is a **warning-only** migration: the upgrader never
+    /// auto-adds the flag. It surfaces the warning so the user can
+    /// decide whether their provider actually serves `/v1/embeddings`.
+    /// If it does, the user can manually add `embedding = true`.
+    ///
+    /// We do NOT query `/v1/models` here — the user has the option
+    /// to check that themselves. The hardcoded list of well-known
+    /// embedding model fragments (see
+    /// `crate::provider::embedding_models`) is the only source of
+    /// "is this a known embedding model" — and per user policy it
+    /// is never exposed in user-facing error messages or hard-fail
+    /// the upgrade.
+    MissingEmbeddingFlag {
+        /// Provider name.
+        name: String,
+    },
 }
 
 /// Run the models upgrade. Returns a vector of every line of user-facing
@@ -101,6 +119,7 @@ pub fn run_models_upgrade(
     let mut fields_to_add: Vec<&ModelsMigration> = Vec::new();
     let mut kinds_to_migrate: Vec<&ModelsMigration> = Vec::new();
     let mut urls_to_fix: Vec<&ModelsMigration> = Vec::new();
+    let mut embedding_warnings: Vec<&ModelsMigration> = Vec::new();
 
     for m in &migrations {
         match m {
@@ -108,6 +127,7 @@ pub fn run_models_upgrade(
             ModelsMigration::AddProviderField { .. } => fields_to_add.push(m),
             ModelsMigration::MigrateProviderKind { .. } => kinds_to_migrate.push(m),
             ModelsMigration::AppendV1Suffix { .. } => urls_to_fix.push(m),
+            ModelsMigration::MissingEmbeddingFlag { .. } => embedding_warnings.push(m),
         }
     }
 
@@ -174,6 +194,27 @@ pub fn run_models_upgrade(
             {
                 output.push(format!(
                     "  - [models.\"{model_name}\"] -> provider = \"{provider}\""
+                ));
+            }
+        }
+        output.push(String::new());
+    }
+
+    // W2 #121: warn when a [provider.*] block is missing `embedding = true`.
+    // The provider MIGHT serve /v1/embeddings but we don't auto-add the flag.
+    // We do NOT query /v1/models (the user can do that themselves).
+    if !embedding_warnings.is_empty() {
+        output.push(format!(
+            "WARN: {} provider(s) do not declare `embedding = true`:",
+            embedding_warnings.len()
+        ));
+        for m in &embedding_warnings {
+            if let ModelsMigration::MissingEmbeddingFlag { name } = m {
+                output.push(format!(
+                    "  - [provider.\"{name}\"]: no `embedding = true` flag. \
+                     If this provider serves /v1/embeddings, \
+                     add `embedding = true` to enable embedding support. \
+                     See `sprach config upgrade` for the [embedding] section."
                 ));
             }
         }
@@ -264,6 +305,25 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                         old_url: trimmed.to_string(),
                     });
                 }
+            }
+
+            // 2c. W2 #121: detect if the provider is missing
+            // `embedding = true` while it serves a known embedding
+            // model. This is a WARNING-only migration; we do not
+            // auto-add the flag.
+            if let Some(embedding_item) = provider_table_inner.get("embedding") {
+                if let Some(embedding_bool) = embedding_item.as_bool()
+                    && !embedding_bool
+                {
+                    // User explicitly set `embedding = false`. Don't
+                    // warn — they made an informed decision.
+                }
+            } else {
+                // `embedding` field is absent. Schedule a warning
+                // (we don't add it; we just inform the user).
+                migrations.push(ModelsMigration::MissingEmbeddingFlag {
+                    name: provider_name.to_string(),
+                });
             }
         }
     }
@@ -365,6 +425,12 @@ fn apply_migrations(
                     }
                     provider_inner.insert("base_url", toml_edit::value(normalized));
                 }
+            }
+            ModelsMigration::MissingEmbeddingFlag { .. } => {
+                // W2 #121: warning-only. We do NOT auto-add
+                // `embedding = true`. The user must do it manually
+                // after confirming the provider serves /v1/embeddings.
+                // This arm is a no-op.
             }
         }
     }
@@ -487,6 +553,7 @@ provider = "my-ollama"
 [provider."my-ollama"]
 kind = "openai"
 base_url = "http://localhost:11434/v1"
+embedding = true
 
 [models.test]
 model_id = "test:1b"
@@ -530,6 +597,77 @@ provider = "my-ollama"
                 .iter()
                 .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { .. })),
             "Should detect missing /v1 suffix even without scheme"
+        );
+    }
+
+    #[test]
+    fn test_detect_missing_embedding_flag() {
+        // W2 #121: provider without `embedding = true` flag is
+        // detected as MissingEmbeddingFlag (warning-only).
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models.test]
+model_id = "test:1b"
+provider = "my-llama-swap"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { name } if name == "my-llama-swap")),
+            "Should detect missing embedding flag, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
+    fn test_no_missing_embedding_flag_when_present() {
+        // W2 #121: provider WITH `embedding = true` is fine.
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+embedding = true
+
+[models.test]
+model_id = "test:1b"
+provider = "my-llama-swap"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { .. })),
+            "Should NOT report missing embedding flag when present, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
+    fn test_no_missing_embedding_flag_when_explicitly_false() {
+        // W2 #121: provider with `embedding = false` is also fine
+        // (user made an informed decision). Only the absence of
+        // the flag triggers the warning.
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+embedding = false
+
+[models.test]
+model_id = "test:1b"
+provider = "my-llama-swap"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingEmbeddingFlag { .. })),
+            "Should NOT report missing embedding flag when explicitly false, migrations: {:?}",
+            migrations
         );
     }
 

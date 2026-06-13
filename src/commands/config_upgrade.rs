@@ -947,6 +947,42 @@ blacklist = []
     }
 
     #[test]
+    fn test_detect_missing_embedding_section() {
+        // W2 #121: A config without [embedding] should report all
+        // embedding.* fields, since the section is required.
+        let path = write_tmp_config("no_embedding.toml", minimal_config());
+        let upgrader = ConfigUpgrader::new(path).unwrap();
+        let missing = upgrader.detect_missing();
+        let paths: Vec<&str> = missing.iter().map(|m| m.path.as_str()).collect();
+
+        assert!(
+            paths.contains(&"embedding.model"),
+            "embedding.model should be detected as missing, paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_detect_no_missing_when_embedding_present() {
+        // W2 #121: A config WITH [embedding] section is considered
+        // up-to-date for the embedding fields.
+        let cfg = r#"
+[embedding]
+model = "nomic-embed-text-v2-moe"
+"#;
+        let path = write_tmp_config("with_embedding.toml", cfg);
+        let upgrader = ConfigUpgrader::new(path).unwrap();
+        let missing = upgrader.detect_missing();
+        let paths: Vec<&str> = missing.iter().map(|m| m.path.as_str()).collect();
+
+        assert!(
+            !paths.contains(&"embedding.model"),
+            "embedding.model should NOT be reported as missing when [embedding] is present, paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
     fn test_detect_missing_field_in_existing_section() {
         // [facts] exists but only auto_extract is set; max_facts,
         // auto_extract_notify, and semantic_threshold should be reported.
