@@ -4054,18 +4054,18 @@ pub trait LlmProvider: Send + Sync {
 
 #### OllamaProvider (reqwest direct) — #120 [M1]
 
-**Status:** 🔄 IN PROGRESS (PR #204)  
+**Status:** ✅ COMPLETED (PR #206 — merged `d78831b` to `master`)  
 **Depends on:** #119 (uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client + **retry acceptance criteria from #116 manual test (Scenarios 2, 3, 4) MUST pass**
 
 **Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`. Introduces **named providers** in `models.toml` (breaking change: `ollama_host`/`ollama_port` removed from `config.toml`).
 
-**Files to create/modify:**
+**Files created/modified:**
 
 | File | Content |
 |------|---------|
-| `src/user_models.rs` | **MODIFY** — Parse `[provider."name"]` and `[models."name"]` with `provider = "name"`; remove `ollama_host`/`ollama_port` fallback |
+| `src/user_models.rs` | **MODIFY** — Parse `[provider."name"]` and `[models."name"]` with `provider = "name"`; remove `ollama_host`/`ollama_port` fallback; new `require_providers()` helper (E1); pre-parse heuristic for commented-out `[provider.*]` (E1) |
 | `src/settings.rs` | **MODIFY** — Remove `ollama_host`/`ollama_port` from `ModelSettings` and `SAMPLE_CONFIG` |
 | `src/provider/factory.rs` | **NEW** — `build_provider(name, all_providers) -> Result<Box<dyn LlmProvider>>`; `ProviderKind::Ollama` | `OpenAICompatible` (unimplemented!) |
 | `src/provider/ollama.rs` | **NEW** — `OllamaProvider` struct, `LlmProvider` impl |
@@ -4207,6 +4207,22 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 | E1 | **Provider bail-out was unreachable in `repl_tui.rs:82`** | The earlier `resolve_model_config` call (in `repl.rs:638`, `query/context.rs:119`, `summarize/processor.rs:36`, `main.rs::handle_vision`, `model_switch.rs:56`) used `process::exit(1)` with a generic "Unknown model" message when `models.toml` was missing the `[provider]` block, masking the actual config error. **Resolution:** new `user_models::require_providers()` helper called at every entry point; pre-parse heuristic in `load_user_models_internal` detects the common user error (commented-out `[provider.*]`) before TOML parse fails with the generic `missing field 'provider'` message. Both fixes preserve `cargo clippy --all-features` clean. |
 
 **Merge criterion update:** PR #206 is mergeable when all A1-A19 are resolved and clippy passes. B1-B4 are documented as limitations to be resolved in #121; C1 in #122. D1-D5 are pre-existing feature-gating bugs to be fixed in a W2 close-out PR (not blocking). E1 is the bail-out fix from this round.
+
+**Implementation summary (PR #206, commit `d78831b`):**
+
+- New `OllamaProvider` in `src/provider/ollama.rs` (native reqwest, ~707 lines)
+- New `LlmProvider` trait + agnostic types in `src/provider/{mod.rs,types.rs,conversions.rs}` (foundation for #122)
+- New `factory::build_provider()` for instantiating providers from config
+- New NDJSON streaming with idle timeout (60s default) and structured log warnings
+- Retry with exponential backoff (200ms→16s) + 20% jitter, division-by-zero guards
+- Health check at startup, file write sandbox, embed() with warn-on-empty fallback
+- `models upgrade` subcommand (additive, never destructive)
+- Breaking config change: `ollama_host`/`ollama_port` removed from `config.toml`; users migrate to `models.toml` `[provider]` section via `sprach models upgrade`
+- `cargo clippy --all-features`: 0 warnings
+- 2952 tests pass (1461 lib + 1488 bin + 3 integration `provider_factory.rs`)
+- W2 chain progress: #116 ✅ → #118 ✅ → #119 ✅ → **#120 ✅** → #121 → #122 → #123
+
+**Next in W2 chain:** #121 (Consumer Migration — migrate all business modules from `ollama_rs` to `LlmProvider`), #122 (OpenAI-Compatible Provider), #123 (Remove ollama-rs).
 
 ---
 
