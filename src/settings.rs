@@ -72,6 +72,22 @@ pub struct Settings {
     /// Thinking Trace Transform configuration
     #[serde(default)]
     pub thinking_trace: ThinkingTraceSettings,
+    /// Embedding configuration (W2 #121)
+    ///
+    /// The `[embedding]` section is **required** in production. There
+    /// is no built-in default for `model` — sprach refuses to start
+    /// (chat, query) if this section is missing or its `model` field
+    /// is empty. The hardcoded embedding model that sprach used
+    /// historically (`nomic-embed-text-v2-moe`) is no longer assumed;
+    /// the user must declare it.
+    ///
+    /// `#[serde(default)]` is used so the Settings type is still
+    /// constructable for tests; the real validation happens in
+    /// `init_chat_database` (which bails out on empty `model`).
+    ///
+    /// See [EmbeddingSettings] for the full schema.
+    #[serde(default)]
+    pub embedding: EmbeddingSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -359,6 +375,84 @@ pub struct ThinkingTraceSettings {
     /// When true, thinking traces are included in retrieval context for reasoning tasks.
     #[serde(default)]
     pub enabled: bool,
+}
+
+/// Embedding configuration (W2 #121).
+///
+/// The `[embedding]` section in `config.toml` is **required**. It
+/// declares the model name used to generate vector embeddings, and
+/// optionally a separate provider to use for embedding calls (which
+/// may differ from the chat provider).
+///
+/// # Schema
+///
+/// ```toml
+/// [embedding]
+/// model = "nomic-embed-text-v2-moe"   # required
+/// # provider = "llama-swap"          # optional; defaults to chat provider
+/// # probe = true                     # optional; default true
+/// ```
+///
+/// # Provider resolution
+///
+/// 1. If `[embedding].provider` is set, the named provider from
+///    `models.toml [provider.*]` is used.
+/// 2. Otherwise, the chat model's provider is used (the provider of
+///    the active chat model).
+/// 3. The resolved provider MUST have `embedding = true` in
+///    `models.toml`. If not, sprach fails to start with a clear
+///    error message.
+///
+/// # Probe (opt-OUT, default ON)
+///
+/// When `probe = true` (default), sprach makes one POST
+/// `/v1/embeddings` call with a short test text at startup to verify
+/// the provider actually serves the embedding model. If the probe
+/// fails (4xx, network error, timeout), sprach fails to start with a
+/// clear error message.
+///
+/// Set `probe = false` to skip the probe and trust the configuration
+/// strictly. Useful for cold-start scenarios where the model takes
+/// 30-60s to load and the probe would time out before the model is
+/// ready. Without the probe, a misconfigured provider is detected
+/// only at first embedding call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingSettings {
+    /// Embedding model name. Required.
+    ///
+    /// This is the model name passed verbatim to the provider's
+    /// `/v1/embeddings` endpoint. It is NOT a map key from
+    /// `models.toml [models.*]`; the model is expected to be served
+    /// by the resolved embedding provider at that name.
+    pub model: String,
+
+    /// Optional override: provider name (from `models.toml
+    /// [provider.*]`) to use for embedding calls. If `None`, the
+    /// chat model's provider is used.
+    ///
+    /// The provider MUST have `embedding = true` declared in
+    /// `models.toml`. See [crate::user_models::ProviderConfig::embedding].
+    #[serde(default)]
+    pub provider: Option<String>,
+
+    /// Whether to make a probe `/v1/embeddings` call at startup.
+    /// Default: `true`. Set to `false` for cold-start scenarios
+    /// where the model takes time to load.
+    #[serde(default = "default_true")]
+    pub probe: bool,
+}
+
+impl Default for EmbeddingSettings {
+    /// Default for tests and `Settings::default()`: a sensible model
+    /// name. Real configuration MUST come from `config.toml`'s
+    /// `[embedding]` section — sprach refuses to start without it.
+    fn default() -> Self {
+        Self {
+            model: "nomic-embed-text-v2-moe".to_string(),
+            provider: None,
+            probe: true,
+        }
+    }
 }
 
 /// The complete sample configuration exposed as a static string.
@@ -713,6 +807,44 @@ skin = "dark"
 # When true, assistant messages with thinking content include their reasoning
 # traces in the ChatMessage sent to the LLM, improving reasoning performance.
 # enabled = false
+
+# =============================================================================
+# EMBEDDING CONFIGURATION (W2 #121 — REQUIRED)
+# =============================================================================
+# Configures the embedding model and provider used to generate vector
+# embeddings for the SQLite-vec store (used by /search and the hybrid
+# RRF retrieval pipeline). This section is REQUIRED — sprach refuses
+# to start if it is missing or `model` is empty.
+#
+# The embedding model and provider are decoupled from the chat model:
+# you can use llama-swap for chat and ollama local for embeddings, etc.
+#
+# The provider MUST have `embedding = true` declared on the
+# corresponding [provider.X] block in models.toml. If not, sprach
+# fails to start with a clear error message.
+
+[embedding]
+
+# Embedding model name. Required.
+# This is the name passed to the provider's /v1/embeddings endpoint.
+# Default nomic-embed-text-v2-moe has 768d output (Matryoshka-truncated
+# to 256d internally by sprach for storage).
+# Note: this is NOT a map key from models.toml [models.*]; it is the
+# exact name served by the embedding provider.
+model = "nomic-embed-text-v2-moe"
+
+# Optional: provider from models.toml [provider.*] to use for embeddings.
+# If not specified, the chat model's provider is used.
+# The named provider MUST have `embedding = true` in models.toml.
+# provider = "llama-swap"
+
+# Whether to probe the embedding endpoint at startup.
+# When true (default), sprach makes 1 POST /v1/embeddings call to
+# verify the provider actually serves the model. Failure → fatal error.
+# Set to false for cold-start scenarios where the model takes 30-60s
+# to load (the probe uses a 30s timeout).
+# Default: true
+# probe = true
 "#;
 
 fn default_led_port() -> u16 {
@@ -1314,5 +1446,57 @@ enabled = true
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
         assert!(settings.thinking_trace.enabled);
+    }
+
+    #[test]
+    fn test_embedding_settings_default_via_settings_default() {
+        // Settings::default() yields a default EmbeddingSettings to
+        // keep tests working; the real validation of the [embedding]
+        // TOML section happens in init_chat_database, not in serde.
+        let settings = Settings::default();
+        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
+        assert!(settings.embedding.probe);
+        assert!(settings.embedding.provider.is_none());
+    }
+
+    #[test]
+    fn test_embedding_settings_parse_minimal() {
+        let sample = r#"
+[embedding]
+model = "nomic-embed-text-v2-moe"
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
+        assert!(settings.embedding.probe);
+        assert!(settings.embedding.provider.is_none());
+    }
+
+    #[test]
+    fn test_embedding_settings_parse_full() {
+        let sample = r#"
+[embedding]
+model = "bge-small-en-v1.5"
+provider = "llama-swap"
+probe = false
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.embedding.model, "bge-small-en-v1.5");
+        assert_eq!(settings.embedding.provider, Some("llama-swap".to_string()));
+        assert!(!settings.embedding.probe);
+    }
+
+    #[test]
+    fn test_embedding_settings_omitted_uses_default() {
+        // W2 #121: serde(default) makes the [embedding] section
+        // optional at the TOML level. The real check that
+        // settings.embedding.model is non-empty happens in
+        // init_chat_database, where sprach bails out with a clear
+        // error.
+        let sample = r#"
+[model]
+default = "qwen3.5:4b"
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
     }
 }
