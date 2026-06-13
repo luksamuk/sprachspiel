@@ -17,6 +17,8 @@
 //! extensions (`top_k`, `repeat_penalty`, `num_ctx` etc.) are NOT sent
 //! — they are not portable across providers (see ollama/ollama#11325).
 
+#![allow(dead_code)] // Some fields are reserved for future use
+
 use serde::{Deserialize, Serialize};
 
 /// OpenAI chat message (request/response).

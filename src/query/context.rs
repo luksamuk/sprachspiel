@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use crate::provider::Ollama;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;

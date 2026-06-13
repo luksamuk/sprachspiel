@@ -13,7 +13,6 @@ use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::models::ModelOptions;
 
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
-use crate::provider::Ollama;
 
 use std::path::PathBuf;
 

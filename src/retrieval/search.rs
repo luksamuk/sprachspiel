@@ -10,7 +10,6 @@
 //! for rendering via `ChatView`. This separation keeps search logic independent of rendering.
 
 use chrono::{DateTime, Utc};
-use crate::provider::Ollama;
 
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;

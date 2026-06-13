@@ -6,7 +6,6 @@
 #![expect(clippy::print_stdout)] // CLI subcommand output
 #![expect(clippy::print_stderr)] // CLI subcommand output
 use base64::Engine;
-use crate::provider::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;

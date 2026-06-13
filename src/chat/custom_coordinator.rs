@@ -14,7 +14,6 @@ use std::{collections::HashMap, future::Future, pin::Pin};
 
 use ollama_rs::re_exports::serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ollama_rs::{
-    Ollama,
     generation::{
         chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
         parameters::ThinkType,
@@ -707,7 +706,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Accumulate the full response while streaming
         let mut full_content = String::new();
         let mut full_thinking: Option<String> = None;
-        let mut final_data = None;
+        let final_data = None;
         let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
         let mut model = String::new();
         let mut created_at = String::new();

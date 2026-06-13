@@ -6,7 +6,6 @@
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::user_models;
-use crate::provider::Ollama;
 
 /// Result of a model switch operation
 pub struct ModelSwitchResult {

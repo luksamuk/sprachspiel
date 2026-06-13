@@ -32,6 +32,8 @@
 //! W2 #121 item B4: this wires up the previously-unused
 //! `retry_after: Option<Duration>` field on `RateLimit`.
 
+#![allow(dead_code)] // Many methods used by shim that will be wired in P6.0e.4
+
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
@@ -45,6 +47,15 @@ use super::openai_types::{
     ModelsResponse, OpenAIMessage, OpenAITool, OpenAIToolCall, OpenAIToolCallFunction,
     OpenAIToolFunction, StreamOptions, Usage as OpenAIUsage,
 };
+
+/// Tuple of OpenAI request fields derived from `ProviderOptions`.
+type ConvertedOptions = (
+    Option<f32>,         // temperature
+    Option<f32>,         // top_p
+    Option<u32>,         // max_tokens (from num_predict)
+    Option<Vec<String>>, // stop_sequences
+    Option<u32>,         // seed
+);
 use super::types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmToolCall, ProviderCapabilities,
     ProviderError, ProviderOptions, ToolInfo, ToolType,
@@ -130,10 +141,10 @@ impl OpenAICompatibleProvider {
     /// Build request headers (including auth if API key is set).
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        if let Some(ref key) = self.api_key {
-            if let Ok(value) = HeaderValue::from_str(&format!("Bearer {key}")) {
-                headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
+        if let Some(ref key) = self.api_key
+            && let Ok(value) = HeaderValue::from_str(&format!("Bearer {key}"))
+        {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
         }
         headers
     }
@@ -213,13 +224,14 @@ impl OpenAICompatibleProvider {
     }
 
     /// Convert `ProviderOptions` to OpenAI request fields.
-    fn convert_options(options: &ProviderOptions) -> (Option<f32>, Option<f32>, Option<u32>, Option<Vec<String>>, Option<u32>) {
+    #[allow(clippy::type_complexity)]
+    fn convert_options(options: &ProviderOptions) -> ConvertedOptions {
         (
             options.temperature,
             options.top_p,
             options.num_predict.map(|n| n.max(0) as u32),
             options.stop_sequences.clone(),
-            options.seed.map(|s| s as u32),
+            options.seed,
         )
     }
 
@@ -283,6 +295,7 @@ impl OpenAICompatibleProvider {
     }
 
     /// Classify an HTTP response into a `ProviderError`.
+    #[allow(dead_code)]
     fn classify_response(&self, response: reqwest::Response) -> ProviderError {
         let status = response.status();
         let headers = response.headers().clone();
@@ -297,11 +310,6 @@ impl OpenAICompatibleProvider {
             ProviderError::RateLimit {
                 message: "HTTP 429 Too Many Requests".to_string(),
                 retry_after,
-            }
-        } else if status.is_server_error() {
-            ProviderError::Api {
-                status: status.as_u16(),
-                body: format!("HTTP {}", status.as_u16()),
             }
         } else {
             ProviderError::Api {
@@ -338,7 +346,7 @@ impl OpenAICompatibleProvider {
     /// Send a chat completion (non-streaming) with retry.
     async fn chat_with_retry(
         &self,
-        model: &str,
+        _model: &str,
         request: ChatRequest,
     ) -> Result<LlmResponse, ProviderError> {
         let url = self.url("/chat/completions");

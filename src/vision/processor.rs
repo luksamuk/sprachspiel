@@ -4,7 +4,6 @@
 //! Uses /api/generate endpoint with images array for multi-image support.
 
 #![expect(clippy::print_stdout)] // CLI subcommand output
-use crate::provider::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;

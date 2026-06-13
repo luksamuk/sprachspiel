@@ -9,7 +9,6 @@ mod executor;
 
 use std::sync::Arc;
 
-use crate::provider::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 

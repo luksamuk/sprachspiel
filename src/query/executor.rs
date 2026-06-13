@@ -11,7 +11,6 @@
 use std::sync::Arc;
 
 use indicatif::ProgressBar;
-use crate::provider::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};

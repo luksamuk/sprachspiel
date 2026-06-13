@@ -8,8 +8,6 @@ use std::time::Duration;
 
 use tokio::sync::{OnceCell, Semaphore};
 
-use crate::provider::types::{ProviderError, ProviderOptions};
-use crate::provider::LlmProvider;
 
 use super::truncate::{
     FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,

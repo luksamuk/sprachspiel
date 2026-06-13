@@ -23,8 +23,6 @@
 //! Invalid TOML is reported with the parser error and the process aborts
 //! — the command never overwrites a file it cannot parse.
 
-#![expect(clippy::print_stdout)]
-#![expect(clippy::print_stderr)]
 use std::path::{Path, PathBuf};
 
 /// Default error type for the models upgrade module.
@@ -321,13 +319,13 @@ fn apply_migrations(
         match migration {
             ModelsMigration::AddProvider { name, block } => {
                 ensure_provider_table(&mut doc);
-                if let Some(provider_table) = doc["provider"].as_table_mut() {
-                    if let Ok(block_doc) = block.parse::<toml_edit::DocumentMut>() {
-                        for (key, value) in block_doc.iter() {
-                            provider_table.insert(key, value.clone());
-                        }
-                        let _ = name;
+                if let Some(provider_table) = doc["provider"].as_table_mut()
+                    && let Ok(block_doc) = block.parse::<toml_edit::DocumentMut>()
+                {
+                    for (key, value) in block_doc.iter() {
+                        provider_table.insert(key, value.clone());
                     }
+                    let _ = name;
                 }
             }
             ModelsMigration::AddProviderField {

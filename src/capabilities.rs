@@ -6,17 +6,18 @@
 //! # W2 Wave Context (Issue #116)
 //!
 //! `check_server_health()` is the entry point for the startup health check.
-//! It calls `ollama.list_local_models()` (which hits `/api/tags`) with a
-//! 3-second timeout. This is a **pre-check** that catches "Ollama is not
-//! running" before the heavier `show_model_info()` call would hang
-//! indefinitely. When #120 (OllamaProvider reqwest direct) lands, this
-//! will be replaced by a `ProviderError`-aware health check.
+//! It calls `/api/tags` via the Ollama shim with a 3-second timeout.
+//! This is a **pre-check** that catches "Ollama is not running" before
+//! the heavier `show_model_info()` call would hang indefinitely. When
+//! #120 (OllamaProvider reqwest direct) lands, this was replaced by
+//! `ProviderError`-aware health check; #121 consolidates everything
+//! via OpenAICompatibleProvider with /v1/models.
 
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
 
 use crate::provider::Ollama;
-use ollama_rs::models::ModelInfo;
+use crate::provider::ollama_shim::ModelInfo;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.
 ///

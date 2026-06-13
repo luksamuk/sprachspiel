@@ -159,7 +159,7 @@ fn build_tool_impl(
         .iter()
         .map(|field| &field.name)
         .collect();
-    let function_params_struct_field_names2 = function_params_struct_field_names.clone();
+    let _function_params_struct_field_names2 = function_params_struct_field_names.clone();
 
     // W2 #121: Emit ONE trait impl: our own `crate::tools::Tool`. The
     // ollama-rs `Tool` impl was previously dual-emitted but is removed

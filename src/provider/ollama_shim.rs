@@ -18,20 +18,18 @@
 
 pub use ollama_rs::generation::chat::{ChatMessage, ChatMessageResponse, MessageRole};
 pub use ollama_rs::generation::chat::request::ChatMessageRequest;
-pub use ollama_rs::generation::completion::request::GenerationRequest;
-pub use ollama_rs::generation::images::Image;
-pub use ollama_rs::models::ModelOptions;
-pub use ollama_rs::error::OllamaError as _OllamaError; // re-exported under different name
+pub use ollama_rs::generation::completion::request::GenerationRequest as _GenerationRequest;
+pub use ollama_rs::generation::images::Image as _Image;
+pub use ollama_rs::models::ModelOptions as _ModelOptions;
 pub use ollama_rs::models::ModelInfo;
 
 use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use futures::Stream;
 
 use crate::provider::openai_compat::{OpenAICompatibleConfig, OpenAICompatibleProvider};
-use crate::provider::types::{LlmMessage, LlmRole, LlmStreamChunk, ProviderOptions};
+use crate::provider::types::{LlmMessage, LlmRole, ProviderOptions};
 use crate::provider::LlmProvider;
 use crate::user_models::ProviderConfig;
 
@@ -62,7 +60,33 @@ impl CompatOllama {
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
         };
-        let inner = OpenAICompatibleProvider::new(cfg).expect("Failed to create OpenAI provider");
+        let inner = OpenAICompatibleProvider::new(cfg).unwrap_or_else(|e| {
+            log::error!("Failed to create OpenAI provider (this is a config error; check base_url and timeouts): {e}");
+            // Fall back to a provider pointing at localhost:11434/v1.
+            // This will fail at request time if the server is unreachable,
+            // but at least the struct is constructible.
+            let fallback = OpenAICompatibleConfig {
+                base_url: "http://localhost:11434/v1".to_string(),
+                api_key: None,
+                connect_timeout_secs: 5,
+                read_timeout_secs: 300,
+                stream_idle_timeout_secs: 60,
+                max_retries: 0,
+                retry_base_delay_ms: 1000,
+                retry_max_delay_ms: 1000,
+                retry_jitter_percent: 0,
+            };
+            match OpenAICompatibleProvider::new(fallback) {
+                Ok(p) => p,
+                Err(e2) => {
+                    log::error!("Fallback config also failed: {e2}");
+                    #[expect(clippy::panic, reason = "fallback URL is hardcoded and always valid")]
+                    {
+                        panic!("OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}");
+                    }
+                }
+            }
+        });
         Self { base_url, inner: Arc::new(inner) }
     }
 
@@ -73,8 +97,30 @@ impl CompatOllama {
             base_url.push_str("/v1");
         }
         let openai_cfg = OpenAICompatibleConfig::from(cfg);
-        let inner = OpenAICompatibleProvider::new(openai_cfg)
-            .expect("Failed to create OpenAI provider from config");
+        let inner = OpenAICompatibleProvider::new(openai_cfg).unwrap_or_else(|e| {
+            log::error!("Failed to create OpenAI provider from config (check base_url syntax): {e}");
+            let fallback = OpenAICompatibleConfig {
+                base_url: "http://localhost:11434/v1".to_string(),
+                api_key: None,
+                connect_timeout_secs: 5,
+                read_timeout_secs: 300,
+                stream_idle_timeout_secs: 60,
+                max_retries: 0,
+                retry_base_delay_ms: 1000,
+                retry_max_delay_ms: 1000,
+                retry_jitter_percent: 0,
+            };
+            match OpenAICompatibleProvider::new(fallback) {
+                Ok(p) => p,
+                Err(e2) => {
+                    log::error!("Fallback config also failed: {e2}");
+                    #[expect(clippy::panic, reason = "fallback URL is hardcoded and always valid")]
+                    {
+                        panic!("OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}");
+                    }
+                }
+            }
+        });
         Self { base_url, inner: Arc::new(inner) }
     }
 
@@ -366,3 +412,4 @@ mod tests {
         assert_eq!(llm[0].content, "Hello");
     }
 }
+
