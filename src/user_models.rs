@@ -5,10 +5,9 @@
 //!
 //! Schema (W2 #121 — OpenAI-First):
 //! ```toml
-//! [provider."my-ollama"]
+//! [provider."my-llama-swap"]
 //! kind = "openai"             # default; "ollama" is deprecated alias
-//! base_url = "http://localhost:11434/v1"   # /v1 suffix REQUIRED
-//! embedding = true            # opt-in: declare this provider as embedding-capable
+//! base_url = "http://localhost:12434/v1"   # /v1 suffix REQUIRED
 //! connect_timeout_secs = 5
 //! read_timeout_secs = 300
 //! stream_idle_timeout_secs = 60
@@ -17,15 +16,23 @@
 //! retry_max_delay_ms = 16000
 //! retry_jitter_percent = 20
 //!
-//! [models.glm-5.1]
-//! model_id = "glm-5.1:cloud"
-//! num_ctx = 202757            # optional; auto-detected if absent
-//! temperature = 1.0
+//! # Chat model (default: embeddings = false)
+//! [models."gemma4-e2b"]
+//! model_id = "gemma4-e2b:think"
+//! num_ctx = 32768             # optional; auto-detected if absent
+//! temperature = 0.7
 //! top_p = 0.95
 //! seed = 42                   # optional, cross-provider
 //! thinking = true
 //! tools = true
-//! provider = "my-ollama"
+//! provider = "my-llama-swap"
+//!
+//! # Embedding model (opt-in via embeddings = true)
+//! [models."nomic"]
+//! model_id = "nomic-embed-text-v2-moe"
+//! provider = "my-llama-swap"
+//! embeddings = true           # opt-in; reserves the model for /v1/embeddings only
+//! dimensions = 768            # REQUIRED when embeddings = true
 //! ```
 
 #![expect(clippy::print_stderr)] // CLI model management output
@@ -89,20 +96,6 @@ pub struct ProviderConfig {
     #[serde(default = "default_retry_jitter_percent")]
     pub retry_jitter_percent: u8,
 
-    /// Whether this provider is declared as embedding-capable.
-    ///
-    /// W2 #121: opt-in flag. The user must explicitly set
-    /// `embedding = true` on a provider in `models.toml` for it to be
-    /// used for embedding generation. There is no automatic detection
-    /// — the sprach trusts the user's declaration strictly. A
-    /// `[embedding]` section in `config.toml` references one of these
-    /// providers by name.
-    ///
-    /// Default: `false` (most LLM chat providers do not serve
-    /// `/v1/embeddings`).
-    #[serde(default)]
-    pub embedding: bool,
-
     // Future: OpenAI-compatible specific
     pub api_key_env: Option<String>,
 }
@@ -160,6 +153,13 @@ impl ProviderConfig {
 ///   (not supported by OpenAI API; ollama/ollama#11325 closed as "not planned")
 /// - Added: `seed` (cross-provider, optional)
 /// - `num_ctx` is now optional (auto-detected via `/v1/models` and `/api/show`)
+///
+/// W2 #121 (extension): Embedding model opt-in:
+/// - Added: `embeddings: bool` (default false) — declares this model
+///   as embedding-capable. When true, `dimensions` MUST also be set.
+/// - Added: `dimensions: Option<u32>` — required when `embeddings = true`.
+///   Specifies the output dimension of the embedding model (e.g. 768
+///   for nomic-embed-text-v2-moe full, 256 for Matryoshka-truncated).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserModelConfig {
     pub model_id: String,
@@ -172,6 +172,28 @@ pub struct UserModelConfig {
     pub thinking: Option<bool>,
     pub tools: Option<bool>,
     pub provider: String,
+    /// Whether this model is declared as an embedding model.
+    ///
+    /// When `true`, the model is reserved for embedding generation
+    /// (`/v1/embeddings` endpoint) and CANNOT be used for chat
+    /// completions via `-m <alias>` or `/model <alias>`. Use the
+    /// `[indexing].model` field in `config.toml` to reference the
+    /// alias for embedding generation.
+    ///
+    /// Default: `false` (chat model).
+    #[serde(default)]
+    pub embeddings: bool,
+    /// Output dimension of the embedding model.
+    ///
+    /// Required when `embeddings = true`. Specifies the dim count
+    /// that sprach's vector store will use (e.g. 768 for
+    /// nomic-embed-text-v2-moe at full precision, 256 for
+    /// Matryoshka-truncated storage).
+    ///
+    /// The startup probe verifies the provider's actual response dim
+    /// matches this value, failing fast if there's a mismatch
+    /// (catches Matryoshka misconfigurations).
+    pub dimensions: Option<u32>,
 }
 
 /// Complete user models file structure.
@@ -216,6 +238,19 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
     let contents = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read models file '{}': {}", path.display(), e))?;
 
+    parse_and_validate_user_models(&contents, &path.display().to_string())
+}
+
+/// Parse and validate a `UserModelsFile` from a TOML string. The
+/// `source_label` is used in error messages (the file path, or a
+/// test label like `"<inline>"`).
+///
+/// W2 #121: extracted from `load_user_models_internal` so tests can
+/// exercise the validation logic without writing to disk.
+fn parse_and_validate_user_models(
+    contents: &str,
+    source_label: &str,
+) -> Result<UserModelsFile, String> {
     // Pre-parse hint: detect the common user error (commented-out
     // [provider.*] block) before TOML parse fails with the generic
     // "missing field `provider`" message. The UserModelsFile struct
@@ -233,16 +268,15 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
     });
     if !has_active_provider {
         return Err(format!(
-            "Missing [provider.\"name\"] section in models.toml at {}. \
+            "Missing [provider.\"name\"] section in models.toml at {source_label}. \
              Add at least one [provider.\"my-ollama\"] block with \
              `kind = \"openai\"` and `base_url = \"http://127.0.0.1:11434/v1\"`. \
-             Run `sprach models upgrade` to migrate an existing config.",
-            path.display()
+             Run `sprach models upgrade` to migrate an existing config."
         ));
     }
 
-    let mut file: UserModelsFile = toml::from_str(&contents)
-        .map_err(|e| format!("Failed to parse models file '{}': {}", path.display(), e))?;
+    let mut file: UserModelsFile = toml::from_str(contents)
+        .map_err(|e| format!("Failed to parse models file '{source_label}': {e}"))?;
 
     // Validate: provider section must exist
     if file.provider.is_empty() {
@@ -265,6 +299,20 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
             return Err(format!(
                 "Model '{}' references unknown provider '{}'",
                 model_name, model_config.provider
+            ));
+        }
+    }
+
+    // Validate: embedding models must declare `dimensions` (W2 #121).
+    // A model with `embeddings = true` and no `dimensions` cannot be
+    // used: the indexing pipeline needs a known dim count to size
+    // the vector store and to verify the probe response.
+    for (model_name, model_config) in &file.models {
+        if model_config.embeddings && model_config.dimensions.is_none() {
+            return Err(format!(
+                "Embedding model '{model_name}' is missing `dimensions` in models.toml. \
+                 Add `dimensions = <N>` (e.g. 768 for nomic-embed-text-v2-moe, \
+                 256 for Matryoshka-truncated).",
             ));
         }
     }
@@ -388,6 +436,29 @@ pub fn is_model_valid(name: &str) -> bool {
     ModelConfig::is_builtin_valid(name) || get_user_models().contains_key(name)
 }
 
+/// Returns `true` if the named model is declared as embedding-only.
+///
+/// A model is "embedding-only" when it has `embeddings = true` in
+/// `models.toml`. Such models serve `/v1/embeddings` and MUST NOT be
+/// used for chat completions via `-m <alias>` or `/model <alias>` —
+/// they are reserved for the indexing pipeline configured by
+/// `[indexing].model` in `config.toml`.
+///
+/// Built-in models are never embedding-only (the `ModelConfig` builtin
+/// has no `embeddings` field, so they all default to `false`).
+#[must_use]
+pub fn is_model_embedding_only(name: &str) -> bool {
+    if let Some(cfg) = get_user_models().get(name) {
+        return cfg.embeddings;
+    }
+    // Also check by model_id (e.g., "nomic-embed-text-v2-moe" matches
+    // the inner model_id field of an alias).
+    get_user_models()
+        .values()
+        .find(|cfg| cfg.model_id == name)
+        .is_some_and(|cfg| cfg.embeddings)
+}
+
 /// Resolve model configuration with error handling
 ///
 /// Returns the model configuration or prints an error and exits.
@@ -496,7 +567,6 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
-            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -515,7 +585,6 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
-            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -534,7 +603,6 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
-            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -553,7 +621,6 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
-            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -579,6 +646,8 @@ mod tests {
             thinking: None,
             tools: None,
             provider: "test".to_string(),
+            embeddings: false,
+            dimensions: None,
         };
 
         let merged = merge_configs(Some(&built_in), &user);
@@ -600,6 +669,8 @@ mod tests {
             thinking: Some(true),
             tools: None,
             provider: "test".to_string(),
+            embeddings: false,
+            dimensions: None,
         };
 
         let merged = merge_configs(None, &user);
@@ -703,40 +774,103 @@ provider = "my-ollama"
         assert_eq!(prov.retry_base_delay_ms, 2000);
         assert_eq!(prov.retry_max_delay_ms, 16000);
         assert_eq!(prov.retry_jitter_percent, 20);
-        // W2 #121: embedding defaults to false
-        assert!(!prov.embedding);
     }
 
     #[test]
-    fn test_provider_embedding_flag_default_false() {
-        // W2 #121: `embedding = true` is opt-in.
-        // Without the flag in TOML, the provider should parse as embedding=false.
+    fn test_user_model_embeddings_default_false() {
+        // W2 #121: `embeddings = true` is opt-in. Without the flag
+        // in TOML, the model parses as embeddings=false.
         let toml_content = r#"
-[provider."my-ollama"]
+[provider."my-llama-swap"]
 kind = "openai"
-base_url = "http://localhost:11434/v1"
+base_url = "http://localhost:12434/v1"
 
-[models]
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "my-llama-swap"
 "#;
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
-        let prov = parsed.provider.get("my-ollama").unwrap();
-        assert!(!prov.embedding);
+        let model = parsed.models.get("gemma4-e2b").unwrap();
+        assert!(!model.embeddings);
+        assert!(model.dimensions.is_none());
     }
 
     #[test]
-    fn test_provider_embedding_flag_opt_in() {
-        // W2 #121: explicit `embedding = true` enables the flag.
+    fn test_user_model_embeddings_opt_in_with_dimensions() {
+        // W2 #121: explicit `embeddings = true` requires
+        // `dimensions = N`.
         let toml_content = r#"
-[provider."my-ollama"]
+[provider."my-llama-swap"]
 kind = "openai"
-base_url = "http://localhost:11434/v1"
-embedding = true
+base_url = "http://localhost:12434/v1"
 
-[models]
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "my-llama-swap"
+embeddings = true
+dimensions = 768
 "#;
         let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
-        let prov = parsed.provider.get("my-ollama").unwrap();
-        assert!(prov.embedding);
+        let model = parsed.models.get("nomic").unwrap();
+        assert!(model.embeddings);
+        assert_eq!(model.dimensions, Some(768));
+    }
+
+    #[test]
+    fn test_user_model_dimensions_required_when_embeddings() {
+        // W2 #121: if `embeddings = true` but `dimensions` is
+        // absent, parse_and_validate_user_models returns an error.
+        let toml_content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "my-llama-swap"
+embeddings = true
+"#;
+        let result = parse_and_validate_user_models(&toml_content, "<inline>");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("'nomic' is missing `dimensions`"));
+    }
+
+    #[test]
+    fn test_user_model_dimensions_optional_when_chat() {
+        // W2 #121: chat models (embeddings = false) don't need
+        // dimensions.
+        let toml_content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "my-llama-swap"
+"#;
+        let result = parse_and_validate_user_models(&toml_content, "<inline>");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_model_embedding_only() {
+        // W2 #121: is_model_embedding_only returns true only for
+        // models declared with `embeddings = true`.
+        if get_user_models().is_empty() {
+            eprintln!("SKIP: test requires models.toml with at least one entry.");
+            return;
+        }
+        // Take any embedding-only model from the loaded models.toml
+        // (or skip if none).
+        let any_embedding = get_user_models().iter().find(|(_, m)| m.embeddings);
+        let any_chat = get_user_models().iter().find(|(_, m)| !m.embeddings);
+        if let Some((alias, _)) = any_embedding {
+            assert!(is_model_embedding_only(alias));
+        }
+        if let Some((alias, _)) = any_chat {
+            assert!(!is_model_embedding_only(alias));
+        }
     }
 
     #[test]

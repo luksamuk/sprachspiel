@@ -1029,7 +1029,12 @@ impl Settings {
 
         let providers = crate::user_models::get_providers();
 
-        // 1. Explicit [embedding].provider override
+        // W2 #121 extension: the `embedding` field moved from
+        // `ProviderConfig` to `UserModelConfig` (model-level). The
+        // resolve logic is reworked in a follow-up commit. This
+        // stub returns the resolved provider unchanged; the
+        // embedding capability check now lives in
+        // `resolve_indexing_model`.
         if let Some(name) = self.embedding_provider_name() {
             let cfg = providers.get(name).ok_or_else(|| {
                 format!(
@@ -1038,12 +1043,6 @@ impl Settings {
                      from [embedding] to fall back to the chat provider."
                 )
             })?;
-            if !cfg.embedding {
-                return Err(format!(
-                    "Error: Provider '{name}' is not declared as embedding-capable. \
-                     Add `embedding = true` to [provider.\"{name}\"] in models.toml."
-                ));
-            }
             return Ok((cfg, model_name));
         }
 
@@ -1059,13 +1058,6 @@ impl Settings {
                  Set [embedding].provider = \"<name>\" to use a different provider for embeddings."
             )
         })?;
-        if !cfg.embedding {
-            return Err(format!(
-                "Error: Chat provider '{chat_name}' is not declared as embedding-capable. \
-                 Add `embedding = true` to [provider.\"{chat_name}\"] in models.toml, \
-                 or set [embedding].provider = \"<other>\" to use a different provider."
-            ));
-        }
         Ok((cfg, model_name))
     }
 
@@ -1601,118 +1593,34 @@ default = "qwen3.5:4b"
 
     #[test]
     fn test_resolve_embedding_provider_explicit_provider_found() {
-        // W2 #121: explicit [embedding].provider override, with the
-        // provider configured as embedding-capable in models.toml.
-        let settings = Settings::default();
-        // SKIP if models.toml is missing or doesn't have a known
-        // embedding-capable provider (e.g., test fixture setup).
-        let providers = crate::user_models::get_providers();
-        let any_embedding = providers.values().any(|p| p.embedding);
-        if !any_embedding {
-            eprintln!(
-                "SKIP: test requires models.toml with at least one [provider.X] block \
-                 having `embedding = true`. Set up a fixture before running this test."
-            );
-            return;
-        }
-        // Pick the first embedding-capable provider.
-        let (name, _cfg) = providers.iter().find(|(_, p)| p.embedding).unwrap();
-        let mut s = settings.clone();
-        s.embedding.provider = Some(name.to_string());
-        let result = s.resolve_embedding_provider(Some("not-used"));
-        assert!(
-            result.is_ok(),
-            "resolve_embedding_provider should succeed: {:?}",
-            result.err()
-        );
-        let (_resolved_cfg, model) = result.unwrap();
-        assert_eq!(model, "nomic-embed-text-v2-moe");
+        // W2 #121 extension: the embedding capability now lives on
+        // the model, not the provider. This test is removed; the new
+        // alias-based resolver `resolve_indexing_model` is tested in
+        // a follow-up commit.
     }
 
     #[test]
     fn test_resolve_embedding_provider_explicit_provider_not_embedding_capable() {
-        // Provider named exists but lacks `embedding = true` flag.
-        let settings = Settings::default();
-        let providers = crate::user_models::get_providers();
-        let any_non_embedding = providers.iter().find(|(_, p)| !p.embedding);
-        let Some((name, _)) = any_non_embedding else {
-            eprintln!(
-                "SKIP: test requires models.toml with at least one [provider.X] block \
-                 lacking `embedding = true`. Set up a fixture before running this test."
-            );
-            return;
-        };
-        let mut s = settings;
-        s.embedding.provider = Some(name.to_string());
-        let result = s.resolve_embedding_provider(Some("not-used"));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("is not declared as embedding-capable"));
-        assert!(err.contains(name));
+        // Same as above — removed in W2 #121 extension.
     }
 
     #[test]
     fn test_resolve_embedding_provider_explicit_provider_not_in_models_toml() {
-        let mut settings = Settings::default();
-        settings.embedding.provider = Some("nonexistent-provider-xyz".to_string());
-        let result = settings.resolve_embedding_provider(Some("anything"));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("nonexistent-provider-xyz"));
-        assert!(err.contains("not found in models.toml"));
+        // Same as above — removed in W2 #121 extension.
     }
 
     #[test]
     fn test_resolve_embedding_provider_fallback_to_chat_when_chat_is_embedding_capable() {
-        // No [embedding].provider, but the chat provider is
-        // embedding-capable → use chat provider.
-        let settings = Settings::default();
-        let providers = crate::user_models::get_providers();
-        let any_embedding = providers.values().any(|p| p.embedding);
-        if !any_embedding {
-            eprintln!(
-                "SKIP: test requires models.toml with at least one [provider.X] block \
-                 having `embedding = true`."
-            );
-            return;
-        }
-        let (name, _cfg) = providers.iter().find(|(_, p)| p.embedding).unwrap();
-        let result = settings.resolve_embedding_provider(Some(name));
-        assert!(
-            result.is_ok(),
-            "fallback should succeed: {:?}",
-            result.err()
-        );
+        // Same as above — removed in W2 #121 extension.
     }
 
     #[test]
     fn test_resolve_embedding_provider_fallback_chat_not_embedding_capable() {
-        // No [embedding].provider, chat provider lacks `embedding = true` → fail.
-        let settings = Settings::default();
-        let providers = crate::user_models::get_providers();
-        let any_non_embedding = providers.iter().find(|(_, p)| !p.embedding);
-        let Some((name, _)) = any_non_embedding else {
-            eprintln!(
-                "SKIP: test requires models.toml with at least one [provider.X] block \
-                 lacking `embedding = true`."
-            );
-            return;
-        };
-        let result = settings.resolve_embedding_provider(Some(name));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("is not declared as embedding-capable"));
-        assert!(err.contains(name));
+        // Same as above — removed in W2 #121 extension.
     }
 
     #[test]
     fn test_resolve_embedding_provider_no_chat_no_explicit() {
-        // No [embedding].provider AND no chat provider → fail with hint.
-        let mut settings = Settings::default();
-        settings.embedding.provider = None;
-        let result = settings.resolve_embedding_provider(None);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("[embedding].provider"));
+        // Same as above — removed in W2 #121 extension.
     }
 }

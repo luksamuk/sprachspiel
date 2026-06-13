@@ -27,7 +27,9 @@ pub struct DatabaseInitResult {
 /// chat subcommand's `crate::provider::Ollama` is for chat, and
 /// `embedding_provider` is the `crate::provider::Ollama` configured
 /// to talk to the embedding-capable provider from
-/// `models.toml [provider.X]` where `X.embedding = true`.
+/// `models.toml [provider.X]`. (W2 #121 extension: the embedding
+/// capability is now declared per-`[models.X]` via `embeddings =
+/// true` + `dimensions = N`, not on the provider.)
 pub struct EmbeddingInit {
     /// The provider (shim) used for embedding calls. Points to a
     /// provider in `models.toml` with `embedding = true`.
