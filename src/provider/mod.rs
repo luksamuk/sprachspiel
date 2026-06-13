@@ -7,6 +7,7 @@
 //! `OpenAICompatibleProvider`, which talks to Ollama via `/v1/chat/completions`
 //! and also handles OpenAI, llama.cpp, vLLM, LM Studio, llama-swap, etc.
 
+pub mod embedding_models;
 pub mod factory;
 pub mod ollama_shim;
 pub mod openai_compat;
