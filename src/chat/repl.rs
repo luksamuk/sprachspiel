@@ -40,10 +40,17 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Initialize database and embedding client for chat mode.
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
+///
+/// W2 #121: the embedding provider is **decoupled** from the chat
+/// provider. The chat provider is the one for the model the user
+/// is chatting with; the embedding provider is the one for the
+/// embedding model declared in `[embedding].model` of `config.toml`.
+/// They are resolved independently and may be different servers.
 #[expect(clippy::type_complexity)]
 async fn init_chat_database(
     settings: &Settings,
     ollama: &crate::provider::Ollama,
+    chat_model_name: &str,
     anonymous: bool,
     db_path: Option<PathBuf>,
 ) -> (
@@ -61,46 +68,45 @@ async fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    // W2 #121: validate that the embedding model name is non-empty
-    // before any probe / DB init. The error path returns a fatal
-    // error message (no DB, no embedding client).
-    if settings.embedding_model_name().trim().is_empty() {
-        let msg = crate::db::init_database_core(
-            crate::db::EmbeddingInit {
-                provider: ollama.clone(),
-                model_name: settings.embedding_model_name().to_string(),
-                probe: false,
-            },
-            false,
-            false,
-            db_path.clone(),
-        )
-        .error_detail
-        .unwrap_or_else(|| {
-            "Error: [embedding].model is empty in config.toml. \
-             Run `sprach config upgrade` to insert a placeholder."
-                .to_string()
-        });
-        return (None, None, ollama, Some(msg));
-    }
+    // W2 #121: resolve the embedding provider. Resolution rules:
+    //  1. [embedding].provider = "<name>" → use that named provider.
+    //  2. Otherwise → fall back to the chat model's provider.
+    // The resolved provider MUST have `embedding = true` declared
+    // in models.toml; otherwise sprach fails fast with a clear
+    // error.
+    let chat_provider_name = crate::user_models::get_provider_for_model(chat_model_name);
+    let (embedding_provider_cfg, embedding_model_name) =
+        match settings.resolve_embedding_provider(chat_provider_name.as_deref()) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("\x1B[31m{e}\x1B[0m");
+                return (None, None, ollama, Some(e));
+            }
+        };
+
+    // W2 #121: build the Ollama (shim) for the resolved embedding
+    // provider, separate from the chat provider's ollama.
+    let embedding_ollama =
+        crate::provider::Ollama::from_provider_config(embedding_provider_cfg);
 
     // W2 #121: probe the embedding endpoint BEFORE creating the
     // database, so a misconfigured provider fails fast (no DB, no
     // embedding client, user sees a clear error).
     if let Err(msg) = crate::db::run_embedding_probe(
-        &ollama,
-        settings.embedding_model_name(),
+        &embedding_ollama,
+        embedding_model_name,
         settings.embedding_probe_enabled(),
     )
     .await
     {
+        eprintln!("\x1B[31m{msg}\x1B[0m");
         return (None, None, ollama, Some(msg));
     }
 
     let result = crate::db::init_database_core(
         crate::db::EmbeddingInit {
-            provider: ollama.clone(),
-            model_name: settings.embedding_model_name().to_string(),
+            provider: embedding_ollama,
+            model_name: embedding_model_name.to_string(),
             probe: false, // already probed above
         },
         false,
@@ -696,13 +702,17 @@ pub async fn run_chat_repl(
     // This must be done before init_chat_database because that path
     // needs an Ollama client. We pass it to init_chat_database so the
     // client survives the session reload (which might change model).
-    let initial_ollama = match model_override {
-        Some(model) => settings.ollama_client_for_model(model),
-        None => settings.ollama_client_for_model(default_model),
-    };
+    let active_chat_model = model_override.unwrap_or(default_model);
+    let initial_ollama = settings.ollama_client_for_model(active_chat_model);
 
-    let (db, embedding_client, _ollama_for_db, db_error) =
-        init_chat_database(settings, &initial_ollama, args.anonymous, db_path).await;
+    let (db, embedding_client, _ollama_for_db, db_error) = init_chat_database(
+        settings,
+        &initial_ollama,
+        active_chat_model,
+        args.anonymous,
+        db_path,
+    )
+    .await;
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
