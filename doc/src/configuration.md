@@ -326,6 +326,117 @@ Or use environment variables:
 export OLLAMA_HOST="192.168.1.100:11434"
 ```
 
+## Embedding Configuration
+
+Sprachspiel uses vector embeddings for the SQLite-vec store (`/search` and the hybrid RRF retrieval pipeline). The embedding model and provider are decoupled from the chat model and provider, so you can use llama-swap for chat and a local Ollama instance for embeddings, or any other combination.
+
+The `[embedding]` section in `config.toml` is **required**. Sprachspiel refuses to start (chat, query) if `model` is empty.
+
+### Schema
+
+```toml
+[embedding]
+# Required. The model name passed verbatim to the provider's /v1/embeddings endpoint.
+model = "nomic-embed-text-v2-moe"
+
+# Optional. Provider name from models.toml [provider.*] to use for embeddings.
+# If not set, the chat provider is used.
+# The named provider MUST have `embedding = true` in models.toml.
+# provider = "llama-swap"
+
+# Optional. Whether to make 1 POST /v1/embeddings call at startup to verify
+# the provider actually serves the model. Default: true.
+# Set to false for cold-start scenarios where the model takes 30-60s to load.
+# probe = true
+```
+
+### Provider Resolution
+
+1. If `[embedding].provider = "<name>"` is set, the named provider from `models.toml [provider.*]` is used. The provider MUST have `embedding = true` declared.
+2. If `[embedding].provider` is unset, the chat model's provider is used (the provider of the active chat model). The chat provider must ALSO have `embedding = true`.
+3. If neither is set or neither is embedding-capable, sprach fails to start with a clear error message.
+
+### Example: Same Provider for Chat and Embedding
+
+```toml
+# config.toml
+[embedding]
+model = "nomic-embed-text-v2-moe"
+# provider is unset → use the chat provider
+```
+
+```toml
+# models.toml
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+embedding = true  # ← required for embeddings to work
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "llama-swap"
+```
+
+### Example: Different Providers for Chat and Embedding
+
+```toml
+# config.toml
+[embedding]
+model = "nomic-embed-text-v2-moe"
+provider = "ollama-local"  # ← use a different provider
+```
+
+```toml
+# models.toml
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+# embedding = true is NOT required here — only used for chat
+
+[provider."ollama-local"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+embedding = true  # ← only this provider is used for embeddings
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "llama-swap"
+```
+
+### Probe Behavior
+
+When `probe = true` (default), sprach makes 1 POST `/v1/embeddings` call at startup with a short test text (`"test"`, `dimensions: Some(256)`). If the call returns 2xx, the configuration is considered valid. If the call returns 4xx, fails to connect, or times out (30s), sprach fails to start with a clear error message that includes:
+- The provider base_url
+- The model name
+- 4 possible causes (cold start, wrong model, wrong base_url, network error)
+- 3 diagnostic commands (curl .../v1/models)
+- The opt-out hint (`[embedding].probe = false`)
+
+Set `probe = false` for cold-start scenarios where the embedding model takes 30-60s to load. Without the probe, a misconfigured provider is detected only at the first embedding call.
+
+### Error Messages
+
+| Situation | Message |
+|-----------|---------|
+| `[embedding].model` is empty | `Error: [embedding].model is empty in config.toml. Add: [embedding]\nmodel = "nomic-embed-text-v2-moe"` |
+| `[embedding].provider` not in models.toml | `Error: Embedding provider '<name>' not found in models.toml. Add a [provider."<name>"] block or remove 'provider = "<name>"' from [embedding] to fall back to the chat provider.` |
+| Provider lacks `embedding = true` | `Error: Provider '<name>' is not declared as embedding-capable. Add 'embedding = true' to [provider."<name>"] in models.toml.` |
+| Probe returns 4xx | `Error: Probe embedding call to provider at <url> with model '<name>' failed: <status>.\n[diagnostic commands and opt-out hint]` |
+| Probe timeout | `Error: Probe embedding call to provider at <url> with model '<name>' timed out. The model may be in cold start; wait for it to load or set 'probe = false' in [embedding].` |
+
+### `sprach models upgrade` Warning
+
+`sprach models upgrade` emits a warning (not an auto-add) when a `[provider.*]` block lacks the `embedding` field:
+
+```
+WARN: 1 provider(s) do not declare `embedding = true`:
+  - [provider."llama-swap"]: no `embedding = true` flag. If this provider
+    serves /v1/embeddings, add `embedding = true` to enable embedding
+    support. See `sprach config upgrade` for the [embedding] section.
+```
+
+The upgrade never auto-adds the flag. The user must add it manually after confirming the provider serves `/v1/embeddings`.
+
 ## Per-Subcommand Configuration
 
 You can configure different models for different subcommands. This allows you to use lightweight models for simple tasks and powerful models for complex ones.

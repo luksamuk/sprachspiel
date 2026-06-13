@@ -4297,6 +4297,66 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 - Manual test against llama-swap (Ollama + llama.cpp + vLLM) passes
 - `models upgrade` migrates existing configs correctly
 
+**Decoupled Embedding Provider (W2 #121 extension):**
+
+The original #121 plan left the embedding model as a hardcoded `nomic-embed-text-v2-moe:latest` constant in `src/embeddings/client.rs`, served by the same provider as the chat model. This was identified as a design gap (the model name was a hidden assumption; the chat and embedding providers were coupled). The W2 #121 extension decouples them:
+
+**New schema:**
+
+```toml
+# config.toml
+[embedding]
+model = "nomic-embed-text-v2-moe"   # required; was hardcoded
+provider = "llama-swap"              # optional; defaults to chat provider
+probe = true                         # optional; default true (opt-OUT)
+```
+
+```toml
+# models.toml
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+embedding = true  # opt-in: declare as embedding-capable
+```
+
+**Resolution rules (in `Settings::resolve_embedding_provider`):**
+
+1. If `[embedding].provider = "<name>"` is set, the named provider is used. It MUST have `embedding = true` declared, else error.
+2. Otherwise, fall back to the chat provider of the active model. It MUST also have `embedding = true`, else error.
+3. Empty `[embedding].model` is a fatal error with an actionable hint.
+
+**Probe (opt-out, default on):** makes 1 POST `/v1/embeddings` with `dimensions: Some(256)` and short test text. Failure → fatal error with 4-cause diagnostic and 3 curl commands. Side effect: 1 real embedding per startup. `probe = false` for cold-start scenarios.
+
+**Files added/modified:**
+
+| File | Change |
+|------|--------|
+| `src/provider/embedding_models.rs` (new) | Hardcoded list of 11 well-known embedding model fragments; `is_potential_embedding_model(name)` substring matcher. Internal-only — never exposed in user-facing messages. |
+| `src/user_models.rs` | `ProviderConfig.embedding: bool` (default `false`); explicit opt-in flag. |
+| `src/settings.rs` | `EmbeddingSettings { model, provider, probe }`; `Settings.embedding` field (with `#[serde(default)]` for tolerance); `SAMPLE_CONFIG` adds `[embedding]` section. 3 helper methods: `embedding_model_name()`, `embedding_provider_name()`, `embedding_probe_enabled()`, `resolve_embedding_provider(chat_provider_name)`. |
+| `src/embeddings/client.rs` | `DEFAULT_EMBEDDING_MODEL` constant REMOVED. `EmbeddingClient::new(ollama)` REMOVED. `with_model(ollama, model_name)` is the only constructor. |
+| `src/provider/openai_compat.rs` | New `OpenAICompatibleProvider::probe_embedding(model)` method (1 POST `/v1/embeddings`). |
+| `src/provider/ollama_shim.rs` | New `CompatOllama::probe_embedding(model)` shim delegation. |
+| `src/db/init.rs` | `init_database_core(embedding_init: EmbeddingInit, ...)` — new `EmbeddingInit { provider, model_name, probe }` struct. Empty `model_name` → fatal error with config snippet. New `run_embedding_probe(provider, model_name, probe_enabled)` async helper. |
+| `src/chat/repl.rs` | `init_chat_database` is now `async`; resolves embedding provider via `Settings::resolve_embedding_provider`; builds a SEPARATE `Ollama` (shim) for the embedding provider; runs the probe BEFORE database init. |
+| `src/retrieval/search.rs` | `run_search` takes `embedding_model_name: &str` parameter. |
+| `src/chat/command_handlers.rs` | Reindex command uses `state.settings.embedding_model_name()`. |
+| `src/main.rs` | `handle_diag` uses `settings.embedding_model_name()` (no more `DEFAULT_EMBEDDING_MODEL` constant). |
+| `src/commands/config_upgrade.rs` | Auto-detects missing `[embedding]` section; 2 new tests verify detection. |
+| `src/commands/models_upgrade.rs` | New `MissingEmbeddingFlag { name }` migration variant. Warning-only (the apply step is a no-op). 3 new tests verify presence/absence of the flag. |
+| `src/lib.rs` | `pub mod commands;` to expose the upgrade tests to `cargo test --lib` (was missing — 24 tests silently skipped). |
+
+**Tests:** 1529 lib tests pass. New tests:
+- `embedding_models::is_potential_embedding_model` (8 tests: nomic, bge, gte, text-embedding, chat models don't match, case-insensitive, empty, substring)
+- `user_models` `ProviderConfig.embedding` (2 tests: default false, opt-in true)
+- `settings` `EmbeddingSettings` parsing (4 tests: default, minimal, full, omitted) + `resolve_embedding_provider` (7 tests: empty model, explicit found, explicit missing, explicit not embedding-capable, chat fallback OK, chat fallback not embedding-capable, no chat no explicit)
+- `db::init` (4 tests: EmbeddingInit struct, skip_persistence, empty model rejected, whitespace model rejected)
+- `embeddings::client` (2 tests: with_model constructor, model name storage)
+- `commands::config_upgrade` (2 tests: missing embedding section, present embedding section)
+- `commands::models_upgrade` (3 tests: missing flag detected, present flag OK, explicit false OK; 1 existing test fixed)
+
+**User config updates:** `~/.config/sprachspiel/models.toml` `[provider."llama-swap"]` adds `embedding = true`. `~/.config/sprachspiel/config.toml` adds `[embedding]` section (`model = "nomic-embed-text-v2-moe"`, `provider = "llama-swap"`, `probe = true`).
+
 ---
 
 #### OpenAI-Compatible Provider — #122 [M1]
