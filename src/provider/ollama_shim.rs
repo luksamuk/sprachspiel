@@ -246,7 +246,7 @@ impl CompatOllama {
             .inner
             .chat(&model, messages, tools, options)
             .await
-            .map_err(|e| ollama_rs::error::OllamaError::Other(e.to_string()))?;
+            .map_err(convert_provider_error)?;
 
         Ok(convert_llm_response_to_ollama(&model, response))
     }
@@ -272,7 +272,7 @@ impl CompatOllama {
             .inner
             .chat_stream(&model, messages, tools, options)
             .await
-            .map_err(|e| ollama_rs::error::OllamaError::Other(e.to_string()))?;
+            .map_err(convert_provider_error)?;
 
         // Convert LlmStreamChunk → ChatMessage. The shim returns ChatMessage
         // (not ChatMessageResponseChunk) so the legacy coordinator's
@@ -305,7 +305,7 @@ impl CompatOllama {
                             thinking: chunk.thinking,
                         });
                     }
-                    Err(e) => yield Err(ollama_rs::error::OllamaError::Other(e.to_string())),
+                    Err(e) => yield Err(convert_provider_error(e)),
                 }
             }
         };
@@ -404,6 +404,47 @@ pub struct LocalModel {
 /// W2 #121: previously this conversion was missing, so the shim dropped
 /// all tools on the floor — the LLM never knew what tools were available
 /// and never emitted `delta.tool_calls` in streaming responses.
+fn convert_provider_error(
+    err: crate::provider::types::ProviderError,
+) -> ollama_rs::error::OllamaError {
+    use crate::provider::types::ProviderError;
+    use ollama_rs::error::{InternalOllamaError, OllamaError};
+
+    match err {
+        // W2 #121 extension: 5xx server errors are retryable
+        // (ServerRetry → 5s/10s/15s linear backoff). Map them
+        // to OllamaError::InternalError so the legacy
+        // classify_for_retry recognizes them.
+        ProviderError::Api { status, body } if status >= 500 => {
+            OllamaError::InternalError(InternalOllamaError {
+                message: format!("HTTP {status}: {body}"),
+            })
+        }
+        // 429 (rate limit) → ollama_rs has no dedicated
+        // variant; use Other with a recognizable message so
+        // legacy callers can detect.
+        ProviderError::RateLimit { .. } => OllamaError::Other(format!("{err}")),
+        // 4xx (other than 429) — non-retryable, but preserve
+        // the body in the error message for diagnostics.
+        ProviderError::Api { status, body } => {
+            OllamaError::Other(format!("HTTP {status}: {body}"))
+        }
+        // Connection / Timeout → ollama_rs::Other. We can't
+        // construct a real reqwest::Error here without the
+        // reqwest types, and the legacy classify_for_retry
+        // already routes `Other(_)` to NoRetry. The user
+        // should retry these manually if needed (or use the
+        // new chat_stream retry layer added in #121).
+        ProviderError::Connection(_) | ProviderError::Timeout(_) => {
+            OllamaError::Other(format!("{err}"))
+        }
+        ProviderError::Config(_) | ProviderError::Unsupported(_) => {
+            OllamaError::Other(format!("{err}"))
+        }
+        ProviderError::Other(_) => OllamaError::Other(format!("{err}")),
+    }
+}
+
 fn convert_ollama_tools_to_tool_info(
     tools: Vec<ollama_rs::generation::tools::ToolInfo>,
 ) -> Vec<crate::provider::ToolInfo> {
@@ -547,5 +588,96 @@ mod tests {
         assert_eq!(llm.len(), 1);
         assert_eq!(llm[0].role, LlmRole::User);
         assert_eq!(llm[0].content, "Hello");
+    }
+
+    // --- W2 #121: convert_provider_error must preserve status semantics
+    // for the legacy retry layer to work correctly ---
+
+    #[test]
+    fn test_convert_provider_error_5xx_maps_to_internal_error() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::Api {
+            status: 500,
+            body: "Internal Server Error".to_string(),
+        };
+        let mapped = convert_provider_error(err);
+        match mapped {
+            OllamaError::InternalError(internal) => {
+                assert!(internal.message.contains("500"));
+                assert!(internal.message.contains("Internal Server Error"));
+            }
+            other => panic!("expected InternalError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_provider_error_503_maps_to_internal_error() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::Api {
+            status: 503,
+            body: "Service Unavailable".to_string(),
+        };
+        let mapped = convert_provider_error(err);
+        assert!(matches!(mapped, OllamaError::InternalError(_)));
+    }
+
+    #[test]
+    fn test_convert_provider_error_4xx_preserves_body_in_other() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::Api {
+            status: 400,
+            body: "Bad Request: invalid model".to_string(),
+        };
+        let mapped = convert_provider_error(err);
+        match mapped {
+            OllamaError::Other(msg) => {
+                assert!(msg.contains("400"));
+                assert!(msg.contains("Bad Request"));
+                assert!(msg.contains("invalid model"));
+            }
+            other => panic!("expected Other, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_provider_error_429_maps_to_other() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::RateLimit {
+            message: "Too many requests".to_string(),
+            retry_after: None,
+        };
+        let mapped = convert_provider_error(err);
+        match mapped {
+            OllamaError::Other(msg) => assert!(msg.contains("Too many requests")),
+            other => panic!("expected Other, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_provider_error_connection_maps_to_other() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::Connection("dns failure".to_string());
+        let mapped = convert_provider_error(err);
+        assert!(matches!(mapped, OllamaError::Other(_)));
+    }
+
+    #[test]
+    fn test_convert_provider_error_timeout_maps_to_other() {
+        use crate::provider::types::ProviderError;
+        use ollama_rs::error::OllamaError;
+
+        let err = ProviderError::Timeout("30s".to_string());
+        let mapped = convert_provider_error(err);
+        assert!(matches!(mapped, OllamaError::Other(_)));
     }
 }
