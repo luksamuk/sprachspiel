@@ -15,7 +15,7 @@ pub fn build_query_coordinator(
     ctx: &QueryContext,
     settings: &Settings,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
-    let model_options = ctx.model_config.build_provider_options();
+    let model_options = crate::chat::core::convert_provider_to_model(&ctx.model_config.build_provider_options());
 
     let coordinator = CustomCoordinator::new(
         ctx.ollama.clone(),

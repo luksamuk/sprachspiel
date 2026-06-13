@@ -177,9 +177,9 @@ impl CompatOllama {
         let prompt = request.prompt.to_string();
         let images: Vec<String> = request
             .images
-            .as_ref()
-            .map(|imgs| imgs.iter().map(|i| i.to_base64().to_string()).collect())
-            .unwrap_or_default();
+            .iter()
+            .map(|i| i.to_base64().to_string())
+            .collect();
         let options = ProviderOptions::default();
 
         let content = self
@@ -310,7 +310,7 @@ fn convert_llm_response_to_ollama(
         content: response.content,
         tool_calls,
         images: None,
-        thinking: response.thinking,
+        thinking: None, // LlmResponse doesn't carry thinking (only LlmMessage does)
     };
 
     ChatMessageResponse {
@@ -326,9 +326,9 @@ fn convert_llm_response_to_ollama(
                 ollama_rs::generation::chat::ChatMessageFinalResponseData {
                     total_duration: 0,
                     load_duration: 0,
-                    prompt_eval_count: p,
+                    prompt_eval_count: p as u64,
                     prompt_eval_duration: 0,
-                    eval_count: c,
+                    eval_count: c as u64,
                     eval_duration: 0,
                 }
             }),

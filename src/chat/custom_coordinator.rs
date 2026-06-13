@@ -758,8 +758,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // End of stream
                     }
                 }
-                Err(()) => {
+                Err(_err) => {
                     // Stream error — break and let the coordinator handle it
+                    log::debug!("Stream error in custom_coordinator: {_err}");
                     break;
                 }
             }

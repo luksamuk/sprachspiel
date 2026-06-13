@@ -113,7 +113,7 @@ impl VisionProcessor {
         }
 
         let response = ollama
-            .generate(request)
+            .generate(&request)
             .await
             .map_err(|e| VisionError::OllamaError {
                 message: format!("Failed to process image(s): {}", e),

@@ -102,7 +102,7 @@ pub struct SubagentConfig {
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
     /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
-    pub model_options: ModelOptions,
+    pub model_options: ollama_rs::models::ModelOptions,
     /// OCR extraction mode (Text, Table, Figure, Formula).
     pub ocr_mode: OcrMode,
 }
@@ -116,7 +116,7 @@ impl SubagentConfig {
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
         let config_key = model.into();
         let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
-            .map(|mc| (mc.model_id.clone(), mc.build_provider_options()))
+            .map(|mc| (mc.model_id.clone(), crate::chat::core::convert_provider_to_model(&mc.build_provider_options())))
             .unwrap_or_else(|| (config_key.clone(), ModelOptions::default().temperature(0.0)));
         Self {
             model: resolved_model,
