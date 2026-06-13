@@ -189,7 +189,8 @@ impl OpenAICompatibleProvider {
             });
         }
 
-        let emb_resp: EmbeddingsResponse = response.json().await.map_err(|e| {
+        let body = response.text().await.unwrap_or_default();
+        let emb_resp: EmbeddingsResponse = serde_json::from_str(&body).map_err(|e| {
             ProviderError::Other(format!("Failed to parse embeddings response: {e}"))
         })?;
 

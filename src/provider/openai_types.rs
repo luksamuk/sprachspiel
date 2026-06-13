@@ -149,8 +149,19 @@ pub struct ChatChoice {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Usage {
+    /// Number of tokens in the prompt. OpenAI sends this for
+    /// both /v1/chat/completions and /v1/embeddings. Some
+    /// non-canonical servers (e.g., llama.cpp older versions) may
+    /// omit it; default to 0 to keep the parse robust.
+    #[serde(default)]
     pub prompt_tokens: u32,
+    /// Number of tokens in the completion. OpenAI sends this
+    /// only for /v1/chat/completions — /v1/embeddings
+    /// responses omit it. Default to 0.
+    #[serde(default)]
     pub completion_tokens: u32,
+    /// Total tokens consumed. Always present.
+    #[serde(default)]
     pub total_tokens: u32,
 }
 
@@ -196,8 +207,16 @@ pub struct EmbeddingsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingObject {
+    /// OpenAI sends `"object": "embedding"` per-item. llama-swap
+    /// and some other servers omit this field; default to empty
+    /// so the parse doesn't fail when the server's serialization
+    /// is slightly non-canonical.
+    #[serde(default)]
     pub object: String,
     pub embedding: Vec<f32>,
+    /// OpenAI sends `"index": 0, 1, ...` per-item. llama-swap and
+    /// some other servers omit this field; default to 0.
+    #[serde(default)]
     pub index: u32,
 }
 
@@ -234,4 +253,73 @@ pub struct ErrorBody {
     pub r#type: Option<String>,
     #[serde(default)]
     pub code: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_usage_serde_missing_completion_tokens() {
+        // W2 #121 extension: llama-swap (and other OpenAI-spec
+        // embeddings servers) omit the `completion_tokens` field
+        // from the usage block. The strict-verify probe must
+        // parse these responses without failing. Also covers
+        // `prompt_tokens` and `total_tokens` being omitted by
+        // non-canonical servers.
+        let body = r#"{"prompt_tokens":3,"total_tokens":3}"#;
+        let usage: Usage = serde_json::from_str(body).unwrap();
+        assert_eq!(usage.prompt_tokens, 3);
+        assert_eq!(usage.completion_tokens, 0);
+        assert_eq!(usage.total_tokens, 3);
+    }
+
+    #[test]
+    fn test_embedding_object_optional_fields() {
+        // W2 #121 extension: llama-swap may omit `object` and
+        // `index` per-item. The strict-verify probe must parse
+        // these responses without failing.
+        let body = r#"{"embedding":[0.1, 0.2, 0.3]}"#;
+        let emb: EmbeddingObject = serde_json::from_str(body).unwrap();
+        assert_eq!(emb.embedding, vec![0.1, 0.2, 0.3]);
+        assert_eq!(emb.object, ""); // default
+        assert_eq!(emb.index, 0); // default
+    }
+
+    #[test]
+    fn test_embeddings_response_full_openai() {
+        // W2 #121 extension: full OpenAI-spec embeddings response
+        // (with `object`, `index`, `completion_tokens`).
+        let body = r#"{
+            "object": "list",
+            "data": [
+                {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+            ],
+            "model": "nomic-embed-text-v2-moe",
+            "usage": {"prompt_tokens": 3, "completion_tokens": 0, "total_tokens": 3}
+        }"#;
+        let resp: EmbeddingsResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(resp.data[0].embedding.len(), 3);
+        assert_eq!(resp.data[0].index, 0);
+    }
+
+    #[test]
+    fn test_embeddings_response_minimal_llama_swap() {
+        // W2 #121 extension: minimal llama-swap response (no
+        // `completion_tokens`, no per-item `object`/`index`).
+        // This is the format returned by llama.cpp's OpenAI
+        // embeddings endpoint.
+        let body = r#"{
+            "model": "nomic-embed-text-v2-moe",
+            "object": "list",
+            "usage": {"prompt_tokens": 3, "total_tokens": 3},
+            "data": [{"embedding": [0.1, 0.2, 0.3]}]
+        }"#;
+        let resp: EmbeddingsResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(resp.data[0].embedding.len(), 3);
+        assert_eq!(resp.data[0].index, 0); // default
+        assert_eq!(resp.usage.completion_tokens, 0); // default
+    }
 }
