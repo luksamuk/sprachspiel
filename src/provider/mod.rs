@@ -1,24 +1,26 @@
 //! Provider-agnostic abstraction layer for LLM backends.
 //!
 //! This module defines the `LlmProvider` trait and the agnostic types
-//! used across all LLM providers (Ollama, OpenAI-compatible, etc.).
+//! used across all LLM providers (OpenAI-compatible, Ollama, etc.).
 //!
-//! W2 Wave Context: Foundation of the Provider Chain (#119 → #123).
+//! W2 Provider Chain (#119 → #123). The default provider in #121 is
+//! `OpenAICompatibleProvider`, which talks to Ollama via `/v1/chat/completions`
+//! and also handles OpenAI, llama.cpp, vLLM, LM Studio, llama-swap, etc.
 
 pub mod conversions;
 pub mod factory;
-pub mod ollama;
-pub mod ollama_api;
+pub mod openai_compat;
+pub mod openai_types;
 pub mod types;
 
-#[allow(unused_imports)] // Re-exported for #120/#121 consumers
+#[allow(unused_imports)]
 pub use types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmToolCall, LlmToolResult,
     ProviderCapabilities, ProviderError, ProviderOptions, RetryCategory, ToolFunctionInfo,
     ToolInfo, ToolType, retry_delay,
 };
 
-#[allow(unused_imports)] // Re-exported for #120 consumers
+#[allow(unused_imports)]
 pub use factory::build_provider;
 
 use async_trait::async_trait;
@@ -26,9 +28,8 @@ use std::pin::Pin;
 
 /// Core trait for LLM providers.
 ///
-/// Implementations: `OllamaProvider` (#120), `OpenAICompatibleProvider` (#122).
+/// Implementations: `OpenAICompatibleProvider` (#121, default).
 /// Business code should depend on this trait, not concrete providers.
-#[allow(dead_code)] // Consumed by OllamaProvider in this PR; build_provider call site in #121
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Send a chat completion request with optional tools.
@@ -43,8 +44,8 @@ pub trait LlmProvider: Send + Sync {
     /// Streaming chat completion — returns a stream of response chunks.
     ///
     /// Default implementation returns `Err(ProviderError::Unsupported)`.
-    /// Providers that support streaming (Ollama, OpenAI-compatible) MUST override this.
-    #[allow(unused_variables)] // Default impl does not consume parameters
+    /// Providers that support streaming MUST override this.
+    #[allow(unused_variables)]
     async fn chat_stream(
         &self,
         _model: &str,
@@ -82,7 +83,7 @@ pub trait LlmProvider: Send + Sync {
     async fn detect_capabilities(&self, model: &str)
     -> Result<ProviderCapabilities, ProviderError>;
 
-    /// Provider identifier (e.g., "ollama", "openai-compatible").
+    /// Provider identifier (e.g., "openai-compatible").
     fn provider_name(&self) -> &str;
 
     /// Health check — is the provider reachable?

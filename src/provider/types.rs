@@ -86,6 +86,7 @@ pub enum LlmRole {
 /// A message in an LLM conversation.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessage`.
+/// W2 #121: extended with `name` and `tool_call_id` for OpenAI tool support.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
@@ -98,6 +99,12 @@ pub struct LlmMessage {
     pub audio: Option<Vec<String>>, // base64-encoded (mp3, wav, ogg)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
+    /// Name of the speaker (used for multi-user/tool-name annotations).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// For tool messages: the id of the tool call this is responding to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl LlmMessage {
@@ -109,6 +116,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -120,6 +129,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -131,6 +142,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -142,6 +155,22 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Tool result message with the id of the tool call being responded to.
+    pub fn tool_result(content: String, tool_call_id: String) -> Self {
+        Self {
+            role: LlmRole::Tool,
+            content,
+            tool_calls: None,
+            images: None,
+            audio: None,
+            thinking: None,
+            name: None,
+            tool_call_id: Some(tool_call_id),
         }
     }
 
@@ -175,7 +204,6 @@ pub struct LlmToolCall {
 }
 
 /// A tool result to send back to the LLM.
-#[allow(dead_code)] // Consumed by #121
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmToolResult {
     pub tool_call_id: String,
@@ -240,17 +268,20 @@ pub struct ProviderCapabilities {
 /// Options for provider requests.
 ///
 /// Mirrors `ollama_rs::models::ModelOptions` with additions.
+/// W2 #121: removed `top_k`, `repeat_penalty`, `think` (not OpenAI-portable).
+/// Added `seed` (cross-provider, optional).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderOptions {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
-    pub top_k: Option<u32>,
     pub repeat_penalty: Option<f32>,
     pub num_predict: Option<i32>,
     pub stop_sequences: Option<Vec<String>>,
     pub think: Option<bool>,
     pub format: Option<String>,
     pub audio_format: Option<String>,
+    /// Optional seed for reproducible outputs (cross-provider).
+    pub seed: Option<u32>,
 }
 
 /// Provider error with retry classification semantics.
