@@ -91,7 +91,10 @@ impl ModelCapabilities {
     ///
     /// # Returns
     /// Detected capabilities for the model
-    pub async fn detect(ollama: &crate::provider::Ollama, model_name: &str) -> crate::AppResult<Self> {
+    pub async fn detect(
+        ollama: &crate::provider::Ollama,
+        model_name: &str,
+    ) -> crate::AppResult<Self> {
         let info: ModelInfo = ollama
             .show_model_info(model_name.to_string())
             .await

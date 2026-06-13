@@ -27,7 +27,10 @@ fn make_ollama_config(base_url: &str) -> ProviderConfig {
 #[test]
 fn test_build_provider_ollama_returns_provider() {
     let mut providers = HashMap::new();
-    providers.insert("my-ollama".to_string(), make_ollama_config("http://localhost:11434"));
+    providers.insert(
+        "my-ollama".to_string(),
+        make_ollama_config("http://localhost:11434"),
+    );
 
     let provider = build_provider("my-ollama", &providers).expect("factory should succeed");
 

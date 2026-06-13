@@ -67,7 +67,7 @@ pub fn init_database_core(
     // in config.toml is required, and the model field is the only
     // way to know which model to use.
     if embedding_init.model_name.trim().is_empty() {
-        let error_detail = format!(
+        let error_detail = String::from(
             "Error: [embedding].model is empty in config.toml.\n\
              \n\
              The [embedding] section is required for sprach to work.\n\
@@ -78,7 +78,7 @@ pub fn init_database_core(
              # provider = \"llama-swap\"   # optional, defaults to chat provider\n\
              # probe = true                # optional, default true\n\
              \n\
-             Run `sprach config upgrade` to insert a documented placeholder."
+             Run `sprach config upgrade` to insert a documented placeholder.",
         );
         log::error!("{}", error_detail);
         return DatabaseInitResult {
@@ -172,7 +172,10 @@ pub async fn run_embedding_probe(
     );
     match provider.probe_embedding(model_name).await {
         Ok(()) => {
-            log::info!("Embedding probe OK: provider serves /v1/embeddings for '{}'", model_name);
+            log::info!(
+                "Embedding probe OK: provider serves /v1/embeddings for '{}'",
+                model_name
+            );
             Ok(())
         }
         Err(e) => {

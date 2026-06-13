@@ -75,7 +75,9 @@ mod tests {
     #[test]
     fn test_nomic_embed_v2_moe_matches() {
         assert!(is_potential_embedding_model("nomic-embed-text-v2-moe"));
-        assert!(is_potential_embedding_model("nomic-embed-text-v2-moe:latest"));
+        assert!(is_potential_embedding_model(
+            "nomic-embed-text-v2-moe:latest"
+        ));
     }
 
     #[test]

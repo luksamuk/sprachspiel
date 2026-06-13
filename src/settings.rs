@@ -1021,12 +1021,10 @@ impl Settings {
     ) -> Result<(&crate::user_models::ProviderConfig, &str), String> {
         let model_name = self.embedding_model_name();
         if model_name.trim().is_empty() {
-            return Err(
-                "Error: [embedding].model is empty in config.toml. Add:\n\
+            return Err("Error: [embedding].model is empty in config.toml. Add:\n\
                  [embedding]\n\
                  model = \"nomic-embed-text-v2-moe\""
-                    .to_string(),
-            );
+                .to_string());
         }
 
         let providers = crate::user_models::get_providers();
@@ -1622,7 +1620,11 @@ default = "qwen3.5:4b"
         let mut s = settings.clone();
         s.embedding.provider = Some(name.to_string());
         let result = s.resolve_embedding_provider(Some("not-used"));
-        assert!(result.is_ok(), "resolve_embedding_provider should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "resolve_embedding_provider should succeed: {:?}",
+            result.err()
+        );
         let (_resolved_cfg, model) = result.unwrap();
         assert_eq!(model, "nomic-embed-text-v2-moe");
     }
@@ -1676,7 +1678,11 @@ default = "qwen3.5:4b"
         }
         let (name, _cfg) = providers.iter().find(|(_, p)| p.embedding).unwrap();
         let result = settings.resolve_embedding_provider(Some(name));
-        assert!(result.is_ok(), "fallback should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "fallback should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]

@@ -36,11 +36,11 @@ use crate::context_overflow::{
     is_prompt_too_long_error, max_chunk_tokens, pre_prune_messages, split_into_chunks,
 };
 use crate::facts::prompt::build_facts_section;
-use crate::provider::types::ProviderOptions;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
     build_system_prompt,
 };
+use crate::provider::types::ProviderOptions;
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::finish_spinner;

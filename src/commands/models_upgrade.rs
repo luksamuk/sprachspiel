@@ -174,7 +174,9 @@ pub fn run_models_upgrade(
         ));
         for m in &urls_to_fix {
             if let ModelsMigration::AppendV1Suffix { name, old_url } = m {
-                output.push(format!("  - [provider.\"{name}\"] {old_url} → {old_url}/v1"));
+                output.push(format!(
+                    "  - [provider.\"{name}\"] {old_url} → {old_url}/v1"
+                ));
             }
         }
         output.push(String::new());
@@ -540,9 +542,9 @@ provider = "my-ollama"
             "Should detect kind=\"ollama\" for migration"
         );
         assert!(
-            migrations
-                .iter()
-                .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { name, .. } if name == "my-ollama")),
+            migrations.iter().any(
+                |m| matches!(m, ModelsMigration::AppendV1Suffix { name, .. } if name == "my-ollama")
+            ),
             "Should detect missing /v1 suffix"
         );
     }
@@ -575,9 +577,11 @@ model_id = "test:1b"
 provider = "my-ollama"
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
-        assert!(!migrations
-            .iter()
-            .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { .. })));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { .. }))
+        );
     }
 
     #[test]
@@ -691,9 +695,15 @@ model_id = "test:1b"
         assert!(result.is_ok(), "Upgrade should succeed: {:?}", result.err());
 
         let updated = std::fs::read_to_string(&tmp).unwrap();
-        assert!(updated.contains("kind = \"openai\""), "Kind should be migrated: {updated}");
+        assert!(
+            updated.contains("kind = \"openai\""),
+            "Kind should be migrated: {updated}"
+        );
         assert!(updated.contains("/v1"), "URL should have /v1: {updated}");
-        assert!(updated.contains("provider = \"my-ollama\""), "Provider should be set: {updated}");
+        assert!(
+            updated.contains("provider = \"my-ollama\""),
+            "Provider should be set: {updated}"
+        );
 
         let _ = std::fs::remove_file(&tmp);
     }

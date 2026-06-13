@@ -115,7 +115,12 @@ impl SubagentConfig {
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
         let config_key = model.into();
         let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
-            .map(|mc| (mc.model_id.clone(), crate::chat::core::convert_provider_to_model(&mc.build_provider_options())))
+            .map(|mc| {
+                (
+                    mc.model_id.clone(),
+                    crate::chat::core::convert_provider_to_model(&mc.build_provider_options()),
+                )
+            })
             .unwrap_or_else(|| (config_key.clone(), ModelOptions::default().temperature(0.0)));
         Self {
             model: resolved_model,

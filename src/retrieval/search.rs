@@ -174,7 +174,8 @@ pub async fn run_search(
     );
 
     // Generate embedding for query
-    let embedding_client = EmbeddingClient::with_model(ollama.clone(), embedding_model_name.to_string());
+    let embedding_client =
+        EmbeddingClient::with_model(ollama.clone(), embedding_model_name.to_string());
 
     log::debug!("Generating embedding for query...");
     let query_result = match embedding_client.embed(query).await {

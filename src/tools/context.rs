@@ -127,7 +127,8 @@ mod tests {
             crate::provider::Ollama::new("http://localhost".to_string(), 11434),
             dummy_settings.embedding_model_name().to_string(),
         ));
-        let dummy_ollama_for_test = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama_for_test =
+            crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_db = Arc::new(Database::in_memory().unwrap());
 
         let result = with_full_context(

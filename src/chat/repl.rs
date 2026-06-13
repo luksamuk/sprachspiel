@@ -46,7 +46,6 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// is chatting with; the embedding provider is the one for the
 /// embedding model declared in `[embedding].model` of `config.toml`.
 /// They are resolved independently and may be different servers.
-#[expect(clippy::type_complexity)]
 async fn init_chat_database(
     settings: &Settings,
     ollama: &crate::provider::Ollama,
@@ -86,8 +85,7 @@ async fn init_chat_database(
 
     // W2 #121: build the Ollama (shim) for the resolved embedding
     // provider, separate from the chat provider's ollama.
-    let embedding_ollama =
-        crate::provider::Ollama::from_provider_config(embedding_provider_cfg);
+    let embedding_ollama = crate::provider::Ollama::from_provider_config(embedding_provider_cfg);
 
     // W2 #121: probe the embedding endpoint BEFORE creating the
     // database, so a misconfigured provider fails fast (no DB, no
@@ -561,9 +559,7 @@ fn resolve_session_model(
     // configuration error.
     if crate::user_models::require_providers().is_err() {
         log::error!("No providers configured in models.toml");
-        eprintln!(
-            "\x1B[31mError: No providers configured in models.toml.\x1B[0m"
-        );
+        eprintln!("\x1B[31mError: No providers configured in models.toml.\x1B[0m");
         eprintln!(
             "\x1B[33mHint: Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.\x1B[0m"
         );
@@ -742,11 +738,9 @@ pub async fn run_chat_repl(
         ResolveModelResult::Ok => {}
         ResolveModelResult::UnknownModel => return Ok(()),
         ResolveModelResult::NoProviders => {
-            return Err(
-                "Cannot start chat: models.toml is missing providers. \
+            return Err("Cannot start chat: models.toml is missing providers. \
                  Add a [provider.\"name\"] section or run `sprach models upgrade`."
-                    .into(),
-            );
+                .into());
         }
     }
 

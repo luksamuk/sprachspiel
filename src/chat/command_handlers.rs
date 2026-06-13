@@ -3232,8 +3232,8 @@ mod tests {
     use super::*;
     use crate::capabilities::ModelCapabilities;
     use crate::config::ModelConfig;
-    use crate::settings::Settings;
     use crate::provider::Ollama;
+    use crate::settings::Settings;
 
     fn create_test_state() -> ReplState {
         let session = ChatSession::new("test-model".to_string(), None, false);

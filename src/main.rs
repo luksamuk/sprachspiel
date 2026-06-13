@@ -506,7 +506,12 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     let (model_key, _, _) = settings.get_subcommand_config("ocr");
     let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
-        .map(|mc| (mc.model_id.clone(), convert_provider_to_model(&mc.build_provider_options())))
+        .map(|mc| {
+            (
+                mc.model_id.clone(),
+                convert_provider_to_model(&mc.build_provider_options()),
+            )
+        })
         .unwrap_or_else(|| {
             (
                 model_key.clone(),

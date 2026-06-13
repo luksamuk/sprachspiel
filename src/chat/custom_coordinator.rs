@@ -38,17 +38,11 @@ pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Se
 /// W2 #121: bound relaxed from `Send + Sync` to `Send` because
 /// tool futures await `LlmProvider::embed`/`chat` which are Send only.
 pub trait ToolHolder: Send {
-    fn call(
-        &mut self,
-        parameters: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>>;
+    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>>;
 }
 
 impl<T: crate::tools::Tool> ToolHolder for T {
-    fn call(
-        &mut self,
-        parameters: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>> {
+    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>> {
         Box::pin(async move {
             // Handle different JSON formats that models might return
             let param_value =

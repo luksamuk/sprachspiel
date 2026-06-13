@@ -16,21 +16,21 @@
 #![allow(dead_code)]
 #![allow(clippy::all)]
 
-pub use ollama_rs::generation::chat::{ChatMessage, ChatMessageResponse, MessageRole};
 pub use ollama_rs::generation::chat::request::ChatMessageRequest;
+pub use ollama_rs::generation::chat::{ChatMessage, ChatMessageResponse, MessageRole};
 pub use ollama_rs::generation::completion::request::GenerationRequest as _GenerationRequest;
 pub use ollama_rs::generation::images::Image as _Image;
-pub use ollama_rs::models::ModelOptions as _ModelOptions;
 pub use ollama_rs::models::ModelInfo;
+pub use ollama_rs::models::ModelOptions as _ModelOptions;
 
 use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::Stream;
 
+use crate::provider::LlmProvider;
 use crate::provider::openai_compat::{OpenAICompatibleConfig, OpenAICompatibleProvider};
 use crate::provider::types::{LlmMessage, LlmRole, ProviderOptions};
-use crate::provider::LlmProvider;
 use crate::user_models::ProviderConfig;
 
 /// Re-export of `crate::provider::Ollama` — a shim that delegates to OpenAI-compatible transport.
@@ -87,7 +87,10 @@ impl CompatOllama {
                 }
             }
         });
-        Self { base_url, inner: Arc::new(inner) }
+        Self {
+            base_url,
+            inner: Arc::new(inner),
+        }
     }
 
     /// Create a shim from a `ProviderConfig` (preferred).
@@ -98,7 +101,9 @@ impl CompatOllama {
         }
         let openai_cfg = OpenAICompatibleConfig::from(cfg);
         let inner = OpenAICompatibleProvider::new(openai_cfg).unwrap_or_else(|e| {
-            log::error!("Failed to create OpenAI provider from config (check base_url syntax): {e}");
+            log::error!(
+                "Failed to create OpenAI provider from config (check base_url syntax): {e}"
+            );
             let fallback = OpenAICompatibleConfig {
                 base_url: "http://localhost:11434/v1".to_string(),
                 api_key: None,
@@ -116,12 +121,17 @@ impl CompatOllama {
                     log::error!("Fallback config also failed: {e2}");
                     #[expect(clippy::panic, reason = "fallback URL is hardcoded and always valid")]
                     {
-                        panic!("OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}");
+                        panic!(
+                            "OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}"
+                        );
                     }
                 }
             }
         });
-        Self { base_url, inner: Arc::new(inner) }
+        Self {
+            base_url,
+            inner: Arc::new(inner),
+        }
     }
 
     /// Get the inner `OpenAICompatibleProvider` for direct access.
@@ -146,26 +156,23 @@ impl CompatOllama {
     }
 
     /// List local models. W2 #121: hits `/v1/models` instead of `/api/tags`.
-    pub async fn list_local_models(&self) -> Result<Vec<LocalModel>, ollama_rs::error::OllamaError> {
+    pub async fn list_local_models(
+        &self,
+    ) -> Result<Vec<LocalModel>, ollama_rs::error::OllamaError> {
         use crate::provider::openai_types::ModelsResponse;
         let url = format!("{}/models", self.base_url);
-        let response = self
-            .inner
-            .as_client()
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ollama_rs::error::OllamaError::Other(format!("Failed to list models: {e}")))?;
+        let response = self.inner.as_client().get(&url).send().await.map_err(|e| {
+            ollama_rs::error::OllamaError::Other(format!("Failed to list models: {e}"))
+        })?;
         if !response.status().is_success() {
             return Err(ollama_rs::error::OllamaError::Other(format!(
                 "Failed to list models: HTTP {}",
                 response.status().as_u16()
             )));
         }
-        let models: ModelsResponse = response
-            .json()
-            .await
-            .map_err(|e| ollama_rs::error::OllamaError::Other(format!("Failed to parse models response: {e}")))?;
+        let models: ModelsResponse = response.json().await.map_err(|e| {
+            ollama_rs::error::OllamaError::Other(format!("Failed to parse models response: {e}"))
+        })?;
         Ok(models
             .data
             .into_iter()
@@ -288,8 +295,9 @@ impl CompatOllama {
             }
         };
 
-        let pinned: Pin<Box<dyn Stream<Item = Result<ChatMessage, ollama_rs::error::OllamaError>> + Send>> =
-            Box::pin(mapped);
+        let pinned: Pin<
+            Box<dyn Stream<Item = Result<ChatMessage, ollama_rs::error::OllamaError>> + Send>,
+        > = Box::pin(mapped);
         Ok(pinned)
     }
 
@@ -339,9 +347,7 @@ impl CompatOllama {
         let model = request.model_name.clone();
         let text = match &request.input {
             ollama_rs::generation::embeddings::request::EmbeddingsInput::Single(s) => s.clone(),
-            ollama_rs::generation::embeddings::request::EmbeddingsInput::Multiple(v) => {
-                v.join(" ")
-            }
+            ollama_rs::generation::embeddings::request::EmbeddingsInput::Multiple(v) => v.join(" "),
         };
 
         let embedding = self
@@ -350,9 +356,11 @@ impl CompatOllama {
             .await
             .map_err(|e| ollama_rs::error::OllamaError::Other(e.to_string()))?;
 
-        Ok(ollama_rs::generation::embeddings::GenerateEmbeddingsResponse {
-            embeddings: vec![embedding],
-        })
+        Ok(
+            ollama_rs::generation::embeddings::GenerateEmbeddingsResponse {
+                embeddings: vec![embedding],
+            },
+        )
     }
 }
 
@@ -435,9 +443,11 @@ fn convert_ollama_messages_to_llm(messages: Vec<ChatMessage>) -> Vec<LlmMessage>
                 role,
                 content: m.content,
                 tool_calls,
-                images: m
-                    .images
-                    .map(|imgs| imgs.into_iter().map(|i| i.to_base64().to_string()).collect()),
+                images: m.images.map(|imgs| {
+                    imgs.into_iter()
+                        .map(|i| i.to_base64().to_string())
+                        .collect()
+                }),
                 audio: None,
                 thinking: m.thinking,
                 name: None,
@@ -480,16 +490,16 @@ fn convert_llm_response_to_ollama(
         final_data: response
             .prompt_eval_count
             .zip(response.eval_count)
-            .map(|(p, c)| {
-                ollama_rs::generation::chat::ChatMessageFinalResponseData {
+            .map(
+                |(p, c)| ollama_rs::generation::chat::ChatMessageFinalResponseData {
                     total_duration: 0,
                     load_duration: 0,
                     prompt_eval_count: p as u64,
                     prompt_eval_duration: 0,
                     eval_count: c as u64,
                     eval_duration: 0,
-                }
-            }),
+                },
+            ),
     }
 }
 
@@ -524,4 +534,3 @@ mod tests {
         assert_eq!(llm[0].content, "Hello");
     }
 }
-

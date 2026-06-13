@@ -801,7 +801,9 @@ embedding = true
         let expected_keywords = ["providers", "models.toml", "sprach models upgrade"];
         for keyword in &expected_keywords {
             assert!(
-                keyword.chars().all(|c| c.is_ascii_lowercase() || c == ' ' || c == '\"' || c == '.'),
+                keyword
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == ' ' || c == '\"' || c == '.'),
                 "Keyword '{keyword}' is verified to be a lowercase ASCII string"
             );
         }
@@ -824,8 +826,7 @@ kind = "openai"
 provider = "my-ollama"
 "#;
         let content_completely_empty = "# only a comment\n";
-        let content_with_commented_provider =
-            "# [provider.\"my-ollama\"] is commented out\n";
+        let content_with_commented_provider = "# [provider.\"my-ollama\"] is commented out\n";
         let content_with_inline_commented_provider = r#"
 #[provider."my-ollama"]
 [models."test"]

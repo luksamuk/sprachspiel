@@ -43,7 +43,7 @@ use futures::Stream;
 use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 
 use super::openai_types::{
-    ChatChunk, ChatChoice, ChatRequest, ChatResponse, EmbeddingsRequest, EmbeddingsResponse,
+    ChatChoice, ChatChunk, ChatRequest, ChatResponse, EmbeddingsRequest, EmbeddingsResponse,
     ModelsResponse, OpenAIMessage, OpenAITool, OpenAIToolCall, OpenAIToolCallFunction,
     OpenAIToolFunction, StreamOptions, Usage as OpenAIUsage,
 };
@@ -111,9 +111,10 @@ impl OpenAICompatibleProvider {
 
     /// Create a new `OpenAICompatibleProvider`.
     pub fn new(config: OpenAICompatibleConfig) -> Result<Self, ProviderError> {
-        let api_key = config.api_key.clone().or_else(|| {
-            std::env::var("OPENAI_API_KEY").ok()
-        });
+        let api_key = config
+            .api_key
+            .clone()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
 
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
@@ -294,11 +295,10 @@ impl OpenAICompatibleProvider {
                 function: OpenAIToolFunction {
                     name: t.function.name,
                     description: t.function.description,
-                    parameters: serde_json::to_value(&t.function.parameters)
-                        .unwrap_or_else(|e| {
-                            log::warn!("Failed to serialize tool parameters: {e}");
-                            serde_json::json!({})
-                        }),
+                    parameters: serde_json::to_value(&t.function.parameters).unwrap_or_else(|e| {
+                        log::warn!("Failed to serialize tool parameters: {e}");
+                        serde_json::json!({})
+                    }),
                 },
             })
             .collect()
@@ -309,7 +309,9 @@ impl OpenAICompatibleProvider {
         let choice = response.choices.into_iter().next();
         let (content, tool_calls, done_reason) = match choice {
             Some(ChatChoice {
-                message, finish_reason, ..
+                message,
+                finish_reason,
+                ..
             }) => {
                 let tool_calls = message.tool_calls.map(|calls| {
                     calls
@@ -327,7 +329,11 @@ impl OpenAICompatibleProvider {
                         })
                         .collect()
                 });
-                (message.content.unwrap_or_default(), tool_calls, finish_reason)
+                (
+                    message.content.unwrap_or_default(),
+                    tool_calls,
+                    finish_reason,
+                )
             }
             None => (String::new(), None, None),
         };
@@ -515,7 +521,9 @@ impl LlmProvider for OpenAICompatibleProvider {
                 Some(Self::convert_tools(tools))
             },
             stream: true,
-            stream_options: Some(StreamOptions { include_usage: true }),
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
         };
 
         let url = self.url("/chat/completions");
@@ -570,7 +578,11 @@ impl LlmProvider for OpenAICompatibleProvider {
             role: LlmRole::User,
             content: prompt.to_string(),
             tool_calls: None,
-            images: if images.is_empty() { None } else { Some(images) },
+            images: if images.is_empty() {
+                None
+            } else {
+                Some(images)
+            },
             audio: None,
             thinking: None,
             name: None,
@@ -626,10 +638,9 @@ impl LlmProvider for OpenAICompatibleProvider {
             });
         }
 
-        let emb_resp: EmbeddingsResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::Other(format!("Failed to parse embeddings response: {e}")))?;
+        let emb_resp: EmbeddingsResponse = response.json().await.map_err(|e| {
+            ProviderError::Other(format!("Failed to parse embeddings response: {e}"))
+        })?;
 
         emb_resp
             .data
@@ -678,15 +689,17 @@ impl LlmProvider for OpenAICompatibleProvider {
 
         Ok(ProviderCapabilities {
             completion: true,
-            tools: true, // OpenAI-spec always supports tools via the API
+            tools: true,     // OpenAI-spec always supports tools via the API
             thinking: false, // OpenAI doesn't expose "thinking" capability separately
-            vision: true, // Most OpenAI-compat servers support vision via image_url
+            vision: true,    // Most OpenAI-compat servers support vision via image_url
             embedding: true, // /v1/embeddings is standard
             insert: false,
             audio: false,
             image: true,
             provider: "openai-compatible".to_string(),
-            model: model_info.map(|m| m.id.clone()).unwrap_or_else(|| model.to_string()),
+            model: model_info
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| model.to_string()),
         })
     }
 
