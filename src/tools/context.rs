@@ -126,6 +126,7 @@ mod tests {
         let dummy_embedding = Arc::new(EmbeddingClient::with_model(
             crate::provider::Ollama::new("http://localhost".to_string(), 11434),
             dummy_settings.indexing_model_alias().to_string(),
+            768, // TRANSITIONAL: placeholder
         ));
         let dummy_ollama_for_test =
             crate::provider::Ollama::new("http://localhost".to_string(), 11434);

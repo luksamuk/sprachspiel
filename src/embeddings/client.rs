@@ -46,21 +46,33 @@ const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 pub struct EmbeddingClient {
     ollama: crate::provider::Ollama,
     model: String,
+    /// Output dimension of the embedding model (from the alias's
+    /// `dimensions = N` in models.toml). Used for vector store
+    /// sizing and probe verification.
+    dimensions: u32,
     /// Cached context length to avoid repeated API calls.
     cached_context_length: OnceCell<usize>,
     semaphore: Semaphore,
 }
 
 impl EmbeddingClient {
-    /// Create a new embedding client with the given provider and model name.
+    /// Create a new embedding client with the given provider, model
+    /// name, and output dimensions.
     ///
-    /// W2 #121: this is the **only** constructor. The model name is
-    /// mandatory and is resolved from `[embedding].model` in
-    /// `config.toml` (see [`crate::settings::EmbeddingSettings`]).
-    pub fn with_model(ollama: crate::provider::Ollama, model: String) -> Self {
+    /// W2 #121 extension: `dimensions` is mandatory. The caller must
+    /// resolve the alias via `Settings::resolve_indexing_model()`
+    /// and pass the resulting `dimensions` value. There is no
+    /// sensible default — silent assumptions about dimensions would
+    /// mask user configuration errors.
+    pub fn with_model(
+        ollama: crate::provider::Ollama,
+        model: String,
+        dimensions: u32,
+    ) -> Self {
         Self {
             ollama,
             model,
+            dimensions,
             cached_context_length: OnceCell::new(),
             semaphore: Semaphore::new(1),
         }
@@ -309,16 +321,22 @@ mod tests {
 
     #[test]
     fn test_with_model_constructor() {
-        // W2 #121: with_model is the only constructor. Model name
-        // is required and comes from [embedding].model in config.toml.
-        let _client =
-            EmbeddingClient::with_model(make_dummy_ollama(), "nomic-embed-text-v2-moe".to_string());
+        // W2 #121 extension: with_model now also takes `dimensions`.
+        let _client = EmbeddingClient::with_model(
+            make_dummy_ollama(),
+            "nomic-embed-text-v2-moe".to_string(),
+            768,
+        );
     }
 
     #[test]
     fn test_with_model_stores_model_name() {
-        let client =
-            EmbeddingClient::with_model(make_dummy_ollama(), "bge-small-en-v1.5".to_string());
+        let client = EmbeddingClient::with_model(
+            make_dummy_ollama(),
+            "bge-small-en-v1.5".to_string(),
+            768,
+        );
         assert_eq!(client.model(), "bge-small-en-v1.5");
+        assert_eq!(client.dimensions, 768);
     }
 }

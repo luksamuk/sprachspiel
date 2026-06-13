@@ -877,6 +877,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
         &db,
         &state.ollama,
         state.settings.indexing_model_alias(),
+        768, // TRANSITIONAL: real value from settings.resolve_indexing_model
         &query,
         Some(&conversation_id),
         limit,
@@ -973,6 +974,7 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
         state.ollama.clone(),
         state.settings.indexing_model_alias().to_string(),
+        768, // TRANSITIONAL: real value from settings.resolve_indexing_model
     );
     let embedding_client = Arc::new(embedding_client);
     let progress_tx = state.session.embedding_tx.clone();

@@ -106,12 +106,16 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            // The EmbeddingClient::with_model still takes (ollama,
-            // model_name) — the dimensions are passed separately
-            // when needed (probe, vector store). See Commit 5.
+            // EmbeddingClient::with_model now takes (ollama,
+            // model_name, dimensions). dimensions is sourced from
+            // the alias in models.toml and propagated through
+            // IndexingInit; the EmbeddingClient is just a thin
+            // holder for now. The probe (Commit 6) uses the
+            // dimensions for strict-verify.
             let embedding = Arc::new(EmbeddingClient::with_model(
                 indexing_init.provider.clone(),
                 indexing_init.model_id.clone(),
+                indexing_init.dimensions,
             ));
             DatabaseInitResult {
                 db: Some(Arc::new(db)),
