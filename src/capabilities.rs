@@ -1,7 +1,18 @@
-//! Model capability detection via the LLM server API
+//! Model capability detection
 //!
-//! Capabilities (tools, vision, thinking) are detected at runtime
-//! by querying the server's model info endpoint.
+//! Capabilities (tools, vision, thinking) are sourced from:
+//! 1. **Explicit fields in `models.toml`** (preferred). Each
+//!    `[models.X]` entry can declare `tools = true/false`,
+//!    `thinking = true/false`, `vision = true/false`. Explicit
+//!    fields override the probe; unspecified fields (`None`) fall
+//!    through to the probe.
+//! 2. **Server probe** (fallback). For built-in models and
+//!    aliases that don't specify capability flags, sprach queries
+//!    the server. For OpenAI-compat providers this hits
+//!    `CompatOllama::show_model_info` which returns a permissive
+//!    default set (completion, tools, thinking) but **not** vision
+//!    (the OpenAI spec doesn't expose a vision flag). So vision
+//!    MUST be declared explicitly in `models.toml`.
 //!
 //! # W2 Wave Context (Issue #116)
 //!
@@ -91,7 +102,43 @@ impl ModelCapabilities {
     ///
     /// # Returns
     /// Detected capabilities for the model
+    ///
+    /// W2 #121 extension: capabilities for **user-defined models**
+    /// in `models.toml` are taken from the alias's explicit
+    /// `tools`/`thinking`/`vision` fields (with `None` = probe
+    /// fallback). Built-in models and models not declared in
+    /// `models.toml` fall back to the server probe (which uses
+    /// `/v1/models` for OpenAI-compat — see
+    /// `CompatOllama::show_model_info`).
     pub async fn detect(
+        ollama: &crate::provider::Ollama,
+        model_name: &str,
+    ) -> crate::AppResult<Self> {
+        // W2 #121 extension: if the model is declared in
+        // models.toml as a user-defined alias, use the
+        // explicit capability flags (vision/tools/thinking)
+        // and fall back to the probe for unspecified fields.
+        if let Some(cfg) = crate::user_models::get_user_models().get(model_name) {
+            // Start with the server probe (provides completion).
+            let probed = Self::detect_from_server(ollama, model_name).await?;
+            return Ok(Self {
+                // vision: explicit > probe > false (probe for
+                // OpenAI-compat never reports vision).
+                vision: cfg.vision.unwrap_or(probed.vision),
+                tools: cfg.tools.unwrap_or(probed.tools),
+                thinking: cfg.thinking.unwrap_or(probed.thinking),
+                completion: probed.completion,
+            });
+        }
+
+        // Fallback: probe the server.
+        Self::detect_from_server(ollama, model_name).await
+    }
+
+    /// Server-only probe (no models.toml lookup). Used by `detect()`
+    /// and exposed publicly for callers that need the raw server
+    /// result (e.g., legacy chat subcommand startup).
+    pub async fn detect_from_server(
         ollama: &crate::provider::Ollama,
         model_name: &str,
     ) -> crate::AppResult<Self> {

@@ -23,16 +23,23 @@
 //! temperature = 0.7
 //! top_p = 0.95
 //! seed = 42                   # optional, cross-provider
-//! thinking = true
-//! tools = true
+//! thinking = true             # optional; explicit capability flag
+//! tools = true                # optional; explicit capability flag
+//! vision = false              # optional; explicit capability flag
 //! provider = "my-llama-swap"
 //!
 //! # Embedding model (opt-in via embeddings = true)
 //! [models."nomic"]
 //! model_id = "nomic-embed-text-v2-moe"
 //! provider = "my-llama-swap"
-//! embeddings = true           # opt-in; reserves the model for /v1/embeddings only
-//! dimensions = 768            # REQUIRED when embeddings = true
+//! embeddings = true     # opt-in; reserves the alias for /v1/embeddings only
+//! dimensions = 768      # REQUIRED when embeddings = true
+//!
+//! # Vision model (opt-in via vision = true)
+//! [models."glm-ocr"]
+//! model_id = "glm-ocr:bf16"
+//! provider = "my-llama-swap"
+//! vision = true         # REQUIRED for vision: OpenAI-compat doesn't expose vision in /v1/models
 //! ```
 
 #![expect(clippy::print_stderr)] // CLI model management output
@@ -169,8 +176,21 @@ pub struct UserModelConfig {
     pub top_p: Option<f32>,
     /// Optional seed for reproducible outputs (cross-provider).
     pub seed: Option<u32>,
+    /// Whether the model supports thinking mode (chain-of-thought).
+    /// Tri-state (`None` = probe fallback, `Some(true/false)` = explicit).
+    /// Required for chat models served by non-Ollama providers where
+    /// the probe can't see the "thinking" capability flag.
     pub thinking: Option<bool>,
+    /// Whether the model supports tool calling.
+    /// Tri-state (`None` = probe fallback, `Some(true/false)` = explicit).
     pub tools: Option<bool>,
+    /// Whether the model supports vision (image inputs).
+    /// Tri-state (`None` = probe fallback, `Some(true/false)` = explicit).
+    /// Required for vision models (OCR, vision subcommand) because
+    /// OpenAI-compat `/v1/models` does NOT expose a vision flag, so
+    /// the probe can't detect it.
+    #[serde(default)]
+    pub vision: Option<bool>,
     pub provider: String,
     /// Whether this model is declared as an embedding model.
     ///
@@ -668,6 +688,7 @@ mod tests {
             seed: None,
             thinking: None,
             tools: None,
+            vision: None,
             provider: "test".to_string(),
             embeddings: false,
             dimensions: None,
@@ -691,6 +712,7 @@ mod tests {
             seed: Some(42),
             thinking: Some(true),
             tools: None,
+            vision: None,
             provider: "test".to_string(),
             embeddings: false,
             dimensions: None,
@@ -925,9 +947,18 @@ provider = "my-llama-swap"
         assert!(config.is_some());
         assert_eq!(config.unwrap().model_id, "translategemma:4b");
 
+        // W2 #121 extension: glm-ocr can be either the builtin
+        // (glm-ocr:bf16) or a user override in models.toml.
+        // Just verify it resolves to a non-empty string
+        // containing "glm-ocr".
         let config = get_model_config("glm-ocr");
         assert!(config.is_some());
-        assert_eq!(config.unwrap().model_id, "glm-ocr:bf16");
+        let model_id = config.unwrap().model_id;
+        assert!(
+            !model_id.is_empty() && model_id.contains("glm-ocr"),
+            "glm-ocr should resolve to a model_id (got {:?})",
+            model_id
+        );
     }
 
     #[test]
