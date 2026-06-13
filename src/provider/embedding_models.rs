@@ -27,6 +27,7 @@
 /// - `nomic-embed-text-v2-moe:latest` → matches `"nomic-embed-text-v2-moe"`
 /// - `BAAI/bge-small-en-v1.5` → matches `"bge-small-en-v1.5"`
 /// - `text-embedding-3-small` → matches `"text-embedding-3-small"`
+#[cfg(test)]
 const KNOWN_EMBEDDING_MODEL_FRAGMENTS: &[&str] = &[
     // Nomic AI nomic-embed-text family
     "nomic-embed-text",
@@ -52,13 +53,15 @@ const KNOWN_EMBEDDING_MODEL_FRAGMENTS: &[&str] = &[
 /// substring-matches (case-insensitively) any entry in the hardcoded
 /// embedding model fragment list.
 ///
-/// This is a **heuristic** used only by `sprach models upgrade` to
-/// surface a warning to the user. It is NOT a validation step —
-/// users can still add `embedding = true` to any provider explicitly,
-/// and providers with `embedding = true` are accepted regardless of
-/// whether their model name matches this list.
+/// This is a **heuristic** currently used only by unit tests. It is
+/// reserved for future use by `sprach models upgrade` to suppress
+/// the `MissingEmbeddingFlag` warning for providers that don't serve
+/// any well-known embedding model. The list is **internal only** —
+/// never exposed in user-facing error messages (per user policy:
+/// strict, no list in errors).
+#[cfg(test)]
 #[must_use]
-pub fn is_potential_embedding_model(model_name: &str) -> bool {
+fn is_potential_embedding_model(model_name: &str) -> bool {
     if model_name.is_empty() {
         return false;
     }
