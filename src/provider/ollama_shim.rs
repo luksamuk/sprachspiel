@@ -166,16 +166,34 @@ impl CompatOllama {
             .collect())
     }
 
-    /// Show model info. W2 #121: returns a stub `ModelInfo` since
-    /// `/v1/models` doesn't return detailed metadata.
-    pub async fn show_model_info(&self, _name: String) -> Result<ModelInfo, ollama_rs::error::OllamaError> {
+    /// Show model info.
+    ///
+    /// W2 #121: capabilities cannot be reliably inferred from OpenAI-compat
+    /// `/v1/models` responses — the OpenAI spec does not expose
+    /// `thinking` / `vision` / `tools` flags, and ad-hoc metadata fields
+    /// (e.g. llama-swap's `meta.llamaswap.features`) are deployment-specific.
+    ///
+    /// Policy: assume a permissive default set so that capability-driven
+    /// code paths (tool calling, embeddings, etc.) engage. The user is
+    /// responsible for disabling capabilities they do not want in
+    /// `models.toml` (e.g. `thinking = false`, `tools = false`). Errors
+    /// from the model itself (refusal, tool-call failure, missing
+    /// embedding endpoint) are surfaced to the caller as usual.
+    pub async fn show_model_info(
+        &self,
+        _name: String,
+    ) -> Result<ModelInfo, ollama_rs::error::OllamaError> {
         Ok(ModelInfo {
             license: String::new(),
             modelfile: String::new(),
             parameters: String::new(),
             template: String::new(),
             model_info: Default::default(),
-            capabilities: vec!["completion".to_string(), "tools".to_string()],
+            capabilities: vec![
+                "completion".to_string(),
+                "tools".to_string(),
+                "thinking".to_string(),
+            ],
         })
     }
 
@@ -186,11 +204,14 @@ impl CompatOllama {
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         let model = request.model_name.clone();
         let messages = convert_ollama_messages_to_llm(request.messages.clone());
+        // Extract tools from the request (W2 #121: same fix as
+        // send_chat_messages_stream — previously hardcoded `vec![]`).
+        let tools = convert_ollama_tools_to_tool_info(request.tools.clone());
         let options = ProviderOptions::default();
 
         let response = self
             .inner
-            .chat(&model, messages, vec![], options)
+            .chat(&model, messages, tools, options)
             .await
             .map_err(|e| ollama_rs::error::OllamaError::Other(e.to_string()))?;
 
@@ -198,20 +219,67 @@ impl CompatOllama {
     }
 
     /// Send a streaming chat completion request.
-    /// W2 #121: streams LlmStreamChunk converted to ollama-rs ChatMessage.
-    /// Returns an empty stream stub for now (full streaming is wired
-    /// in P6.0e.4 commit that migrates custom_coordinator to LlmProvider).
+    /// W2 #121: streams LlmStreamChunk from OpenAICompatibleProvider
+    /// converted to ollama-rs ChatMessage per chunk.
     pub async fn send_chat_messages_stream(
         &self,
         request: ChatMessageRequest,
     ) -> ollama_rs::error::Result<
         Pin<Box<dyn Stream<Item = Result<ChatMessage, ollama_rs::error::OllamaError>> + Send>>,
     > {
-        let _ = request;
-        use futures::stream;
-        let stream: Pin<Box<dyn Stream<Item = Result<ChatMessage, ollama_rs::error::OllamaError>> + Send>> =
-            Box::pin(stream::empty());
-        Ok(stream)
+        let model = request.model_name.clone();
+        let messages = convert_ollama_messages_to_llm(request.messages.clone());
+        // Extract tools from the request (W2 #121 bug fix: was hardcoded `vec![]`,
+        // causing the OpenAI-compatible backend to never receive tool definitions
+        // and thus never emit `delta.tool_calls`).
+        let tools = convert_ollama_tools_to_tool_info(request.tools.clone());
+        let options = ProviderOptions::default();
+
+        let stream = self
+            .inner
+            .chat_stream(&model, messages, tools, options)
+            .await
+            .map_err(|e| ollama_rs::error::OllamaError::Other(e.to_string()))?;
+
+        // Convert LlmStreamChunk → ChatMessage. The shim returns ChatMessage
+        // (not ChatMessageResponseChunk) so the legacy coordinator's
+        // `while let Some(chunk_result) = stream.next().await { match chunk_result { Ok(chunk) => ... chunk.content ... } }`
+        // loop works unchanged. See custom_coordinator.rs:725-733.
+        let mapped = async_stream::stream! {
+            use futures::StreamExt;
+            let mut stream = stream;
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        let content = chunk.content.clone().unwrap_or_default();
+                        let tool_calls = chunk
+                            .tool_calls
+                            .clone()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|c| ollama_rs::generation::tools::ToolCall {
+                                function: ollama_rs::generation::tools::ToolCallFunction {
+                                    name: c.name,
+                                    arguments: c.arguments,
+                                },
+                            })
+                            .collect();
+                        yield Ok(ChatMessage {
+                            role: MessageRole::Assistant,
+                            content,
+                            tool_calls,
+                            images: None,
+                            thinking: chunk.thinking,
+                        });
+                    }
+                    Err(e) => yield Err(ollama_rs::error::OllamaError::Other(e.to_string())),
+                }
+            }
+        };
+
+        let pinned: Pin<Box<dyn Stream<Item = Result<ChatMessage, ollama_rs::error::OllamaError>> + Send>> =
+            Box::pin(mapped);
+        Ok(pinned)
     }
 
     /// Generate a completion.
@@ -294,6 +362,39 @@ pub struct LocalModel {
 }
 
 // === Helper conversion functions ===
+
+/// Convert ollama-rs `ToolInfo` (from `ChatMessageRequest.tools`) into our
+/// agnostic `LlmToolInfo` so the OpenAI-compatible backend receives the
+/// tool definitions on every chat call.
+///
+/// W2 #121: previously this conversion was missing, so the shim dropped
+/// all tools on the floor — the LLM never knew what tools were available
+/// and never emitted `delta.tool_calls` in streaming responses.
+fn convert_ollama_tools_to_tool_info(
+    tools: Vec<ollama_rs::generation::tools::ToolInfo>,
+) -> Vec<crate::provider::ToolInfo> {
+    tools
+        .into_iter()
+        .filter_map(|t| {
+            // Round-trip via JSON to map ollama-rs's ToolInfo into the
+            // agnostic LlmToolInfo (structurally identical, different paths).
+            let json = match serde_json::to_value(&t) {
+                Ok(j) => j,
+                Err(e) => {
+                    log::warn!("convert_ollama_tools: failed to serialize tool: {e}");
+                    return None;
+                }
+            };
+            match serde_json::from_value::<crate::provider::ToolInfo>(json) {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    log::warn!("convert_ollama_tools: failed to deserialize tool: {e}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
 
 fn convert_ollama_messages_to_llm(messages: Vec<ChatMessage>) -> Vec<LlmMessage> {
     messages

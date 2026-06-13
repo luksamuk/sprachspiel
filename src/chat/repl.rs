@@ -42,8 +42,9 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 #[expect(clippy::type_complexity)]
 fn init_chat_database(
-    args: &super::ChatArgs,
     settings: &Settings,
+    ollama: &crate::provider::Ollama,
+    anonymous: bool,
     db_path: Option<PathBuf>,
 ) -> (
     Option<Arc<crate::db::Database>>,
@@ -51,14 +52,12 @@ fn init_chat_database(
     crate::provider::Ollama,
     Option<String>,
 ) {
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    // W2 #121: Use the model's provider if known; fallback to default.
-    let ollama = match args.model.as_deref() {
-        Some(model) => settings.ollama_client_for_model(model),
-        None => settings.ollama_client_for_model(&settings.model.default),
-    };
+    // W2 #121: ollama client is built by the caller so that it can
+    // target the model the user actually asked for. The DB init needs
+    // a client for embeddings + health, so we keep a clone here.
+    let ollama = ollama.clone();
 
-    if args.anonymous {
+    if anonymous {
         return (None, None, ollama, None);
     }
 
@@ -647,7 +646,18 @@ pub async fn run_chat_repl(
         return Ok(());
     }
 
-    let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings, db_path);
+    // W2 #121: build the LLM client for the model the user actually
+    // asked for (CLI override > subcommand override > config default).
+    // This must be done before init_chat_database because that path
+    // needs an Ollama client. We pass it to init_chat_database so the
+    // client survives the session reload (which might change model).
+    let initial_ollama = match model_override {
+        Some(model) => settings.ollama_client_for_model(model),
+        None => settings.ollama_client_for_model(default_model),
+    };
+
+    let (db, embedding_client, _ollama_for_db, db_error) =
+        init_chat_database(settings, &initial_ollama, args.anonymous, db_path);
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
@@ -684,6 +694,14 @@ pub async fn run_chat_repl(
             );
         }
     }
+
+    // W2 #121: rebuild the LLM client for the FINAL resolved model
+    // (after session model has been applied). This ensures the streaming
+    // coordinator and the banner both use the same provider.
+    let ollama = match Some(session.model.as_str()) {
+        Some(model) => settings.ollama_client_for_model(model),
+        None => settings.ollama_client_for_model(default_model),
+    };
 
     let current_model_name = session.model.clone();
     let model_config = crate::user_models::resolve_model_config(&current_model_name);
@@ -735,7 +753,7 @@ pub async fn run_chat_repl(
         .agents_md(agents_md.clone())
         .cli_code(cli_code)
         .cli_soulless(cli_soulless)
-        .ollama(ollama)
+        .ollama(ollama.clone())
         .db(db.clone())
         .embedding_client(embedding_client.clone())
         .settings(settings.clone())

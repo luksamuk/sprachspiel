@@ -309,11 +309,25 @@ pub fn get_user_models() -> &'static HashMap<String, UserModelConfig> {
 /// have a `provider` field, since they were defined before the multi-provider
 /// refactor) or for unknown model names.
 ///
+/// Lookup order:
+///  1. Map key (e.g. `"gemma4-e2b"`) — what `--model gemma4-e2b` resolves to.
+///  2. Inner `model_id` field (e.g. `"gemma4-e2b:think"`) — what the
+///     coordinator actually passes to the LLM client.
+///
+/// Callers may invoke this with either form, so we must accept both.
+///
 /// Used by the chat banner to display "Provider: <name>" instead of the
-/// server URL.
+/// server URL, and by `Settings::ollama_client_for_model` to build the
+/// correct client.
 pub fn get_provider_for_model(model_name: &str) -> Option<String> {
+    // 1. Direct map key lookup
+    if let Some(cfg) = get_user_models().get(model_name) {
+        return Some(cfg.provider.clone());
+    }
+    // 2. Fallback: scan by inner `model_id` field
     get_user_models()
-        .get(model_name)
+        .values()
+        .find(|cfg| cfg.model_id == model_name)
         .map(|cfg| cfg.provider.clone())
 }
 

@@ -24,9 +24,19 @@ use serde::{Deserialize, Serialize};
 /// OpenAI chat message (request/response).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIMessage {
-    pub role: String,
+    /// Sender role. Optional in streaming deltas (OpenAI sends the role
+    /// only on the very first chunk; subsequent chunks omit it). Required
+    /// for non-streaming responses and request bodies.
+    #[serde(default)]
+    pub role: Option<String>,
     #[serde(default)]
     pub content: Option<String>,
+    /// Reasoning / thinking content emitted in streaming deltas by some
+    /// OpenAI-compat providers (llama-swap, DeepSeek, Qwen3-thinking,
+    /// etc.). Not part of the strict OpenAI spec but widely supported.
+    /// On the request side, leave `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Tool calls issued by the assistant. Present in assistant messages
@@ -39,19 +49,38 @@ pub struct OpenAIMessage {
 }
 
 /// OpenAI tool call.
+///
+/// In streaming responses, only the first chunk for a given tool call
+/// carries the `id` and `function.name`; subsequent chunks carry
+/// incremental `function.arguments` fragments and the same `index` to
+/// identify the tool call they extend. Some providers (e.g. llama-swap
+/// proxying local llama.cpp) may omit `id`/`type` on continuation
+/// chunks. We therefore deserialize all fields as optional/default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIToolCall {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub tool_type: String,
+    /// Index of the tool call in the response. OpenAI streams this
+    /// on every chunk. Used to correlate continuation chunks to the
+    /// first chunk of a tool call.
+    #[serde(default)]
+    pub index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub tool_type: Option<String>,
+    #[serde(default)]
     pub function: OpenAIToolCallFunction,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OpenAIToolCallFunction {
+    /// Function name. Set on the first chunk for each tool call.
+    /// Empty string on continuation chunks.
+    #[serde(default)]
     pub name: String,
     /// Arguments as a JSON-encoded string (OpenAI-spec: arguments is a string,
-    /// unlike Ollama native which uses a JSON object).
+    /// unlike Ollama native which uses a JSON object). Empty on the first
+    /// chunk; populated incrementally across continuation chunks.
+    #[serde(default)]
     pub arguments: String,
 }
 

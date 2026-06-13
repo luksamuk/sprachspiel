@@ -267,7 +267,7 @@ impl OpenAICompatibleProvider {
                     calls
                         .into_iter()
                         .map(|c| LlmToolCall {
-                            id: c.id,
+                            id: c.id.unwrap_or_default(),
                             name: c.function.name,
                             arguments: serde_json::from_str(&c.function.arguments)
                                 .unwrap_or_else(|e| {
@@ -731,7 +731,7 @@ fn parse_sse_stream(
                                         for choice in chunk.choices {
                                             let mut llm_chunk = LlmStreamChunk {
                                                 content: choice.delta.content.clone(),
-                                                thinking: None,
+                                                thinking: choice.delta.reasoning_content.clone(),
                                                 tool_calls: None,
                                                 done: false,
                                                 done_reason: choice.finish_reason.clone(),
@@ -739,23 +739,35 @@ fn parse_sse_stream(
                                                 prompt_eval_count: None,
                                             };
 
-                                            // Accumulate tool calls (incremental arguments)
+                                            // Accumulate tool calls (incremental arguments).
+                                            // OpenAI spec streams tool calls as multiple chunks
+                                            // sharing the same `index`; only the first chunk
+                                            // carries `id` and `function.name`; subsequent
+                                            // chunks extend `function.arguments`.
                                             if let Some(delta_calls) = choice.delta.tool_calls {
                                                 for delta_call in delta_calls {
-                                                    let index = delta_call.id.len() as u32; // use id hash as index
+                                                    let index = delta_call.index;
                                                     let accumulator = tool_call_accumulators
                                                         .entry(index)
-                                                        .or_insert_with(|| PartialToolCall {
-                                                            id: delta_call.id.clone(),
-                                                            name: String::new(),
-                                                            arguments: String::new(),
-                                                        });
+                                                        .or_default();
+                                                    // First chunk: id and name
+                                                    if let Some(id) = delta_call.id
+                                                        && !id.is_empty()
+                                                    {
+                                                        accumulator.id = id;
+                                                    }
                                                     if !delta_call.function.name.is_empty() {
                                                         accumulator.name = delta_call.function.name;
                                                     }
-                                                    accumulator.arguments.push_str(&delta_call.function.arguments);
+                                                    // Continuation chunk: append arguments
+                                                    if !delta_call.function.arguments.is_empty() {
+                                                        accumulator
+                                                            .arguments
+                                                            .push_str(&delta_call.function.arguments);
+                                                    }
                                                 }
-                                                // After processing all deltas, build the tool calls
+                                                // Emit the accumulated tool calls on this chunk
+                                                // so the consumer sees the latest progress.
                                                 let complete_calls: Vec<LlmToolCall> = tool_call_accumulators
                                                     .values()
                                                     .filter(|p| !p.name.is_empty())
@@ -763,7 +775,9 @@ fn parse_sse_stream(
                                                         id: p.id.clone(),
                                                         name: p.name.clone(),
                                                         arguments: serde_json::from_str(&p.arguments)
-                                                            .unwrap_or_else(|_| serde_json::Value::String(p.arguments.clone())),
+                                                            .unwrap_or_else(|_| {
+                                                                serde_json::Value::String(p.arguments.clone())
+                                                            }),
                                                     })
                                                     .collect();
                                                 if !complete_calls.is_empty() {
@@ -815,7 +829,7 @@ fn parse_sse_stream(
 }
 
 /// Partial tool call state for accumulating OpenAI incremental arguments.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct PartialToolCall {
     id: String,
     name: String,
@@ -934,12 +948,14 @@ mod tests {
             choices: vec![ChatChoice {
                 index: 0,
                 message: OpenAIMessage {
-                    role: "assistant".to_string(),
+                    role: Some("assistant".to_string()),
                     content: None,
+                    reasoning_content: None,
                     name: None,
                     tool_calls: Some(vec![OpenAIToolCall {
-                        id: "call_1".to_string(),
-                        tool_type: "function".to_string(),
+                        index: 0,
+                        id: Some("call_1".to_string()),
+                        tool_type: Some("function".to_string()),
                         function: OpenAIToolCallFunction {
                             name: "get_weather".to_string(),
                             arguments: r#"{"location":"London"}"#.to_string(),
