@@ -129,6 +129,17 @@ impl CompatOllama {
         &self.inner
     }
 
+    /// Probe the embedding endpoint (W2 #121).
+    ///
+    /// Delegates to [`OpenAICompatibleProvider::probe_embedding`].
+    /// See that method for details.
+    pub async fn probe_embedding(
+        &self,
+        model: &str,
+    ) -> Result<(), crate::provider::types::ProviderError> {
+        self.inner.probe_embedding(model).await
+    }
+
     /// Get the base URL (normalized with /v1 suffix).
     pub fn base_url(&self) -> &str {
         &self.base_url

@@ -138,6 +138,54 @@ impl OpenAICompatibleProvider {
         }
     }
 
+    /// Probe the embedding endpoint (W2 #121).
+    ///
+    /// Sends a minimal POST to `/v1/embeddings` with a short test
+    /// text (`"test"`, truncated to 256 dims) to verify the
+    /// `model` is actually served by this provider.
+    ///
+    /// Returns:
+    /// - `Ok(())` if the call succeeded (any 2xx status)
+    /// - `Err(ProviderError::Api { status, body })` on 4xx/5xx
+    /// - `Err(ProviderError::Http(_))` on network errors
+    ///
+    /// This is called once at startup by the embedding
+    /// initialization path when `[embedding].probe = true` in
+    /// `config.toml`. Set the flag to `false` to skip the probe
+    /// (useful for cold-start scenarios).
+    pub async fn probe_embedding(&self, model: &str) -> Result<(), ProviderError> {
+        let url = self.url("/embeddings");
+        let request = EmbeddingsRequest {
+            model: model.to_string(),
+            input: "test".to_string(),
+            // Use smallest meaningful dimension to keep the probe
+            // fast and bandwidth-light. Servers that support
+            // Matryoshka truncation (nomic, bge) honor this; others
+            // ignore and return full dims.
+            dimensions: Some(256),
+            encoding_format: "float".to_string(),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(self.headers())
+            .json(&request)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ProviderError::Api {
+                status: status.as_u16(),
+                body,
+            });
+        }
+        Ok(())
+    }
+
     /// Build request headers (including auth if API key is set).
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
