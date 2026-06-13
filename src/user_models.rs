@@ -446,18 +446,11 @@ pub fn is_model_valid(name: &str) -> bool {
 ///
 /// Built-in models are never embedding-only (the `ModelConfig` builtin
 /// has no `embeddings` field, so they all default to `false`).
-#[must_use]
-pub fn is_model_embedding_only(name: &str) -> bool {
-    if let Some(cfg) = get_user_models().get(name) {
-        return cfg.embeddings;
-    }
-    // Also check by model_id (e.g., "nomic-embed-text-v2-moe" matches
-    // the inner model_id field of an alias).
-    get_user_models()
-        .values()
-        .find(|cfg| cfg.model_id == name)
-        .is_some_and(|cfg| cfg.embeddings)
-}
+///
+/// **See also:** the canonical implementation lives in the unified
+/// `is_model_embedding_only` near `list_all_model_names` (the W2
+/// #121 extension uses the same impl in both places; this
+/// declaration is kept for `#[must_use]` documentation).
 
 /// Resolve model configuration with error handling
 ///
@@ -504,6 +497,9 @@ pub fn resolve_think_mode(
     }
 }
 
+/// All model names (chat + embedding). Used by `sprach --list`
+/// and any other place that wants to enumerate every model
+/// the user has configured, regardless of capability.
 pub fn list_all_model_names() -> Vec<String> {
     let mut names: Vec<String> = ModelConfig::list_builtin_names()
         .iter()
@@ -518,6 +514,49 @@ pub fn list_all_model_names() -> Vec<String> {
 
     names.sort();
     names
+}
+
+/// Names of models that are safe to use as chat models (i.e. NOT
+/// declared with `embeddings = true` in models.toml). Used by
+/// the `/model` tab completer and any other place that should
+/// hide embedding-only models from chat selection.
+///
+/// Built-in models are never embedding-only (the `ModelConfig`
+/// builtin has no `embeddings` field), so they are always
+/// included.
+pub fn list_chat_model_names() -> Vec<String> {
+    let mut names: Vec<String> = ModelConfig::list_builtin_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    for (name, cfg) in get_user_models() {
+        if !cfg.embeddings && !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+
+    names.sort();
+    names
+}
+
+/// Returns `true` if the model at the given name (alias or
+/// inner model_id) is declared as embedding-only in
+/// `models.toml`. Built-in models are never embedding-only.
+///
+/// W2 #121 extension: this is the canonical check used by
+/// `model_switch::switch_model` and the `--model` CLI flag to
+/// reject embedding-only models from being selected as chat
+/// models.
+#[must_use]
+pub fn is_model_embedding_only(name: &str) -> bool {
+    if let Some(cfg) = get_user_models().get(name) {
+        return cfg.embeddings;
+    }
+    get_user_models()
+        .values()
+        .find(|cfg| cfg.model_id == name)
+        .is_some_and(|cfg| cfg.embeddings)
 }
 
 #[cfg(test)]

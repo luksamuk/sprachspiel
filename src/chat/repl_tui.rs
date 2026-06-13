@@ -65,7 +65,12 @@ pub async fn run_chat_repl_tui(
     resume_message: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let capabilities = state.capabilities.clone();
-    let model_names = crate::user_models::list_all_model_names();
+    // W2 #121 extension: the completer shows chat-safe models
+    // only (filter out embedding-only models). For the
+    // `sprach --list` output, see `list_all_model_names` (used
+    // by main.rs), which lists everything and marks embedding
+    // models with a tag.
+    let model_names = crate::user_models::list_chat_model_names();
     let model_name = state.model_config.model_id.clone();
     let think_enabled = state.session.think;
     let tools_enabled = state.session.tools && capabilities.tools;
