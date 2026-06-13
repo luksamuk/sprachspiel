@@ -754,9 +754,20 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     }
                 }
                 Err(_err) => {
-                    // Stream error — break and let the coordinator handle it
-                    log::debug!("Stream error in custom_coordinator: {_err}");
-                    break;
+                    // Stream error — propagate the error to the caller so
+                    // the TUI can display it (user policy: errors that
+                    // interrupt the cycle MUST be visible). Previously
+                    // this only `break`-ed, which caused the partial
+                    // content to be returned as a complete response,
+                    // hiding the error from the user.
+                    //
+                    // W2 #121: errors coming from the OpenAI-compatible
+                    // backend arrive as `OllamaError::InternalError`
+                    // (5xx) or `OllamaError::Other` (4xx) after the
+                    // `convert_provider_error` mapping in ollama_shim.
+                    // We preserve the formatted message here.
+                    log::error!("Stream error in custom_coordinator: {_err}");
+                    return Err(_err);
                 }
             }
         }
