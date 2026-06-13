@@ -326,116 +326,123 @@ Or use environment variables:
 export OLLAMA_HOST="192.168.1.100:11434"
 ```
 
-## Embedding Configuration
+## Indexing Configuration
 
-Sprachspiel uses vector embeddings for the SQLite-vec store (`/search` and the hybrid RRF retrieval pipeline). The embedding model and provider are decoupled from the chat model and provider, so you can use llama-swap for chat and a local Ollama instance for embeddings, or any other combination.
+Sprachspiel uses vector embeddings for the SQLite-vec store (`/search` and the hybrid RRF retrieval pipeline). The `[indexing]` section in `config.toml` configures the embedding model AND the hybrid RRF weights, since indexing (storing vectors) and retrieval (looking them up) are two sides of the same concern.
 
-The `[embedding]` section in `config.toml` is **required**. Sprachspiel refuses to start (chat, query) if `model` is empty.
+The embedding capability is declared **per-model** in `models.toml` (not per-provider). A model with `embeddings = true` is reserved for the indexing pipeline and **cannot be selected for chat** (the `-m <alias>` and `/model <alias>` commands will reject it with a clear error).
+
+The `[indexing]` section in `config.toml` is **required**. Sprachspiel refuses to start (chat, query) if `model` is empty or if the alias doesn't resolve.
 
 ### Schema
 
 ```toml
-[embedding]
-# Required. The model name passed verbatim to the provider's /v1/embeddings endpoint.
-model = "nomic-embed-text-v2-moe"
+[indexing]
+# Required. The ALIAS of an embedding-capable model from models.toml
+# [models.*]. The alias must be declared with `embeddings = true`
+# and `dimensions = N` in models.toml. The provider is inferred from
+# the alias's `provider` field — there is NO `provider` field here.
+model = "nomic"
 
-# Optional. Provider name from models.toml [provider.*] to use for embeddings.
-# If not set, the chat provider is used.
-# The named provider MUST have `embedding = true` in models.toml.
-# provider = "llama-swap"
-
-# Optional. Whether to make 1 POST /v1/embeddings call at startup to verify
-# the provider actually serves the model. Default: true.
-# Set to false for cold-start scenarios where the model takes 30-60s to load.
+# Optional. Whether to make 1 POST /v1/embeddings call at startup to
+# verify the provider actually serves the model. Default: true.
+# The probe does NOT pass `dimensions` in the request body (adaptive
+# — some providers reject it); the response's vector dim count is
+# compared against the alias's declared `dimensions` for strict
+# verify. Mismatch is a fatal error.
+# Set to false for cold-start scenarios where the model takes 30-60s
+# to load.
 # probe = true
+
+# RRF weights (moved from the old [retrieval] section).
+# keyword_weight = 0.4  # BM25; default 0.4
+# semantic_weight = 0.6  # vector similarity; default 0.6
 ```
 
-### Provider Resolution
-
-1. If `[embedding].provider = "<name>"` is set, the named provider from `models.toml [provider.*]` is used. The provider MUST have `embedding = true` declared.
-2. If `[embedding].provider` is unset, the chat model's provider is used (the provider of the active chat model). The chat provider must ALSO have `embedding = true`.
-3. If neither is set or neither is embedding-capable, sprach fails to start with a clear error message.
-
-### Example: Same Provider for Chat and Embedding
+### Required `models.toml` Schema
 
 ```toml
-# config.toml
-[embedding]
-model = "nomic-embed-text-v2-moe"
-# provider is unset → use the chat provider
-```
-
-```toml
-# models.toml
+# The provider is just a transport — it does NOT need any
+# "embedding" flag. The capability is per-model.
 [provider."llama-swap"]
 kind = "openai"
 base_url = "http://localhost:12434/v1"
-embedding = true  # ← required for embeddings to work
 
+# Chat model (no embeddings flag → safe for -m and /model)
 [models."gemma4-e2b"]
 model_id = "gemma4-e2b:think"
 provider = "llama-swap"
-```
 
-### Example: Different Providers for Chat and Embedding
-
-```toml
-# config.toml
-[embedding]
-model = "nomic-embed-text-v2-moe"
-provider = "ollama-local"  # ← use a different provider
-```
-
-```toml
-# models.toml
-[provider."llama-swap"]
-kind = "openai"
-base_url = "http://localhost:12434/v1"
-# embedding = true is NOT required here — only used for chat
-
-[provider."ollama-local"]
-kind = "openai"
-base_url = "http://localhost:11434/v1"
-embedding = true  # ← only this provider is used for embeddings
-
-[models."gemma4-e2b"]
-model_id = "gemma4-e2b:think"
+# Embedding model (embeddings = true → reserved for [indexing]).
+# dimensions is REQUIRED when embeddings = true.
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
 provider = "llama-swap"
+embeddings = true
+dimensions = 768
 ```
 
-### Probe Behavior
+### Resolution Rules
 
-When `probe = true` (default), sprach makes 1 POST `/v1/embeddings` call at startup with a short test text (`"test"`, `dimensions: Some(256)`). If the call returns 2xx, the configuration is considered valid. If the call returns 4xx, fails to connect, or times out (30s), sprach fails to start with a clear error message that includes:
-- The provider base_url
-- The model name
-- 4 possible causes (cold start, wrong model, wrong base_url, network error)
-- 3 diagnostic commands (curl .../v1/models)
-- The opt-out hint (`[embedding].probe = false`)
+When sprach starts, it resolves the indexing alias with these rules:
 
-Set `probe = false` for cold-start scenarios where the embedding model takes 30-60s to load. Without the probe, a misconfigured provider is detected only at the first embedding call.
+1. `[indexing].model` is **empty** → fatal error: `[indexing].model is empty in config.toml. Add: [indexing]\nmodel = "nomic"`.
+2. The alias doesn't exist in `models.toml` → fatal error: `Indexing alias '<name>' not found in models.toml.`
+3. The alias exists but doesn't have `embeddings = true` → fatal error: `Model '<name>' is not declared as an embedding model. Add 'embeddings = true' and 'dimensions = N' to [models."<name>"] in models.toml.`
+4. The alias has `embeddings = true` but no `dimensions` → fatal error (caught at models.toml load time).
+5. The alias's `provider` doesn't exist in `models.toml` → fatal error: `Provider '<name>' referenced by embedding model '<alias>' not found in models.toml.`
 
-### Error Messages
+### Probe Behavior (Adaptive + Strict Verify)
 
-| Situation | Message |
-|-----------|---------|
-| `[embedding].model` is empty | `Error: [embedding].model is empty in config.toml. Add: [embedding]\nmodel = "nomic-embed-text-v2-moe"` |
-| `[embedding].provider` not in models.toml | `Error: Embedding provider '<name>' not found in models.toml. Add a [provider."<name>"] block or remove 'provider = "<name>"' from [embedding] to fall back to the chat provider.` |
-| Provider lacks `embedding = true` | `Error: Provider '<name>' is not declared as embedding-capable. Add 'embedding = true' to [provider."<name>"] in models.toml.` |
-| Probe returns 4xx | `Error: Probe embedding call to provider at <url> with model '<name>' failed: <status>.\n[diagnostic commands and opt-out hint]` |
-| Probe timeout | `Error: Probe embedding call to provider at <url> with model '<name>' timed out. The model may be in cold start; wait for it to load or set 'probe = false' in [embedding].` |
+When `probe = true` (default), sprach makes 1 POST `/v1/embeddings` call at startup:
+
+- **Adaptive**: the probe does NOT pass `dimensions` in the request body (some providers reject it with 400). The response's vector dim count is the ground truth.
+- **Strict verify**: the response dim count is compared against the alias's declared `dimensions`. Mismatch is a fatal error:
+  ```
+  Error: Probe indexing dim mismatch: alias declares dimensions=768,
+  but provider returned 256 dimensions for model 'nomic'.
+  The model may not support Matryoshka truncation, or the alias is
+  misconfigured.
+
+  To fix:
+  - If the model naturally returns 256 dimensions, update the
+    alias's `dimensions = 256` in models.toml.
+  - If the alias should use Matryoshka truncation to 768 dims,
+    verify the model server is configured for it.
+  - Set [indexing].probe = false to skip the probe and trust the config.
+  ```
+
+Set `probe = false` for cold-start scenarios where the embedding model takes 30-60s to load.
+
+### Chat Model Rejection
+
+Embedding-only models cannot be used for chat. Both the CLI flag and the slash command reject them:
+
+```bash
+$ sprach -m nomic
+Error: 'nomic' is an embedding-only model and cannot be used for chat.
+Use `[indexing].model = "nomic"` in config.toml to reference it for
+embedding generation, or pick a chat model from --list.
+
+$ sprach chat
+> /model nomic
+Error: 'nomic' is an embedding-only model and cannot be used for chat.
+```
+
+The TUI tab completer in the `/model` command filters out embedding-only models automatically. `sprach --list` still shows all models (including embedding ones) with a `[embeddings-only]` tag appended.
 
 ### `sprach models upgrade` Warning
 
-`sprach models upgrade` emits a warning (not an auto-add) when a `[provider.*]` block lacks the `embedding` field:
+`sprach models upgrade` emits a warning (not an auto-add) when a `[models.*]` block has `embeddings = true` but no `dimensions`:
 
 ```
-WARN: 1 provider(s) do not declare `embedding = true`:
-  - [provider."llama-swap"]: no `embedding = true` flag. If this provider
-    serves /v1/embeddings, add `embedding = true` to enable embedding
-    support. See `sprach config upgrade` for the [embedding] section.
+WARN: 1 embedding model(s) do not declare `dimensions`:
+  - [models."nomic"]: no `dimensions = N` field. Add `dimensions = <N>`
+    (e.g. 768 for nomic-embed-text-v2-moe, 256 for Matryoshka-truncated)
+    so [indexing] can use this model.
 ```
 
-The upgrade never auto-adds the flag. The user must add it manually after confirming the provider serves `/v1/embeddings`.
+The upgrade never auto-adds `dimensions` (the user must know the actual dim count the model produces). The startup probe will fail-fast with a clear error if the alias is referenced from `[indexing]` and the dimensions don't match the provider's response.
 
 ## Per-Subcommand Configuration
 

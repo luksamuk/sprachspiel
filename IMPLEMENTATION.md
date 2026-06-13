@@ -4297,18 +4297,19 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 - Manual test against llama-swap (Ollama + llama.cpp + vLLM) passes
 - `models upgrade` migrates existing configs correctly
 
-**Decoupled Embedding Provider (W2 #121 extension):**
+**Indexing Configuration Redesign (W2 #121 extension — user feedback):**
 
-The original #121 plan left the embedding model as a hardcoded `nomic-embed-text-v2-moe:latest` constant in `src/embeddings/client.rs`, served by the same provider as the chat model. This was identified as a design gap (the model name was a hidden assumption; the chat and embedding providers were coupled). The W2 #121 extension decouples them:
+The first version of the W2 #121 extension added a provider-level `embedding = true` flag on `[provider.*]` and a `[embedding]` section in `config.toml`. After user review, this design was replaced with a model-level approach where the embedding capability is declared on the **model** (not the provider), and the section is renamed from `[embedding]` to `[indexing]` (merged with the old `[retrieval]`).
 
-**New schema:**
+**New schema (W2 #121 extension, final):**
 
 ```toml
 # config.toml
-[embedding]
-model = "nomic-embed-text-v2-moe"   # required; was hardcoded
-provider = "llama-swap"              # optional; defaults to chat provider
-probe = true                         # optional; default true (opt-OUT)
+[indexing]
+model = "nomic"               # ALIAS from models.toml [models.*]
+probe = true                  # opt-out; default true
+keyword_weight = 0.4          # moved from [retrieval]
+semantic_weight = 0.6         # moved from [retrieval]
 ```
 
 ```toml
@@ -4316,46 +4317,89 @@ probe = true                         # optional; default true (opt-OUT)
 [provider."llama-swap"]
 kind = "openai"
 base_url = "http://localhost:12434/v1"
-embedding = true  # opt-in: declare as embedding-capable
+# NO `embedding = true` here — provider is just a transport
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "llama-swap"
+# Chat model (no embeddings flag → safe for -m and /model)
+
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true   # opt-in: reserved for /v1/embeddings
+dimensions = 768    # REQUIRED when embeddings = true
 ```
 
-**Resolution rules (in `Settings::resolve_embedding_provider`):**
+**Resolution rules (in `Settings::resolve_indexing_model`):**
 
-1. If `[embedding].provider = "<name>"` is set, the named provider is used. It MUST have `embedding = true` declared, else error.
-2. Otherwise, fall back to the chat provider of the active model. It MUST also have `embedding = true`, else error.
-3. Empty `[embedding].model` is a fatal error with an actionable hint.
+1. `[indexing].model` is empty → fatal error: `[indexing].model is empty`.
+2. The alias doesn't exist in `models.toml` → fatal error: `Indexing alias '<name>' not found in models.toml`.
+3. The alias exists but doesn't have `embeddings = true` → fatal error: `Model '<name>' is not declared as an embedding model`.
+4. The alias has `embeddings = true` but no `dimensions` → fatal error (caught at models.toml load time).
+5. The alias's `provider` doesn't exist → fatal error.
 
-**Probe (opt-out, default on):** makes 1 POST `/v1/embeddings` with `dimensions: Some(256)` and short test text. Failure → fatal error with 4-cause diagnostic and 3 curl commands. Side effect: 1 real embedding per startup. `probe = false` for cold-start scenarios.
+**Probe (adaptive + strict verify, opt-out, default on):** the probe does NOT pass `dimensions` in the request body (some providers reject it). The response's vector dim count is compared against the alias's declared `dimensions`. Mismatch is a fatal error:
+```
+Error: Probe indexing dim mismatch: alias declares dimensions=768,
+but provider returned 256 dimensions for model 'nomic'.
+...
+```
+
+**Embedding-only model rejection:** `-m <alias>` and `/model <alias>` reject aliases with `embeddings = true`. The TUI completer filters them out automatically. `sprach --list` shows them with a `[embeddings-only]` tag.
 
 **Files added/modified:**
 
 | File | Change |
 |------|--------|
-| `src/provider/embedding_models.rs` (new) | Hardcoded list of 11 well-known embedding model fragments; `is_potential_embedding_model(name)` substring matcher. Internal-only — never exposed in user-facing messages. |
-| `src/user_models.rs` | `ProviderConfig.embedding: bool` (default `false`); explicit opt-in flag. |
-| `src/settings.rs` | `EmbeddingSettings { model, provider, probe }`; `Settings.embedding` field (with `#[serde(default)]` for tolerance); `SAMPLE_CONFIG` adds `[embedding]` section. 3 helper methods: `embedding_model_name()`, `embedding_provider_name()`, `embedding_probe_enabled()`, `resolve_embedding_provider(chat_provider_name)`. |
-| `src/embeddings/client.rs` | `DEFAULT_EMBEDDING_MODEL` constant REMOVED. `EmbeddingClient::new(ollama)` REMOVED. `with_model(ollama, model_name)` is the only constructor. |
-| `src/provider/openai_compat.rs` | New `OpenAICompatibleProvider::probe_embedding(model)` method (1 POST `/v1/embeddings`). |
-| `src/provider/ollama_shim.rs` | New `CompatOllama::probe_embedding(model)` shim delegation. |
-| `src/db/init.rs` | `init_database_core(embedding_init: EmbeddingInit, ...)` — new `EmbeddingInit { provider, model_name, probe }` struct. Empty `model_name` → fatal error with config snippet. New `run_embedding_probe(provider, model_name, probe_enabled)` async helper. |
-| `src/chat/repl.rs` | `init_chat_database` is now `async`; resolves embedding provider via `Settings::resolve_embedding_provider`; builds a SEPARATE `Ollama` (shim) for the embedding provider; runs the probe BEFORE database init. |
-| `src/retrieval/search.rs` | `run_search` takes `embedding_model_name: &str` parameter. |
-| `src/chat/command_handlers.rs` | Reindex command uses `state.settings.embedding_model_name()`. |
-| `src/main.rs` | `handle_diag` uses `settings.embedding_model_name()` (no more `DEFAULT_EMBEDDING_MODEL` constant). |
-| `src/commands/config_upgrade.rs` | Auto-detects missing `[embedding]` section; 2 new tests verify detection. |
-| `src/commands/models_upgrade.rs` | New `MissingEmbeddingFlag { name }` migration variant. Warning-only (the apply step is a no-op). 3 new tests verify presence/absence of the flag. |
-| `src/lib.rs` | `pub mod commands;` to expose the upgrade tests to `cargo test --lib` (was missing — 24 tests silently skipped). |
+| `src/provider/embedding_models.rs` (new) | Hardcoded list of 11 well-known embedding model fragments; `is_potential_embedding_model(name)`. Kept as `#[cfg(test)]` (no production call sites in this PR; reserved for future tooling). |
+| `src/user_models.rs` | `ProviderConfig.embedding: bool` REMOVED. `UserModelConfig.embeddings: bool` (default `false`) + `dimensions: Option<u32>` ADDED. Validation: if `embeddings = true` and `dimensions` is None, fail at load time. |
+| `src/settings.rs` | `Settings.embedding: EmbeddingSettings` → `Settings.indexing: IndexingSettings`. Removed `IndexingSettings.provider` field. Merged `keyword_weight` and `semantic_weight` from the (now-removed) `RetrievalSettings`. Added 4 helper methods: `indexing_model_alias()`, `indexing_probe_enabled()`, `indexing_keyword_weight()`, `indexing_semantic_weight()`. Added `resolve_indexing_model()` returning `(UserModelConfig, ProviderConfig, model_id, dimensions)`. Removed `resolve_embedding_provider()`. |
+| `src/embeddings/client.rs` | `with_model(ollama, model_id, dimensions)` now takes 3 args. `DEFAULT_EMBEDDING_MODEL` constant REMOVED. |
+| `src/provider/openai_compat.rs` | `probe_embedding(model)` now returns `Result<usize, ProviderError>` (the response dim count). ADAPTIVE: no `dimensions` in request body. |
+| `src/provider/ollama_shim.rs` | `probe_embedding(model)` shim delegation returns `Result<usize, ...>`. |
+| `src/db/init.rs` | `EmbeddingInit` → `IndexingInit { provider, model_id, dimensions, probe }`. `run_embedding_probe` → `run_indexing_probe(provider, model_id, dimensions, probe_enabled)` with strict dim verify. |
+| `src/chat/repl.rs` | `init_chat_database` uses `Settings::resolve_indexing_model()`. Builds separate `Ollama` (shim) for embedding provider. Probe with strict dim verify before DB init. |
+| `src/chat/model_switch.rs` | Rejects embedding-only models in `/model` command. |
+| `src/main.rs` | `--model` flag rejects embedding-only models (both `handle_query_subcommand` and `handle_legacy_query`). `sprach --list` adds `[embeddings-only]` tag. |
+| `src/retrieval/search.rs` | `run_search(db, ollama, embedding_model_id, embedding_dimensions, query, ...)` — was just `embedding_model_name`. |
+| `src/chat/command_handlers.rs` | `handle_search` and reindex command use `Settings::resolve_indexing_model()` to get the model_id and dimensions. |
+| `src/user_models.rs` | New helpers: `list_chat_model_names()` (filters out embedding-only), `is_model_embedding_only(name)`. |
+| `src/chat/repl_tui.rs` | TUI completer uses `list_chat_model_names()` (filters out embedding-only). |
+| `src/query/mod.rs` | `settings.indexing.keyword_weight` and `.semantic_weight` (moved from `settings.retrieval.*`). |
+| `src/query/context.rs` | Resolves indexing alias for query subcommand (skips the probe). |
+| `src/commands/config_upgrade.rs` | Auto-detects missing `[indexing]` section (renamed from `[embedding]`). |
+| `src/commands/models_upgrade.rs` | `MissingEmbeddingFlag { name }` REMOVED. `MissingDimensions { alias }` ADDED (warning when model has `embeddings = true` but no `dimensions`). |
+| `src/lib.rs` | `pub mod commands;` to expose the upgrade tests. |
+| `src/settings.rs::SAMPLE_CONFIG` | `[embedding]` section replaced with `[indexing]`; `[retrieval]` section removed. |
+| `~/.config/sprachspiel/models.toml` | `embedding = true` removed from `[provider."llama-swap"]`. `[models."nomic"]` block added with `embeddings = true`, `dimensions = 768`. |
+| `~/.config/sprachspiel/config.toml` | `[embedding]` → `[indexing]`, `model = "nomic"` (alias), `provider = "llama-swap"` removed (inferred from alias), `keyword_weight` and `semantic_weight` added. `[retrieval]` section removed. |
 
-**Tests:** 1529 lib tests pass. New tests:
-- `embedding_models::is_potential_embedding_model` (8 tests: nomic, bge, gte, text-embedding, chat models don't match, case-insensitive, empty, substring)
-- `user_models` `ProviderConfig.embedding` (2 tests: default false, opt-in true)
-- `settings` `EmbeddingSettings` parsing (4 tests: default, minimal, full, omitted) + `resolve_embedding_provider` (7 tests: empty model, explicit found, explicit missing, explicit not embedding-capable, chat fallback OK, chat fallback not embedding-capable, no chat no explicit)
-- `db::init` (4 tests: EmbeddingInit struct, skip_persistence, empty model rejected, whitespace model rejected)
-- `embeddings::client` (2 tests: with_model constructor, model name storage)
-- `commands::config_upgrade` (2 tests: missing embedding section, present embedding section)
-- `commands::models_upgrade` (3 tests: missing flag detected, present flag OK, explicit false OK; 1 existing test fixed)
+**Tests:** 1530 lib tests pass. New tests:
+- `user_models` `UserModelConfig.embeddings` + `dimensions` (4 tests: default false, opt-in, dimensions required when embeddings, dimensions optional for chat models)
+- `user_models::is_model_embedding_only` (1 test)
+- `user_models::list_chat_model_names` (helper, no dedicated test)
+- `settings` `IndexingSettings` parsing (4 tests: default, minimal, full, omitted) + `resolve_indexing_model` (4 tests: empty alias, alias not found, alias not embedding-capable, alias success)
+- `db::init` `IndexingInit` (4 tests: struct construction, skip_persistence, empty model_id rejected, whitespace model_id rejected)
+- `embeddings::client::with_model` (2 tests: constructor, stores model name and dimensions)
+- `query::tests::test_query_uses_indexing_weights` (regression test)
+- `commands::config_upgrade` (2 tests: missing indexing section, present indexing section; renamed from `embedding`)
+- `commands::models_upgrade` (3 tests: missing dimensions detected, present dimensions OK, chat models don't need dimensions; renamed from `embedding flag`)
+- `main` smoke test: `sprach --list` shows `nomic` with `[embeddings-only]` tag
 
-**User config updates:** `~/.config/sprachspiel/models.toml` `[provider."llama-swap"]` adds `embedding = true`. `~/.config/sprachspiel/config.toml` adds `[embedding]` section (`model = "nomic-embed-text-v2-moe"`, `provider = "llama-swap"`, `probe = true`).
+**12 commits** in this PR (in order):
+1. `c8891cc` refactor(user_models): move embedding flag to UserModelConfig
+2. `a806a7d` refactor(settings): rename [embedding] to [indexing] and merge [retrieval]
+3. `f1fcf1b` feat(settings): add resolve_indexing_model alias resolver
+4. `e56ddab` refactor(db): rename EmbeddingInit to IndexingInit with dimensions
+5. `74c5663` refactor(embeddings): pass dimensions to EmbeddingClient
+6. `23046d0` refactor(chat,db,provider): wire indexing pipeline with strict dim probe
+7. `978139f` refactor(callsites): resolve indexing alias for search and reindex
+8. `7064a84` test(query): add regression test for [indexing] weights
+9. `4de9a04` feat(rules): reject embedding-only models in -m and /model
+10. `227363e` refactor(migrations): model-level MissingDimensions warning
+
+(Commits 11 (chore: user config) and 12 (docs) are in this same PR but not listed above — see CHANGELOG.md and configuration.md for the user-facing documentation.)
 
 ---
 
