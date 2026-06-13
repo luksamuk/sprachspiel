@@ -454,6 +454,46 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             };
         }
 
+        // W2 #121: Defensive pre-truncation for tool results.
+        //
+        // The token estimator (`estimate_chat_messages_tokens`) undercounts
+        // by ~30-50% compared to the model's real tokenizer (e.g. we
+        // estimated 27K tokens for a request the model counted as 40K).
+        // By the time `is_emergency_context` triggers, we are already
+        // overflowing. Preemptively truncate when our estimate crosses
+        // 75% of the context window — leaves headroom for the real
+        // tokenizer's higher count.
+        if total_after_add >= ctx_window.saturating_mul(3) / 4 {
+            let target = ctx_window.saturating_mul(70) / 100; // 70% of ctx_window
+            let excess = total_after_add.saturating_sub(target);
+            let available = estimate_tokens(&result).saturating_sub(excess);
+            let original_tokens = estimate_tokens(&result);
+            let truncated = truncate_to_budget(&result, available);
+            let truncated_tokens = estimate_tokens(&truncated);
+            let reduction = original_tokens.saturating_sub(truncated_tokens);
+
+            if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10)
+            {
+                log::warn!(
+                    "[PREEMPTIVE] Estimated context at {}% ({} tokens), \
+                     truncated tool result to leave headroom for real tokenizer: \
+                     {} → {} tokens",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add,
+                    original_tokens,
+                    truncated_tokens,
+                );
+            }
+
+            return ContextCheckResult {
+                result: truncated,
+                is_near_limit: true,
+                was_truncated: reduction > 0,
+                tokens_used: total_after_add,
+                needs_compaction: false,
+            };
+        }
+
         let remaining = ctx_window.saturating_sub(total_after_add);
         if remaining < compaction_buffer {
             // Only trigger compaction if there's history to compact
