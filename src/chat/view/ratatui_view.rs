@@ -203,8 +203,15 @@ impl ChatView for RatatuiView {
         // Strip ANSI codes — the TUI renderer applies its own styling.
         // Error messages may contain ANSI from format_tool_error or other sources
         // that assume a terminal, not a TUI widget.
+        // W2 #121 extension: wrap with separator + warning header
+        // so the user can't miss fatal errors in scrollback.
         let clean = strip_ansi_codes(error);
-        self.app.add_message(ChatMessage::error(clean));
+        self.app.add_message(ChatMessage::separator());
+        self.app.add_message(ChatMessage::error(format!(
+            "⛔ ERROR (interrupts input) — {}\n\
+             ⛔ Review the error above, fix the configuration, and try again.",
+            clean
+        )));
         self.render();
     }
 
@@ -319,10 +326,20 @@ impl ChatView for RatatuiView {
                 self.add_system_message(&format!("⚠️ {}", msg));
             }
             CommandOutput::Error(msg) => {
-                // Strip ANSI codes — the TUI renderer applies its own styling.
-                // Error messages may contain ANSI from format_tool_error or other sources.
-                let clean = strip_ansi_codes(msg);
-                self.app.add_message(ChatMessage::error(clean));
+                // W2 #121 extension: errors that interrupt the
+                // cycle (e.g., failed /model, failed probe, failed
+                // DB init) must be impossible to miss. Add a
+                // visual separator before, and prefix the error
+                // with a warning header to make it stand out
+                // from ordinary messages. Without this, the
+                // user can lose the error in the scrollback
+                // when the chat history grows.
+                self.app.add_message(ChatMessage::separator());
+                self.app.add_message(ChatMessage::error(format!(
+                    "⛔ ERROR (interrupts input) — {}\n\
+                     ⛔ Review the error above, fix the configuration, and try again.",
+                    strip_ansi_codes(msg)
+                )));
             }
             CommandOutput::Progress(msg) => {
                 self.add_system_message(&format!("⏳ {}", msg));
