@@ -980,6 +980,26 @@ impl Settings {
         None
     }
 
+    /// Get the configured embedding model name.
+    ///
+    /// W2 #121: returns `&self.embedding.model` (the value from
+    /// `[embedding].model` in `config.toml`). Used by all embedding
+    /// call sites that need to instantiate an `EmbeddingClient`.
+    pub fn embedding_model_name(&self) -> &str {
+        &self.embedding.model
+    }
+
+    /// Get the configured embedding provider name, or `None` if the
+    /// chat provider should be used.
+    pub fn embedding_provider_name(&self) -> Option<&str> {
+        self.embedding.provider.as_deref()
+    }
+
+    /// Whether the embedding endpoint should be probed at startup.
+    pub fn embedding_probe_enabled(&self) -> bool {
+        self.embedding.probe
+    }
+
     /// Get blacklist as a HashSet for efficient lookups
     pub fn blacklist_set(&self) -> HashSet<&str> {
         self.tools.blacklist.iter().map(|s| s.as_str()).collect()

@@ -873,8 +873,15 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
-    match crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit)
-        .await
+    match crate::retrieval::run_search(
+        &db,
+        &state.ollama,
+        state.settings.embedding_model_name(),
+        &query,
+        Some(&conversation_id),
+        limit,
+    )
+    .await
     {
         SearchOutcome::Results(results) => {
             if results.is_empty() {
@@ -963,7 +970,10 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
-    let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
+    let embedding_client = crate::embeddings::EmbeddingClient::with_model(
+        state.ollama.clone(),
+        state.settings.embedding_model_name().to_string(),
+    );
     let embedding_client = Arc::new(embedding_client);
     let progress_tx = state.session.embedding_tx.clone();
 

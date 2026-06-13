@@ -25,14 +25,17 @@ pub struct DatabaseInitResult {
 ///
 /// # Arguments
 /// * `provider` - LlmProvider instance for embedding generation
+/// * `embedding_model_name` - Model name to use for embeddings
+///   (from `[embedding].model` in `config.toml`)
 /// * `skip_persistence` - If true, skip database creation (anonymous/code mode)
-/// * `use_debug` - Enable debug logging (unused, kept for API compatibility)
+/// * `_use_debug` - Enable debug logging (unused, kept for API compatibility)
 /// * `db_path` - Optional custom database path (overrides default XDG path)
 ///
 /// # Returns
 /// `DatabaseInitResult` with db/embedding on success, or error details on failure.
 pub fn init_database_core(
     provider: crate::provider::Ollama,
+    embedding_model_name: &str,
     skip_persistence: bool,
     _use_debug: bool,
     db_path: Option<PathBuf>,
@@ -58,7 +61,10 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            let embedding = Arc::new(EmbeddingClient::new(provider));
+            let embedding = Arc::new(EmbeddingClient::with_model(
+                provider,
+                embedding_model_name.to_string(),
+            ));
             DatabaseInitResult {
                 db: Some(Arc::new(db)),
                 embedding: Some(embedding),

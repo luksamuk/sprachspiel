@@ -160,6 +160,7 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 pub async fn run_search(
     db: &Database,
     ollama: &crate::provider::Ollama,
+    embedding_model_name: &str,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,
@@ -173,7 +174,7 @@ pub async fn run_search(
     );
 
     // Generate embedding for query
-    let embedding_client = EmbeddingClient::new(ollama.clone());
+    let embedding_client = EmbeddingClient::with_model(ollama.clone(), embedding_model_name.to_string());
 
     log::debug!("Generating embedding for query...");
     let query_result = match embedding_client.embed(query).await {

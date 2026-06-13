@@ -122,12 +122,12 @@ mod tests {
     #[test]
     async fn with_full_context_scopes_all_four() {
         let dummy_ollama = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
-        let dummy_embedding = Arc::new(EmbeddingClient::new(crate::provider::Ollama::new(
-            "http://localhost".to_string(),
-            11434,
-        )));
-        let dummy_ollama_for_test = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_settings = Arc::new(Settings::default());
+        let dummy_embedding = Arc::new(EmbeddingClient::with_model(
+            crate::provider::Ollama::new("http://localhost".to_string(), 11434),
+            dummy_settings.embedding_model_name().to_string(),
+        ));
+        let dummy_ollama_for_test = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_db = Arc::new(Database::in_memory().unwrap());
 
         let result = with_full_context(

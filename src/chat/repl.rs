@@ -61,7 +61,13 @@ fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    let result = crate::db::init_database_core(ollama.clone(), false, false, db_path);
+    let result = crate::db::init_database_core(
+        ollama.clone(),
+        settings.embedding_model_name(),
+        false,
+        false,
+        db_path,
+    );
 
     let error_detail = if result.db.is_none() {
         // Error already logged and formatted in init_database_core

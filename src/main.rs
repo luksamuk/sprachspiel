@@ -885,13 +885,12 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     }
 }
 
-fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()> {
+fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     use crate::db::Database;
     use crate::diagnostics::display::display_diagnostics;
     use crate::diagnostics::embeddings::{
         EmbeddingSource, analyze_embeddings_with_progress, vectors_f32_to_f64,
     };
-    use crate::embeddings::DEFAULT_EMBEDDING_MODEL;
     use crate::embeddings::TRUNCATED_DIMENSIONS;
     use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
 
@@ -973,7 +972,7 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
     let diagnostics = analyze_embeddings_with_progress(
         &vectors_f64,
         TRUNCATED_DIMENSIONS,
-        DEFAULT_EMBEDDING_MODEL,
+        settings.embedding_model_name(),
         source_counts,
         &move |phase, frac| {
             progress_clone.set_message(phase.to_string());

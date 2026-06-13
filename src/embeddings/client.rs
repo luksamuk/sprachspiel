@@ -1,8 +1,20 @@
 //! Embedding client for the LLM server API
 //!
-//! Generates embeddings using nomic-embed-text-v2-moe model via
-//! `LlmProvider::embed()` (W2 #121). Compatible with any provider
-//! that implements the OpenAI-spec `/v1/embeddings` endpoint.
+//! Generates embeddings via `LlmProvider::embed()` (W2 #121).
+//! Compatible with any provider that implements the OpenAI-spec
+//! `/v1/embeddings` endpoint.
+//!
+//! # W2 #121 changes
+//!
+//! - `EmbeddingClient` no longer carries a hardcoded model name. The
+//!   model is supplied explicitly via [`EmbeddingClient::with_model`]
+//!   and resolved from `[embedding].model` in `config.toml` (see
+//!   [`crate::settings::EmbeddingSettings`]).
+//! - The legacy `EmbeddingClient::new` constructor is **removed** —
+//!   all callers must supply the model name. This is a hard
+//!   requirement: there is no sensible default for the embedding
+//!   model, and silently picking one would mask user configuration
+//!   errors.
 
 use std::time::Duration;
 
@@ -12,9 +24,6 @@ use tokio::sync::{OnceCell, Semaphore};
 use super::truncate::{
     FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
 };
-
-/// Default embedding model (nomic-embed-text-v2-moe)
-pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
 
 /// Default context length when model info is unavailable.
 pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
@@ -44,18 +53,11 @@ pub struct EmbeddingClient {
 }
 
 impl EmbeddingClient {
-    /// Create a new embedding client with default model
-    pub fn new(ollama: crate::provider::Ollama) -> Self {
-        Self {
-            ollama,
-            model: DEFAULT_EMBEDDING_MODEL.to_string(),
-            cached_context_length: OnceCell::new(),
-            semaphore: Semaphore::new(1),
-        }
-    }
-
-    /// Create a new embedding client with custom model
-    #[allow(dead_code)]
+    /// Create a new embedding client with the given provider and model name.
+    ///
+    /// W2 #121: this is the **only** constructor. The model name is
+    /// mandatory and is resolved from `[embedding].model` in
+    /// `config.toml` (see [`crate::settings::EmbeddingSettings`]).
     pub fn with_model(ollama: crate::provider::Ollama, model: String) -> Self {
         Self {
             ollama,
@@ -259,11 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_model() {
-        assert_eq!(DEFAULT_EMBEDDING_MODEL, "nomic-embed-text-v2-moe:latest");
-    }
-
-    #[test]
     fn test_embedding_dimension_method() {
         assert_eq!(EmbeddingClient::embedding_dimension(), 256);
     }
@@ -312,7 +309,17 @@ mod tests {
     }
 
     #[test]
-    fn test_new_with_ollama() {
-        let _client = EmbeddingClient::new(make_dummy_ollama());
+    fn test_with_model_constructor() {
+        // W2 #121: with_model is the only constructor. Model name
+        // is required and comes from [embedding].model in config.toml.
+        let _client =
+            EmbeddingClient::with_model(make_dummy_ollama(), "nomic-embed-text-v2-moe".to_string());
+    }
+
+    #[test]
+    fn test_with_model_stores_model_name() {
+        let client =
+            EmbeddingClient::with_model(make_dummy_ollama(), "bge-small-en-v1.5".to_string());
+        assert_eq!(client.model(), "bge-small-en-v1.5");
     }
 }
