@@ -554,7 +554,7 @@
 
 ### R-25: Norm Correction for Embeddings (TurboVec Technique)
 
-- **Source:** TurboQuant (Zandieh et al., ICLR 2026); TurboVec (Codrai 2026); RaBitQ (Gao & Long, SIGMOD 2024)
+- **Source:** TurboQuant (Zandieh et al., ICLR 2026); TurboVec (RyanCodrai, 2025 — open-source Rust/Python library, github.com/RyanCodrai/turbovec); RaBitQ (Gao & Long, SIGMOD 2024)
 - **Current state:** Cosine similarity in sqlite-vec has systematic underestimation bias, amplified when d_eff is low (Matryoshka 768→256).
 - **Why significant:** 1 float per vector corrects the bias at zero query-time cost. Impacts TAP-2 (thinking-aware retrieval), fact dedup, and all semantic retrieval. Especially important when d_eff < 0.7.
 - **Implementation:** ALTER tables add `norm_correction REAL`; calculate on insert; multiply in scoring.

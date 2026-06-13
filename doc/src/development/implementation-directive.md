@@ -247,7 +247,7 @@ impl FeedbackSignal {
     fn base_value(&self) -> f64 {
         match self.signal_type {
             FeedbackType::Good => 1.0,
-            FeedbackType::Bad => -1.0,  // Symmetric magnitude (ADR-005: Drori 'no partial credit')
+            FeedbackType::Bad => -1.0,  // Symmetric magnitude (ADR-005: Drori et al. 2025, arXiv:2502.09955)
             FeedbackType::Correction(_) => 1.0, // Correction value is in metadata, not weight
         }
     }
@@ -645,9 +645,8 @@ Users can export their feedback history:
 | MemOS: A Memory OS for AI Systems | `__archived__/papers/memos-paper.pdf` | ✅ Downloaded |
 | OpenClaw-RL: Train Any Agent Simply by Talking | `__archived__/papers/openclaw-rl-paper.pdf` | ✅ Downloaded |
 | MemGPT: Towards LLMs as Operating Systems | `__archived__/papers/memgpt-paper.pdf` | ✅ Downloaded |
-| Krishnamurthy et al. 2026 | Referenced | LLM self-assessment noise analysis |
-| Drori 2025 | Referenced | Binary feedback: no partial credit for negative signals |
 | Wu et al. 2025 | Referenced | LLM confidence calibration and over-estimation |
+| Drori et al. 2025 | Referenced | Binary feedback: strict 0/1 verification via Lean proofs and code execution (arXiv:2502.09955) |
 | Long et al. 2026 | Referenced | Self-verification dilemma: rechecks rarely change outcomes (arXiv:2602.03485) |
 
 ### 7.2 Analysis Documents
@@ -668,9 +667,8 @@ Users can export their feedback history:
 | MemGPT | Virtual context management | Already implemented (continuation) |
 | CortexGraph | Ebbinghaus decay | Temporal weighting of feedback |
 | Unsloth/NVIDIA | Environments define intelligence contract | Tool outcomes as verification |
-| Krishnamurthy 2026 | LLM self-assessment is noisy | Discount LLM-originated feedback (ADR-004) |
-| Drori 2025 | No partial credit for negative signals | Symmetric Good/Bad magnitude (ADR-005) |
 | Wu 2025 | LLM confidence systematically over-estimated | Weight user signals above LLM signals |
+| Drori 2025 | Strict 0/1 verification via Lean proofs and code execution (arXiv:2502.09955) | Symmetric Good/Bad magnitude (ADR-005) |
 | Long 2026 | Self-verification predominantly confirmatory — discount LLM self-feedback | 0.3 weight factor for LLM self-feedback |
 
 ---

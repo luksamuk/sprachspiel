@@ -28,6 +28,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **Context Cartography** | Wu & Gartner | [arXiv:2603.20578](https://arxiv.org/abs/2603.20578) | 2026 |
 | **Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?** | Wu, Li, Yang, Jiang, Yan, Li, Yu, Zhang & Nahrstedt | [arXiv:2506.17417](https://arxiv.org/abs/2506.17417) | 2025 |
 | **Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning** | Long, Jiang, Chen, Guo, Gan & Wang | [arXiv:2602.03485](https://arxiv.org/abs/2602.03485) | 2026 |
+| **Diverse Inference and Verification for Advanced Reasoning** | Drori, Longhitano, Mao, Hyun, Zhang, Park, Meeks, Zhang, Segev, Yong, Verma, Shporer, Amit, Udell | [arXiv:2502.09955](https://arxiv.org/abs/2502.09955) | 2025 |
 
 ## Key Contributions
 
@@ -185,6 +186,12 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Paper:** arXiv:2602.03485 — "Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning"
 - **Key findings:** A substantial fraction of reflective steps consist of self-verification (recheck) that repeatedly confirm intermediate results. These rechecks rarely identify errors or alter reasoning outcomes — the vast majority are confirmatory rather than corrective. Reducing overused verification saves up to 20.3% tokens while maintaining accuracy.
 - **Sprachspiel implication:** ADR-004 — reinforces the 30% discount on LLM self-feedback. Verification steps rarely change outcomes, confirming that LLM self-approval is an unreliable quality signal. Also informs TAP-Reflect design: filter out confirmatory rechecks from thinking traces.
+
+#### Diverse Inference and Verification (Drori et al. 2025)
+
+- **Paper:** arXiv:2502.09955 — "Diverse Inference and Verification for Advanced Reasoning"
+- **Key findings:** Strict binary verification (Lean formal proofs for math, code execution for ARC puzzles) provides unambiguous 0/1 correctness signals. A proof either type-checks or it doesn't; code either produces the correct output or it doesn't. This strict verification combined with rejection sampling and RL with inference feedback significantly improves reasoning: IMO combinatorics 33.3% → 77.8%.
+- **Sprachspiel implication:** ADR-005 — validates binary Good/Bad feedback signals (±1.0) with no partial credit. The strict verification paradigm confirms that granularity should come from temporal decay, not from base_value magnitude.
 
 ## Related Blog Posts
 
@@ -437,5 +444,12 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   author={Long, Quanyu and Jiang, Kai Jie and Chen, Jianda and Guo, Xu and Gan, Leilei and Wang, Wenya},
   journal={arXiv preprint arXiv:2602.03485},
   year={2026}
+}
+
+@article{drori2025diverse,
+  title={Diverse Inference and Verification for Advanced Reasoning},
+  author={Drori, Iddo and Longhitano, Gaston and Mao, Mao and Hyun, Seunghwan and Zhang, Yuke and Park, Sungjun and Meeks, Zachary and Zhang, Xin-Yu and Segev, Ben and Yong, Howard and Verma, Nakul and Shporer, Avi and Amit, Alon and Udell, Madeleine},
+  journal={arXiv preprint arXiv:2502.09955},
+  year={2025}
 }
 ```
