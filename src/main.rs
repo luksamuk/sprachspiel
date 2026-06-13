@@ -51,6 +51,7 @@ use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
+use crate::chat::core::convert_provider_to_model;
 use crate::ocr::mode::is_glm_ocr_model;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
@@ -292,7 +293,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
-    let model_options = model_config.build_provider_options();
+    let provider_options = model_config.build_provider_options();
+    let model_options = convert_provider_to_model(&provider_options);
 
     let mut coordinator =
         chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -504,7 +506,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     let (model_key, _, _) = settings.get_subcommand_config("ocr");
     let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
-        .map(|mc| (mc.model_id.clone(), mc.build_provider_options()))
+        .map(|mc| (mc.model_id.clone(), convert_provider_to_model(&mc.build_provider_options())))
         .unwrap_or_else(|| {
             (
                 model_key.clone(),
@@ -857,9 +859,9 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("==========================");
     log::debug!("Executing vision analysis with logging enabled...");
 
-    let model_options = model_config
-        .build_provider_options()
-        .num_predict(args.max_tokens as i32);
+    let mut provider_options = model_config.build_provider_options();
+    provider_options.num_predict = Some(args.max_tokens as i32);
+    let model_options = convert_provider_to_model(&provider_options);
     let processor = VisionProcessor::new();
 
     match processor

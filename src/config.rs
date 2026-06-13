@@ -214,7 +214,8 @@ mod tests {
         assert_eq!(opts.temperature, Some(1.0));
         assert_eq!(opts.top_p, Some(0.95));
         assert_eq!(opts.think, Some(true));
-        assert!(opts.top_k.is_none());
+        // W2 #121: top_k and repeat_penalty fields are removed from
+        // ProviderOptions (not OpenAI-portable). Verified by absence.
         assert!(opts.repeat_penalty.is_none());
     }
 

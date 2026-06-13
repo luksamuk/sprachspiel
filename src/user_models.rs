@@ -44,15 +44,20 @@ use crate::config::ModelConfig;
 /// `Ollama` is kept as a deprecated alias for backward compatibility with
 /// `models.toml` files from before #121. It is auto-migrated to `OpenAI`
 /// by `sprach models upgrade`. Anthropic is reserved for future use.
+///
+/// Note: `rename_all = "snake_case"` would produce `open_a_i` (because
+/// `OpenAI` has a contiguous uppercase sequence), so we use explicit
+/// `#[serde(rename = "...")]` attributes to control the on-disk format.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     #[default]
+    #[serde(rename = "openai")]
     OpenAI,
     /// Deprecated: use `OpenAI` with `base_url = ".../v1"`. Will be removed in #123.
-    #[serde(alias = "ollama", alias = "openai_compatible")]
+    #[serde(rename = "ollama", alias = "openai_compatible")]
     OllamaLegacy,
     /// Reserved for future use (M3 or later).
+    #[serde(rename = "anthropic")]
     Anthropic,
 }
 

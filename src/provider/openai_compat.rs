@@ -42,7 +42,8 @@ use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 
 use super::openai_types::{
     ChatChunk, ChatChoice, ChatRequest, ChatResponse, EmbeddingsRequest, EmbeddingsResponse,
-    ModelsResponse, OpenAITool, OpenAIToolFunction, StreamOptions,
+    ModelsResponse, OpenAIMessage, OpenAITool, OpenAIToolCall, OpenAIToolCallFunction,
+    OpenAIToolFunction, StreamOptions, Usage as OpenAIUsage,
 };
 use super::types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmToolCall, ProviderCapabilities,
@@ -940,7 +941,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".to_string()),
             }],
-            usage: Some(super::openai_types::Usage {
+            usage: Some(OpenAIUsage {
                 prompt_tokens: 10,
                 completion_tokens: 5,
                 total_tokens: 15,
