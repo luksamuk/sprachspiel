@@ -953,7 +953,42 @@ impl Settings {
     /// This will be removed in #121 (Consumer Migration).
     #[deprecated(note = "Use provider factory (#120). Will be removed in #121.")]
     pub fn ollama_client(&self) -> crate::provider::Ollama {
-        // Fallback: use the default if not configured
+        // W2 #121 (temporary, until #121 is merged): Use the default
+        // localhost Ollama instance. The #121 PR removes this method
+        // in favor of factory::build_provider(provider_name, ...)
+        // which selects the right provider per model.
+        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+    }
+
+    /// Build a client for a named provider from `models.toml`.
+    /// W2 #121: temporary helper until `Settings::ollama_client()` is removed.
+    /// Each model declares its `provider = "<name>"` in `models.toml`; this
+    /// function returns the appropriate `Ollama` (shim) for that provider.
+    pub fn ollama_client_for(&self, provider_name: &str) -> crate::provider::Ollama {
+        let providers = crate::user_models::get_providers();
+        if let Some(cfg) = providers.get(provider_name) {
+            crate::provider::Ollama::from_provider_config(cfg)
+        } else {
+            // Fallback to default Ollama
+            crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+        }
+    }
+
+    /// Build a client for the provider of a given model name.
+    /// W2 #121: temporary helper. Resolves the model's `provider = "<name>"`
+    /// from `models.toml` and returns the appropriate `Ollama` shim.
+    /// Falls back to default Ollama if model is not found or has no provider.
+    pub fn ollama_client_for_model(&self, model_name: &str) -> crate::provider::Ollama {
+        if let Some(provider_name) = crate::user_models::get_provider_for_model(model_name) {
+            return self.ollama_client_for(&provider_name);
+        }
+        // Fallback: use the first OpenAI provider if available, else default Ollama
+        let providers = crate::user_models::get_providers();
+        for (_name, cfg) in providers.iter() {
+            if matches!(cfg.kind, crate::user_models::ProviderKind::OpenAI) {
+                return crate::provider::Ollama::from_provider_config(cfg);
+            }
+        }
         crate::provider::Ollama::new("http://localhost".to_string(), 11434)
     }
 

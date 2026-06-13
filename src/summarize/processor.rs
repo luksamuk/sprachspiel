@@ -42,7 +42,7 @@ impl SummarizeProcessor {
 
         // Initialize Ollama with settings
         #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-        let ollama = settings.ollama_client();
+        let ollama = settings.ollama_client_for_model(model_id);
 
         let provider_options = model_config.build_provider_options();
         // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.

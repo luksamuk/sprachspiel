@@ -117,7 +117,7 @@ impl QueryContextBuilder {
 
         let model_config = user_models::resolve_model_config(&model_name);
         #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-        let ollama = settings.ollama_client();
+        let ollama = settings.ollama_client_for_model(&model_config.model_id);
         let capabilities =
             ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 

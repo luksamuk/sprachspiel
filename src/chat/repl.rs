@@ -52,7 +52,11 @@ fn init_chat_database(
     Option<String>,
 ) {
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client();
+    // W2 #121: Use the model's provider if known; fallback to default.
+    let ollama = match args.model.as_deref() {
+        Some(model) => settings.ollama_client_for_model(model),
+        None => settings.ollama_client_for_model(&settings.model.default),
+    };
 
     if args.anonymous {
         return (None, None, ollama, None);
@@ -629,8 +633,11 @@ pub async fn run_chat_repl(
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
+    // W2 #121: For llama-swap (OpenAI-compat), we hit /v1/models instead
+    // of /api/tags. The Ollama shim's `list_local_models` handles both
+    // endpoints (it knows the base URL of the configured provider).
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let pre_init_ollama = settings.ollama_client();
+    let pre_init_ollama = settings.ollama_client_for_model(&settings.model.default);
     if let Err(e) = check_server_health(&pre_init_ollama).await {
         log::error!("Ollama health check failed: {e}");
         eprintln!("\x1B[31mError: {e}\x1B[0m");
