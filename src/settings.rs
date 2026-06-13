@@ -1012,13 +1012,101 @@ impl Settings {
     // W2 #121 extension: `resolve_embedding_provider` is removed
     // (it operated on `ProviderConfig.embedding`, which no longer
     // exists). The new alias-based resolver
-    // `Settings::resolve_indexing_model(alias)` is added in the
-    // follow-up commit.
-    //
-    // As a temporary transitional shim, callers in chat/repl.rs are
-    // updated in the next commit to use the new resolver directly;
-    // until then, the chat init may bail with a clear "not yet
-    // migrated" error.
+    // `Settings::resolve_indexing_model(alias)` is added below.
+
+    /// Resolve the indexing configuration for the alias in
+    /// `[indexing].model` of `config.toml` (W2 #121 extension).
+    ///
+    /// Reads the alias (e.g. `"nomic"`) from `settings.indexing.model`,
+    /// looks it up in `models.toml [models.*]`, and returns:
+    /// - `&UserModelConfig` — the model config (with the upstream
+    ///   `model_id`, `provider`, `dimensions`, etc.)
+    /// - `&ProviderConfig` — the provider config (resolved via the
+    ///   model config's `provider` field)
+    /// - `&str` — the upstream `model_id` (the name passed verbatim
+    ///   to `/v1/embeddings`)
+    /// - `u32` — the `dimensions` value (guaranteed non-zero by the
+    ///   models.toml validation)
+    ///
+    /// Returns `Err` with an actionable message if:
+    /// - the alias is empty
+    /// - the alias doesn't exist in `models.toml`
+    /// - the alias exists but doesn't have `embeddings = true`
+    /// - the alias has `embeddings = true` but no `dimensions`
+    ///   (this should be caught at load time, but is checked here
+    ///   defensively)
+    pub fn resolve_indexing_model(
+        &self,
+    ) -> Result<
+        (
+            &crate::user_models::UserModelConfig,
+            &crate::user_models::ProviderConfig,
+            &str,
+            u32,
+        ),
+        String,
+    > {
+        let alias = self.indexing_model_alias();
+        if alias.trim().is_empty() {
+            return Err(
+                "Error: [indexing].model is empty in config.toml. \
+                 Add the alias of an embedding-capable model from \
+                 models.toml [models.*], e.g.:\n\
+                 \n\
+                 [indexing]\n\
+                 model = \"nomic\"\n\
+                 \n\
+                 The alias must be declared with `embeddings = true` \
+                 and `dimensions = N` in models.toml."
+                    .to_string(),
+            );
+        }
+
+        let models = crate::user_models::get_user_models();
+        let model_cfg = models.get(alias).ok_or_else(|| {
+            format!(
+                "Error: Indexing alias '{alias}' not found in models.toml. \
+                 Add a [models.\"{alias}\"] block with `embeddings = true` \
+                 and `dimensions = N`, or change [indexing].model to an \
+                 existing alias.",
+            )
+        })?;
+
+        if !model_cfg.embeddings {
+            return Err(format!(
+                "Error: Model '{alias}' is not declared as an embedding model. \
+                 Add `embeddings = true` and `dimensions = N` to \
+                 [models.\"{alias}\"] in models.toml.",
+            ));
+        }
+
+        // The models.toml loader guarantees dimensions is set when
+        // embeddings = true, but we check defensively in case a
+        // caller bypassed the loader.
+        let dimensions = model_cfg.dimensions.ok_or_else(|| {
+            format!(
+                "Error: Embedding model '{alias}' is missing `dimensions` \
+                 in models.toml. Add `dimensions = <N>` (e.g. 768 for \
+                 nomic-embed-text-v2-moe, 256 for Matryoshka-truncated).",
+            )
+        })?;
+
+        let providers = crate::user_models::get_providers();
+        let provider_cfg = providers.get(&model_cfg.provider).ok_or_else(|| {
+            format!(
+                "Error: Provider '{}' referenced by embedding model '{alias}' \
+                 not found in models.toml. Add a [provider.\"{}\"] block.",
+                model_cfg.provider, model_cfg.provider,
+            )
+        })?;
+
+        Ok((
+            model_cfg,
+            provider_cfg,
+            model_cfg.model_id.as_str(),
+            dimensions,
+        ))
+    }
 
     /// Get blacklist as a HashSet for efficient lookups
     pub fn blacklist_set(&self) -> HashSet<&str> {
@@ -1546,44 +1634,76 @@ default = "qwen3.5:4b"
     }
 
     #[test]
-    fn test_resolve_embedding_provider_empty_model() {
-        // W2 #121 extension: resolve_embedding_provider was removed
-        // (it operated on ProviderConfig.embedding, which no longer
-        // exists). The new alias-based resolver
-        // `Settings::resolve_indexing_model(alias)` is added in the
-        // next commit and tested there.
+    fn test_resolve_indexing_model_empty_alias() {
+        // W2 #121 extension: [indexing].model is empty.
+        let mut settings = Settings::default();
+        settings.indexing.model = String::new();
+        let result = settings.resolve_indexing_model();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("[indexing].model is empty"));
     }
 
     #[test]
-    fn test_resolve_embedding_provider_explicit_provider_found() {
-        // W2 #121 extension: the embedding capability now lives on
-        // the model, not the provider. This test is removed; the new
-        // alias-based resolver `resolve_indexing_model` is tested in
-        // a follow-up commit.
+    fn test_resolve_indexing_model_alias_not_found() {
+        // [indexing].model = "missing" but no such alias in models.toml.
+        let mut settings = Settings::default();
+        settings.indexing.model = "nonexistent-alias-xyz".to_string();
+        let result = settings.resolve_indexing_model();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("nonexistent-alias-xyz"));
+        assert!(err.contains("not found in models.toml"));
     }
 
     #[test]
-    fn test_resolve_embedding_provider_explicit_provider_not_embedding_capable() {
-        // Same as above — removed in W2 #121 extension.
+    fn test_resolve_indexing_model_alias_not_embedding_capable() {
+        // Alias exists in models.toml but lacks `embeddings = true`.
+        let models = crate::user_models::get_user_models();
+        let any_chat = models.iter().find(|(_, m)| !m.embeddings);
+        let Some((name, _)) = any_chat else {
+            eprintln!("SKIP: test requires models.toml with at least one chat model.");
+            return;
+        };
+        let mut settings = Settings::default();
+        settings.indexing.model = name.clone();
+        let result = settings.resolve_indexing_model();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains(name.as_str()));
+        assert!(err.contains("not declared as an embedding model"));
     }
 
     #[test]
-    fn test_resolve_embedding_provider_explicit_provider_not_in_models_toml() {
-        // Same as above — removed in W2 #121 extension.
-    }
-
-    #[test]
-    fn test_resolve_embedding_provider_fallback_to_chat_when_chat_is_embedding_capable() {
-        // Same as above — removed in W2 #121 extension.
-    }
-
-    #[test]
-    fn test_resolve_embedding_provider_fallback_chat_not_embedding_capable() {
-        // Same as above — removed in W2 #121 extension.
-    }
-
-    #[test]
-    fn test_resolve_embedding_provider_no_chat_no_explicit() {
-        // Same as above — removed in W2 #121 extension.
+    fn test_resolve_indexing_model_alias_success() {
+        // Pick an embedding-capable alias from models.toml and verify
+        // resolve returns the expected tuple.
+        let models = crate::user_models::get_user_models();
+        let any_embedding = models.iter().find(|(_, m)| m.embeddings);
+        let Some((name, model_cfg)) = any_embedding else {
+            eprintln!(
+                "SKIP: test requires models.toml with at least one [models.X] \
+                 block having `embeddings = true`."
+            );
+            return;
+        };
+        let mut settings = Settings::default();
+        settings.indexing.model = name.clone();
+        let result = settings.resolve_indexing_model();
+        assert!(
+            result.is_ok(),
+            "resolve_indexing_model should succeed for '{name}': {:?}",
+            result.err()
+        );
+        let (resolved_model_cfg, resolved_provider_cfg, model_id, dimensions) = result.unwrap();
+        assert_eq!(resolved_model_cfg.model_id, model_cfg.model_id);
+        assert_eq!(model_id, model_cfg.model_id);
+        assert_eq!(dimensions, model_cfg.dimensions.unwrap());
+        // Provider is resolved via the model's provider field.
+        let providers = crate::user_models::get_providers();
+        assert_eq!(
+            resolved_provider_cfg.base_url,
+            providers.get(&model_cfg.provider).unwrap().base_url
+        );
     }
 }
