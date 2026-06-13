@@ -452,4 +452,32 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   journal={arXiv preprint arXiv:2502.09955},
   year={2025}
 }
+
+@article{liu2023lostinmiddle,
+  title={Lost in the Middle: How Language Models Use Long Contexts},
+  author={Liu, Nelson F. and Lin, Kevin and Hewitt, John and Paranjape, Ashwin and Bevilacqua, Michele and Petroni, Fabio and Liang, Percy},
+  journal={arXiv preprint arXiv:2307.03172},
+  year={2023},
+  note={TACL 2023}
+}
+
+@article{cuconasu2024trust,
+  title={A Tale of Trust and Accuracy: Base vs. Instruct LLMs in RAG Systems},
+  author={Cuconasu, Florin and Trappolini, Giovanni and Tonellotto, Nicola and Silvestri, Fabrizio},
+  journal={arXiv preprint arXiv:2406.14972},
+  year={2024}
+}
+
+@article{boratko2025limitations,
+  title={On the Theoretical Limitations of Embedding-Based Retrieval},
+  author={Boratko, Michael and others},
+  journal={arXiv preprint arXiv:2508.21038},
+  year={2025}
+}
+
+@article{transformations2025weakness,
+  title={How Small Transformations Expose Weakness of Similarity Measures},
+  journal={arXiv preprint arXiv:2509.09714},
+  year={2025}
+}
 ```
