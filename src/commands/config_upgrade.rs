@@ -902,8 +902,6 @@ mod tests {
         r#"
 [model]
 default = "qwen3.5:4b"
-ollama_host = "127.0.0.1"
-ollama_port = 11434
 
 [tools]
 blacklist = []
@@ -1015,8 +1013,6 @@ default = "custom-model"
         let cfg = r#"
 [model]
 default = "custom-model"
-ollama_host = "10.0.0.1"
-ollama_port = 12345
 
 [tools]
 blacklist = ["web_search"]
@@ -1035,8 +1031,7 @@ blacklist = ["web_search"]
         // strict `toml` crate to verify).
         let settings: Settings = toml::from_str(&updated).unwrap();
         assert_eq!(settings.model.default, "custom-model");
-        assert_eq!(settings.model.ollama_host, "10.0.0.1");
-        assert_eq!(settings.model.ollama_port, 12345);
+        // ollama_host/port removed in #120; not tested here
         assert!(settings.is_tool_blacklisted("web_search"));
     }
 
@@ -1072,8 +1067,6 @@ default = "custom-model"
 # I prefer qwen3.5 for everything
 [model]
 default = "qwen3.5:4b"
-ollama_host = "127.0.0.1"
-ollama_port = 11434
 "#;
         let path = write_tmp_config("comments.toml", cfg);
         let upgrader = ConfigUpgrader::new(path.clone()).unwrap();

@@ -58,8 +58,9 @@ use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
-    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, QueryArgs, Shell,
-    TranslateArgs, TranslationStyle, UpgradeArgs, build_translation_prompt, parse_language_pair,
+    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, LanguageMapper, ModelsAction,
+    ModelsArgs, ModelsUpgradeArgs, QueryArgs, Shell, TranslateArgs, TranslationStyle, UpgradeArgs,
+    build_translation_prompt, parse_language_pair,
 };
 use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
@@ -192,6 +193,7 @@ async fn main() -> AppResult<()> {
             }
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
             Commands::Config(args) => return handle_config(args.clone(), &settings),
+            Commands::Models(args) => return handle_models(args.clone()),
         }
     }
 
@@ -288,6 +290,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         }
     };
 
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let model_options = model_config.build_model_options();
 
@@ -511,6 +514,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     // Check if the model supports vision capabilities (required for OCR).
     // Abort unless the user passes --force to override the capability check.
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
@@ -706,6 +710,34 @@ fn handle_config_upgrade(args: UpgradeArgs, _settings: &Settings) -> AppResult<(
     }
 }
 
+fn handle_models(args: ModelsArgs) -> AppResult<()> {
+    match args.action {
+        ModelsAction::Upgrade(upgrade_args) => handle_models_upgrade(upgrade_args),
+    }
+}
+
+fn handle_models_upgrade(args: ModelsUpgradeArgs) -> AppResult<()> {
+    use crate::commands::models_upgrade::run_models_upgrade;
+
+    let models_path = match crate::user_models::get_user_models_path().canonicalize() {
+        Ok(p) => p,
+        Err(_) => crate::user_models::get_user_models_path(),
+    };
+
+    match run_models_upgrade(models_path, args.dry_run, args.no_backup) {
+        Ok(output) => {
+            for line in &output {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Models upgrade failed: {e}");
+            Err(format!("{e}").into())
+        }
+    }
+}
+
 fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()> {
     use clap::CommandFactory;
     use std::io::stdout;
@@ -778,6 +810,14 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
         settings.model.default.clone()
     };
 
+    // Bail-out: detect broken config before reaching resolve_model_config's
+    // process::exit(1). Per PR #206 review: failing silently with "default"
+    // or generic "Unknown model" masks user configuration errors.
+    if let Err(e) = user_models::require_providers() {
+        eprintln!("Error: {}", e);
+        return Err(e.into());
+    }
+
     let model_config = user_models::resolve_model_config(&model_name);
     let model_id = model_config.model_id.clone();
 
@@ -788,6 +828,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     // Check if the model supports vision capabilities.
     // Abort unless the user passes --force to override the capability check.
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;

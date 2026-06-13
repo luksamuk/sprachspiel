@@ -51,6 +51,7 @@ fn init_chat_database(
     ollama_rs::Ollama,
     Option<String>,
 ) {
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let ollama = settings.ollama_client();
 
     if args.anonymous {
@@ -473,6 +474,22 @@ fn create_session(
     }
 }
 
+/// Outcome of resolving the model for a chat session.
+///
+/// Distinguishes between transient validation issues (caller can choose to
+/// exit gracefully) and catastrophic configuration errors (caller should
+/// propagate as a hard error with non-zero exit code).
+#[derive(Debug, PartialEq, Eq)]
+enum ResolveModelResult {
+    /// Model was successfully resolved.
+    Ok,
+    /// CLI `-m` flag specified an unknown model — caller can exit gracefully.
+    UnknownModel,
+    /// `models.toml` is missing or broken — caller should exit with non-zero
+    /// status so the user knows their config is invalid.
+    NoProviders,
+}
+
 /// Validate and set the model for a session.
 ///
 /// Prints warnings/errors to stderr before the TUI takes over the terminal.
@@ -480,18 +497,36 @@ fn resolve_session_model(
     session: &mut ChatSession,
     model_override: Option<&str>,
     default_model: &str,
-) -> bool {
+) -> ResolveModelResult {
+    // Bail-out: detect broken config before reaching resolve_model_config's
+    // process::exit(1). When models.toml fails to load (e.g., missing
+    // [provider] section commented out), get_providers() returns an empty
+    // HashMap. The provider name bail-out in run_chat_repl_tui() is too
+    // late — we abort here with a clear message instead.
+    // Per PR #206 review: failing silently with "default" masks user
+    // configuration error.
+    if crate::user_models::require_providers().is_err() {
+        log::error!("No providers configured in models.toml");
+        eprintln!(
+            "\x1B[31mError: No providers configured in models.toml.\x1B[0m"
+        );
+        eprintln!(
+            "\x1B[33mHint: Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.\x1B[0m"
+        );
+        return ResolveModelResult::NoProviders;
+    }
+
     if let Some(model) = model_override {
         if crate::user_models::is_model_valid(model) {
             session.set_model(model.to_string());
-            return true;
+            return ResolveModelResult::Ok;
         }
         log::error!("Unknown model specified: '{}'", model);
         eprintln!(
             "\x1B[31mUnknown model '{}'. Use --list to see available models.\x1B[0m",
             model
         );
-        return false;
+        return ResolveModelResult::UnknownModel;
     }
 
     if !crate::user_models::is_model_valid(&session.model) {
@@ -506,7 +541,7 @@ fn resolve_session_model(
         );
         session.set_model(default_model.to_string());
     }
-    true
+    ResolveModelResult::Ok
 }
 
 /// Determine thinking mode from CLI flags, config, and model capabilities.
@@ -594,6 +629,7 @@ pub async fn run_chat_repl(
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
+    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let pre_init_ollama = settings.ollama_client();
     if let Err(e) = check_server_health(&pre_init_ollama).await {
         log::error!("Ollama health check failed: {e}");
@@ -627,9 +663,19 @@ pub async fn run_chat_repl(
     // Apply CLI flags (CLI takes precedence over args)
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
 
-    // Validate and set model
-    if !resolve_session_model(&mut session, model_override, default_model) {
-        return Ok(());
+    // Validate and set model. Distinguish catastrophic (no providers) from
+    // transient (unknown CLI model) — only the former must propagate as a
+    // hard error so the user knows their config is invalid.
+    match resolve_session_model(&mut session, model_override, default_model) {
+        ResolveModelResult::Ok => {}
+        ResolveModelResult::UnknownModel => return Ok(()),
+        ResolveModelResult::NoProviders => {
+            return Err(
+                "Cannot start chat: models.toml is missing providers. \
+                 Add a [provider.\"name\"] section or run `sprach models upgrade`."
+                    .into(),
+            );
+        }
     }
 
     let current_model_name = session.model.clone();

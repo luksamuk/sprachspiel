@@ -11,8 +11,8 @@ pub mod style;
 
 // Re-export commonly used items
 pub use cli::{
-    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, QueryArgs, Shell, TranslateArgs,
-    UpgradeArgs,
+    Commands, CompletionArgs, ConfigAction, ConfigArgs, DiagArgs, ModelsAction, ModelsArgs,
+    ModelsUpgradeArgs, QueryArgs, Shell, TranslateArgs, UpgradeArgs,
 };
 pub use language::{LanguageError, LanguageMapper, parse_language_pair};
 pub use prompt::build_translation_prompt;

@@ -6,6 +6,9 @@
 //! W2 Wave Context: Foundation of the Provider Chain (#119 → #123).
 
 pub mod conversions;
+pub mod factory;
+pub mod ollama;
+pub mod ollama_api;
 pub mod types;
 
 #[allow(unused_imports)] // Re-exported for #120/#121 consumers
@@ -15,6 +18,9 @@ pub use types::{
     ToolInfo, ToolType, retry_delay,
 };
 
+#[allow(unused_imports)] // Re-exported for #120 consumers
+pub use factory::build_provider;
+
 use async_trait::async_trait;
 use std::pin::Pin;
 
@@ -22,23 +28,26 @@ use std::pin::Pin;
 ///
 /// Implementations: `OllamaProvider` (#120), `OpenAICompatibleProvider` (#122).
 /// Business code should depend on this trait, not concrete providers.
-#[allow(dead_code)] // Consumed by #120
+#[allow(dead_code)] // Consumed by OllamaProvider in this PR; build_provider call site in #121
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Send a chat completion request with optional tools.
     async fn chat(
         &self,
-        _messages: Vec<LlmMessage>,
-        _tools: Vec<ToolInfo>,
-        _options: ProviderOptions,
+        model: &str,
+        messages: Vec<LlmMessage>,
+        tools: Vec<ToolInfo>,
+        options: ProviderOptions,
     ) -> Result<LlmResponse, ProviderError>;
 
     /// Streaming chat completion — returns a stream of response chunks.
     ///
     /// Default implementation returns `Err(ProviderError::Unsupported)`.
     /// Providers that support streaming (Ollama, OpenAI-compatible) MUST override this.
+    #[allow(unused_variables)] // Default impl does not consume parameters
     async fn chat_stream(
         &self,
+        _model: &str,
         _messages: Vec<LlmMessage>,
         _tools: Vec<ToolInfo>,
         _options: ProviderOptions,
@@ -54,6 +63,7 @@ pub trait LlmProvider: Send + Sync {
     /// Generate a completion (non-chat, e.g., for vision/OCR).
     async fn generate(
         &self,
+        model: &str,
         prompt: &str,
         images: Vec<String>, // base64-encoded
         audio: Vec<String>,  // base64-encoded (mp3, wav, ogg)

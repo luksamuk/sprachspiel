@@ -26,6 +26,9 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **Pichay: Demand Paging for LLM Context** | Mason | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) | 2026 |
 | **Titans: Learning to Memorize at Test Time** | Behrouz et al. | [arXiv:2501.00663](https://arxiv.org/abs/2501.00663) | 2024 |
 | **Context Cartography** | Wu & Gartner | [arXiv:2603.20578](https://arxiv.org/abs/2603.20578) | 2026 |
+| **Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?** | Wu, Li, Yang, Jiang, Yan, Li, Yu, Zhang & Nahrstedt | [arXiv:2506.17417](https://arxiv.org/abs/2506.17417) | 2025 |
+| **Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning** | Long, Jiang, Chen, Guo, Gan & Wang | [arXiv:2602.03485](https://arxiv.org/abs/2602.03485) | 2026 |
+| **Diverse Inference and Verification for Advanced Reasoning** | Drori, Longhitano, Mao, Hyun, Zhang, Park, Meeks, Zhang, Segev, Yong, Verma, Shporer, Amit, Udell | [arXiv:2502.09955](https://arxiv.org/abs/2502.09955) | 2025 |
 
 ## Key Contributions
 
@@ -171,6 +174,24 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Paper:** arXiv:2603.20578
 - **Key findings:** LLMs have predictable "attention deserts" — regions of context that receive systematically less attention. The middle of context is especially neglected. Mapping these deserts enables strategic information placement.
 - **Sprachspiel implication:** Validates our middle-compaction strategy (keep first N + last N). Informs R-04 (attention-based prompt optimization) and R-29 (information routing mapping) — attention distribution is part of the Capacity allocation in the routing abstraction.
+
+#### Aha Moment Revisited (Wu et al. 2025)
+
+- **Paper:** arXiv:2506.17417 — "Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?"
+- **Key findings:** Simple majority voting consistently and substantially outperforms verification-centric strategies such as best-of-N with self-verification. Self-verification up to -16.7% worse than baseline. Recovery rate from self-correction attempts: only 2.7–19.5%. Visual information is not effectively integrated into self-verification.
+- **Sprachspiel implication:** ADR-004 — LLM self-feedback discounted to 30% weight. LLM self-verification is an unreliable signal; user feedback is the ground truth.
+
+#### Self-Verification Dilemma (Long et al. 2026)
+
+- **Paper:** arXiv:2602.03485 — "Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning"
+- **Key findings:** A substantial fraction of reflective steps consist of self-verification (recheck) that repeatedly confirm intermediate results. These rechecks rarely identify errors or alter reasoning outcomes — the vast majority are confirmatory rather than corrective. Reducing overused verification saves up to 20.3% tokens while maintaining accuracy.
+- **Sprachspiel implication:** ADR-004 — reinforces the 30% discount on LLM self-feedback. Verification steps rarely change outcomes, confirming that LLM self-approval is an unreliable quality signal. Also informs TAP-Reflect design: filter out confirmatory rechecks from thinking traces.
+
+#### Diverse Inference and Verification (Drori et al. 2025)
+
+- **Paper:** arXiv:2502.09955 — "Diverse Inference and Verification for Advanced Reasoning"
+- **Key findings:** Strict binary verification (Lean formal proofs for math, code execution for ARC puzzles) provides unambiguous 0/1 correctness signals. A proof either type-checks or it doesn't; code either produces the correct output or it doesn't. This strict verification combined with rejection sampling and RL with inference feedback significantly improves reasoning: IMO combinatorics 33.3% → 77.8%.
+- **Sprachspiel implication:** ADR-005 — validates binary Good/Bad feedback signals (±1.0) with no partial credit. The strict verification paradigm confirms that granularity should come from temporal decay, not from base_value magnitude.
 
 ## Related Blog Posts
 
@@ -408,5 +429,55 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   author={Wu, Zhiyuan and Gartner, Jan},
   journal={arXiv preprint arXiv:2603.20578},
   year={2026}
+}
+
+@article{aha_moment_revisited_2025,
+  title={Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?},
+  author={Wu, Mingyuan and Li, Meitang and Yang, Jingcheng and Jiang, Jize and Yan, Kaizhuo and Li, Zhaoheng and Yu, Hanchao and Zhang, Minjia and Nahrstedt, Klara},
+  journal={arXiv preprint arXiv:2506.17417},
+  year={2025},
+  note={NeurIPS 2025 Multimodal Algorithmic Reasoning Workshop Oral}
+}
+
+@article{self_verification_dilemma_2026,
+  title={Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning},
+  author={Long, Quanyu and Jiang, Kai Jie and Chen, Jianda and Guo, Xu and Gan, Leilei and Wang, Wenya},
+  journal={arXiv preprint arXiv:2602.03485},
+  year={2026}
+}
+
+@article{drori2025diverse,
+  title={Diverse Inference and Verification for Advanced Reasoning},
+  author={Drori, Iddo and Longhitano, Gaston and Mao, Mao and Hyun, Seunghwan and Zhang, Yuke and Park, Sungjun and Meeks, Zachary and Zhang, Xin-Yu and Segev, Ben and Yong, Howard and Verma, Nakul and Shporer, Avi and Amit, Alon and Udell, Madeleine},
+  journal={arXiv preprint arXiv:2502.09955},
+  year={2025}
+}
+
+@article{liu2023lostinmiddle,
+  title={Lost in the Middle: How Language Models Use Long Contexts},
+  author={Liu, Nelson F. and Lin, Kevin and Hewitt, John and Paranjape, Ashwin and Bevilacqua, Michele and Petroni, Fabio and Liang, Percy},
+  journal={arXiv preprint arXiv:2307.03172},
+  year={2023},
+  note={TACL 2023}
+}
+
+@article{cuconasu2024trust,
+  title={A Tale of Trust and Accuracy: Base vs. Instruct LLMs in RAG Systems},
+  author={Cuconasu, Florin and Trappolini, Giovanni and Tonellotto, Nicola and Silvestri, Fabrizio},
+  journal={arXiv preprint arXiv:2406.14972},
+  year={2024}
+}
+
+@article{boratko2025limitations,
+  title={On the Theoretical Limitations of Embedding-Based Retrieval},
+  author={Boratko, Michael and others},
+  journal={arXiv preprint arXiv:2508.21038},
+  year={2025}
+}
+
+@article{transformations2025weakness,
+  title={How Small Transformations Expose Weakness of Similarity Measures},
+  journal={arXiv preprint arXiv:2509.09714},
+  year={2025}
 }
 ```

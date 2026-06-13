@@ -74,6 +74,25 @@ pub async fn run_chat_repl_tui(
 
     let theme = super::tui::markdown::MarkdownTheme::from_config(&state.settings.display.skin);
 
+    // Provider name resolution: model → first provider → bail-out.
+    // Per PR #206 review: failing silently with "default" masks user
+    // configuration error. Bail out with a clear message instead.
+    // Resolved BEFORE the TUI is initialized so the error propagates
+    // without leaving the terminal in raw mode.
+    let provider_name = crate::user_models::get_provider_for_model(&state.model_config.model_id)
+        .or_else(|| {
+            // Built-in models have no `provider` field — fall back to the
+            // first provider defined in models.toml.
+            crate::user_models::get_providers().keys().next().cloned()
+        })
+        .ok_or_else(|| {
+            format!(
+                "Cannot determine provider for model '{}': no providers defined in models.toml. \
+                 Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.",
+                state.model_config.model_id
+            )
+        })?;
+
     // Create the TUI view (see RatatuiView::new() for initialization details)
     let mut view = RatatuiView::new(theme, model_names);
 
@@ -91,16 +110,11 @@ pub async fn run_chat_repl_tui(
     {
         let session = &state.session;
         let model_config = &state.model_config;
-        let settings = &state.settings;
 
         let project = session.project_id.as_deref().unwrap_or("anonymous");
         let session_name = session.name.as_deref().unwrap_or(&session.id);
         let sandbox_status = crate::external::get_sandbox_status();
         let version = env!("CARGO_PKG_VERSION");
-        let server_url = format!(
-            "{}:{}",
-            settings.model.ollama_host, settings.model.ollama_port
-        );
 
         let (fact_count, note_count, doc_count) = if let Some(db_ref) = &state.db {
             (
@@ -128,7 +142,7 @@ pub async fn run_chat_repl_tui(
             session_name,
             session.anonymous,
             version,
-            &server_url,
+            &provider_name,
             fact_count,
             note_count,
             doc_count,

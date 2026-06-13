@@ -424,7 +424,12 @@ pub struct WelcomeInfo {
     pub session_name: String,
     pub is_anonymous: bool,
     pub version: String,
-    pub server_url: String,
+    /// Name of the provider serving the current model (e.g., "my-ollama").
+    /// Replaces the previous `server_url` field (#120). Showing the provider
+    /// name is more informative than the URL — the user already knows where
+    /// Ollama is running, but with multiple providers, knowing which one is
+    /// serving the model is useful.
+    pub provider_name: String,
     pub fact_count: i64,
     pub note_count: i64,
     pub doc_count: i64,
@@ -490,7 +495,7 @@ impl WelcomeInfo {
     /// Format session info lines for right-side display
     ///
     /// Order: most useful/frequently consulted first, static metadata last:
-    /// Model → Server → Tools → Think → Vision → Sandbox → Project → Session → Version
+    /// Model → Provider → Tools → Think → Vision → Sandbox → Project → Session → Version
     /// Then conditional: Facts, Notes, Docs, Skills
     fn format_session_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
@@ -502,11 +507,11 @@ impl WelcomeInfo {
         // Model is shown in the status bar/modeline — no need to duplicate in banner
 
         lines.push(format!(
-            "{}Server:{} {}{}{}",
+            "{}Provider:{} {}{}{}",
             bc,
             r,
             d,
-            truncate_str(&self.server_url, 30),
+            truncate_str(&self.provider_name, 30),
             r
         ));
 
@@ -592,7 +597,10 @@ impl WelcomeInfo {
         let mut lines = Vec::new();
 
         // Model is shown in the status bar/modeline — no need to duplicate in banner
-        lines.push(format!("Server: {}", truncate_str(&self.server_url, 30)));
+        lines.push(format!(
+            "Provider: {}",
+            truncate_str(&self.provider_name, 30)
+        ));
 
         // Capabilities
         let tools_status = if self.tools_enabled {
@@ -966,7 +974,7 @@ mod tests {
             is_anonymous: false,
             version: "0.40.0".to_string(),
 
-            server_url: "localhost:11434".to_string(),
+            provider_name: "my-ollama".to_string(),
             fact_count: 3,
             note_count: 2,
             doc_count: 1,
@@ -976,6 +984,7 @@ mod tests {
         let output = info.to_boxed_string();
         assert!(output.contains("Project:"));
         assert!(output.contains("Session:"));
+        assert!(output.contains("Provider:"));
     }
 
     #[test]

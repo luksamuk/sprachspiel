@@ -2437,11 +2437,11 @@ Context Assembly:
 
 | ADR | Decision | Rationale |
 |-----|----------|-----------|
-| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Krishnamurthy 2026). |
+| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Wu et al. 2025, Long et al. 2026). |
 | ADR-002 | Decay formula: `2^(-t/half_life)` | Aligns with existing facts system (`src/facts/decay.rs`). `exp(-t/h)` is equivalent but confusing; `2^(-t/h)` matches Ebbinghaus curve already in code. |
 | ADR-003 | Messages-only scope is Phase 1 (not permanent) | When Unified Knowledge Store ships, `feedback_signals.item_id` can reference `knowledge_items.id`. Migration: v10→messages, v11+→all sources. |
-| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Chan et al. (2025): ~3% decisions change per reflection step. Configurable via `config.toml [feedback].llm_feedback_weight`. |
-| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals (no partial credit). Drori et al. (2025): strict 0/1 verification. Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
+| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Long et al. (2026): verification steps rarely change outcomes — predominantly confirmatory rechecks (arXiv:2602.03485). Configurable via `config.toml [feedback].llm_feedback_weight`. |
+| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals (no partial credit). Drori et al. (2025): strict 0/1 verification via Lean proofs and code execution (arXiv:2502.09955). Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
 | ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative scores (bug: `1.0 + (-2.0) = -1.0 → max(-1.0, -0.9) = -0.9`). New clamp: min 0.1 (90% max suppression), max 3.0 (3× amplification cap). |
 | ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. `decay_score` is persisted by `run_content_decay_cycle()`, enabling accurate "items at risk" queries in `/context`. |
 | ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval — increments `access_count`, updates `last_accessed`. Same pattern as facts system. RRF (immediate ranking) and access_count (future retention) are separate signals — not double-counting. |
@@ -3715,7 +3715,7 @@ Features that enhance core functionality before Sprach 2.0 work begins.
 - **#119 (Agnostic Provider Types):** `src/retry.rs` will be relocated to `src/provider/retry.rs`. `classify_for_retry(&OllamaError)` gets a sibling `classify_for_retry(&ProviderError)`. `ProviderError` should carry retry semantics (either via `retry_category()` method or via variant names).
 - **#120 (OllamaProvider reqwest):** Reqwest-native errors (timeout, connect, 5xx) need explicit classification into the same `RetryCategory`. SSE parse errors → `NetworkRetry`. 429 → `RateLimitRetry`.
 - **#121 (Consumer Migration):** `core.rs` retry loops (P6.0e.5) gain +1 day effort — must migrate `classify_for_retry(&OllamaError)` to `classify_for_retry(&ProviderError)`. `custom_coordinator.rs` (P6.0e.4) gain +0.5 day — the recovery pattern (push `ChatMessage::tool(error_msg)`) must use `LlmMessage::tool` from #119 via the `recovery::push_tool_result` wrapper.
-- **#122 (OpenAI-Compatible Provider):** Uses `RateLimitRetry` variant pre-emptively added in #116. Must wire `Retry-After` header parsing. Cloud-specific non-retryable: `content_filter`, `invalid_api_key`, `insufficient_quota`.
+- **#122 (OpenAI-Compatible Provider):** Uses `RateLimitRetry` variant pre-emptively added in #116. Must wire `Retry-After` header parsing. Cloud-specific non-retryable: `content_filter`, `invalid_api_key`, `insufficient_quota`. **Streaming tool call handling** differs fundamentally from Ollama native — see `doc/src/development/research/openai-streaming-tool-calls.md` for the full investigation (Ollama delivers complete tool call per chunk; OpenAI delivers arguments incrementally). **Recommended approach:** implement 100% OpenAI-compat first, test against Ollama's `/v1/chat/completions` endpoint, broaden testing (llama-swap, vLLM, llama.cpp) in next demand.
 - **#123 (Remove ollama-rs):** `coordinator.rs` (100% coupled to `OllamaError`) gets rewritten or removed. `src/retry.rs` module is relocated in #119, so #123 just removes the last `use ollama_rs::error::OllamaError` lines. #123 effort increases from 2-3d to 3-4d due to the larger rewriter scope caused by #116.
 - **#11 (Parallel Tool Execution):** Must adopt the per-tool-error-recovery pattern from #116. `join_all` collects `Vec<Result<String, String>>`, each error becomes a `LlmMessage::tool(error_msg)`. No batch-abort on single tool failure.
 
@@ -4054,42 +4054,159 @@ pub trait LlmProvider: Send + Sync {
 
 #### OllamaProvider (reqwest direct) — #120 [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS (PR #204)  
 **Depends on:** #119 (uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client + **retry acceptance criteria from #116 manual test (Scenarios 2, 3, 4) MUST pass**
 
-**Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`.
+**Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`. Introduces **named providers** in `models.toml` (breaking change: `ollama_host`/`ollama_port` removed from `config.toml`).
 
-**Files to create:**
+**Files to create/modify:**
 
 | File | Content |
 |------|---------|
-| `src/provider/ollama.rs` | `OllamaProvider` struct, `LlmProvider` impl |
-| `src/provider/ollama_api.rs` | Ollama API request/response structs (serde), endpoint URLs |
+| `src/user_models.rs` | **MODIFY** — Parse `[provider."name"]` and `[models."name"]` with `provider = "name"`; remove `ollama_host`/`ollama_port` fallback |
+| `src/settings.rs` | **MODIFY** — Remove `ollama_host`/`ollama_port` from `ModelSettings` and `SAMPLE_CONFIG` |
+| `src/provider/factory.rs` | **NEW** — `build_provider(name, all_providers) -> Result<Box<dyn LlmProvider>>`; `ProviderKind::Ollama` | `OpenAICompatible` (unimplemented!) |
+| `src/provider/ollama.rs` | **NEW** — `OllamaProvider` struct, `LlmProvider` impl |
+| `src/provider/ollama_api.rs` | **NEW** — Ollama API request/response structs (serde), endpoint URLs |
+| `src/provider/streaming.rs` | **NEW** — NDJSON parser with idle timeout for chat_stream |
+| `src/provider/mod.rs` | **MODIFY** — Export factory, types |
+| `src/main.rs` / `src/repl.rs` | **MODIFY** — Use `factory::build_provider()` instead of `settings.ollama_client()` |
+| `src/chat/model_switch.rs` | **MODIFY** — `switch_model()` receives `&dyn LlmProvider` |
 
-**Sub-deliverables (each testable independently):**
+**Sub-deliverables (each testable independently, sequential commits):**
 
-| Sub | Endpoint | Description | Effort |
-|-----|----------|-------------|--------|
-| P6.0d.1 | `POST /api/chat` | Send messages, receive response with/without tool_calls | 1 week |
-| P6.0d.2 | Tool calling | Parse `tool_calls` from response, format tool results in next request | 3-5 days |
-| P6.0d.3 | `POST /api/generate` | Vision/OCR (base64 images) | 2-3 days |
-| P6.0d.4 | `POST /api/embed` | Embeddings with `dimensions` parameter (server-side Matryoshka) | 2 days |
-| P6.0d.5 | `GET /api/show` | Capability detection | 1 day |
-| P6.0d.6 | Keep-alive, format, options | Minor parameters | 1 day |
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| 1 | Provider config parsing + factory + breaking change config format | 1 week |
+| 2 | `POST /api/chat` + `chat_stream` (NDJSON, idle timeout, retry, shared client) | 1 week |
+| 3 | Tool calling (parse/format `tool_calls`) | 3-5 days |
+| 4 | `POST /api/generate` (vision/OCR images + format) | 2-3 days |
+| 5 | `POST /api/embed` (Matryoshka `dimensions` parameter) | 2 days |
+| 6 | `GET /api/show` / `/api/tags` → `detect_capabilities()` + full integration | 1-2 days |
 
-**Key benefit over ollama-rs:** Resolves the `prompt_eval_count` bug (ollama-rs v0.3.4 ignores it) — with reqwest direct, we parse the full response JSON.
+**Breaking Changes (Config Format):**
+
+```toml
+# models.toml (NEW FORMAT - REQUIRED)
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "http://localhost:11434"
+connect_timeout_secs = 5
+read_timeout_secs = 300
+stream_idle_timeout_secs = 60
+max_retries = 3
+retry_base_delay_ms = 2000
+retry_max_delay_ms = 16000
+retry_jitter_percent = 20
+
+[models.glm-5.1]
+model_id = "glm-5.1:cloud"
+num_ctx = 202757
+thinking = true
+tools = true
+provider = "my-ollama"
+
+# config.toml — olama_host/port REMOVED from [model]
+[model]
+default = "glm-5.1"
+thinking = false
+```
+
+**Defaults (Docstrings on Struct):**
+- `connect_timeout_secs = 5`
+- `read_timeout_secs = 300` 
+- `stream_idle_timeout_secs = 60`
+- `max_retries = 3`
+- `retry_base_delay_ms = 2000`
+- `retry_max_delay_ms = 16000`
+- `retry_jitter_percent = 20`
+
+**Key Features:**
+- Shared `reqwest::Client` singleton — connection pooling, keep-alive
+- NDJSON streaming parser with **idle timeout (60s default)** — prevents hangs
+- Exponential backoff retry with **±20% jitter** + **`Retry-After` header parsing** (P0 for #122)
+- `base_url` auto-normalization: `localhost:11434` → `http://localhost:11434`
+- Health check: lazy in chat (first use), immediate in query/embed
 
 **W2 Wave Context — Acceptance criteria from #116 manual test:**
 
 This issue MUST pass the following manual test scenarios from `MANUAL_TEST_116.md` (located in `~/`) before being marked as complete. These scenarios are the **reason** #120 is critical — `ollama-rs` cannot surface the errors needed for retry to work.
 
-- **Scenario 2 — Server 500 + linear backoff:** `kill -STOP` Ollama mid-request. Expect "Retrying in 5s..." → "Retrying in 10s..." → "Retrying in 15s..." (3 attempts, 5s linear backoff). Resume with `kill -CONT`. Conversation must complete successfully. Requires reqwest-direct `ProviderError::Api` mapped to `RetryCategory::ServerRetry`.
-- **Scenario 3 — Network timeout + exponential backoff:** `sudo iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query. Expect "Retrying in 100ms..." → "200ms..." → "400ms..." → "800ms..." → "1.6s..." (5 attempts, exponential backoff). Graceful error after exhaustion. Requires reqwest client with `.timeout(Duration)` configured and `ProviderError::Timeout`/`Connection` mapped to `RetryCategory::NetworkRetry`.
-- **Scenario 4 — Cancel-aware sleep:** Trigger ServerRetry via any method. Press Ctrl+C during 5s/10s/15s backoff. Expect returns in <1 second (cancel respected). Requires cancel token propagation through reqwest's `tokio::select!` with `client.request(...)` and the `CancellationToken`.
+- **Scenario 2 — Server 500 + linear backoff:** `kill -STOP` Ollama mid-request. Expect "Retrying in 5s..." → "Retrying in 10s..." → "Retrying in 15s..." (3 attempts, 5s linear backoff). Resume with `kill -CONT`. Conversation must complete successfully. Requires `ProviderError::Api` mapped to `RetryCategory::ServerRetry`.
+- **Scenario 3 — Network timeout + exponential backoff:** `sudo iptables -A OUTPUT -p tcp --dport 11434 -j DROP` BEFORE query. Expect "Retrying in 100ms..." → "200ms..." → "400ms..." → "800ms..." → "1.6s..." (5 attempts, exponential backoff). Graceful error after exhaustion. Requires reqwest client with `.timeout(Duration)` and `ProviderError::Timeout`/`Connection` mapped to `RetryCategory::NetworkRetry`.
+- **Scenario 4 — Cancel-aware sleep:** Trigger ServerRetry via any method. Press Ctrl+C during 5s/10s/15s backoff. Expect returns in <1 second (cancel respected). Requires cancel token propagation through reqwest's `tokio::select!`.
 
-The retry infrastructure (`src/retry.rs` with `classify_for_retry`, `retry_delay`, `sleep_or_cancel`, `RateLimitRetry`) introduced in #116 is already in place — #120 just needs to make `OllamaProvider` produce the right `ProviderError` variants for the retry loop to act on.
+The retry infrastructure (`RetryCategory`, `retry_delay`, `sleep_or_cancel`) from #116 is in place — #120 makes `OllamaProvider` produce the right `ProviderError` variants for the retry loop.
+
+**OpenAI-Compatible Placeholder:**
+- `ProviderKind::OpenAICompatible` exists in enum
+- `build_provider()` returns `Err(anyhow!("OpenAICompatibleProvider not yet implemented (see #122)"))`
+- No feature flag — compiles, errors at runtime if referenced
+
+---
+
+#### #120 PR #206 — Code Review Findings (2026-06-11)
+
+PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are categorized below as **(A) Resolved in PR #206**, **(B) Deferred to #121**, or **(C) Deferred to #122**.
+
+**A. Resolved in PR #206 (this PR):**
+
+| # | Issue | File | Action |
+|---|-------|------|--------|
+| A1 | **BUG CRÍTICO:** `OllamaToolCallFunction.arguments: String` breaks tool calls in Ollama native (deserializes as `String` but Ollama sends JSON object) | `src/provider/ollama_api.rs:27`, `ollama.rs:307,412` | Change to `serde_json::Value` |
+| A2 | **BUG ESTRUTURAL:** `LazyLock<USER_MODELS_FILE>` with `process::exit(1)` crashes `cargo test --lib` when `models.toml` is missing | `src/user_models.rs:216-222` | Return `UserModelsFile::default()` (empty HashMaps); caller decides |
+| A3 | **Clippy 7 errors:** `derivable_impls` on `ProviderKind`, `for_kv_map` on provider iter, `if_same_then_else` on classify_error | `user_models.rs:40, 197`, `ollama.rs:27` | Derive `Default`, use `.values_mut()`, consolidate if |
+| A4 | **Docstring stale:** `long_about` mentions duplicate model detection that doesn't exist (Pitfall 11) | `src/translate/cli.rs:305-306` | Remove duplicate claim from docstring |
+| A5 | **factory.rs module docstring inconsistent with impl** (says "JSON object" for Ollama but struct has `String`) | `src/provider/factory.rs:15` | Update after A1 |
+| A6 | **`ModelsUpgradeReport` 3 dead code fields** (Pitfall 2/3) | `src/commands/models_upgrade.rs:47-53` | Remove struct; return `Vec<String>` only |
+| A7 | **`let _ = action_verb;` dead code literal** | `models_upgrade.rs:116` | Remove line |
+| A8 | **`provider_name()` inherent method duplicates trait method** | `src/provider/ollama.rs:55-58` | Replace with `const PROVIDER_NAME: &str = "ollama";` |
+| A9 | **Dead Cargo.toml deps:** `anyhow`, `bytes`, `tracing` (optional w/o feature) | `Cargo.toml` | Remove if confirmed unused |
+| A10 | **Division by zero in `backoff_delay`** (retry_base_delay_ms == 0) | `src/provider/ollama.rs:177-179` | Guard with `if retry_base_delay_ms == 0` |
+| A11 | **`rand::random::<u64>() % 0` panic** (jitter_range == 0) | `src/provider/ollama.rs:184` | Guard with `if jitter_range.is_zero() { return delay; }` |
+| A12 | **`unwrap_or_default()` silent in production** (embeddings) | `src/provider/ollama.rs:556` | Add `log::warn!` companion |
+| A13 | **`#![allow(clippy::print_stdout)]` module-level** | `src/commands/models_upgrade.rs:18-19` | Use `#[expect(...)]` |
+| A14 | **`eprintln!` without `log::error!` companion** | `src/user_models.rs:219` | Add `log::error!` before |
+| A15 | **`process::exit(1)` in `handle_models_upgrade`** inconsistent with rest of code | `src/main.rs:733-735` | Return `Err(...)` |
+| A16 | **Streaming silently drops malformed NDJSON lines** | `src/provider/ollama.rs:394` | Add `log::warn!` with counter |
+| A17 | **Integration test for `build_provider`** (or `#[cfg(test)]` mock) | `tests/provider_factory.rs` (new) | Add smoke test calling `build_provider("my-ollama", &cfg).provider_name()` |
+| A18 | **TUI rendering glitch:** `/session forget` shows as `sessiontforget` | (view/welcome line) | Investigate and fix width/truncation |
+| A19 | **`SMOKE_TEST.md` outdated:** references `/forget` instead of `/session forget` | `SMOKE_TEST.md` | Update docs |
+
+**B. Deferred to #121 (Consumer Migration):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| B1 | **`Settings::ollama_client()` deprecated regression:** returns `Ollama::default()` ignoring custom host/port (regression for users with custom config) | #121 migrates all 5 call sites; method will be **removed** in #121. Documented limitation: users with custom `ollama_host`/`ollama_port` in `config.toml` must migrate to `models.toml` `[provider]` block before upgrading. |
+| B2 | **`#[allow(dead_code)]` chain on `factory::build_provider` → `OllamaProvider::new` → `provider_name`** | All 3 annotations justified by "Used in #121". Integration test (A17) provides call site. |
+| B3 | **`LlmProvider` trait `#[allow(dead_code)] // Consumed by #120`** | Comment is now factually wrong (it's consumed BY this PR). Corrected in this PR to `// Consumed by OllamaProvider in this PR; build_provider call site in #121`. |
+| B4 | **`RateLimit retry_after: Option<Duration>` claim 'Will be populated from header'** in #116 | Header parsing is #122 work. Remove claim from #120 code or mark as `#122 TODO`. |
+
+**C. Deferred to #122 (OpenAI-Compatible Provider):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| C1 | **`tracing` optional dependency without feature flag** | If `tracing` is genuinely unused in the PR, remove. If it will be used in #122 for instrumented spans, add `tracing` feature flag. |
+
+**D. Pre-existing clippy limitations (W2 follow-up):**
+
+| # | Issue | Reason |
+|---|-------|--------|
+| D1 | **`src/chat/command_handlers.rs:28` imports `DocumentEntry`/`DocumentListData` without `#[cfg(feature = "document-tools")]`** | Pre-existing: imports are unconditionally pulled in, but their USES are gated by `#[cfg(feature = "document-tools")]` (line 3023, etc.). When compiling `--no-default-features --features X` (X ≠ document-tools), the import is "unused" — 1 error per individual feature. |
+| D2 | **`src/chat/tui/markdown.rs` has unused items gated by `#[cfg(feature = "...")]`** | Pre-existing: variables `lang` (lines 270, 1523) and `render_mermaid` (line 1426) and function `mermaid_style` (line 888) trigger "unused" errors when features are turned off individually. |
+| D3 | **`src/markdown/standalone.rs:59` and `src/markdown/table.rs:115` have unused items** | Pre-existing: `render_special` (standalone) and `lang` (table) trigger "unused" errors in feature-gated builds. |
+| D4 | **`src/tools/weather.rs` uses `crate::utils::fetch_json` (gated by `search-tools`) but `pub mod weather;` in `src/tools/mod.rs:14` is unconditional** | Pre-existing: this combination causes compile errors in any feature combination that lacks `search-tools`. `pub mod weather;` should be `#[cfg(feature = "weather-tools")]` and the body should also gate its functions with `#[cfg(feature = "weather-tools")]`. |
+| D5 | **`src/tools/weather.rs` has unfulfilled `#[expect(dead_code)]` annotations** (lines 361, 366, 369, 385, etc.) | Pre-existing: when the module is compiled WITHOUT `weather-tools` (which still happens because D4 is unfixed), these expectations are unfulfilled. |
+
+**E. Follow-up (PR #120 review, Hefesto round 3):**
+
+| # | Issue | Resolution |
+|---|-------|-----------|
+| E1 | **Provider bail-out was unreachable in `repl_tui.rs:82`** | The earlier `resolve_model_config` call (in `repl.rs:638`, `query/context.rs:119`, `summarize/processor.rs:36`, `main.rs::handle_vision`, `model_switch.rs:56`) used `process::exit(1)` with a generic "Unknown model" message when `models.toml` was missing the `[provider]` block, masking the actual config error. **Resolution:** new `user_models::require_providers()` helper called at every entry point; pre-parse heuristic in `load_user_models_internal` detects the common user error (commented-out `[provider.*]`) before TOML parse fails with the generic `missing field 'provider'` message. Both fixes preserve `cargo clippy --all-features` clean. |
+
+**Merge criterion update:** PR #206 is mergeable when all A1-A19 are resolved and clippy passes. B1-B4 are documented as limitations to be resolved in #121; C1 in #122. D1-D5 are pre-existing feature-gating bugs to be fixed in a W2 close-out PR (not blocking). E1 is the bail-out fix from this round.
 
 ---
 
@@ -4116,7 +4233,7 @@ The retry infrastructure (`src/retry.rs` with `classify_for_retry`, `retry_delay
 **Status:** 📋 PLANNED  
 **Depends on:** #118 (Tool trait) + #119 (agnostic types) + #120 (OllamaProvider)  
 **Estimated effort:** 2–3 weeks  
-**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`)
+**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`) AND no `#[allow(dead_code)]` annotations on `src/provider/{ollama,factory}.rs` chain (P6.0e.10).
 
 **Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types.
 
@@ -4133,6 +4250,7 @@ The retry infrastructure (`src/retry.rs` with `classify_for_retry`, `retry_delay
 | P6.0e.7 | `query/*.rs` | 4 | 1 day | P6.0e.4 |
 | P6.0e.8 | `vision/processor.rs`, `ocr/processor.rs`, `summarize/processor.rs` | 3 | 1 day | P6.0e.3 |
 | P6.0e.9 | `main.rs` — provider construction | 1 | 0.5 day | P6.0e.6 |
+| P6.0e.10 | Remove `#[allow(dead_code)]` from `factory::build_provider`, `OllamaProvider::new`, `provider_name` (chain reachable via P6.0e.9 + P6.0e.5) | 1 | 0.1 day | P6.0e.9 |
 
 ---
 

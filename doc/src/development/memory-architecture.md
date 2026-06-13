@@ -623,7 +623,7 @@ Feedback signals from different sources carry different weights:
 | Source type | Weight factor | Rationale |
 |--------|--------|-----------|
 | User (explicit `/feedback good/bad`) | 1.0× | Direct, intentional signal — ground truth |
-| LLM (`feedback_submit()` tool) | 0.3× | Self-feedback discounted — LLMs tend toward overconfidence (ADR-004, Wu+Chan 2025) |
+| LLM (`feedback_submit()` tool) | 0.3× | Self-feedback discounted — LLMs tend toward overconfidence (ADR-004, Wu et al. 2025; Long et al. 2026) |
 
 > **Note:** User implicit feedback (continuation signals, requery detection, session abandonment) is deferred to Phase 2. The 3-source model (`user_explicit`, `user_implicit`, `llm_self`) is the Phase 2 target — Phase 1 implements `user` and `llm` only.
 

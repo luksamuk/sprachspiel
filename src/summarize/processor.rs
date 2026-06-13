@@ -33,9 +33,15 @@ impl SummarizeProcessor {
             return Err("No text provided for summarization".into());
         }
 
+        // Bail-out: detect broken config before reaching resolve_model_config's
+        // process::exit(1). Per PR #206 review: failing silently with "default"
+        // or generic "Unknown model" masks user configuration errors.
+        crate::user_models::require_providers()?;
+
         let model_config = crate::user_models::resolve_model_config(model_id);
 
         // Initialize Ollama with settings
+        #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
         let ollama = settings.ollama_client();
 
         let model_options = model_config.build_model_options();

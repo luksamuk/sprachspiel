@@ -475,11 +475,11 @@ The following ADRs from `IMPLEMENTATION.md` govern the feedback system:
 
 | ADR | Decision | Rationale |
 |-----|----------|-----------|
-| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Krishnamurthy 2026). |
+| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Wu et al. 2025, Long et al. 2026). |
 | ADR-002 | Decay formula: `2^(-t/half_life)` | Aligns with existing facts system. Easier to reason about than `exp(-t/h)` — at one half-life, weight is exactly 0.5. |
 | ADR-003 | Messages-only scope in Phase 1 | `feedback_signals.item_id` references `content_items.id` but only messages are feedback-eligible. Notes and documents will be eligible in a future phase. |
-| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Chan et al. (2025): ~3% decisions change per reflection step. |
-| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals. Drori et al. (2025): strict 0/1 verification. Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
+| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Long et al. (2026): verification steps rarely change outcomes — predominantly confirmatory rechecks (arXiv:2602.03485). |
+| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals. Drori et al. (2025): strict 0/1 verification via Lean proofs and code execution (arXiv:2502.09955). Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
 | ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative final scores (bug: `1.0 + (-2.0) = -1.0`). New clamp: min 0.1 (max 90% suppression), max 3.0 (3× amplification). |
 | ADR-008 | Content Decay Activation | Ghost fields on `content_items` activated: `decay_score`, `access_count`, `last_accessed` now functional with Ebbinghaus decay. Content-type half-lives differ. Feedback adjusts importance. |
 | ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval. Increments `access_count`, updates `last_accessed`. RRF boost and `access_count` are separate signals on different time scales — not double-counting. |
