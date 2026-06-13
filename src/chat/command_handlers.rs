@@ -873,11 +873,25 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
+    // W2 #121 extension: resolve the indexing alias to get the
+    // upstream model_id and dimensions. The search function takes
+    // both — the model_id is the name passed to /v1/embeddings
+    // and the dimensions size the vector store.
+    let (embedding_model_id, embedding_dimensions) =
+        match state.settings.resolve_indexing_model() {
+            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+            Err(e) => {
+                return vec![CommandOutput::error(format!(
+                    "Cannot run /search without a valid [indexing] config: {e}"
+                ))];
+            }
+        };
+
     match crate::retrieval::run_search(
         &db,
         &state.ollama,
-        state.settings.indexing_model_alias(),
-        768, // TRANSITIONAL: real value from settings.resolve_indexing_model
+        &embedding_model_id,
+        embedding_dimensions,
         &query,
         Some(&conversation_id),
         limit,
@@ -971,10 +985,22 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
+    // W2 #121 extension: resolve the indexing alias to get the
+    // upstream model_id and dimensions.
+    let (embedding_model_id, embedding_dimensions) =
+        match state.settings.resolve_indexing_model() {
+            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+            Err(e) => {
+                return vec![CommandOutput::error(format!(
+                    "Cannot run /reindex without a valid [indexing] config: {e}"
+                ))];
+            }
+        };
+
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
         state.ollama.clone(),
-        state.settings.indexing_model_alias().to_string(),
-        768, // TRANSITIONAL: real value from settings.resolve_indexing_model
+        embedding_model_id,
+        embedding_dimensions,
     );
     let embedding_client = Arc::new(embedding_client);
     let progress_tx = state.session.embedding_tx.clone();

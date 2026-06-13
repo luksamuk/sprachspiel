@@ -160,15 +160,15 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
-        // W2 #121 extension (TRANSITIONAL): the query subcommand's
-        // wiring is reworked in Commit 6 (along with the chat
-        // subcommand). For now, use a placeholder IndexingInit with
-        // the model's upstream model_id when resolvable, or empty
-        // string if the resolver fails (in which case the init will
-        // bail out below with a clear error).
+        // W2 #121 extension: the query subcommand's wiring uses
+        // Settings::resolve_indexing_model to get the upstream
+        // model_id and dimensions. If the alias is missing or
+        // misconfigured, the resolver returns an error and we
+        // pass an empty model_id to init_database_core which
+        // bails with a clear error message.
         let (model_id, dimensions) = match settings.resolve_indexing_model() {
             Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-            Err(_) => (String::new(), 768),
+            Err(_) => (String::new(), 768), // triggers the empty-model_id error
         };
         let result = crate::db::init_database_core(
             crate::db::IndexingInit {
