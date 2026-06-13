@@ -8,6 +8,7 @@
 //! [provider."my-ollama"]
 //! kind = "openai"             # default; "ollama" is deprecated alias
 //! base_url = "http://localhost:11434/v1"   # /v1 suffix REQUIRED
+//! embedding = true            # opt-in: declare this provider as embedding-capable
 //! connect_timeout_secs = 5
 //! read_timeout_secs = 300
 //! stream_idle_timeout_secs = 60
@@ -87,6 +88,20 @@ pub struct ProviderConfig {
 
     #[serde(default = "default_retry_jitter_percent")]
     pub retry_jitter_percent: u8,
+
+    /// Whether this provider is declared as embedding-capable.
+    ///
+    /// W2 #121: opt-in flag. The user must explicitly set
+    /// `embedding = true` on a provider in `models.toml` for it to be
+    /// used for embedding generation. There is no automatic detection
+    /// — the sprach trusts the user's declaration strictly. A
+    /// `[embedding]` section in `config.toml` references one of these
+    /// providers by name.
+    ///
+    /// Default: `false` (most LLM chat providers do not serve
+    /// `/v1/embeddings`).
+    #[serde(default)]
+    pub embedding: bool,
 
     // Future: OpenAI-compatible specific
     pub api_key_env: Option<String>,
@@ -481,6 +496,7 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
+            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -499,6 +515,7 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
+            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -517,6 +534,7 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
+            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -535,6 +553,7 @@ mod tests {
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
             retry_jitter_percent: 20,
+            embedding: false,
             api_key_env: None,
         };
         cfg.normalize_base_url();
@@ -684,6 +703,40 @@ provider = "my-ollama"
         assert_eq!(prov.retry_base_delay_ms, 2000);
         assert_eq!(prov.retry_max_delay_ms, 16000);
         assert_eq!(prov.retry_jitter_percent, 20);
+        // W2 #121: embedding defaults to false
+        assert!(!prov.embedding);
+    }
+
+    #[test]
+    fn test_provider_embedding_flag_default_false() {
+        // W2 #121: `embedding = true` is opt-in.
+        // Without the flag in TOML, the provider should parse as embedding=false.
+        let toml_content = r#"
+[provider."my-ollama"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+
+[models]
+"#;
+        let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        assert!(!prov.embedding);
+    }
+
+    #[test]
+    fn test_provider_embedding_flag_opt_in() {
+        // W2 #121: explicit `embedding = true` enables the flag.
+        let toml_content = r#"
+[provider."my-ollama"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+embedding = true
+
+[models]
+"#;
+        let parsed: UserModelsFile = toml::from_str(toml_content).unwrap();
+        let prov = parsed.provider.get("my-ollama").unwrap();
+        assert!(prov.embedding);
     }
 
     #[test]
