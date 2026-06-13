@@ -1048,8 +1048,7 @@ impl Settings {
     > {
         let alias = self.indexing_model_alias();
         if alias.trim().is_empty() {
-            return Err(
-                "Error: [indexing].model is empty in config.toml. \
+            return Err("Error: [indexing].model is empty in config.toml. \
                  Add the alias of an embedding-capable model from \
                  models.toml [models.*], e.g.:\n\
                  \n\
@@ -1058,8 +1057,7 @@ impl Settings {
                  \n\
                  The alias must be declared with `embeddings = true` \
                  and `dimensions = N` in models.toml."
-                    .to_string(),
-            );
+                .to_string());
         }
 
         let models = crate::user_models::get_user_models();

@@ -75,9 +75,7 @@ async fn init_chat_database(
     // W2 #121 extension: resolve the indexing alias to (model_cfg,
     // provider_cfg, model_id, dimensions). Bail fast with a clear
     // error if the alias is missing/misconfigured.
-    let (_model_cfg, provider_cfg, model_id, dimensions) = match settings
-        .resolve_indexing_model()
-    {
+    let (_model_cfg, provider_cfg, model_id, dimensions) = match settings.resolve_indexing_model() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("\x1B[31m{e}\x1B[0m");

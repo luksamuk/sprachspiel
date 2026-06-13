@@ -626,9 +626,9 @@ embeddings = true
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
         assert!(
-            migrations
-                .iter()
-                .any(|m| matches!(m, ModelsMigration::MissingDimensions { alias } if alias == "nomic")),
+            migrations.iter().any(
+                |m| matches!(m, ModelsMigration::MissingDimensions { alias } if alias == "nomic")
+            ),
             "Should detect missing dimensions, migrations: {:?}",
             migrations
         );

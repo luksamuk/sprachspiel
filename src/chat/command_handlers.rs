@@ -877,15 +877,14 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
     // upstream model_id and dimensions. The search function takes
     // both — the model_id is the name passed to /v1/embeddings
     // and the dimensions size the vector store.
-    let (embedding_model_id, embedding_dimensions) =
-        match state.settings.resolve_indexing_model() {
-            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-            Err(e) => {
-                return vec![CommandOutput::error(format!(
-                    "Cannot run /search without a valid [indexing] config: {e}"
-                ))];
-            }
-        };
+    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
+        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Cannot run /search without a valid [indexing] config: {e}"
+            ))];
+        }
+    };
 
     match crate::retrieval::run_search(
         &db,
@@ -987,15 +986,14 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
 
     // W2 #121 extension: resolve the indexing alias to get the
     // upstream model_id and dimensions.
-    let (embedding_model_id, embedding_dimensions) =
-        match state.settings.resolve_indexing_model() {
-            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-            Err(e) => {
-                return vec![CommandOutput::error(format!(
-                    "Cannot run /reindex without a valid [indexing] config: {e}"
-                ))];
-            }
-        };
+    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
+        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Cannot run /reindex without a valid [indexing] config: {e}"
+            ))];
+        }
+    };
 
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
         state.ollama.clone(),

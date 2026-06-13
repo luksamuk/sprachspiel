@@ -189,10 +189,9 @@ impl OpenAICompatibleProvider {
             });
         }
 
-        let emb_resp: EmbeddingsResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::Other(format!("Failed to parse embeddings response: {e}")))?;
+        let emb_resp: EmbeddingsResponse = response.json().await.map_err(|e| {
+            ProviderError::Other(format!("Failed to parse embeddings response: {e}"))
+        })?;
 
         let dim = emb_resp
             .data

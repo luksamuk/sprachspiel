@@ -436,22 +436,6 @@ pub fn is_model_valid(name: &str) -> bool {
     ModelConfig::is_builtin_valid(name) || get_user_models().contains_key(name)
 }
 
-/// Returns `true` if the named model is declared as embedding-only.
-///
-/// A model is "embedding-only" when it has `embeddings = true` in
-/// `models.toml`. Such models serve `/v1/embeddings` and MUST NOT be
-/// used for chat completions via `-m <alias>` or `/model <alias>` —
-/// they are reserved for the indexing pipeline configured by
-/// `[indexing].model` in `config.toml`.
-///
-/// Built-in models are never embedding-only (the `ModelConfig` builtin
-/// has no `embeddings` field, so they all default to `false`).
-///
-/// **See also:** the canonical implementation lives in the unified
-/// `is_model_embedding_only` near `list_all_model_names` (the W2
-/// #121 extension uses the same impl in both places; this
-/// declaration is kept for `#[must_use]` documentation).
-
 /// Resolve model configuration with error handling
 ///
 /// Returns the model configuration or prints an error and exits.
