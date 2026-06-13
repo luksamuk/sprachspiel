@@ -342,3 +342,28 @@ pub async fn run_query(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_uses_indexing_weights() {
+        // W2 #121 extension: the query subcommand must use
+        // settings.indexing.keyword_weight and
+        // settings.indexing.semantic_weight for the RRF
+        // retrieval config. These fields were moved from the
+        // (now-removed) settings.retrieval section into
+        // [indexing] in Commit 2. This test guards against
+        // accidental regressions to the old [retrieval] access.
+        let sample = r#"
+[indexing]
+model = "nomic"
+keyword_weight = 0.25
+semantic_weight = 0.75
+"#;
+        let settings: crate::settings::Settings = toml::from_str(sample).unwrap();
+        assert!((settings.indexing.keyword_weight - 0.25).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.75).abs() < f32::EPSILON);
+    }
+}
