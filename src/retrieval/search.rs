@@ -193,8 +193,8 @@ pub async fn run_search(
     // Perform hybrid search using content_items (V7)
     log::debug!("Running hybrid search on content_items...");
     let settings = crate::settings::Settings::load();
-    let keyword_weight = settings.retrieval.keyword_weight;
-    let semantic_weight = settings.retrieval.semantic_weight;
+    let keyword_weight = settings.indexing.keyword_weight;
+    let semantic_weight = settings.indexing.semantic_weight;
     let results = match db.search_messages_hybrid(
         query,
         &embedding,

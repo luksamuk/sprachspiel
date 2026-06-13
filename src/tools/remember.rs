@@ -678,7 +678,7 @@ async fn remember_by_query(
     let feedback_settings = settings.as_ref().map(|s| &s.feedback);
     let (keyword_weight, semantic_weight) = settings
         .as_ref()
-        .map(|s| (s.retrieval.keyword_weight, s.retrieval.semantic_weight))
+        .map(|s| (s.indexing.keyword_weight, s.indexing.semantic_weight))
         .unwrap_or((DEFAULT_KEYWORD_WEIGHT, DEFAULT_SEMANTIC_WEIGHT));
     // Search for notes using unified content search
     let note_params = crate::content::ContentSearchParams {

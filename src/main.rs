@@ -977,7 +977,7 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
     let diagnostics = analyze_embeddings_with_progress(
         &vectors_f64,
         TRUNCATED_DIMENSIONS,
-        settings.embedding_model_name(),
+        settings.indexing_model_alias(),
         source_counts,
         &move |phase, frac| {
             progress_clone.set_message(phase.to_string());

@@ -66,28 +66,26 @@ pub struct Settings {
     /// Factual memory auto-extraction configuration
     #[serde(default)]
     pub facts: FactSettings,
-    /// Retrieval configuration (hybrid search weights)
-    #[serde(default)]
-    pub retrieval: RetrievalSettings,
     /// Thinking Trace Transform configuration
     #[serde(default)]
     pub thinking_trace: ThinkingTraceSettings,
-    /// Embedding configuration (W2 #121)
+    /// Indexing configuration (W2 #121 extension).
     ///
-    /// The `[embedding]` section is **required** in production. There
-    /// is no built-in default for `model` — sprach refuses to start
-    /// (chat, query) if this section is missing or its `model` field
-    /// is empty. The hardcoded embedding model that sprach used
-    /// historically (`nomic-embed-text-v2-moe`) is no longer assumed;
-    /// the user must declare it.
+    /// The `[indexing]` section in `config.toml` is **required** in
+    /// production. It declares the alias (from `models.toml
+    /// [models.*]`) used to generate vector embeddings, AND the
+    /// hybrid RRF weights for retrieval. The two are merged into a
+    /// single section because indexing and retrieval are two sides
+    /// of the same concern.
     ///
     /// `#[serde(default)]` is used so the Settings type is still
     /// constructable for tests; the real validation happens in
-    /// `init_chat_database` (which bails out on empty `model`).
+    /// `init_chat_database` (which bails out on empty `model` or
+    /// when the alias is missing `embeddings = true` in models.toml).
     ///
-    /// See [EmbeddingSettings] for the full schema.
+    /// See [IndexingSettings] for the full schema.
     #[serde(default)]
-    pub embedding: EmbeddingSettings,
+    pub indexing: IndexingSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -320,36 +318,12 @@ fn default_semantic_threshold() -> f32 {
     DEFAULT_SEMANTIC_THRESHOLD
 }
 
-/// Retrieval configuration for hybrid search (Reciprocal Rank Fusion).
-///
-/// Controls how keyword (BM25) and semantic (vector similarity) search
-/// results are combined. The two weights should typically sum to ~1.0,
-/// but this is not enforced — weights are applied independently in RRF.
-///
-/// See `content/db.rs::content_reciprocal_rank_fusion()` for the RRF algorithm.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetrievalSettings {
-    /// Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
-    /// Higher = more weight on keyword matches.
-    /// Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
-    #[serde(default = "default_keyword_weight")]
-    pub keyword_weight: f32,
-
-    /// Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
-    /// Higher = more weight on semantic similarity.
-    /// Default: 0.6 (embeddings capture meaning better than keyword overlap)
-    #[serde(default = "default_semantic_weight")]
-    pub semantic_weight: f32,
-}
-
-impl Default for RetrievalSettings {
-    fn default() -> Self {
-        RetrievalSettings {
-            keyword_weight: DEFAULT_KEYWORD_WEIGHT,
-            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
-        }
-    }
-}
+// W2 #121 extension: RetrievalSettings was REMOVED.
+// The keyword_weight and semantic_weight fields now live in
+// IndexingSettings (the [indexing] section), since indexing and
+// retrieval are two sides of the same concern. Use the
+// `default_keyword_weight()` / `default_semantic_weight()` helpers
+// for the default values.
 
 fn default_keyword_weight() -> f32 {
     DEFAULT_KEYWORD_WEIGHT
@@ -377,83 +351,99 @@ pub struct ThinkingTraceSettings {
     pub enabled: bool,
 }
 
-/// Embedding configuration (W2 #121).
+/// Indexing configuration (W2 #121 extension).
 ///
-/// The `[embedding]` section in `config.toml` is **required**. It
-/// declares the model name used to generate vector embeddings, and
-/// optionally a separate provider to use for embedding calls (which
-/// may differ from the chat provider).
+/// The `[indexing]` section in `config.toml` merges two concerns:
+/// (1) which model to use for vector embedding generation, and
+/// (2) the hybrid RRF weights for retrieval. They live together
+/// because indexing and retrieval are two sides of the same
+/// concern (storage and lookup of vector embeddings).
 ///
 /// # Schema
 ///
 /// ```toml
-/// [embedding]
-/// model = "nomic-embed-text-v2-moe"   # required
-/// # provider = "llama-swap"          # optional; defaults to chat provider
-/// # probe = true                     # optional; default true
+/// [indexing]
+/// model = "nomic"              # required; ALIAS from models.toml [models.*]
+/// # The alias MUST be declared with `embeddings = true` in
+/// # models.toml and have `dimensions = N` set. The provider is
+/// # inferred from the alias's `provider = "..."` field.
+/// probe = true                 # optional; default true
+/// keyword_weight = 0.4         # optional; default 0.4 (moved from [retrieval])
+/// semantic_weight = 0.6        # optional; default 0.6 (moved from [retrieval])
 /// ```
 ///
-/// # Provider resolution
+/// # Model resolution
 ///
-/// 1. If `[embedding].provider` is set, the named provider from
-///    `models.toml [provider.*]` is used.
-/// 2. Otherwise, the chat model's provider is used (the provider of
-///    the active chat model).
-/// 3. The resolved provider MUST have `embedding = true` in
-///    `models.toml`. If not, sprach fails to start with a clear
-///    error message.
+/// `model` is an ALIAS (the map key in `models.toml [models.*]`),
+/// NOT the upstream `model_id`. The provider is INFERRED from the
+/// alias — the user does NOT specify a provider in `[indexing]`.
+/// Sprach bails out if:
+/// - the alias doesn't exist in `models.toml`
+/// - the alias exists but doesn't have `embeddings = true`
+/// - the alias has `embeddings = true` but no `dimensions`
 ///
 /// # Probe (opt-OUT, default ON)
 ///
 /// When `probe = true` (default), sprach makes one POST
-/// `/v1/embeddings` call with a short test text at startup to verify
-/// the provider actually serves the embedding model. If the probe
-/// fails (4xx, network error, timeout), sprach fails to start with a
-/// clear error message.
+/// `/v1/embeddings` call at startup to verify the provider actually
+/// serves the model. The probe does NOT pass `dimensions` in the
+/// request body (adaptive — some providers reject it); the
+/// response's vector dim count is compared against the alias's
+/// declared `dimensions`. Mismatch is a fatal error.
 ///
 /// Set `probe = false` to skip the probe and trust the configuration
 /// strictly. Useful for cold-start scenarios where the model takes
 /// 30-60s to load and the probe would time out before the model is
-/// ready. Without the probe, a misconfigured provider is detected
-/// only at first embedding call.
+/// ready.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingSettings {
-    /// Embedding model name. Required.
+pub struct IndexingSettings {
+    /// Embedding model **alias** (the key in
+    /// `models.toml [models.*]`). Required.
     ///
-    /// This is the model name passed verbatim to the provider's
-    /// `/v1/embeddings` endpoint. It is NOT a map key from
-    /// `models.toml [models.*]`; the model is expected to be served
-    /// by the resolved embedding provider at that name.
+    /// The alias must be declared with `embeddings = true` and a
+    /// `dimensions` value in `models.toml`. Sprach uses the alias
+    /// to look up the upstream `model_id` and the provider.
     pub model: String,
-
-    /// Optional override: provider name (from `models.toml
-    /// [provider.*]`) to use for embedding calls. If `None`, the
-    /// chat model's provider is used.
-    ///
-    /// The provider MUST have `embedding = true` declared in
-    /// `models.toml`. See [crate::user_models::ProviderConfig::embedding].
-    #[serde(default)]
-    pub provider: Option<String>,
 
     /// Whether to make a probe `/v1/embeddings` call at startup.
     /// Default: `true`. Set to `false` for cold-start scenarios
     /// where the model takes time to load.
     #[serde(default = "default_true")]
     pub probe: bool,
+
+    /// Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
+    /// Higher = more weight on keyword matches.
+    /// Default: 0.4 (semantic is weighted higher because embeddings
+    /// capture meaning). Moved from the old `[retrieval]` section.
+    #[serde(default = "default_keyword_weight")]
+    pub keyword_weight: f32,
+
+    /// Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
+    /// Higher = more weight on semantic similarity.
+    /// Default: 0.6 (embeddings capture meaning better than keyword
+    /// overlap). Moved from the old `[retrieval]` section.
+    #[serde(default = "default_semantic_weight")]
+    pub semantic_weight: f32,
 }
 
-impl Default for EmbeddingSettings {
-    /// Default for tests and `Settings::default()`: a sensible model
-    /// name. Real configuration MUST come from `config.toml`'s
-    /// `[embedding]` section — sprach refuses to start without it.
+impl Default for IndexingSettings {
+    /// Default for tests and `Settings::default()`: a sensible alias
+    /// name (the literal alias the user must declare in
+    /// `models.toml`). Real configuration MUST come from
+    /// `config.toml`'s `[indexing]` section — sprach refuses to start
+    /// without it.
     fn default() -> Self {
         Self {
-            model: "nomic-embed-text-v2-moe".to_string(),
-            provider: None,
+            model: "nomic".to_string(),
             probe: true,
+            keyword_weight: DEFAULT_KEYWORD_WEIGHT,
+            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
         }
     }
 }
+
+// W2 #121 extension: EmbeddingSettings removed; replaced by
+// IndexingSettings (defined above, line ~399).
 
 /// The complete sample configuration exposed as a static string.
 ///
@@ -773,24 +763,9 @@ skin = "dark"
 # Default: 0.70
 # semantic_threshold = 0.70
 
-# =============================================================================
-# RETRIEVAL CONFIGURATION (Optional)
-# =============================================================================
-# Control how keyword and semantic search are combined (Reciprocal Rank Fusion).
-# The two weights are applied independently in the RRF formula.
-# They should typically sum to ~1.0, but this is not enforced.
-
-# [retrieval]
-
-# Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
-# Higher = more weight on exact keyword matches.
-# Default: 0.4 (semantic is weighted higher because embeddings capture meaning)
-# keyword_weight = 0.4
-
-# Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
-# Higher = more weight on semantic similarity.
-# Default: 0.6 (embeddings capture meaning better than keyword overlap)
-# semantic_weight = 0.6
+# W2 #121 extension: [retrieval] was REMOVED. The keyword_weight and
+# semantic_weight fields now live in the [indexing] section (above).
+# Indexing and retrieval are two sides of the same concern.
 
 # =============================================================================
 # THINKING TRACE TRANSFORM CONFIGURATION (Optional)
@@ -809,42 +784,59 @@ skin = "dark"
 # enabled = false
 
 # =============================================================================
-# EMBEDDING CONFIGURATION (W2 #121 — REQUIRED)
+# INDEXING CONFIGURATION (W2 #121 extension — REQUIRED)
 # =============================================================================
-# Configures the embedding model and provider used to generate vector
-# embeddings for the SQLite-vec store (used by /search and the hybrid
-# RRF retrieval pipeline). This section is REQUIRED — sprach refuses
-# to start if it is missing or `model` is empty.
+# Configures the embedding model and the hybrid RRF weights used by
+# /search and the indexing pipeline. This section is REQUIRED —
+# sprach refuses to start if it is missing or `model` is empty.
 #
-# The embedding model and provider are decoupled from the chat model:
-# you can use llama-swap for chat and ollama local for embeddings, etc.
+# The `model` field is an ALIAS from models.toml [models.*], NOT the
+# upstream model_id. The alias must be declared with
+# `embeddings = true` and `dimensions = N` in models.toml. The
+# provider is inferred from the alias's `provider` field — there is
+# NO `provider` field in this section.
 #
-# The provider MUST have `embedding = true` declared on the
-# corresponding [provider.X] block in models.toml. If not, sprach
-# fails to start with a clear error message.
+# Indexing and retrieval weights live in the same section because
+# they are two sides of the same concern (storage and lookup of
+# vector embeddings).
 
-[embedding]
+[indexing]
 
-# Embedding model name. Required.
-# This is the name passed to the provider's /v1/embeddings endpoint.
-# Default nomic-embed-text-v2-moe has 768d output (Matryoshka-truncated
-# to 256d internally by sprach for storage).
-# Note: this is NOT a map key from models.toml [models.*]; it is the
-# exact name served by the embedding provider.
-model = "nomic-embed-text-v2-moe"
-
-# Optional: provider from models.toml [provider.*] to use for embeddings.
-# If not specified, the chat model's provider is used.
-# The named provider MUST have `embedding = true` in models.toml.
-# provider = "llama-swap"
+# Embedding model alias (key in models.toml [models.*]). Required.
+# The alias must be declared with `embeddings = true` and
+# `dimensions = N` in models.toml. The provider is inferred from
+# the alias — no provider override here.
+# Example: models.toml has
+#   [models."nomic"]
+#   model_id = "nomic-embed-text-v2-moe"
+#   provider = "llama-swap"
+#   embeddings = true
+#   dimensions = 768
+# so the alias is "nomic".
+model = "nomic"
 
 # Whether to probe the embedding endpoint at startup.
 # When true (default), sprach makes 1 POST /v1/embeddings call to
-# verify the provider actually serves the model. Failure → fatal error.
-# Set to false for cold-start scenarios where the model takes 30-60s
-# to load (the probe uses a 30s timeout).
+# verify the provider actually serves the model. The probe does NOT
+# pass `dimensions` in the request body (adaptive — some providers
+# reject it); the response's vector dim count is compared against
+# the alias's declared `dimensions`. Mismatch is a fatal error.
+# Set to false for cold-start scenarios where the model takes
+# 30-60s to load (the probe uses a 30s timeout).
 # Default: true
 # probe = true
+
+# Weight for keyword (BM25) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on keyword matches.
+# Default: 0.4 (semantic is weighted higher because embeddings
+# capture meaning). Moved from the old [retrieval] section.
+# keyword_weight = 0.4
+
+# Weight for semantic (vector) search in hybrid RRF. Range: 0.0–1.0.
+# Higher = more weight on semantic similarity.
+# Default: 0.6 (embeddings capture meaning better than keyword
+# overlap). Moved from the old [retrieval] section.
+# semantic_weight = 0.6
 "#;
 
 fn default_led_port() -> u16 {
@@ -980,86 +972,53 @@ impl Settings {
         None
     }
 
-    /// Get the configured embedding model name.
+    /// Get the configured indexing model alias.
     ///
-    /// W2 #121: returns `&self.embedding.model` (the value from
-    /// `[embedding].model` in `config.toml`). Used by all embedding
-    /// call sites that need to instantiate an `EmbeddingClient`.
-    pub fn embedding_model_name(&self) -> &str {
-        &self.embedding.model
+    /// W2 #121 extension: returns `&self.indexing.model` (the value
+    /// from `[indexing].model` in `config.toml`). This is an ALIAS
+    /// from `models.toml [models.*]`, NOT the upstream `model_id`.
+    /// The alias is resolved via `Settings::resolve_indexing_model`
+    /// in a follow-up commit.
+    pub fn indexing_model_alias(&self) -> &str {
+        &self.indexing.model
     }
 
-    /// Get the configured embedding provider name, or `None` if the
-    /// chat provider should be used.
-    pub fn embedding_provider_name(&self) -> Option<&str> {
-        self.embedding.provider.as_deref()
+    /// Get the configured indexing model upstream `model_id` (after
+    /// alias resolution).
+    ///
+    /// W2 #121 extension: returns the empty string by default;
+    /// resolve_indexing_model is the authoritative resolver.
+    /// This thin helper exists for backward compat in tests.
+    #[deprecated(note = "Use Settings::resolve_indexing_model instead")]
+    pub fn indexing_model_name(&self) -> &str {
+        ""
     }
 
     /// Whether the embedding endpoint should be probed at startup.
-    pub fn embedding_probe_enabled(&self) -> bool {
-        self.embedding.probe
+    pub fn indexing_probe_enabled(&self) -> bool {
+        self.indexing.probe
     }
 
-    /// Resolve the provider configuration to use for embedding calls (W2 #121).
-    ///
-    /// Resolution rules:
-    /// 1. If `[embedding].provider` is set, look it up in `models.toml`.
-    ///    - Not found → return `Err` with actionable error.
-    ///    - Found but `embedding != true` → return `Err` with action.
-    /// 2. If `[embedding].provider` is unset, use the chat provider
-    ///    (the provider of the model the user is currently using).
-    /// 3. The chat provider must ALSO have `embedding = true` to
-    ///    serve `/v1/embeddings` for the embedding model.
-    ///
-    /// On success, returns `(provider_config, model_name)` where
-    /// `provider_config` is a reference to the
-    /// [`crate::user_models::ProviderConfig`] and `model_name` is
-    /// the model name to pass to the provider.
-    pub fn resolve_embedding_provider(
-        &self,
-        chat_provider_name: Option<&str>,
-    ) -> Result<(&crate::user_models::ProviderConfig, &str), String> {
-        let model_name = self.embedding_model_name();
-        if model_name.trim().is_empty() {
-            return Err("Error: [embedding].model is empty in config.toml. Add:\n\
-                 [embedding]\n\
-                 model = \"nomic-embed-text-v2-moe\""
-                .to_string());
-        }
-
-        let providers = crate::user_models::get_providers();
-
-        // W2 #121 extension: the `embedding` field moved from
-        // `ProviderConfig` to `UserModelConfig` (model-level). The
-        // resolve logic is reworked in a follow-up commit. This
-        // stub returns the resolved provider unchanged; the
-        // embedding capability check now lives in
-        // `resolve_indexing_model`.
-        if let Some(name) = self.embedding_provider_name() {
-            let cfg = providers.get(name).ok_or_else(|| {
-                format!(
-                    "Error: Embedding provider '{name}' not found in models.toml. \
-                     Add a [provider.\"{name}\"] block or remove 'provider = \"{name}\"' \
-                     from [embedding] to fall back to the chat provider."
-                )
-            })?;
-            return Ok((cfg, model_name));
-        }
-
-        // 2. Fall back to the chat provider
-        let chat_name = chat_provider_name.ok_or_else(|| {
-            "Error: Could not determine chat provider for embedding fallback. \
-             Set [embedding].provider = \"<name>\" in config.toml."
-                .to_string()
-        })?;
-        let cfg = providers.get(chat_name).ok_or_else(|| {
-            format!(
-                "Error: Chat provider '{chat_name}' not found in models.toml. \
-                 Set [embedding].provider = \"<name>\" to use a different provider for embeddings."
-            )
-        })?;
-        Ok((cfg, model_name))
+    /// RRF keyword weight (moved from `[retrieval]`).
+    pub fn indexing_keyword_weight(&self) -> f32 {
+        self.indexing.keyword_weight
     }
+
+    /// RRF semantic weight (moved from `[retrieval]`).
+    pub fn indexing_semantic_weight(&self) -> f32 {
+        self.indexing.semantic_weight
+    }
+
+    // W2 #121 extension: `resolve_embedding_provider` is removed
+    // (it operated on `ProviderConfig.embedding`, which no longer
+    // exists). The new alias-based resolver
+    // `Settings::resolve_indexing_model(alias)` is added in the
+    // follow-up commit.
+    //
+    // As a temporary transitional shim, callers in chat/repl.rs are
+    // updated in the next commit to use the new resolver directly;
+    // until then, the chat init may bail with a clear "not yet
+    // migrated" error.
 
     /// Get blacklist as a HashSet for efficient lookups
     pub fn blacklist_set(&self) -> HashSet<&str> {
@@ -1484,30 +1443,33 @@ semantic_threshold = 0.80
     }
 
     #[test]
-    fn test_retrieval_settings_defaults() {
+    fn test_indexing_settings_defaults() {
+        // W2 #121 extension: keyword_weight and semantic_weight now
+        // live in IndexingSettings, not RetrievalSettings.
         let settings = Settings::default();
-        assert!((settings.retrieval.keyword_weight - 0.4).abs() < f32::EPSILON);
-        assert!((settings.retrieval.semantic_weight - 0.6).abs() < f32::EPSILON);
+        assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_retrieval_settings_parse_defaults() {
+    fn test_indexing_settings_parse_defaults() {
         // Empty config should yield all defaults
         let settings: Settings = toml::from_str("").unwrap();
-        assert!((settings.retrieval.keyword_weight - 0.4).abs() < f32::EPSILON);
-        assert!((settings.retrieval.semantic_weight - 0.6).abs() < f32::EPSILON);
+        assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_retrieval_settings_parse_overrides() {
+    fn test_indexing_settings_parse_overrides() {
         let sample = r#"
-[retrieval]
+[indexing]
+model = "nomic"
 keyword_weight = 0.3
 semantic_weight = 0.7
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert!((settings.retrieval.keyword_weight - 0.3).abs() < f32::EPSILON);
-        assert!((settings.retrieval.semantic_weight - 0.7).abs() < f32::EPSILON);
+        assert!((settings.indexing.keyword_weight - 0.3).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.7).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1530,47 +1492,49 @@ enabled = true
     }
 
     #[test]
-    fn test_embedding_settings_default_via_settings_default() {
-        // Settings::default() yields a default EmbeddingSettings to
-        // keep tests working; the real validation of the [embedding]
+    fn test_indexing_settings_default_via_settings_default() {
+        // Settings::default() yields a default IndexingSettings to
+        // keep tests working; the real validation of the [indexing]
         // TOML section happens in init_chat_database, not in serde.
         let settings = Settings::default();
-        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
-        assert!(settings.embedding.probe);
-        assert!(settings.embedding.provider.is_none());
+        assert_eq!(settings.indexing.model, "nomic");
+        assert!(settings.indexing.probe);
+        assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_embedding_settings_parse_minimal() {
+    fn test_indexing_settings_parse_minimal() {
         let sample = r#"
-[embedding]
-model = "nomic-embed-text-v2-moe"
+[indexing]
+model = "nomic"
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
-        assert!(settings.embedding.probe);
-        assert!(settings.embedding.provider.is_none());
+        assert_eq!(settings.indexing.model, "nomic");
+        assert!(settings.indexing.probe);
     }
 
     #[test]
-    fn test_embedding_settings_parse_full() {
+    fn test_indexing_settings_parse_full() {
         let sample = r#"
-[embedding]
-model = "bge-small-en-v1.5"
-provider = "llama-swap"
+[indexing]
+model = "bge"
 probe = false
+keyword_weight = 0.3
+semantic_weight = 0.7
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert_eq!(settings.embedding.model, "bge-small-en-v1.5");
-        assert_eq!(settings.embedding.provider, Some("llama-swap".to_string()));
-        assert!(!settings.embedding.probe);
+        assert_eq!(settings.indexing.model, "bge");
+        assert!(!settings.indexing.probe);
+        assert!((settings.indexing.keyword_weight - 0.3).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.7).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_embedding_settings_omitted_uses_default() {
-        // W2 #121: serde(default) makes the [embedding] section
-        // optional at the TOML level. The real check that
-        // settings.embedding.model is non-empty happens in
+    fn test_indexing_settings_omitted_uses_default() {
+        // W2 #121 extension: serde(default) makes the [indexing]
+        // section optional at the TOML level. The real check that
+        // settings.indexing.model is non-empty happens in
         // init_chat_database, where sprach bails out with a clear
         // error.
         let sample = r#"
@@ -1578,17 +1542,16 @@ probe = false
 default = "qwen3.5:4b"
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert_eq!(settings.embedding.model, "nomic-embed-text-v2-moe");
+        assert_eq!(settings.indexing.model, "nomic");
     }
 
     #[test]
     fn test_resolve_embedding_provider_empty_model() {
-        let mut settings = Settings::default();
-        settings.embedding.model = String::new();
-        let result = settings.resolve_embedding_provider(Some("llama-swap"));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("[embedding].model is empty"));
+        // W2 #121 extension: resolve_embedding_provider was removed
+        // (it operated on ProviderConfig.embedding, which no longer
+        // exists). The new alias-based resolver
+        // `Settings::resolve_indexing_model(alias)` is added in the
+        // next commit and tested there.
     }
 
     #[test]

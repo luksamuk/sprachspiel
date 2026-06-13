@@ -67,68 +67,19 @@ async fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    // W2 #121: resolve the embedding provider. Resolution rules:
-    //  1. [embedding].provider = "<name>" → use that named provider.
-    //  2. Otherwise → fall back to the chat model's provider.
-    // The resolved provider MUST have `embedding = true` declared
-    // in models.toml; otherwise sprach fails fast with a clear
-    // error.
-    let chat_provider_name = crate::user_models::get_provider_for_model(chat_model_name);
-    let (embedding_provider_cfg, embedding_model_name) =
-        match settings.resolve_embedding_provider(chat_provider_name.as_deref()) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("\x1B[31m{e}\x1B[0m");
-                return (None, None, ollama, Some(e));
-            }
-        };
-
-    // W2 #121: build the Ollama (shim) for the resolved embedding
-    // provider, separate from the chat provider's ollama.
-    let embedding_ollama = crate::provider::Ollama::from_provider_config(embedding_provider_cfg);
-
-    // W2 #121: probe the embedding endpoint BEFORE creating the
-    // database, so a misconfigured provider fails fast (no DB, no
-    // embedding client, user sees a clear error).
-    if let Err(msg) = crate::db::run_embedding_probe(
-        &embedding_ollama,
-        embedding_model_name,
-        settings.embedding_probe_enabled(),
-    )
-    .await
-    {
-        eprintln!("\x1B[31m{msg}\x1B[0m");
-        return (None, None, ollama, Some(msg));
-    }
-
-    let result = crate::db::init_database_core(
-        crate::db::EmbeddingInit {
-            provider: embedding_ollama,
-            model_name: embedding_model_name.to_string(),
-            probe: false, // already probed above
-        },
-        false,
-        false,
-        db_path,
+    // W2 #121 extension (TRANSITIONAL): the old
+    // `resolve_embedding_provider` is gone (it operated on
+    // `ProviderConfig.embedding` which no longer exists). The new
+    // alias-based `resolve_indexing_model` is added in the next
+    // commit and the wiring below is updated to use it. Until then,
+    // we bail out with a clear "not yet migrated" error.
+    let msg = String::from(
+        "Error: W2 #121 extension: [indexing] alias resolver is not yet wired. \
+         This is a transitional state during the embedding configuration refactor. \
+         See PR #207 for progress.",
     );
-
-    let error_detail = if result.db.is_none() {
-        // Error already logged and formatted in init_database_core
-        if let Some(ref detail) = result.error_detail {
-            eprintln!("\x1B[31m{}\x1B[0m", detail);
-            Some(detail.clone())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // NOTE: normalize_inline_thinking() is called in the background spawn
-    // (repl_tui.rs), not here. It runs before embedding recovery to ensure
-    // normalized items (has_embedding=0) are picked up for regeneration.
-
-    (result.db, result.embedding, ollama, error_detail)
+    eprintln!("\x1B[31m{msg}\x1B[0m");
+    return (None, None, ollama, Some(msg));
 }
 
 /// Run startup tasks (decay cycles).

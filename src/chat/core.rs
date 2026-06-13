@@ -289,8 +289,8 @@ pub async fn prepare_messages(
     let settings = crate::settings::Settings::load();
     let retrieval_config = if session.retrieval_enabled {
         RetrievalConfig {
-            keyword_weight: settings.retrieval.keyword_weight,
-            semantic_weight: settings.retrieval.semantic_weight,
+            keyword_weight: settings.indexing.keyword_weight,
+            semantic_weight: settings.indexing.semantic_weight,
             ..RetrievalConfig::default()
         }
     } else {

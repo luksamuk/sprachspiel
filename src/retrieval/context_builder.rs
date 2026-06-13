@@ -146,8 +146,8 @@ impl Default for RetrievalConfig {
             relevant_count: RELEVANT_MESSAGES_COUNT,
             recent_count: RECENT_MESSAGES_COUNT,
             min_query_interval_secs: MIN_RETRIEVAL_INTERVAL_SECS,
-            keyword_weight: settings.retrieval.keyword_weight,
-            semantic_weight: settings.retrieval.semantic_weight,
+            keyword_weight: settings.indexing.keyword_weight,
+            semantic_weight: settings.indexing.semantic_weight,
             include_thinking: settings.thinking_trace.enabled,
         }
     }

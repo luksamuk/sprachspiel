@@ -163,8 +163,8 @@ impl QueryContextBuilder {
         let result = crate::db::init_database_core(
             crate::db::EmbeddingInit {
                 provider: ollama.clone(),
-                model_name: settings.embedding_model_name().to_string(),
-                probe: settings.embedding_probe_enabled(),
+                model_name: settings.indexing_model_alias().to_string(),
+                probe: settings.indexing_probe_enabled(),
             },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
