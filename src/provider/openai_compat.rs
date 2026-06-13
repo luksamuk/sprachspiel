@@ -464,6 +464,12 @@ impl OpenAICompatibleProvider {
                         }
                     } else {
                         let body = resp.text().await.unwrap_or_default();
+                        // W2 #121 diagnostic: log the raw 4xx body so
+                        // we can see what llama-swap / vLLM actually
+                        // returned. Truncated to 500 chars to avoid
+                        // flooding the log on long bodies.
+                        let preview: String = body.chars().take(500).collect();
+                        log::debug!("[chat_with_retry] 4xx body: {}", preview);
                         return Err(ProviderError::Api {
                             status: status.as_u16(),
                             body,
