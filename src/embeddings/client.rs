@@ -141,7 +141,10 @@ impl EmbeddingClient {
 
         let prefixed_text = format!("search_document: {}", text);
 
-        // W2 #121: use shim's generate_embeddings which delegates to OpenAI-compat.
+        // W2 #121 extension: pass the alias's declared
+        // `dimensions` (not the hardcoded TRUNCATED_DIMENSIONS
+        // constant). The startup probe already verified the
+        // server returns this exact dim count.
         let result = tokio::time::timeout(
             Duration::from_secs(EMBEDDING_TIMEOUT_SECS),
             self.ollama.generate_embeddings(
@@ -151,7 +154,7 @@ impl EmbeddingClient {
                         prefixed_text,
                     ),
                 )
-                .dimensions(TRUNCATED_DIMENSIONS as u32),
+                .dimensions(self.dimensions),
             ),
         )
         .await;
@@ -172,14 +175,43 @@ impl EmbeddingClient {
             }
         };
 
-        if embedding.len() != FULL_DIMENSIONS {
+        // W2 #121 extension: validate against the alias's
+        // declared dimensions (not the hardcoded FULL_DIMENSIONS
+        // constant). The startup probe already verified the
+        // server returns this exact dim count.
+        if embedding.len() as u32 != self.dimensions {
             return Err(EmbeddingError::InvalidDimensions {
-                expected: FULL_DIMENSIONS,
+                expected: self.dimensions as usize,
                 got: embedding.len(),
             });
         }
 
-        Ok(truncate_and_normalize_with_correction(&embedding))
+        // If the model returns more than the storage format
+        // (TRUNCATED_DIMENSIONS = 256), apply Matryoshka
+        // truncation for compact storage with norm correction.
+        // If the alias's dimensions are <= TRUNCATED_DIMENSIONS,
+        // store the full vector (no truncation needed).
+        if (self.dimensions as usize) > TRUNCATED_DIMENSIONS {
+            Ok(truncate_and_normalize_with_correction(&embedding))
+        } else {
+            // No truncation; just L2-normalize and compute norm
+            // correction.
+            use super::truncate::TruncateResult;
+            let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm < f32::EPSILON {
+                Ok(TruncateResult {
+                    vector: vec![0.0; embedding.len()],
+                    norm_correction: 1.0,
+                })
+            } else {
+                let vector: Vec<f32> = embedding.iter().map(|x| x / norm).collect();
+                let norm_correction = 1.0 / (norm * norm);
+                Ok(TruncateResult {
+                    vector,
+                    norm_correction,
+                })
+            }
+        }
     }
 
     /// Generate embeddings for multiple texts in batch
