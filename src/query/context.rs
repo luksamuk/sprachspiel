@@ -162,8 +162,11 @@ impl QueryContextBuilder {
 
         let skip_persistence = self.cli_code;
         let result = crate::db::init_database_core(
-            ollama.clone(),
-            settings.embedding_model_name(),
+            crate::db::EmbeddingInit {
+                provider: ollama.clone(),
+                model_name: settings.embedding_model_name().to_string(),
+                probe: settings.embedding_probe_enabled(),
+            },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
             None, // Use default database path

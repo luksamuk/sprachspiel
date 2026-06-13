@@ -41,7 +41,7 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 #[expect(clippy::type_complexity)]
-fn init_chat_database(
+async fn init_chat_database(
     settings: &Settings,
     ollama: &crate::provider::Ollama,
     anonymous: bool,
@@ -61,9 +61,48 @@ fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    let result = crate::db::init_database_core(
-        ollama.clone(),
+    // W2 #121: validate that the embedding model name is non-empty
+    // before any probe / DB init. The error path returns a fatal
+    // error message (no DB, no embedding client).
+    if settings.embedding_model_name().trim().is_empty() {
+        let msg = crate::db::init_database_core(
+            crate::db::EmbeddingInit {
+                provider: ollama.clone(),
+                model_name: settings.embedding_model_name().to_string(),
+                probe: false,
+            },
+            false,
+            false,
+            db_path.clone(),
+        )
+        .error_detail
+        .unwrap_or_else(|| {
+            "Error: [embedding].model is empty in config.toml. \
+             Run `sprach config upgrade` to insert a placeholder."
+                .to_string()
+        });
+        return (None, None, ollama, Some(msg));
+    }
+
+    // W2 #121: probe the embedding endpoint BEFORE creating the
+    // database, so a misconfigured provider fails fast (no DB, no
+    // embedding client, user sees a clear error).
+    if let Err(msg) = crate::db::run_embedding_probe(
+        &ollama,
         settings.embedding_model_name(),
+        settings.embedding_probe_enabled(),
+    )
+    .await
+    {
+        return (None, None, ollama, Some(msg));
+    }
+
+    let result = crate::db::init_database_core(
+        crate::db::EmbeddingInit {
+            provider: ollama.clone(),
+            model_name: settings.embedding_model_name().to_string(),
+            probe: false, // already probed above
+        },
         false,
         false,
         db_path,
@@ -663,7 +702,7 @@ pub async fn run_chat_repl(
     };
 
     let (db, embedding_client, _ollama_for_db, db_error) =
-        init_chat_database(settings, &initial_ollama, args.anonymous, db_path);
+        init_chat_database(settings, &initial_ollama, args.anonymous, db_path).await;
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
