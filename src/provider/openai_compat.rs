@@ -390,6 +390,120 @@ impl OpenAICompatibleProvider {
         }
     }
 
+    /// Decide whether a 4xx response is **transient** (worth retrying)
+    /// or **permanent** (give up and surface to the user).
+    ///
+    /// llama-swap and similar OpenAI-compatible proxies can return
+    /// 4xx responses with **empty bodies** while the upstream model
+    /// is mid-swap (e.g. another model was just loaded and the
+    /// proxy is still warming up the new one). The same request
+    /// succeeds a few seconds later. Treating these as terminal
+    /// causes a 1.5ms "HTTP 400" hang with no useful diagnostic.
+    ///
+    /// Conversely, a 4xx with a JSON body that names the failure
+    /// (e.g. "exceed_context_size_error", "invalid_request_error",
+    /// "missing required field") is almost always terminal —
+    /// retrying it just hits the same path again.
+    ///
+    /// Heuristic (W2 #121):
+    ///   1. 408 Request Timeout and 425 Too Early are always
+    ///      transient (RFC 7231 / 8470).
+    ///   2. 4xx with an empty body is treated as transient (model
+    ///      swap, proxy hiccup).
+    ///   3. 4xx with a body matching the OpenAI error envelope
+    ///      shape (`{"error": {"code": ..., "message": ...}}`) is
+    ///      classified by `message`:
+    ///         - "exceed_context_size", "context_length_exceeded",
+    ///           "too long" → permanent
+    ///         - "invalid", "malformed", "missing", "unknown",
+    ///           "validation" → permanent
+    ///         - "model_not_found", "not loaded", "unavailable",
+    ///           "warming up", "loading" → transient
+    ///         - anything else → transient (give the proxy the
+    ///           benefit of the doubt)
+    ///   4. 4xx with a non-JSON body is treated as transient
+    ///      (proxy returned HTML or plain text — usually a
+    ///      transient 502/503 misclassified as 4xx by the proxy).
+    fn is_transient_4xx_error(status: u16, body: &str) -> bool {
+        // (1) Always-transient codes (within 4xx)
+        if matches!(status, 408 | 425) {
+            return true;
+        }
+        // Caller should not pass 5xx; this helper exists to
+        // refine the 4xx branch only. (5xx is already retried
+        // unconditionally.)
+        if !(400..500).contains(&status) {
+            return false;
+        }
+
+        // (2) Empty body — llama-swap model swap signature
+        let trimmed = body.trim();
+        if trimmed.is_empty() {
+            return true;
+        }
+
+        // (3) JSON envelope — classify by message
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            let msg = value
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .or_else(|| value.get("message").and_then(|m| m.as_str()))
+                .or_else(|| value.get("error").and_then(|e| e.as_str()))
+                .unwrap_or("");
+
+            let msg_lower = msg.to_lowercase();
+
+            // Permanent patterns (the user has to fix something
+            // — retrying won't help)
+            const PERMANENT: &[&str] = &[
+                "exceed_context",
+                "exceeds the available context",
+                "exceeds the model",
+                "context_length_exceeded",
+                "context length exceeded",
+                "too long",
+                "too many tokens",
+                "prompt is too long",
+                "invalid",
+                "malformed",
+                "missing",
+                "unknown field",
+                "validation",
+                "unsupported",
+                "decode",
+                "parse",
+            ];
+            if PERMANENT.iter().any(|p| msg_lower.contains(p)) {
+                return false;
+            }
+
+            // Transient patterns (the proxy/upstream is not ready)
+            const TRANSIENT: &[&str] = &[
+                "model_not_found",
+                "model not found",
+                "not loaded",
+                "unavailable",
+                "warming up",
+                "warming",
+                "loading",
+                "not ready",
+                "no such model",
+                "try again",
+                "overloaded",
+            ];
+            if TRANSIENT.iter().any(|p| msg_lower.contains(p)) {
+                return true;
+            }
+
+            // Default for unknown JSON shape: transient
+            return true;
+        }
+
+        // (4) Non-JSON body — likely a proxy misclassification
+        true
+    }
+
     /// Backoff delay for an attempt (with jitter).
     fn backoff_delay(&self, attempt: u32) -> Duration {
         if self.config.retry_base_delay_ms == 0 {
@@ -470,6 +584,44 @@ impl OpenAICompatibleProvider {
                         // flooding the log on long bodies.
                         let preview: String = body.chars().take(500).collect();
                         log::debug!("[chat_with_retry] 4xx body: {}", preview);
+
+                        // W2 #121: distinguish transient vs permanent
+                        // 4xx errors. llama-swap returns 400 with an
+                        // empty body during model swap (the proxy
+                        // forwards the request before the upstream
+                        // model is loaded); the same request succeeds
+                        // a few seconds later. These are transient —
+                        // retrying is the right move.
+                        //
+                        // Permanent 4xx errors (context overflow,
+                        // invalid request, missing field) come with
+                        // a JSON body that explains the failure.
+                        // Retrying them just wastes time.
+                        let is_transient_4xx =
+                            Self::is_transient_4xx_error(status.as_u16(), &body);
+
+                        if is_transient_4xx && attempt < self.config.max_retries.max(1) {
+                            let delay = self.backoff_delay(attempt);
+                            log::info!(
+                                "[chat_with_retry] transient 4xx (HTTP {}), \
+                                 retrying in {}ms (attempt {}/{})",
+                                status.as_u16(),
+                                delay.as_millis(),
+                                attempt,
+                                self.config.max_retries.max(1)
+                            );
+                            last_error = Some(ProviderError::Api {
+                                status: status.as_u16(),
+                                body: format!(
+                                    "HTTP {} (transient, retrying): {}",
+                                    status.as_u16(),
+                                    preview
+                                ),
+                            });
+                            tokio::time::sleep(delay).await;
+                            continue;
+                        }
+
                         return Err(ProviderError::Api {
                             status: status.as_u16(),
                             body,
@@ -1088,7 +1240,7 @@ mod tests {
     #[test]
     fn test_url_construction_with_trailing_slash() {
         let cfg = OpenAICompatibleConfig {
-            base_url: "http://localhost:11434/v1/".to_string(),
+            base_url: "http://localhost:12434/v1/".to_string(),
             api_key: None,
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
@@ -1101,7 +1253,110 @@ mod tests {
         let provider = OpenAICompatibleProvider::new(cfg).unwrap();
         assert_eq!(
             provider.url("/chat/completions"),
-            "http://localhost:11434/v1/chat/completions"
+            "http://localhost:12434/v1/chat/completions"
         );
+    }
+
+    // W2 #121: regression tests for is_transient_4xx_error.
+    //
+    // llama-swap returns 400 with an empty body during model swap
+    // (the proxy forwards the request before the upstream is
+    // loaded). Permanent 4xx (context overflow, malformed body)
+    // come with descriptive bodies. We must not waste retries on
+    // the latter.
+
+    #[test]
+    fn test_is_transient_4xx_empty_body() {
+        // The signature of llama-swap model swap — body is empty.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(400, ""));
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400, "   \n\t  "
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_408_425() {
+        // RFC-defined always-transient codes.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(408, ""));
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(425, ""));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_permanent_context_overflow() {
+        // The user reported case from #207: pdftotext output made
+        // the request 40K tokens > 32K ctx. llama-swap returns a
+        // structured exceed_context_size_error body. Retrying this
+        // would just hit the same 400 — must NOT be transient.
+        let body = r#"{"error":{"code":400,"message":"request (38449 tokens) exceeds the available context size (32768 tokens)","type":"exceed_context_size_error"}}"#;
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(400, body));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_permanent_invalid() {
+        // Generic "invalid" / "malformed" / "missing" / "validation"
+        // responses are terminal — the client has to fix something.
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"invalid request: model field missing"}"#
+        ));
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"malformed JSON in request"}"#
+        ));
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"validation failed: empty messages array"}"#
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_transient_model_loading() {
+        // llama-swap with a model that's not yet loaded: typically
+        // returns 400 with "model not found" / "not loaded" /
+        // "warming up" / "loading" in the message. Retrying is
+        // the right call — the model will be ready in a few
+        // seconds.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"model not found: qwen3.5-4b"}"#
+        ));
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"model not loaded, please try again"}"#
+        ));
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":"warming up model, retry shortly"}"#
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_unknown_json_default_transient() {
+        // Unknown JSON shape: benefit of the doubt — retry.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"weird":{"shape":42}}"#
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_non_json_body() {
+        // HTML page, plain text — proxy misclassification. Retry.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            "<html><body>502 Bad Gateway</body></html>"
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_4xx_5xx_falls_through() {
+        // The 5xx branch handles its own retry, so 5xx should
+        // not be classified as transient by this helper (which
+        // exists to refine the 4xx branch only).
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(500, ""));
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
+            503,
+            r#"{"error":"unavailable"}"#
+        ));
     }
 }
