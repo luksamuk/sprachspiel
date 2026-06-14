@@ -578,12 +578,6 @@ impl OpenAICompatibleProvider {
                         }
                     } else {
                         let body = resp.text().await.unwrap_or_default();
-                        // W2 #121 diagnostic: log the raw 4xx body so
-                        // we can see what llama-swap / vLLM actually
-                        // returned. Truncated to 500 chars to avoid
-                        // flooding the log on long bodies.
-                        let preview: String = body.chars().take(500).collect();
-                        log::debug!("[chat_with_retry] 4xx body: {}", preview);
 
                         // W2 #121: distinguish transient vs permanent
                         // 4xx errors. llama-swap returns 400 with an
@@ -615,12 +609,20 @@ impl OpenAICompatibleProvider {
                                 body: format!(
                                     "HTTP {} (transient, retrying): {}",
                                     status.as_u16(),
-                                    preview
+                                    body
                                 ),
                             });
                             tokio::time::sleep(delay).await;
                             continue;
                         }
+
+                        // W2 #121 diagnostic: log the raw 4xx body
+                        // when we are about to surface it to the user
+                        // (i.e. either the error is permanent, or
+                        // we've exhausted max_retries on a transient
+                        // one). Truncated to 500 chars.
+                        let preview: String = body.chars().take(500).collect();
+                        log::debug!("[chat_with_retry] 4xx body: {}", preview);
 
                         return Err(ProviderError::Api {
                             status: status.as_u16(),
@@ -682,9 +684,11 @@ impl LlmProvider for OpenAICompatibleProvider {
         ProviderError,
     > {
         let (temperature, top_p, max_tokens, stop, seed) = Self::convert_options(&options);
+        let messages_json = Self::convert_messages(messages);
+
         let request = ChatRequest {
             model: model.to_string(),
-            messages: Self::convert_messages(messages),
+            messages: messages_json,
             temperature,
             top_p,
             max_tokens,
