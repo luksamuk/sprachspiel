@@ -25,7 +25,7 @@ use ollama_rs::{
 use serde_json::Value;
 
 use crate::context_overflow::{
-    calculate_available_budget, calculate_thresholds, estimate_chat_messages_tokens,
+    calculate_available_budget, calculate_thresholds,
     is_emergency_context, needs_inter_tool_compaction,
 };
 use crate::tokens::{ContextUsage, MESSAGE_OVERHEAD, estimate_tokens};
@@ -337,14 +337,45 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // 4. tool_tokens: Tool definitions
         // 5. result_tokens: Current tool result being processed
 
-        // Base: Real tokens from Ollama (includes all session history)
-        let base_tokens = self.real_history_tokens.unwrap_or(0);
-
-        // Growth: ONLY messages added during this request (avoid double-counting with base)
-        // Messages from initial_message_count onwards are NEW in this request
+        // W2 #121 follow-up: use ContextUsage as the single source of truth.
+        // Build a ContextUsage from the API-reported prompt_tokens (or 0 if
+        // we don't have one yet) and then `with_growth` for the new messages
+        // added in this request. The final `total_tokens` is what was
+        // previously called `total_after_add` — same value, just produced
+        // by the unified path.
         let all_messages = self.history.messages().len();
         let growth_messages = &self.history.messages()[self.initial_message_count..];
-        let growth_tokens = estimate_chat_messages_tokens(growth_messages);
+        // Pre-growth total: the API-reported prompt size if available,
+        // else 0 (fresh session with no messages to summarize).
+        let pre_growth_base = self.real_history_tokens.unwrap_or(0);
+        let base_usage = match self.real_history_tokens {
+            Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+            None => {
+                log::debug!(
+                    "[check_and_handle] No real_history_tokens; using local estimate"
+                );
+                ContextUsage {
+                    system_tokens: 0, // diagnostic only — `total` is what matters
+                    tools_tokens: 0,
+                    history_tokens: pre_growth_base,
+                    total_tokens: pre_growth_base,
+                    source: crate::tokens::ContextSource::Estimated,
+                }
+            }
+        };
+        let usage = base_usage
+            .with_growth(growth_messages)
+            .with_tool_result(&result);
+        let total_after_add = usage.total_tokens;
+        // W2 #121 follow-up: keep `base_tokens` available for legacy log
+        // lines and threshold math. It's the pre-growth total — `base_usage.total_tokens`.
+        let base_tokens = base_usage.total_tokens;
+        // growth_tokens / result_tokens are kept only for the diagnostic
+        // log lines below (which print them separately).
+        let growth_tokens = usage.history_tokens.saturating_sub(base_usage.history_tokens);
+        let result_tokens = usage.total_tokens
+            - base_usage.total_tokens
+            - growth_tokens;
 
         // Tool definitions (each tool: name + description + parameters + overhead)
         // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
@@ -376,14 +407,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Result tokens - the current tool result being processed
         let result_tokens = estimate_tokens(&result);
 
-        // IMPORTANT: base_tokens from Ollama's prompt_eval_count ALREADY includes:
-        // - System prompt tokens
-        // - Tool definition tokens
-        // - All history tokens
-        //
-        // So we should NOT add tool_tokens and system_tokens again!
-        // Only add: growth_tokens (new in this request) + result_tokens (current result)
-        let total_after_add = base_tokens + growth_tokens + result_tokens;
+        // W2 #121 follow-up: `total_after_add` is now derived from the
+        // `ContextUsage` we built above. Same value as
+        //   base_tokens + growth_tokens + result_tokens
+        // but produced by the unified `with_growth` / `with_tool_result`
+        // path. The legacy `growth_tokens` / `result_tokens` locals are
+        // kept only for the debug log lines below (which print them
+        // separately for diagnostic purposes).
+        let _ = result_tokens; // see usage.total_tokens below; kept for log compat
 
         // Format token values: show as raw number if < 1000, otherwise as NK
         fn fmt_tokens(v: usize) -> String {

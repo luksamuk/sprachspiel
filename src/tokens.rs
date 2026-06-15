@@ -30,21 +30,14 @@ pub fn estimate_tokens_code(text: &str) -> usize {
     ((text.len() as f32) * 0.5).ceil() as usize
 }
 
-/// Count tokens in a list of chat messages
-/// Includes 4 tokens overhead per message for role and formatting
-pub fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
-    if messages.is_empty() {
-        return 0;
-    }
-    // Skip System messages - they're counted separately as system_tokens
-    // This is important because get_messages_for_llm() includes system prompt,
-    // but calculate_context_metrics() counts system_tokens separately.
-    messages
-        .iter()
-        .filter(|msg| !matches!(msg.role, ollama_rs::generation::chat::MessageRole::System))
-        .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
-        .sum()
-}
+/// Count tokens in a list of chat messages.
+///
+/// NOTE: Removed in W2 #121 commit 4. The functionality is now provided
+/// by `ContextUsage::with_growth(&[ChatMessage])` (in this same file),
+/// which uses the unified `estimate_tokens` + `MESSAGE_OVERHEAD` math.
+/// All call sites have been migrated. The function was redundant: its
+/// only purpose (estimating per-message tokens for context calculation)
+/// is now centralized in `ContextUsage`.
 
 /// Context window usage metrics
 #[derive(Debug, Clone, Copy)]
@@ -117,11 +110,15 @@ pub fn calculate_context_metrics(
             (usage.total_tokens, usage.history_tokens)
         }
         None => {
-            // Fallback: estimate from messages only.
-            let history = count_messages_tokens(history_messages);
-            let total = system_tokens
-                .saturating_add(tools_tokens)
-                .saturating_add(history);
+            // Fallback: estimate from messages only. Build a minimal
+            // ContextUsage so the math is consistent with the rest of
+            // the codebase (the same way `with_growth` does internally).
+            let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
+            let history: usize = history_messages
+                .iter()
+                .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+                .sum();
+            let total = system_tokens + tools_tokens + history;
             (total, history)
         }
     };
@@ -409,26 +406,10 @@ mod tests {
         assert_eq!(estimate_tokens_code(code), 6);
     }
 
-    #[test]
-    fn test_count_messages_tokens_empty() {
-        let messages: Vec<ChatMessage> = Vec::new();
-        assert_eq!(count_messages_tokens(&messages), 0);
-    }
-
-    #[test]
-    fn test_count_messages_tokens_single() {
-        let messages = vec![ChatMessage::user("hello world".to_string())];
-        assert_eq!(count_messages_tokens(&messages), 7);
-    }
-
-    #[test]
-    fn test_count_messages_tokens_multiple() {
-        let messages = vec![
-            ChatMessage::user("hello world".to_string()),
-            ChatMessage::assistant("hi there".to_string()),
-        ];
-        assert_eq!(count_messages_tokens(&messages), 14);
-    }
+    // NOTE: test_count_messages_tokens_* removed in W2 #121 commit 4.
+    // The functionality is now tested via test_with_growth_* in the
+    // context_usage_tests module below (which exercises the same math
+    // through the unified ContextUsage::with_growth path).
 
     #[test]
     fn test_context_metrics_available() {

@@ -190,17 +190,12 @@ pub fn calculate_available_budget(total_tokens: usize, context_window: usize) ->
         .saturating_sub(RESPONSE_MARGIN)
 }
 
-/// Estimate tokens in a list of ChatMessage (for coordinator history)
-/// Includes message overhead for each message
-pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
-    if messages.is_empty() {
-        return 0;
-    }
-    messages
-        .iter()
-        .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
-        .sum()
-}
+// NOTE: estimate_chat_messages_tokens was removed in W2 #121 commit 4.
+// It was a parallel estimator that duplicated the logic now provided by
+// `ContextUsage::with_growth` (in src/tokens.rs). All call sites have been
+// migrated to the unified `ContextUsage` struct. The estimator logic
+// lives in `tokens::estimate_tokens` + `tokens::MESSAGE_OVERHEAD`; the
+// `with_growth` method applies both consistently.
 
 /// Context overflow status
 #[derive(Debug, Clone)]
@@ -307,32 +302,16 @@ pub fn check_context_overflow(
         // Use real value from Ollama
         real_tokens
     } else {
-        // Fallback: estimate from message content
-        let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
-
-        let summary_tokens = session
-            .compacted_summary
-            .as_ref()
-            .map(|s| estimate_tokens(s) + MESSAGE_OVERHEAD)
-            .unwrap_or(0);
-
-        let history_tokens: usize = session
-            .messages
-            .iter()
-            .skip(session.messages_sent_to_llm)
-            .map(|msg| estimate_tokens(&msg.content) + MESSAGE_OVERHEAD)
-            .sum();
-
-        // Estimate tools tokens if enabled (~50 tokens per tool)
-        let tools_tokens = if session.tools {
-            // Approximate: ~50 tokens per tool for tool definitions
-            // This is a rough estimate; actual count depends on tool complexity
-            50 * 34 // Assuming ~34 tools when enabled
-        } else {
-            0
-        };
-
-        system_tokens + tools_tokens + history_tokens + summary_tokens
+        // W2 #121 follow-up: delegate to ContextUsage::from_session_estimate
+        // (defined in src/tokens.rs). This consolidates the fallback math
+        // — no more hardcoded `50 * 34` tool estimate (P9) and the same
+        // heuristic used everywhere else in the codebase.
+        let usage = crate::tokens::ContextUsage::from_session_estimate(
+            session,
+            system_prompt,
+            session.tools,
+        );
+        usage.total_tokens
     };
 
     let usage = total_tokens as f32 / context_window as f32;
@@ -884,33 +863,6 @@ mod tests {
         };
         assert!(status_over.needs_compaction());
         assert!(status_over.is_overflow());
-    }
-
-    #[test]
-    fn test_estimate_chat_messages_tokens() {
-        use ollama_rs::generation::chat::ChatMessage;
-
-        // Empty messages
-        let empty: Vec<ChatMessage> = Vec::new();
-        assert_eq!(estimate_chat_messages_tokens(&empty), 0);
-
-        // Single message
-        let single = vec![ChatMessage::user("Hello".to_string())];
-        let single_tokens = estimate_chat_messages_tokens(&single);
-        assert!(single_tokens >= 4, "Should have at least MESSAGE_OVERHEAD");
-        assert!(single_tokens < 20, "Should be small for short message");
-
-        // Multiple messages with different roles
-        let multiple: Vec<ChatMessage> = vec![
-            ChatMessage::user("Hello".to_string()),
-            ChatMessage::assistant("Hi there!".to_string()),
-            ChatMessage::user("How are you?".to_string()),
-        ];
-        let multiple_tokens = estimate_chat_messages_tokens(&multiple);
-        assert!(
-            multiple_tokens > single_tokens,
-            "More messages should have more tokens"
-        );
     }
 
     #[test]
