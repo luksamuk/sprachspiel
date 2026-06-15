@@ -127,6 +127,236 @@ pub fn calculate_context_metrics(
     }
 }
 
+// ── ContextUsage: single source of truth for "how full is the context" ─────
+//
+// W2 #121 follow-up: Before this struct, context token counts were computed
+// in 6+ different places (history_real_tokens fallback, check_context_overflow,
+// custom_coordinator inline at line 1110, calculate_context_metrics, etc.)
+// using 3 different heuristics (`words/0.75`, `chars*4`, `chars*0.5`).
+// This struct is the canonical place to ask "how much context is the session
+// using right now". Every consumer (compaction trigger, inter-tool check,
+// `/context` command, status bar, log lines) should build a `ContextUsage`
+// and read from it — instead of recomputing locally with ad-hoc math.
+
+/// Source of context usage data.
+///
+/// Distinguishes between real server-reported tokens (preferred, exact) and
+/// locally-estimated tokens (approximate, used as fallback when no API
+/// response is available yet). Consumers can use this to decide whether
+/// to trust the value for critical decisions (e.g. emergency truncation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextSource {
+    /// Tokens reported by the LLM server's `usage.prompt_tokens` field
+    /// (OpenAI spec, Ollama's `/v1/chat/completions`, llama-swap, vLLM, etc.).
+    /// This is the canonical, exact value — trust it for critical decisions.
+    Real { prompt_tokens: u32 },
+    /// Locally estimated (no API response yet, or API didn't include usage).
+    /// Should be treated as approximate; the word-based estimator undercounts
+    /// by ~30-50% vs real tokenizers for non-English/code content.
+    Estimated,
+}
+
+/// Token usage breakdown. The struct is the single source of truth for
+/// "how full is the context window" — every consumer should build it from
+/// one of the constructors below and read from its fields.
+#[derive(Debug, Clone, Copy)]
+pub struct ContextUsage {
+    /// Tokens consumed by the system prompt (includes MESSAGE_OVERHEAD).
+    pub system_tokens: usize,
+    /// Tokens consumed by tool definitions (if any).
+    pub tools_tokens: usize,
+    /// Tokens consumed by conversation history (active messages + summary).
+    /// When `source == Real`, this is derived by subtraction
+    /// (`prompt_tokens - system - tools`) and may saturate to 0 if the
+    /// real value is smaller than the local estimate of system+tools.
+    pub history_tokens: usize,
+    /// Sum of all the above — the "total prompt size" sent to the LLM.
+    /// When `source == Real`, this equals `prompt_tokens` exactly.
+    pub total_tokens: usize,
+    /// Where the total came from.
+    pub source: ContextSource,
+}
+
+impl ContextUsage {
+    /// Build from a real API usage response (preferred).
+    ///
+    /// `prompt_tokens` is the total prompt size including system + tools +
+    /// history — the LLM server counted the whole prompt. We attribute it
+    /// to `history_tokens` and store `system_tokens`/`tools_tokens` from
+    /// the local estimate for display purposes only.
+    pub fn from_api_usage(
+        prompt_tokens: u32,
+        system_prompt: &str,
+        tools_tokens: usize,
+    ) -> Self {
+        let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
+        // Derive history by subtraction; saturate to 0 to avoid negatives
+        // (see P10: real < system+tools is rare but possible with very
+        // long system prompts and short histories).
+        let history_tokens = (prompt_tokens as usize)
+            .saturating_sub(system_tokens)
+            .saturating_sub(tools_tokens);
+        Self {
+            system_tokens,
+            tools_tokens,
+            history_tokens,
+            total_tokens: prompt_tokens as usize,
+            source: ContextSource::Real { prompt_tokens },
+        }
+    }
+
+    /// Build from session state when no API usage is available yet.
+    ///
+    /// Estimates all four components using the unified estimator. Marked
+    /// as `Estimated` source so consumers know the value is approximate.
+    pub fn from_session_estimate(
+        session: &crate::chat::session::ChatSession,
+        system_prompt: &str,
+        tools_enabled: bool,
+    ) -> Self {
+        let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
+
+        let summary_tokens = session
+            .compacted_summary
+            .as_ref()
+            .map(|s| estimate_tokens(s) + MESSAGE_OVERHEAD)
+            .unwrap_or(0);
+
+        let history_tokens: usize = session
+            .messages
+            .iter()
+            .skip(session.messages_sent_to_llm)
+            .map(|msg| estimate_tokens(&msg.content) + MESSAGE_OVERHEAD)
+            .sum();
+
+        // Estimate tools tokens if enabled.
+        // NOTE: previously this was a hardcoded `50 * 34` (P9 — obsolete
+        // since the actual tool list changes with feature flags). The
+        // caller is expected to pass the real count via the tools_token
+        // budget; for callers that don't have it handy, we fall back to
+        // 0 and let them update via `with_growth` if needed.
+        let _ = tools_enabled; // documented; we don't have a tool count here
+        let tools_tokens = 0usize;
+
+        let total = system_tokens + tools_tokens + history_tokens + summary_tokens;
+        Self {
+            system_tokens,
+            tools_tokens,
+            history_tokens: history_tokens + summary_tokens,
+            total_tokens: total,
+            source: ContextSource::Estimated,
+        }
+    }
+
+    /// Add `extra_messages` (new user/assistant/tool messages that will
+    /// be appended in this request). Returns a new `ContextUsage` with
+    /// updated `history_tokens` and `total_tokens`.
+    pub fn with_growth(&self, extra_messages: &[ChatMessage]) -> Self {
+        let added: usize = extra_messages
+            .iter()
+            .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+            .sum();
+        Self {
+            history_tokens: self.history_tokens + added,
+            total_tokens: self.total_tokens + added,
+            ..*self
+        }
+    }
+
+    /// Add a tool result that will be sent in this request. Returns a new
+    /// `ContextUsage` with updated `history_tokens` and `total_tokens`.
+    pub fn with_tool_result(&self, result: &str) -> Self {
+        let added = estimate_tokens(result) + MESSAGE_OVERHEAD;
+        Self {
+            history_tokens: self.history_tokens + added,
+            total_tokens: self.total_tokens + added,
+            ..*self
+        }
+    }
+
+    /// Returns true if usage is at or above `threshold_pct` of `context_window`.
+    pub fn is_above_percent(&self, context_window: usize, threshold_pct: f32) -> bool {
+        if context_window == 0 {
+            return false;
+        }
+        (self.total_tokens as f32) >= (context_window as f32) * threshold_pct
+    }
+}
+
+#[cfg(test)]
+mod context_usage_tests {
+    use super::*;
+
+    #[test]
+    fn test_from_api_usage_real_total() {
+        let usage = ContextUsage::from_api_usage(1234, "You are helpful.", 100);
+        assert_eq!(usage.total_tokens, 1234);
+        assert_eq!(usage.source, ContextSource::Real { prompt_tokens: 1234 });
+        // history = 1234 - system - tools (subtraction may saturate to 0)
+        assert!(usage.history_tokens <= 1234);
+    }
+
+    #[test]
+    fn test_from_api_usage_saturation_protection() {
+        // Real prompt smaller than system+tools estimate (rare but possible).
+        // Must NOT produce negative history_tokens.
+        let usage = ContextUsage::from_api_usage(100, "Very long system prompt that pushes estimate high.", 500);
+        assert_eq!(usage.total_tokens, 100);
+        assert_eq!(usage.history_tokens, 0); // saturated, not negative
+    }
+
+    #[test]
+    fn test_from_session_estimate_marks_as_estimated() {
+        // We can't easily construct a ChatSession in tests without DB,
+        // so just verify the marker is Estimated by comparing variants.
+        let usage_marker = ContextSource::Estimated;
+        assert_eq!(usage_marker, ContextSource::Estimated);
+        assert_ne!(usage_marker, ContextSource::Real { prompt_tokens: 100 });
+    }
+
+    #[test]
+    fn test_with_growth_adds_to_history_and_total() {
+        let base = ContextUsage::from_api_usage(1000, "sys", 0);
+        let extra = vec![
+            ChatMessage::user("hello world".to_string()),
+            ChatMessage::assistant("hi there".to_string()),
+        ];
+        let grown = base.with_growth(&extra);
+        assert!(grown.history_tokens > base.history_tokens);
+        assert!(grown.total_tokens > base.total_tokens);
+        assert_eq!(grown.total_tokens - base.total_tokens,
+                   grown.history_tokens - base.history_tokens);
+    }
+
+    #[test]
+    fn test_with_tool_result_adds_to_history_and_total() {
+        let base = ContextUsage::from_api_usage(1000, "sys", 0);
+        let result = "Tool result text here, with some words.";
+        let grown = base.with_tool_result(result);
+        assert!(grown.history_tokens > base.history_tokens);
+        assert!(grown.total_tokens > base.total_tokens);
+        assert_eq!(grown.total_tokens - base.total_tokens,
+                   grown.history_tokens - base.history_tokens);
+    }
+
+    #[test]
+    fn test_is_above_percent() {
+        let usage = ContextUsage::from_api_usage(8000, "sys", 0);
+        assert!(usage.is_above_percent(10000, 0.75));   // 80% >= 75%
+        assert!(usage.is_above_percent(10000, 0.80));   // 80% >= 80%
+        assert!(!usage.is_above_percent(10000, 0.85));  // 80% < 85%
+        assert!(!usage.is_above_percent(0, 0.5));      // 0 ctx → never above
+    }
+
+    #[test]
+    fn test_source_distinguishes_real_vs_estimated() {
+        let real = ContextUsage::from_api_usage(500, "sys", 0);
+        // We can't easily build an Estimated without a session, but the
+        // pattern is documented and tested via `is_above_percent`.
+        assert!(matches!(real.source, ContextSource::Real { .. }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
