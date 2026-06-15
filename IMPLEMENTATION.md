@@ -4401,6 +4401,23 @@ but provider returned 256 dimensions for model 'nomic'.
 
 (Commits 11 (chore: user config) and 12 (docs) are in this same PR but not listed above — see CHANGELOG.md and configuration.md for the user-facing documentation.)
 
+**ReAct Regression Bugs Investigation (W2 #121 follow-up):**
+
+During smoke testing of #121, three apparent ReAct regression bugs were investigated:
+
+1. **TUI message ordering** (real bug, fixed): Tool messages appeared in reverse order (`tool → tool → ... → assistant`) because `drain_and_add_tool_messages()` (in `event_loop.rs`) called `add_message()` (= `messages.push` at the end) AFTER the Assistant of that round had already been finalized via `finalize_streaming_zone_as_is()`. **Fix:** use `insert_before_streaming_zone()` (in `app.rs`) which has three-way logic: insert before streaming zone if present, insert before trailing tool messages, fall back to push. Resolves the bug at all 7 call sites, not just `ToolCallStarted`.
+
+2. **Cold-model 400 (transient 4xx) without diagnostic trace** (real bug, fixed): When `is_transient_4xx_error()` classified an error as transient (e.g., llama-swap model swap, empty body) and the retry path executed, the 4xx body was NOT logged — only the surfacing path logged it. This made it impossible to diagnose cold-model failures from logs alone. **Fix:** added a `log::debug!` of the truncated 4xx body in the transient retry path of `chat_with_retry()` (in `openai_compat.rs`), mirroring the surfacing-path diagnostic.
+
+3. **Silent context reset (32K→994 tokens)** (FALSE ALARM): Initially appeared that `session.messages` was being silently truncated between requests. Investigation revealed:
+   - `Session: messages=N` (logged by `context_builder.rs:321`) reports `session.messages.len()` — the canonical session state.
+   - `Complete: messages_count=M` (logged by `event_loop.rs`) reports `app.message_count()` — the TUI chat area, which includes `Thinking` and `AssistantStreaming` placeholders that exist transiently during multi-round tool cycles.
+   - The two counters measure different things: `Session: messages` grows by 2 per user turn (user message + assistant response), while `Complete: messages_count` is the total UI rendering, which can be 5-10× the session count during multi-round tool cycles.
+   - The `base_tokens=880` after a `base_tokens=32179` is just `prompt_eval_count` from the Ollama response — the size of THAT SPECIFIC REQUEST's prompt, which legitimately varies with how much context was sent.
+   - **No silent truncation occurs.** The session grows monotonically. This was a measurement-comparison confusion, not a real bug.
+
+**Files:** `src/chat/event_loop.rs` (Bug 1), `src/provider/openai_compat.rs` (Bug 2).
+
 ---
 
 #### OpenAI-Compatible Provider — #122 [M1]
