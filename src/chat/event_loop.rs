@@ -579,22 +579,22 @@ pub fn drain_and_add_tool_messages(view: &mut RatatuiView, round: usize) {
         );
     }
     for msg in drained {
-        // W2 #121 fix: use `insert_before_streaming_zone()` instead of
-        // `add_message()` so tool messages from a previous round land
-        // BEFORE the finalized Assistant of that round, not after it.
+        // W2 #121 follow-up fix: use `insert_after_round_0()` instead
+        // of `insert_before_streaming_zone()` (from commit 150c35b) or
+        // `insert_at_round_boundary()`.
         //
-        // `insert_before_streaming_zone` handles three scenarios:
-        // 1. Active streaming zone — insert before it
-        // 2. Trailing tool messages (no streaming zone) — insert before
-        //    the first trailing tool message
-        // 3. No streaming zone, no trailing tools — fall back to push
+        // The previous `insert_before_streaming_zone` was wrong for
+        // the post-finalized case: it inserted tool messages BEFORE
+        // the finalized Thinking/Assistant, producing the user-reported
+        // regression "tool → thinking → text" instead of the expected
+        // "thinking → text → tool".
         //
-        // Without this fix, the TUI rendered tool messages in reverse
-        // order (tool → tool → ... → assistant) because `add_message`
-        // appends to the end of `self.messages`, while the Assistant
-        // of the current round was already finalized at an earlier
-        // index.
-        view.app_mut().insert_before_streaming_zone(
+        // `insert_after_round_0` finds the last round-0 message and
+        // inserts immediately after. Successive tool messages with
+        // the same round land successively at the same insertion
+        // point, producing the correct order:
+        //   [User, Thinking(0), Assistant(0), Tool_call(1), Tool_result(1)]
+        view.app_mut().insert_after_round_0(
             ChatMessage::tool(msg).with_round_index(round),
         );
     }

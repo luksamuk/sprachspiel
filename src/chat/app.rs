@@ -620,6 +620,72 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Insert a message AFTER the streaming zone boundary.
+    ///
+    /// W2 #121 follow-up: this is the correct placement for tool
+    /// messages that arrive after the streaming zone has been
+    /// finalized (i.e., after `ToolCallStarted` called
+    /// `finalize_streaming_zone_as_is()` and converted
+    /// `AssistantStreaming` to stable `Assistant`).
+    ///
+    /// Semantics:
+    /// 1. Active streaming zone (Thinking or AssistantStreaming in tail)
+    ///    — insert AT THE END OF THE ZONE (after the last
+    ///    Thinking/AssistantStreaming). This is the "streaming zone
+    ///    has new content arriving" case.
+    /// 2. No streaming zone (all finalized) — append at the end.
+    ///
+    /// Difference from `insert_before_streaming_zone()`: the latter
+    /// inserts BEFORE the zone. That was correct for *concurrent*
+    /// tool messages (when streaming and tool execution are racing),
+    /// but WRONG for *post-finalized* tool messages (when the zone
+    /// has been finalized and the tool completed). For post-finalized
+    /// tool messages, the correct order is: [finalized Thinking,
+    /// finalized Assistant, Tool_call, Tool_result, ...].
+    /// Insert a message AFTER the round-0 content (the LLM's turn).
+    ///
+    /// W2 #121 follow-up: `drain_and_add_tool_messages` was using
+    /// `insert_before_streaming_zone` (commit 150c35b), which produced
+    /// the user-reported regression "tool → thinking → text" instead
+    /// of "thinking → text → tool".
+    ///
+    /// This is the correct placement for tool messages arriving
+    /// AFTER the streaming zone has been finalized (the post-finalized
+    /// case) OR while streaming is still active (the concurrent case).
+    /// In both cases, the tool message should land after the LLM's
+    /// round-0 content (Thinking + Assistant), not before the Thinking
+    /// that the LLM emitted before deciding to call the tool.
+    ///
+    /// Semantics:
+    /// 1. Find the index of the last message with
+    ///    `round_index <= target_round` (using the message's own
+    ///    round_index — not just round=0).
+    /// 2. Insert immediately after that message.
+    /// 3. Successive tool messages with the same round land
+    ///    successively at the same insertion point — producing the
+    ///    correct order `[User, Thinking(0), Assistant(0), Tool(1),
+    ///    Tool(1), ...]`.
+    ///
+    /// Note: this is different from `insert_at_round_boundary`, which
+    /// excludes `AssistantStreaming` from the search range (because
+    /// InterToolText is text that should be inserted before the
+    /// currently-streaming content). Tool messages, by contrast, go
+    /// AFTER the round-0 content (including the streaming Assistant
+    /// if it's still active) — they don't interleave with the stream.
+    pub fn insert_after_round_0(&mut self, message: ChatMessage) {
+        let target_round = message.round_index;
+        for i in (0..self.messages.len()).rev() {
+            if self.messages[i].round_index <= target_round {
+                self.messages.insert(i + 1, message);
+                self.scroll.reset_to_bottom();
+                return;
+            }
+        }
+        // No message with round_index <= target_round — append at end
+        self.messages.push(message);
+        self.scroll.reset_to_bottom();
+    }
+
     /// Insert a message after all messages with `round_index <= message.round_index`,
     /// respecting the streaming zone boundary (only `AssistantStreaming` messages).
     ///
@@ -2561,6 +2627,96 @@ mod tests {
         assert_eq!(app.messages.len(), 2);
         assert_eq!(app.messages[0].msg_type, MessageType::Tool);
         assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+    }
+
+    // ── drain_and_add_tool_messages ordering (W2 #121 follow-up) ─────
+    //
+    // These tests verify the fix for the user-reported regression
+    // "tool → thinking → text" ordering. After ToolCallStarted
+    // finalizes the streaming zone (AssistantStreaming → Assistant),
+    // tool messages arriving via the `tool_call_tx` channel should
+    // land AFTER the finalized Thinking/Assistant — not BEFORE.
+
+    #[test]
+    fn test_drain_and_add_tool_messages_post_finalized() {
+        // Simulate the post-finalized case: User, finalized Thinking
+        // (round=0), finalized Assistant (round=0). Two tool messages
+        // arriving via drain_and_add_tool_messages should land AFTER
+        // the Assistant, in the correct order.
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Search".to_string()));
+        app.add_message(
+            ChatMessage::thinking("Let me think".to_string()).with_round_index(0),
+        );
+        app.add_message(
+            ChatMessage::assistant_markdown("I will search".to_string())
+                .with_round_index(0),
+        );
+
+        // Tool messages arriving now (round 1)
+        // We test the helper directly via insert_after_round_0,
+        // which is what drain_and_add_tool_messages now uses.
+        app.insert_after_round_0(
+            ChatMessage::tool("🔧 search: results".to_string()).with_round_index(1),
+        );
+        app.insert_after_round_0(
+            ChatMessage::tool("Found X".to_string()).with_round_index(1),
+        );
+
+        // Expected order: User, Thinking, Assistant, Tool_call, Tool_result
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].content, "🔧 search: results");
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].content, "Found X");
+    }
+
+    #[test]
+    fn test_drain_and_add_tool_messages_no_round0() {
+        // No round-0 content at all (no Thinking, no Assistant) —
+        // tool message appends at the end.
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Hello".to_string()));
+
+        app.insert_after_round_0(
+            ChatMessage::tool("Tool msg".to_string()).with_round_index(1),
+        );
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+    }
+
+    #[test]
+    fn test_drain_and_add_tool_messages_with_active_streaming() {
+        // Streaming zone still active (AssistantStreaming in tail).
+        // Tool message should be inserted at end of round-0 content
+        // (after the AssistantStreaming, before any later content).
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Search".to_string()));
+        app.append_stream_thinking("Let me think");
+        app.append_stream_token("I will search");
+
+        // Tool message arriving while streaming
+        app.insert_after_round_0(
+            ChatMessage::tool("🔧 search: results".to_string()).with_round_index(1),
+        );
+
+        // Expected: User, Thinking(0), AssistantStreaming(0), Tool(1)
+        assert_eq!(app.messages.len(), 4);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[1].round_index, 0);
+        assert_eq!(app.messages[2].msg_type, MessageType::AssistantStreaming);
+        assert_eq!(app.messages[2].round_index, 0);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].round_index, 1);
     }
 
     // ── insert_at_round_boundary tests ────────────────────────────
