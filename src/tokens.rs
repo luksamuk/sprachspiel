@@ -7,8 +7,22 @@ use ollama_rs::generation::chat::ChatMessage;
 /// Tokens per message overhead (role, formatting)
 pub const MESSAGE_OVERHEAD: usize = 4;
 
-/// Estimate tokens in text using word-based estimation
-/// ~0.75 words per token for English text (GPT-style)
+/// Estimate tokens in text using word-based estimation.
+/// ~0.75 words per token for English text (GPT-style).
+///
+/// IMPORTANT: This is an ESTIMATE, not the model's real token count.
+/// Empirically it undercounts by 30-50% vs real tokenizers (Llama,
+/// Mistral, Qwen) for mixed content (code, JSON, non-English text,
+/// tool results). Example: we estimated 27K tokens for a request
+/// the model counted as 40K.
+///
+/// Consumers that need 100% accuracy (e.g. critical decisions like
+/// emergency truncation) MUST add a safety margin — see
+/// `custom_coordinator.rs::check_and_handle_context_overflow` (the
+/// 75% preemptive threshold) for how this is handled in practice.
+///
+/// A real tokenizer (tiktoken-rs, Ollama's /api/tokenize) would
+/// remove the bias. See W2 #121 follow-up TODO in custom_coordinator.rs.
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;

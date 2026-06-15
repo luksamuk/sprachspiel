@@ -487,13 +487,25 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         // W2 #121: Defensive pre-truncation for tool results.
         //
-        // The token estimator (`estimate_chat_messages_tokens`) undercounts
-        // by ~30-50% compared to the model's real tokenizer (e.g. we
-        // estimated 27K tokens for a request the model counted as 40K).
-        // By the time `is_emergency_context` triggers, we are already
-        // overflowing. Preemptively truncate when our estimate crosses
-        // 75% of the context window — leaves headroom for the real
-        // tokenizer's higher count.
+        // `estimate_tokens` (in src/tokens.rs) uses a word-based heuristic
+        // (~0.75 words/token, GPT-style) which UNDERCOUNTS by 30-50% vs
+        // real model tokenizers (Llama, Mistral, Qwen) for mixed content
+        // (code, JSON, non-English text, tool results). Empirically: we
+        // estimated 27K tokens for a request the model counted as 40K.
+        //
+        // By the time `is_emergency_context` triggers (95% of ctx_window)
+        // we are ALREADY overflowing the real tokenizer's count.
+        // Preemptively truncate at 75% of the ESTIMATE so there's headroom
+        // for the real tokenizer to be ~33% higher and still fit.
+        //
+        // TODO(W2 #121 follow-up): A real tokenizer would give 100%
+        // accuracy and let us size to the actual budget. Two options:
+        //   1. tiktoken-rs (GPT-style BPE) — ~5MB binary, ~100ms load.
+        //      Doesn't match Llama/Mistral/Qwen tokenizers 100%.
+        //   2. Ollama's /api/tokenize endpoint — model-specific, no
+        //      binary bloat, but adds HTTP RTT on the compaction path.
+        // Deferred until we have a clearer accuracy-vs-complexity trade-off
+        // from real-world data.
         if total_after_add >= ctx_window.saturating_mul(3) / 4 {
             let target = ctx_window.saturating_mul(70) / 100; // 70% of ctx_window
             let excess = total_after_add.saturating_sub(target);
