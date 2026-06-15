@@ -720,34 +720,142 @@ impl LlmProvider for OpenAICompatibleProvider {
         };
 
         let url = self.url("/chat/completions");
-        let response = self
-            .client
-            .post(&url)
-            .headers(self.headers())
-            .json(&request)
-            .send()
-            .await
-            .map_err(classify_reqwest_error)?;
 
-        let status = response.status();
-        if !status.is_success() {
-            let retry_after = response
-                .headers()
-                .get(RETRY_AFTER)
-                .and_then(|v| v.to_str().ok())
-                .and_then(parse_retry_after);
-            let body = response.text().await.unwrap_or_default();
-            if status.as_u16() == 429 {
-                return Err(ProviderError::RateLimit {
-                    message: body,
-                    retry_after,
-                });
+        // W2 #121 follow-up: streaming previously bypassed
+        // `chat_with_retry` — any 4xx/5xx response would surface
+        // immediately without applying the transient/permanent
+        // classification. This caused llama-swap cold-start 400s
+        // (empty body, model not yet loaded) to fail the user's
+        // request instead of retrying with backoff.
+        //
+        // Now: send the streaming request, but if the response is
+        // non-2xx, apply the same retry logic as `chat_with_retry`
+        // BEFORE yielding the SSE stream to the caller. Only when
+        // we have a successful 2xx response do we start the stream.
+        let mut attempt: u32 = 1;
+        let max_attempts = self.config.max_retries.max(1);
+        let response = loop {
+            let resp = self
+                .client
+                .post(&url)
+                .headers(self.headers())
+                .json(&request)
+                .send()
+                .await;
+
+            match resp {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success() {
+                        break r;
+                    }
+
+                    // Non-2xx — extract Retry-After header BEFORE reading
+                    // the body (which moves the response).
+                    let retry_after = r
+                        .headers()
+                        .get(RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(parse_retry_after);
+
+                    // Now read the body for classification.
+                    let body = r.text().await.unwrap_or_default();
+
+                    // 429 has special handling: respect Retry-After.
+                    if status.as_u16() == 429 {
+                        if attempt < max_attempts {
+                            let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
+                            log::info!(
+                                "[chat_stream] HTTP 429, retrying in {}ms (attempt {}/{})",
+                                delay.as_millis(),
+                                attempt,
+                                max_attempts
+                            );
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        }
+                        return Err(ProviderError::RateLimit {
+                            message: body,
+                            retry_after,
+                        });
+                    }
+
+                    // 5xx — always retry.
+                    if status.is_server_error() {
+                        if attempt < max_attempts {
+                            let delay = self.backoff_delay(attempt);
+                            log::info!(
+                                "[chat_stream] {} (server error), retrying in {}ms (attempt {}/{})",
+                                status.as_u16(),
+                                delay.as_millis(),
+                                attempt,
+                                max_attempts
+                            );
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        }
+                        return Err(ProviderError::Api {
+                            status: status.as_u16(),
+                            body: format!("HTTP {} (server error)", status.as_u16()),
+                        });
+                    }
+
+                    // 4xx — distinguish transient vs permanent.
+                    let is_transient_4xx =
+                        Self::is_transient_4xx_error(status.as_u16(), &body);
+                    if is_transient_4xx && attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        let preview: String = body.chars().take(500).collect();
+                        log::debug!(
+                            "[chat_stream] transient 4xx body (HTTP {}, attempt {}/{}): {}",
+                            status.as_u16(),
+                            attempt,
+                            max_attempts,
+                            preview
+                        );
+                        log::info!(
+                            "[chat_stream] transient 4xx (HTTP {}), \
+                             retrying in {}ms (attempt {}/{})",
+                            status.as_u16(),
+                            delay.as_millis(),
+                            attempt,
+                            max_attempts
+                        );
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        continue;
+                    }
+
+                    // Permanent 4xx or transient-but-exhausted — surface.
+                    let preview: String = body.chars().take(500).collect();
+                    log::debug!("[chat_stream] 4xx body (surfacing): {}", preview);
+                    return Err(ProviderError::Api {
+                        status: status.as_u16(),
+                        body,
+                    });
+                }
+                Err(e) => {
+                    // Network error — retry with backoff.
+                    let err = classify_reqwest_error(e);
+                    if attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        log::info!(
+                            "[chat_stream] network error: {}, retrying in {}ms (attempt {}/{})",
+                            err,
+                            delay.as_millis(),
+                            attempt,
+                            max_attempts
+                        );
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    return Err(err);
+                }
             }
-            return Err(ProviderError::Api {
-                status: status.as_u16(),
-                body,
-            });
-        }
+        };
 
         let idle_timeout = Duration::from_secs(self.config.stream_idle_timeout_secs);
         let stream = parse_sse_stream(response, idle_timeout);
@@ -1375,6 +1483,45 @@ mod tests {
         assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
             503,
             r#"{"error":"unavailable"}"#
+        ));
+    }
+
+    // W2 #121 follow-up: regression tests for the streaming-retry
+    // bug. Previously, `chat_stream` returned Err immediately on
+    // any non-2xx response — so a llama-swap cold-start 400 (empty
+    // body, model still loading) would fail the user's request
+    // instead of being retried with backoff like the non-streaming
+    // path did.
+    //
+    // These tests verify the fix by exercising `is_transient_4xx_error`
+    // (which is the same function used by both `chat_with_retry` and
+    // the new `chat_stream` retry loop) with the llama-swap signature.
+
+    #[test]
+    fn test_streaming_retry_classifies_llama_swap_cold_start() {
+        // llama-swap returns 400 with an empty body during model
+        // swap. chat_stream now uses is_transient_4xx_error to
+        // classify this and should retry.
+        assert!(OpenAICompatibleProvider::is_transient_4xx_error(400, ""));
+    }
+
+    #[test]
+    fn test_streaming_retry_classifies_5xx_as_transient() {
+        // 5xx is handled by a different branch in chat_stream (the
+        // `is_server_error` check, which always retries). Verify
+        // the helper is consistent: 5xx should NOT be classified
+        // by the 4xx helper (it has its own branch).
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(502, ""));
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(503, ""));
+    }
+
+    #[test]
+    fn test_streaming_retry_classifies_context_overflow_as_permanent() {
+        // Context overflow (large input) should fail fast, not
+        // waste retries. The body tells us the cause.
+        assert!(!OpenAICompatibleProvider::is_transient_4xx_error(
+            400,
+            r#"{"error":{"code":400,"message":"context length exceeded"}}"#
         ));
     }
 }
