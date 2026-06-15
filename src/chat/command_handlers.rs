@@ -3282,6 +3282,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            last_status_token_bucket: 0,
         }
     }
 
@@ -3408,6 +3409,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            last_status_token_bucket: 0,
         }
     }
 

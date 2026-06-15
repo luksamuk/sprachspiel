@@ -322,6 +322,20 @@ pub fn handle_llm_event(
         LlmEvent::StreamToken(token) => {
             // Append token to the current streaming message (or create one)
             view.stream_token(&token);
+
+            // W2 #121: throttle status bar updates during streaming. The
+            // real `prompt_eval_count` only arrives in the final chunk
+            // (with `usage`), so we use `ContextUsage::from_session_estimate`
+            // to get an approximate prompt size based on session state.
+            // Throttled to a 50-token bucket so we don't re-render on
+            // every character.
+            let bucket = state.status_bar_bucket();
+            if bucket != state.last_status_token_bucket {
+                state.last_status_token_bucket = bucket;
+                if let Some((used, max, pct)) = state.estimate_status_bar() {
+                    view.update_status_tokens(used, max, pct);
+                }
+            }
         }
         LlmEvent::StreamThinking(thinking_token) => {
             // Append thinking token to the current streaming thinking block
