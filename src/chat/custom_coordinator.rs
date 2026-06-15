@@ -28,7 +28,7 @@ use crate::context_overflow::{
     calculate_available_budget, calculate_thresholds, estimate_chat_messages_tokens,
     is_emergency_context, needs_inter_tool_compaction,
 };
-use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
+use crate::tokens::{ContextUsage, MESSAGE_OVERHEAD, estimate_tokens};
 use crate::utils::truncate_to_budget;
 
 /// Result type for tool execution
@@ -1107,21 +1107,54 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ));
         }
 
-        // Check context overflow before sending to Ollama
+        // Check context overflow before sending to Ollama.
+        //
+        // W2 #121 follow-up: previously this block recomputed
+        // history_tokens + system_tokens locally via `estimate_chat_messages_tokens`,
+        // duplicating the calculation done by `check_and_handle_context_overflow`
+        // (which uses `real_history_tokens` from the API). The two could disagree
+        // and we'd be checking overflow against two different numbers.
+        //
+        // Now: use `ContextUsage::from_api_usage` when we have the real value
+        // (preferred — it's what the LLM server actually counted), falling
+        // back to `from_session_estimate` otherwise. Same `ContextUsage` type
+        // feeds the inter-tool check at `check_and_handle_context_overflow`,
+        // so we have ONE source of truth.
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
-            let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-            let total_tokens = history_tokens + system_tokens;
+            let usage = match self.real_history_tokens {
+                Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+                None => {
+                    log::debug!(
+                        "[process_next] No real_history_tokens; falling back to estimate"
+                    );
+                    // No session available here (coordinator is decoupled from
+                    // the session layer). Build an estimate from the messages
+                    // in our own history.
+                    let messages = self.history.messages();
+                    let system = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+                    let history: usize = messages
+                        .iter()
+                        .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+                        .sum();
+                    ContextUsage {
+                        system_tokens: system,
+                        tools_tokens: 0,
+                        history_tokens: history,
+                        total_tokens: system + history,
+                        source: crate::tokens::ContextSource::Estimated,
+                    }
+                }
+            };
 
-            // Use emergency threshold to detect overflow
+            // Use emergency threshold to detect overflow.
             let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
             let threshold = ctx_window.saturating_sub(emergency_threshold);
 
-            if total_tokens > threshold {
+            if usage.total_tokens > threshold {
                 // Return error that will be caught by caller
                 let msg = format!(
                     "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
-                    total_tokens, ctx_window
+                    usage.total_tokens, ctx_window
                 );
                 return Err(ollama_rs::error::OllamaError::Other(msg));
             }
