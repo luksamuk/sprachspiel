@@ -81,6 +81,14 @@ impl ContextMetrics {
 ///   IMPORTANT: This is the TOTAL prompt size (system + tools + ALL history)
 ///   When provided, we use it directly as total_tokens (no need to add system + tools again).
 ///   We then DERIVE history_tokens by subtracting system + tools from the total.
+///
+/// # Returns
+///
+/// `ContextMetrics` — a struct that includes the breakdown
+/// (system/tools/history/total) plus `utilization` (0.0..1.0) and
+/// `context_window` for display. The internal computation delegates to
+/// [`ContextUsage`] so the breakdown is consistent with the rest of the
+/// codebase (see commit history for the unification rationale).
 pub fn calculate_context_metrics(
     history_messages: &[ChatMessage],
     context_window: usize,
@@ -90,20 +98,26 @@ pub fn calculate_context_metrics(
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // When real_history_tokens is provided, it's the TOTAL from Ollama (system + tools + history)
-    // Use it directly and derive history_tokens by subtraction.
-    // Otherwise, estimate from message content.
+    // W2 #121 follow-up: delegate to ContextUsage so the breakdown
+    // (system/tools/history/total) is computed by the SAME logic that
+    // process_next and the inter-tool check use. This is the single
+    // source of truth for "how full is the context".
     let (total_tokens, history_tokens) = match real_history_tokens {
-        Some(total) => {
-            // total is the full prompt size from Ollama (system + tools + history)
-            // Derive history_tokens by subtracting system + tools
-            let history = total
-                .saturating_sub(system_tokens)
-                .saturating_sub(tools_tokens);
-            (total, history)
+        Some(prompt_tokens) => {
+            // Use ContextUsage::from_api_usage for saturation protection
+            // (P10): if the API-reported total is smaller than the local
+            // system+tools estimate, history saturates to 0 instead of
+            // going negative. Same path as process_next and the inter-tool
+            // check — single source of truth.
+            let usage = ContextUsage::from_api_usage(
+                prompt_tokens as u32,
+                system_prompt,
+                tools_tokens,
+            );
+            (usage.total_tokens, usage.history_tokens)
         }
         None => {
-            // Fallback: estimate from messages only
+            // Fallback: estimate from messages only.
             let history = count_messages_tokens(history_messages);
             let total = system_tokens
                 .saturating_add(tools_tokens)
