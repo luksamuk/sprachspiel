@@ -1017,9 +1017,15 @@ pub async fn send_message_stream(
 ///
 /// **Layer 1: Pre-pruning** — Strips long tool outputs from the middle
 /// section before constructing the compaction prompt. Tool results exceeding
-/// `PRUNE_TOOL_RESULT_THRESHOLD` characters are truncated to their first
-/// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a truncation notice.
-/// This often reduces the prompt enough to fit the model's window.
+/// `PRUNE_TOOL_RESULT_THRESHOLD_TOKENS` estimated tokens are truncated to
+/// their first `PRUNE_TOOL_RESULT_KEEP_TOKENS` estimated tokens plus a
+/// truncation notice. This often reduces the prompt enough to fit the
+/// model's window.
+///
+/// W2 #121 follow-up: was `PRUNE_TOOL_RESULT_THRESHOLD = 500` chars and
+/// `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` chars. The threshold/keep are now
+/// expressed in tokens (via `estimate_tokens` + `chars_for_tokens`) so the
+/// compaction budget is honored regardless of content density.
 ///
 /// **Layer 2: Chunked recursive summarization** — If the pre-pruned prompt
 /// still exceeds the model's context window, splits the middle section into

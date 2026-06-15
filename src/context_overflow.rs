@@ -75,13 +75,31 @@ pub const COMPACTION_MAX_CONTEXT_RATIO: f32 = 0.60;
 /// Prevents infinite loops if summaries keep exceeding the window.
 pub const MAX_RECURSION_DEPTH: usize = 3;
 
-/// Minimum number of characters a tool result must have before pre-pruning
-/// will truncate it. Shorter tool results are kept as-is.
-pub const PRUNE_TOOL_RESULT_THRESHOLD: usize = 500;
+/// Minimum number of ESTIMATED tokens a tool result must have before
+/// pre-pruning will truncate it. Shorter tool results are kept as-is.
+///
+/// W2 #121 follow-up: this used to be `PRUNE_TOOL_RESULT_THRESHOLD = 500`
+/// (chars), but `chars != tokens`. JSON-structured tool results
+/// (file reads, shell output) have ~2-3x higher token density per char
+/// than prose. The threshold is now expressed in estimated tokens
+/// (using `estimate_tokens`, see src/tokens.rs), so the trigger is
+/// consistent regardless of content type.
+///
+/// Note: `estimate_tokens` is approximate (30-50% undercount vs real
+/// tokenizers — see the W2 #121 TODO in src/tokens.rs). The 200-token
+/// threshold is conservative: at the worst case (50% undercount) this
+/// triggers at ~400 real tokens, still well below any single tool result
+/// that's likely to cause compaction problems.
+pub const PRUNE_TOOL_RESULT_THRESHOLD_TOKENS: usize = 200;
 
-/// Number of characters to keep from the beginning of a truncated tool result.
-/// The rest is replaced with a truncation notice.
-pub const PRUNE_TOOL_RESULT_KEEP_CHARS: usize = 100;
+/// Number of ESTIMATED tokens to keep from the beginning of a truncated
+/// tool result. The rest is replaced with a truncation notice.
+///
+/// W2 #121 follow-up: was `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars).
+/// Now 40 estimated tokens — enough for the start of a file's content
+/// or the first lines of shell output, which carry the most signal for
+/// summarization.
+pub const PRUNE_TOOL_RESULT_KEEP_TOKENS: usize = 40;
 
 /// Ratio of context window targeted after fallback truncation.
 /// Targets 50% of the window so there's plenty of room for the response.
@@ -439,12 +457,54 @@ pub fn should_position_summary_after_system(session: &ChatSession) -> bool {
 // bringing it below the model's context window without losing important
 // context (tool outputs are typically verbose and low-information-density).
 
+/// Estimate how many characters to keep from `text` to stay at or under
+/// `target_tokens` estimated tokens.
+///
+/// Uses binary search over the char count, calling `estimate_tokens` on the
+/// prefix each iteration. The result is the largest char count such that
+/// `estimate_tokens(prefix) <= target_tokens`.
+///
+/// `estimate_tokens` has a 30-50% undercount bias (see src/tokens.rs), so
+/// this is approximate — the actual real-token count of the kept prefix
+/// could be ~33% higher than `target_tokens`. This is acceptable for the
+/// pre-pruning use case (we want a coarse budget, not exact sizing).
+pub fn chars_for_tokens(text: &str, target_tokens: usize) -> usize {
+    let total_chars = text.chars().count();
+    if total_chars == 0 || target_tokens == 0 {
+        return 0;
+    }
+    // Fast path: full text is already under budget.
+    if estimate_tokens(text) <= target_tokens {
+        return total_chars;
+    }
+    // Binary search for the largest prefix whose estimated tokens <= target.
+    let mut lo: usize = 0;
+    let mut hi: usize = total_chars;
+    while lo < hi {
+        let mid = (lo + hi).saturating_add(1) / 2; // upper mid to avoid infinite loop
+        let candidate: String = text.chars().take(mid).collect();
+        if estimate_tokens(&candidate) <= target_tokens {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo
+}
+
 /// Prune long tool results from a list of messages.
 ///
-/// Replaces tool message content exceeding `PRUNE_TOOL_RESULT_THRESHOLD`
-/// characters with a truncated version that preserves the first
-/// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a notice of how many
-/// characters were removed.
+/// Replaces tool message content exceeding `PRUNE_TOOL_RESULT_THRESHOLD_TOKENS`
+/// (estimated tokens) with a truncated version that preserves the first
+/// `PRUNE_TOOL_RESULT_KEEP_TOKENS` (estimated tokens) plus a notice of how
+/// many characters were removed.
+///
+/// W2 #121 follow-up: this previously used `PRUNE_TOOL_RESULT_THRESHOLD = 500`
+/// (chars) and `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars). The threshold
+/// and keep values are now expressed in ESTIMATED TOKENS (using
+/// `estimate_tokens` from src/tokens.rs), which is the unit that matters
+/// for the compaction prompt size. The conversion from tokens to chars
+/// is done by `chars_for_tokens()` via binary search.
 ///
 /// User and Assistant messages are NEVER pruned — only Tool role messages.
 /// This preserved critical context (user instructions, assistant decisions)
@@ -456,16 +516,16 @@ pub fn pre_prune_messages(messages: &[SavedMessage]) -> Vec<SavedMessage> {
     messages
         .iter()
         .map(|msg| {
-            if msg.role == MessageRole::Tool && msg.content.len() > PRUNE_TOOL_RESULT_THRESHOLD {
-                let truncated_len = msg.content.len() - PRUNE_TOOL_RESULT_KEEP_CHARS;
-                let kept = msg
-                    .content
-                    .chars()
-                    .take(PRUNE_TOOL_RESULT_KEEP_CHARS)
-                    .collect::<String>();
+            if msg.role == MessageRole::Tool
+                && estimate_tokens(&msg.content) > PRUNE_TOOL_RESULT_THRESHOLD_TOKENS
+            {
+                let target_chars = chars_for_tokens(&msg.content, PRUNE_TOOL_RESULT_KEEP_TOKENS);
+                let total_chars = msg.content.chars().count();
+                let truncated_chars = total_chars.saturating_sub(target_chars);
+                let kept: String = msg.content.chars().take(target_chars).collect();
                 let pruned_content = format!(
-                    "{}…\n[{} characters truncated — tool output pruned for compaction]",
-                    kept, truncated_len
+                    "{}…\n[{} characters truncated — tool output pruned for compaction (kept first {} estimated tokens)]",
+                    kept, truncated_chars, PRUNE_TOOL_RESULT_KEEP_TOKENS
                 );
                 SavedMessage {
                     content: pruned_content,
@@ -1136,8 +1196,18 @@ mod tests {
 
     #[test]
     fn test_pre_prune_long_tool_result_truncated() {
-        // Tool results longer than the threshold should be truncated
-        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        // W2 #121: tool results with > PRUNE_TOOL_RESULT_THRESHOLD_TOKENS
+        // estimated tokens should be truncated. We use a string of repeated
+        // "x " tokens — ~1000 chars ≈ 250 estimated tokens, just above
+        // the 200 threshold.
+        let long_content: String = "x ".repeat(500);
+        let original_token_count = estimate_tokens(&long_content);
+        assert!(
+            original_token_count > PRUNE_TOOL_RESULT_THRESHOLD_TOKENS,
+            "Test setup: long_content should exceed threshold tokens ({} vs {})",
+            original_token_count,
+            PRUNE_TOOL_RESULT_THRESHOLD_TOKENS
+        );
         let msg = SavedMessage {
             role: MessageRole::Tool,
             content: long_content.clone(),
@@ -1145,23 +1215,33 @@ mod tests {
             ..Default::default()
         };
         let pruned = pre_prune_messages(&[msg]);
-        assert!(pruned[0].content.len() < long_content.len());
+        assert!(
+            pruned[0].content.len() < long_content.len(),
+            "Pruned content ({} chars) should be shorter than original ({} chars)",
+            pruned[0].content.len(),
+            long_content.len()
+        );
         assert!(
             pruned[0].content.contains("truncated"),
             "Pruned content should mention truncation"
         );
+        // The kept prefix should be ~PRUNE_TOOL_RESULT_KEEP_TOKENS estimated
+        // tokens. We compare prefixes: the kept part should match the start
+        // of the original.
+        let kept_chars = chars_for_tokens(&long_content, PRUNE_TOOL_RESULT_KEEP_TOKENS);
+        let kept_prefix: String = long_content.chars().take(kept_chars).collect();
         assert!(
-            pruned[0]
-                .content
-                .contains(&long_content[..PRUNE_TOOL_RESULT_KEEP_CHARS]),
-            "Pruned content should preserve the beginning"
+            pruned[0].content.contains(&kept_prefix),
+            "Pruned content should preserve the first {} chars (estimated {} tokens)",
+            kept_chars,
+            PRUNE_TOOL_RESULT_KEEP_TOKENS
         );
     }
 
     #[test]
     fn test_pre_prune_user_message_unchanged() {
         // User messages should NEVER be pruned, regardless of length
-        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let long_content: String = "x ".repeat(500);
         let msg = SavedMessage {
             role: MessageRole::User,
             content: long_content.clone(),
@@ -1173,9 +1253,36 @@ mod tests {
     }
 
     #[test]
+    fn test_chars_for_tokens_basic() {
+        // Short text under budget returns full char count
+        let text = "hello world";
+        assert_eq!(chars_for_tokens(text, 100), text.chars().count());
+
+        // Empty text returns 0
+        assert_eq!(chars_for_tokens("", 100), 0);
+
+        // Zero target returns 0
+        assert_eq!(chars_for_tokens("hello", 0), 0);
+
+        // Long text over budget returns the largest prefix that fits.
+        // "x " repeated 1000 times ≈ 200-300 estimated tokens, so
+        // target=10 should keep only a small prefix.
+        let long = "x ".repeat(1000);
+        let kept = chars_for_tokens(&long, 10);
+        assert!(kept < long.chars().count(), "Should truncate ({} of {})", kept, long.chars().count());
+        // The kept prefix should estimate to <= 10 tokens.
+        let prefix: String = long.chars().take(kept).collect();
+        assert!(estimate_tokens(&prefix) <= 10,
+                "Prefix of {} chars estimated at {} tokens, should be <= 10",
+                prefix.chars().count(), estimate_tokens(&prefix));
+    }
+
+    #[test]
     fn test_pre_prune_assistant_message_unchanged() {
         // Assistant messages should NEVER be pruned, regardless of length
-        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        // W2 #121: long content expressed in token budget (500 "x " pairs
+        // ≈ 250 estimated tokens, well above PRUNE_TOOL_RESULT_THRESHOLD_TOKENS).
+        let long_content: String = "x ".repeat(500);
         let msg = SavedMessage {
             role: MessageRole::Assistant,
             content: long_content.clone(),
@@ -1189,7 +1296,7 @@ mod tests {
     #[test]
     fn test_pre_prune_preserves_message_metadata() {
         // Pruning should preserve all metadata fields (timestamp, prompt_tokens, etc.)
-        let long_content = "x".repeat(PRUNE_TOOL_RESULT_THRESHOLD + 500);
+        let long_content: String = "x ".repeat(500);
         let msg = SavedMessage {
             role: MessageRole::Tool,
             content: long_content,
