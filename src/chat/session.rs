@@ -984,16 +984,21 @@ impl ChatSession {
         self.messages_sent_to_llm
     }
 
-    /// Get real token count from the most recent prompt evaluation
+    /// Return the prompt size from the most recent LLM request that completed.
     ///
-    /// IMPORTANT: Ollama's prompt_eval_count is CUMULATIVE - it includes:
-    /// - System prompt
-    /// - Tool definitions (if any)
-    /// - ALL conversation history
-    /// - Current user message
+    /// Each request to the LLM server returns `usage.prompt_tokens` (Ollama)
+    /// or `usage.prompt_tokens` (OpenAI spec), which counts the tokens of the
+    /// prompt that was actually sent — that is, the system prompt + tool
+    /// definitions + conversation history + the new user message that
+    /// triggered the request.
     ///
-    /// We return the most recent value as the total prompt size.
-    /// For context display purposes, callers should NOT add system + tools again.
+    /// IMPORTANT: This is NOT cumulative across requests. Each request is
+    /// independent and the server counts the prompt for THAT request only.
+    /// The "most recent" qualifier matters because earlier requests may have
+    /// sent less (e.g., if the user had a shorter history at that time).
+    ///
+    /// For context display purposes, callers should NOT add system + tools
+    /// again — the value already includes them.
     pub fn history_real_tokens(&self) -> usize {
         // Find the most recent message with prompt_tokens
         // This value is ALREADY cumulative from Ollama's prompt_eval_count
