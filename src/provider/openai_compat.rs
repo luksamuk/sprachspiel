@@ -596,6 +596,20 @@ impl OpenAICompatibleProvider {
 
                         if is_transient_4xx && attempt < self.config.max_retries.max(1) {
                             let delay = self.backoff_delay(attempt);
+                            // W2 #121: log the 4xx body on transient retry too,
+                            // not only when surfacing to the user. Without this,
+                            // cold-model 400s (llama-swap model swap, Jinja exception
+                            // during swap, etc.) leave no diagnostic trace in the
+                            // log even though the retry is firing. Truncated to
+                            // 500 chars to match the surfacing path.
+                            let preview: String = body.chars().take(500).collect();
+                            log::debug!(
+                                "[chat_with_retry] transient 4xx body (HTTP {}, attempt {}/{}): {}",
+                                status.as_u16(),
+                                attempt,
+                                self.config.max_retries.max(1),
+                                preview
+                            );
                             log::info!(
                                 "[chat_with_retry] transient 4xx (HTTP {}), \
                                  retrying in {}ms (attempt {}/{})",
