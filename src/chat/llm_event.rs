@@ -49,26 +49,13 @@ pub enum LlmEvent {
     /// thinking block being streamed.
     StreamThinking(String),
 
-    /// The current streaming CONTENT BLOCK is complete.
-    ///
-    /// This event is emitted when tool calls interrupt streaming.
-    /// By the time this event arrives, the TUI event loop has
-    /// already processed `ToolCallStarted` (which called
-    /// `finalize_streaming_zone_as_is()`) — so the pre-tool
-    /// content is already a stable `Assistant` message.
-    ///
-    /// This event exists solely to set `block_finalized = true`
-    /// on the `App` and transition `LlmState` to `ToolCall`.
-    /// It does NOT carry content for rendering.
-    StreamBlockDone,
-
     /// Streaming is complete — replace the FINAL streaming message with
     /// the final markdown-rendered assistant response.
     ///
     /// This is the last event of a streaming turn. It finalizes the
     /// LAST content block (post-tool, or the only block if no tools).
-    /// For turns with tool calls, this event is preceded by
-    /// `StreamBlockDone` which finalized the pre-tool block.
+    /// For turns with tool calls, the pre-tool block is finalized by
+    /// `ToolCallStarted` (which calls `finalize_streaming_zone_as_is`).
     StreamDone {
         /// Full accumulated response content (for markdown rendering)
         content: String,
@@ -219,7 +206,6 @@ impl std::fmt::Debug for LlmEvent {
                 };
                 f.debug_tuple("StreamThinking").field(&display).finish()
             }
-            Self::StreamBlockDone => f.debug_struct("StreamBlockDone").finish_non_exhaustive(),
             Self::StreamDone {
                 content: _,
                 thinking: _,

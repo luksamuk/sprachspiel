@@ -996,12 +996,11 @@ pub async fn send_message_stream(
             // When tools interrupted streaming, pre-tool content is already
             // displayed via StreamToken events and finalized by
             // ToolCallStarted (which calls finalize_streaming_zone_as_is).
-            // Send StreamBlockDone to mark the block as finalized and
-            // transition to ToolCall state.
+            // ToolCallStarted also transitions LlmState to ToolCall, so no
+            // StreamBlockDone event is needed anymore.
             // StreamDone then carries ONLY the post-tool content.
             let post_tool_content = if let Some(ref pre_tool) = pre_tool_content {
                 let pre_tool_display = strip_thinking_tags(pre_tool);
-                let _ = llm_tx.try_send(LlmEvent::StreamBlockDone);
                 // Compute post-tool content: full response minus pre-tool.
                 // The LLM may or may not include the pre-tool text in its
                 // final response. If it does, remove the prefix to avoid

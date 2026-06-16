@@ -310,12 +310,6 @@ pub struct App {
     spinner_frames: Vec<&'static str>,
     /// Current spinner frame index
     spinner_frame: usize,
-    /// Whether the first streamed block of a multi-block turn was finalized.
-    ///
-    /// **Deprecated:** kept only for test compatibility during the live-turn
-    /// refactor. It will be removed together with the legacy streaming-zone
-    /// methods in a follow-up cleanup commit.
-    pub block_finalized: bool,
     /// Channel receiver for embedding progress updates from background tasks.
     embedding_progress_rx: mpsc::UnboundedReceiver<EmbeddingProgress>,
     /// Channel receiver for asynchronous system messages from background tasks
@@ -432,7 +426,6 @@ impl App {
             scroll: ScrollState::new(),
             spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
-            block_finalized: false,
             embedding_progress_rx,
             async_message_rx,
             cached_input_screen_lines: 0,
@@ -501,13 +494,6 @@ impl App {
             rendered.extend(turn.render_blocks());
         }
         rendered
-    }
-
-    /// Compatibility stub: the old `block_finalized` flag is obsolete in the
-    /// live-turn model but still referenced by the event loop. The event loop
-    /// will be refactored to use `LiveTurn` state directly.
-    pub fn set_block_finalized(&mut self, value: bool) {
-        self.block_finalized = value;
     }
 
     /// Find the index of the last message that is a tool-call preview for
@@ -1015,12 +1001,8 @@ impl App {
     }
 
     /// Set the LLM state and update input/status accordingly.
-    /// Clears `block_finalized` when transitioning to Idle.
     pub fn set_llm_state(&mut self, state: LlmState) {
         self.llm_state = state;
-        if state == LlmState::Idle {
-            self.block_finalized = false;
-        }
         match state {
             LlmState::Idle => {
                 self.input_disabled = false;

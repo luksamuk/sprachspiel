@@ -350,18 +350,6 @@ pub fn handle_llm_event(
             // Append thinking token to the current live turn
             view.app_mut().append_stream_thinking(&thinking_token);
         }
-        LlmEvent::StreamBlockDone => {
-            // Pre-tool block complete — finalize the current content block
-            // in the live turn and transition to ToolCall state.
-            view.app_mut().finalize_streaming_zone_as_is();
-            view.app_mut().set_block_finalized(true);
-            view.set_llm_state(LlmState::ToolCall);
-            // In the new two-buffer model, tool execution results are added
-            // directly to the live turn via ToolExecutionStarted/Finished.
-            // The global tool-message channel is drained only as a safety
-            // net for legacy tool call logging.
-            drain_and_add_tool_messages(view, view.app().current_round());
-        }
         LlmEvent::StreamDone {
             content,
             thinking,
