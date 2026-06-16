@@ -4441,8 +4441,9 @@ During smoke testing of #121, three apparent ReAct regression bugs were investig
 | `LlmStreamChunk` | Remove completely | Superseded by `LlmStreamEvent` |
 | `ollama_shim.rs` | Can be broken/simplified/removed | Ollama is reachable via OpenAI-compatible endpoints; shim no longer needs to preserve `ollama_rs` API |
 | Retry events | Variants inside `LlmStreamEvent` | Keeps the stream unified; rendered in the **status bar** (red, right-aligned), not the message buffer |
-| Tool-call preview | Anchored in the message buffer as a temporary `Tool` message with `is_tool_preview = true` | Visually tied to the turn; render style can be changed later (e.g., collapsible stream like Pi) |
+| Tool-call preview | Rendered inside a volatile `LiveTurn` keyed by `tool_call_id`; previews carry `is_streaming = true` until frozen | Replaces fragile single-buffer preview matching (`is_tool_preview`/`find_tool_preview_index`) with exact key-based identity |
 | Post-tool streaming | All ReAct turns stream, including after tool results | Removed `InterToolText` event and the non-streaming `process_next()` path |
+| Streaming buffer | Two-Buffer model: `App::messages` (committed history) + `App::live_turn` (volatile turn) | Eliminates duplicated thinking, fragile insertion heuristics, and multi-round ordering bugs |
 | Tool execution output | Skeleton only (`Started` / `Finished`) | Full partial-output callbacks deferred to a follow-up |
 
 **New event vocabulary (`src/provider/types.rs`):**
@@ -4499,10 +4500,14 @@ ProviderRetryFinished { success: bool, attempt: u32 }
 | 6b | Render tool execution finished state | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | ✅ `4a16cf6` |
 | 6c | Render retry status in status bar | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | ✅ `4a16cf6` |
 | 7 | Remove `InterToolText`, dead code, docs, clippy, tests | All above | ✅ `1fdc309` |
+| 8 | Two-Buffer live turn: introduce `LiveTurn`, `App::live_turn`, drive events through live turn | `src/chat/tui/live_turn.rs`, `src/chat/app.rs`, `src/chat/event_loop.rs`, `src/chat/view/ratatui_view.rs` | ✅ `33566f4` |
+| 9 | Drive live turn from event loop; remove `StreamBlockDone`, `block_finalized` | `src/chat/event_loop.rs`, `src/chat/core.rs`, `src/chat/llm_event.rs`, `src/chat/app.rs` | ✅ `ae5d217` |
+| 10 | Remove legacy insertion methods (`insert_before_streaming_zone`, `insert_after_round_0`, `insert_at_round_boundary`, `streaming_zone_start`, `find_tool_preview_index`) and legacy preview flag (`is_tool_preview`/`freeze_preview`) | `src/chat/app.rs`, `src/chat/tui/components/chat_area.rs`, `src/chat/tui/live_turn.rs` | ✅ uncommitted |
+| 11 | Remove legacy tool-message channel (`tool_call_rx`/`drain_tool_messages`/`drain_and_add_tool_messages`/TUI_CALLBACK wiring); tool results enter only via `ToolExecutionFinished`; suppress `PreToolContent` in streaming TUI path | `src/chat/view/ratatui_view.rs`, `src/chat/event_loop.rs`, `src/chat/repl_tui.rs`, `src/chat/core.rs`, `src/chat/llm_event.rs` | ✅ uncommitted |
 
 **Testing plan (executed):**
 
-- 1567 lib tests passing (`cargo test --features all-tools --lib`).
+- 1538 lib tests passing (`cargo test --features all-tools --lib`) after Two-Buffer cleanup.
 - SSE parser events with incremental tool-call arguments (unit tests in `tool_accumulator.rs`).
 - Post-tool streaming validated by code path; mock-provider test deferred to follow-up.
 - Retry events emitted from `OpenAICompatibleProvider::chat_with_retry` (integration scenario deferred to manual test).
@@ -4513,6 +4518,7 @@ ProviderRetryFinished { success: bool, attempt: u32 }
 **Known limitations / follow-up:**
 
 - `ToolExecutionStarted`/`Finished` currently only mark start/end. Full partial-output streaming for long-running tools is deferred to a follow-up issue.
+- The Two-Buffer redesign is structurally complete; visual styling of streaming/preview states is reserved for future work.
 - `cargo clippy` (default features) passes; `--all-features` and individual feature flags still expose pre-existing dead-code/feature-gating warnings that are out of scope for #122 (documented in AGENTS.md and to be addressed in W2 close-out).
 
 **Related:** Issue #122, #121 (predecessor), #123 (final ollama-rs removal). Reference: `~/papers/sprachspiel-openai-provider-lessons-from-pi.md`.

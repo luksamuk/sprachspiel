@@ -356,7 +356,6 @@ pub fn handle_llm_event(
             metrics,
         } => {
             // Finalize the live turn and commit it to the message history.
-            drain_and_add_tool_messages(view, view.app().current_round());
             let thinking_desc = thinking.as_ref().map_or_else(
                 || "None".to_string(),
                 |t| format!("Some({} chars)", t.len()),
@@ -367,7 +366,8 @@ pub fn handle_llm_event(
                 thinking_desc,
                 view.app().message_count(),
             );
-            view.app_mut().finalize_stream(&content, thinking.as_deref());
+            view.app_mut()
+                .finalize_stream(&content, thinking.as_deref());
             if let Some(m) = metrics
                 && m.total_tokens > 0
             {
@@ -384,9 +384,6 @@ pub fn handle_llm_event(
             state.session = *session;
             view.update_status_tokens(used_tokens, max_tokens, percent);
             view.set_llm_state(LlmState::Idle);
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last round of the cycle.
-            drain_and_add_tool_messages(view, view.app().current_round());
             log::debug!(
                 "Complete: messages_count={}, current_round={}",
                 view.app().message_count(),
@@ -404,9 +401,6 @@ pub fn handle_llm_event(
             // add_message(ChatMessage::error) which used the default
             // ✗ marker — easy to miss in scrollback.
             view.show_error(&error);
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last active round.
-            drain_and_add_tool_messages(view, view.app().current_round());
             log::debug!(
                 "Complete (after error): messages_count={}, current_round={}",
                 view.app().message_count(),
@@ -420,9 +414,6 @@ pub fn handle_llm_event(
         }
         LlmEvent::Cancelled => {
             // LLM was cancelled — already handled by Ctrl+C branch
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last active round.
-            drain_and_add_tool_messages(view, view.app().current_round());
             view.app_mut().reset_round();
             *cancel_token = None;
             *llm_tx = None;
@@ -437,7 +428,6 @@ pub fn handle_llm_event(
             view.app_mut().finalize_streaming_zone_as_is();
             view.app_mut().increment_round();
             view.set_llm_state(LlmState::ToolCall);
-            drain_and_add_tool_messages(view, 0);
         }
         LlmEvent::ToolCallPreview {
             tool_call_id,
@@ -518,12 +508,11 @@ pub fn handle_llm_event(
                 .session
                 .set_compacted_summary_with_range(summary.clone(), range);
 
-            // Add a horizontal-rule separator before the summary for visual clarity.
-            // This must go BEFORE the streaming zone so the separator appears
-            // between progress messages and the summary, not after the summary.
-            // Separator fills the full terminal width responsively.
-            view.app_mut()
-                .insert_before_streaming_zone(ChatMessage::separator());
+            // In the two-buffer model, the compaction summary was streamed into
+            // the live turn via CompactStreamToken. Add the separator to committed
+            // history BEFORE finalizing so the separator appears between progress
+            // messages and the summary, not after it.
+            view.app_mut().add_message(ChatMessage::separator());
 
             // Finalize the streaming content — just the summary, no artificial header/footer
             view.stream_done(&summary, None, None);
@@ -563,47 +552,6 @@ pub fn handle_llm_event(
 }
 
 // ── View action and tool message helpers ─────────────────────────────────
-
-/// Drain any pending tool messages and append them at the end.
-///
-/// Tool messages receive the specified `round_index` so they are grouped
-/// with the correct round in multi-round tool call cycles. Callers must
-/// pass the round that corresponds to the tool calls that produced these
-/// messages — typically the round BEFORE any increment for inter-tool content.
-///
-/// When in doubt about the correct round, pass `0` to assign messages to
-/// the initial streaming round. The caller is responsible for determining
-/// the correct round based on the event type and its position in the
-/// round lifecycle.
-pub fn drain_and_add_tool_messages(view: &mut RatatuiView, round: usize) {
-    let drained: Vec<String> = view.drain_tool_messages();
-    if !drained.is_empty() {
-        log::debug!(
-            "drain_and_add_tool_messages: {} tool messages with round_index={}",
-            drained.len(),
-            round
-        );
-    }
-    for msg in drained {
-        // W2 #121 follow-up fix: use `insert_after_round_0()` instead
-        // of `insert_before_streaming_zone()` (from commit 150c35b) or
-        // `insert_at_round_boundary()`.
-        //
-        // The previous `insert_before_streaming_zone` was wrong for
-        // the post-finalized case: it inserted tool messages BEFORE
-        // the finalized Thinking/Assistant, producing the user-reported
-        // regression "tool → thinking → text" instead of the expected
-        // "thinking → text → tool".
-        //
-        // `insert_after_round_0` finds the last round-0 message and
-        // inserts immediately after. Successive tool messages with
-        // the same round land successively at the same insertion
-        // point, producing the correct order:
-        //   [User, Thinking(0), Assistant(0), Tool_call(1), Tool_result(1)]
-        view.app_mut()
-            .insert_after_round_0(ChatMessage::tool(msg).with_round_index(round));
-    }
-}
 
 /// Apply a `ViewAction` to the real `RatatuiView`.
 ///

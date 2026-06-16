@@ -87,28 +87,18 @@ pub struct ChatMessage {
     /// Default is 0 for backward compatibility with messages created by helpers
     /// that don't specify a round.
     pub round_index: usize,
-    /// Whether this tool message is a live preview of an in-flight tool call.
-    ///
-    /// `true` while the LLM is still streaming the tool-call arguments.
-    /// Once the call is finalized (`ToolCallEnd`), the flag is cleared via
-    /// `freeze_preview()` and the message becomes a normal tool result entry.
-    /// This lets the UI show "🔧 name({partial args})" progressively without
-    /// committing a final tool message until the arguments are complete.
-    ///
-    /// Only meaningful when `msg_type == MessageType::Tool`. Defaults to
-    /// `false` for all other message types.
-    pub is_tool_preview: bool,
     /// Optional tool-call id associated with this message.
     ///
     /// Used by the live-turn model to match tool-call previews, executions,
     /// and results. `None` for messages that are not tied to a specific tool
     /// call. This field is ephemeral and not persisted to SQLite.
     pub tool_call_id: Option<String>,
-    /// Whether this message is still being streamed.
+    /// Whether this message is still being streamed or is a volatile preview.
     ///
     /// Used by the live-turn renderer to distinguish volatile blocks from
-    /// committed history. Visual styling for streaming content is reserved
-    /// for future work; the field is structural groundwork.
+    /// committed history. In the two-buffer model, previews and streaming
+    /// content carry `is_streaming = true`. Visual styling for streaming
+    /// content is reserved for future work; the field is structural groundwork.
     pub is_streaming: bool,
 }
 
@@ -119,7 +109,6 @@ impl ChatMessage {
             msg_type: MessageType::User,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -131,7 +120,6 @@ impl ChatMessage {
             msg_type: MessageType::AssistantStreaming,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -143,7 +131,6 @@ impl ChatMessage {
             msg_type: MessageType::Assistant,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -155,7 +142,6 @@ impl ChatMessage {
             msg_type: MessageType::Thinking,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -167,31 +153,9 @@ impl ChatMessage {
             msg_type: MessageType::Tool,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
-    }
-
-    /// Create a tool-call preview message.
-    ///
-    /// This is a transient `Tool` message that will be updated as the LLM
-    /// streams partial arguments. Call `freeze_preview()` when the tool call
-    /// is complete to turn it into a normal tool message.
-    pub fn tool_preview(content: String) -> Self {
-        Self {
-            msg_type: MessageType::Tool,
-            content,
-            round_index: 0,
-            is_tool_preview: true,
-            tool_call_id: None,
-            is_streaming: false,
-        }
-    }
-
-    /// Clear the preview flag, making this a finalized tool message.
-    pub fn freeze_preview(&mut self) {
-        self.is_tool_preview = false;
     }
 
     /// Create a system info message (dim text, no prefix).
@@ -200,7 +164,6 @@ impl ChatMessage {
             msg_type: MessageType::System,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -212,7 +175,6 @@ impl ChatMessage {
             msg_type: MessageType::Error,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -227,7 +189,6 @@ impl ChatMessage {
             msg_type: MessageType::Separator,
             content: String::new(),
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }
@@ -242,7 +203,6 @@ impl ChatMessage {
             msg_type: MessageType::Banner,
             content,
             round_index: 0,
-            is_tool_preview: false,
             tool_call_id: None,
             is_streaming: false,
         }

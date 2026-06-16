@@ -60,15 +60,9 @@ pub enum TurnState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TurnBlock {
     /// Thinking content (may still be streaming).
-    Thinking {
-        content: String,
-        is_streaming: bool,
-    },
+    Thinking { content: String, is_streaming: bool },
     /// Text content (may still be streaming).
-    Text {
-        content: String,
-        is_streaming: bool,
-    },
+    Text { content: String, is_streaming: bool },
     /// A finalized tool call with its eventual result.
     ///
     /// The result starts as `None` and is filled in when the tool finishes
@@ -290,11 +284,7 @@ impl LiveTurn {
     /// Used when the provider signals that tool-call collection is complete
     /// but we do not yet have results.
     pub fn freeze_all_tool_previews(&mut self) {
-        let previews: Vec<ToolPreview> = self
-            .tool_previews
-            .values()
-            .cloned()
-            .collect();
+        let previews: Vec<ToolPreview> = self.tool_previews.values().cloned().collect();
         self.tool_previews.clear();
         for p in previews {
             self.blocks.push(TurnBlock::ToolCall {
@@ -318,8 +308,7 @@ impl LiveTurn {
                 TurnBlock::Thinking { content, .. } => {
                     if !content.is_empty() {
                         messages.push(
-                            ChatMessage::thinking(content)
-                                .with_round_index(self.round_index),
+                            ChatMessage::thinking(content).with_round_index(self.round_index),
                         );
                     }
                 }
@@ -338,8 +327,7 @@ impl LiveTurn {
                     result,
                 } => {
                     let content = format_tool_message(&tool_call_id, &name, &args, result.as_ref());
-                    let mut msg = ChatMessage::tool(content)
-                        .with_round_index(self.round_index);
+                    let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id);
                     messages.push(msg);
                 }
@@ -358,7 +346,10 @@ impl LiveTurn {
 
         for block in &self.blocks {
             match block {
-                TurnBlock::Thinking { content, is_streaming } => {
+                TurnBlock::Thinking {
+                    content,
+                    is_streaming,
+                } => {
                     if !content.is_empty() {
                         let mut msg = ChatMessage::thinking(content.clone())
                             .with_round_index(self.round_index);
@@ -366,7 +357,10 @@ impl LiveTurn {
                         messages.push(msg);
                     }
                 }
-                TurnBlock::Text { content, is_streaming } => {
+                TurnBlock::Text {
+                    content,
+                    is_streaming,
+                } => {
                     let mut msg = ChatMessage::assistant_streaming(content.clone())
                         .with_round_index(self.round_index);
                     msg.is_streaming = *is_streaming;
@@ -379,8 +373,7 @@ impl LiveTurn {
                     result,
                 } => {
                     let content = format_tool_message(tool_call_id, name, args, result.as_ref());
-                    let mut msg = ChatMessage::tool(content)
-                        .with_round_index(self.round_index);
+                    let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id.clone());
                     msg.is_streaming = result.as_ref().is_some_and(|r| r.is_streaming);
                     messages.push(msg);
@@ -392,8 +385,7 @@ impl LiveTurn {
         // tool call being built in real time.
         for preview in self.tool_previews.values() {
             let content = format_tool_preview(&preview.name, &preview.args, &preview.tool_call_id);
-            let mut msg = ChatMessage::tool_preview(content)
-                .with_round_index(self.round_index);
+            let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
             msg.tool_call_id = Some(preview.tool_call_id.clone());
             msg.is_streaming = true;
             messages.push(msg);
@@ -421,7 +413,11 @@ fn format_tool_message(
         lines.push(format!("```json\n{pretty}\n```"));
     }
     if let Some(r) = result {
-        let prefix = if r.is_error { "⛔ Error" } else { "📝 Result" };
+        let prefix = if r.is_error {
+            "⛔ Error"
+        } else {
+            "📝 Result"
+        };
         lines.push(format!("{prefix}:\n```\n{}\n```", r.content));
     }
     lines.join("\n\n")
@@ -522,7 +518,10 @@ mod tests {
         );
         assert_eq!(turn.tool_previews.len(), 1);
         let preview = turn.tool_previews.get("call_1").unwrap();
-        assert_eq!(preview.args, serde_json::json!({"city": "São Paulo", "unit": "C"}));
+        assert_eq!(
+            preview.args,
+            serde_json::json!({"city": "São Paulo", "unit": "C"})
+        );
     }
 
     #[test]
@@ -592,7 +591,13 @@ mod tests {
         assert_eq!(messages[1].msg_type, MessageType::Assistant);
         assert_eq!(messages[2].msg_type, MessageType::Tool);
         assert_eq!(messages[2].round_index, 0);
-        assert!(messages[2].tool_call_id.as_deref().unwrap_or("").contains("c"));
+        assert!(
+            messages[2]
+                .tool_call_id
+                .as_deref()
+                .unwrap_or("")
+                .contains("c")
+        );
     }
 
     #[test]
@@ -620,7 +625,7 @@ mod tests {
         assert_eq!(rendered[1].msg_type, MessageType::AssistantStreaming);
         assert!(rendered[1].is_streaming);
         assert_eq!(rendered[2].msg_type, MessageType::Tool);
-        assert!(rendered[2].is_tool_preview);
         assert!(rendered[2].is_streaming);
+        assert_eq!(rendered[2].tool_call_id.as_deref(), Some("p"));
     }
 }

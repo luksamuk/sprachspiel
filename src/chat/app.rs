@@ -26,11 +26,10 @@ use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
-use super::tui::components::chat_area::MessageType;
-use super::tui::live_turn::LiveTurn;
 use super::tui::components::chat_selection::ChatSelection;
 use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
+use super::tui::live_turn::LiveTurn;
 use super::tui::markdown::MarkdownTheme;
 
 /// Each phase shows a different emoji in the status bar to indicate
@@ -496,23 +495,6 @@ impl App {
         rendered
     }
 
-    /// Find the index of the last message that is a tool-call preview for
-    /// the given tool call id.
-    ///
-    /// Returns `None` if no matching preview exists.
-    pub fn find_tool_preview_index(&self, tool_call_id: &str) -> Option<usize> {
-        self.messages
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| {
-                m.msg_type == MessageType::Tool
-                    && m.is_tool_preview
-                    && m.content.contains(tool_call_id)
-            })
-            .map(|(i, _)| i)
-    }
-
     /// Update or insert a tool-call preview.
     ///
     /// Creates the live turn if it does not exist. In the two-buffer model,
@@ -532,6 +514,28 @@ impl App {
     pub fn freeze_all_tool_previews(&mut self) {
         if let Some(turn) = self.live_turn.as_mut() {
             turn.freeze_all_tool_previews();
+        }
+    }
+
+    /// Attach the result of a tool call to its matching live-turn block.
+    ///
+    /// Called when `ToolExecutionFinished` arrives from the coordinator.
+    /// If the live turn does not exist or does not contain a matching block,
+    /// a warning is logged and the result is dropped.
+    pub fn set_tool_result(
+        &mut self,
+        tool_call_id: &str,
+        content: String,
+        is_error: bool,
+        is_streaming: bool,
+    ) {
+        if let Some(turn) = self.live_turn.as_mut() {
+            turn.set_tool_result(tool_call_id, content, is_error, is_streaming);
+        } else {
+            log::warn!(
+                "set_tool_result called with no active live turn for id {}",
+                tool_call_id
+            );
         }
     }
 
@@ -622,203 +626,6 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
-    /// Returns the start index of the streaming zone.
-    ///
-    /// The streaming zone is the contiguous tail of streaming-eligible
-    /// messages: `Thinking` with `round_index == 0` and `AssistantStreaming`.
-    /// Everything before this index is stable and must not be modified by
-    /// streaming operations.
-    ///
-    /// **Round-awareness:** `Thinking` blocks with `round_index > 0` are
-    /// stable inter-round blocks from previous turns and must NOT be
-    /// included in the streaming zone. Including them would cause
-    /// `finalize_stream()` to consolidate inter-round thinking into a
-    /// single block, merging thinking from different rounds.
-    fn streaming_zone_start(&self) -> usize {
-        self.messages
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| {
-                // Streaming-eligible: round-0 Thinking and any AssistantStreaming
-                let is_streaming_eligible = matches!(m.msg_type, MessageType::AssistantStreaming)
-                    || (m.msg_type == MessageType::Thinking && m.round_index == 0);
-                !is_streaming_eligible
-            })
-            .map(|(i, _)| i + 1)
-            .unwrap_or(0)
-    }
-
-    /// Insert a message before the streaming zone.
-    ///
-    /// When the LLM is in `ToolCall` or `Streaming` state, tool messages
-    /// and view actions should appear BEFORE any streaming content
-    /// (Thinking/AssistantStreaming messages). This method finds the
-    /// streaming zone start and inserts the message there, pushing
-    /// streaming content down.
-    ///
-    /// If there is no streaming zone (all messages are stable), this
-    /// finds the boundary before any trailing Tool messages and inserts
-    /// before them. This ensures inter-tool text (from a post-tool
-    /// streaming turn) appears in the correct position — after pre-tool
-    /// content and before subsequent tool calls — rather than appended after
-    /// all existing tool messages.
-    ///
-    /// Fallback: if there are no trailing tool messages either, appends
-    /// at the end via `add_message()`.
-    pub fn insert_before_streaming_zone(&mut self, message: ChatMessage) {
-        let zone_start = self.streaming_zone_start();
-        if zone_start < self.messages.len() {
-            // There's a streaming zone — insert before it
-            self.messages.insert(zone_start, message);
-        } else {
-            // No streaming zone — find the boundary before trailing
-            // Tool messages. Inter-tool text must appear BEFORE tool
-            // messages, not after them.
-            let tool_boundary = self
-                .messages
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, m)| m.msg_type != MessageType::Tool)
-                .map(|(i, _)| i + 1)
-                .unwrap_or(0);
-            if tool_boundary < self.messages.len() {
-                self.messages.insert(tool_boundary, message);
-            } else {
-                self.add_message(message);
-            }
-        }
-        self.scroll.reset_to_bottom();
-    }
-
-    /// Insert a message AFTER the streaming zone boundary.
-    ///
-    /// W2 #121 follow-up: this is the correct placement for tool
-    /// messages that arrive after the streaming zone has been
-    /// finalized (i.e., after `ToolCallStarted` called
-    /// `finalize_streaming_zone_as_is()` and converted
-    /// `AssistantStreaming` to stable `Assistant`).
-    ///
-    /// Semantics:
-    /// 1. Active streaming zone (Thinking or AssistantStreaming in tail)
-    ///    — insert AT THE END OF THE ZONE (after the last
-    ///    Thinking/AssistantStreaming). This is the "streaming zone
-    ///    has new content arriving" case.
-    /// 2. No streaming zone (all finalized) — append at the end.
-    ///
-    /// Difference from `insert_before_streaming_zone()`: the latter
-    /// inserts BEFORE the zone. That was correct for *concurrent*
-    /// tool messages (when streaming and tool execution are racing),
-    /// but WRONG for *post-finalized* tool messages (when the zone
-    /// has been finalized and the tool completed). For post-finalized
-    /// tool messages, the correct order is: [finalized Thinking,
-    /// finalized Assistant, Tool_call, Tool_result, ...].
-    /// Insert a message AFTER the round-0 content (the LLM's turn).
-    ///
-    /// W2 #121 follow-up: `drain_and_add_tool_messages` was using
-    /// `insert_before_streaming_zone` (commit 150c35b), which produced
-    /// the user-reported regression "tool → thinking → text" instead
-    /// of "thinking → text → tool".
-    ///
-    /// This is the correct placement for tool messages arriving
-    /// AFTER the streaming zone has been finalized (the post-finalized
-    /// case) OR while streaming is still active (the concurrent case).
-    /// In both cases, the tool message should land after the LLM's
-    /// round-0 content (Thinking + Assistant), not before the Thinking
-    /// that the LLM emitted before deciding to call the tool.
-    ///
-    /// Semantics:
-    /// 1. Find the index of the last message with
-    ///    `round_index <= target_round` (using the message's own
-    ///    round_index — not just round=0).
-    /// 2. Insert immediately after that message.
-    /// 3. Successive tool messages with the same round land
-    ///    successively at the same insertion point — producing the
-    ///    correct order `[User, Thinking(0), Assistant(0), Tool(1),
-    ///    Tool(1), ...]`.
-    ///
-    /// Note: this is different from `insert_at_round_boundary`, which
-    /// excludes `AssistantStreaming` from the search range (because
-    /// inter-round text should be inserted before the currently-streaming
-    /// content). Tool messages, by contrast, go AFTER the round-0 content
-    /// (including the streaming Assistant if it's still active) — they don't
-    /// interleave with the stream.
-    pub fn insert_after_round_0(&mut self, message: ChatMessage) {
-        let target_round = message.round_index;
-        for i in (0..self.messages.len()).rev() {
-            if self.messages[i].round_index <= target_round {
-                self.messages.insert(i + 1, message);
-                self.scroll.reset_to_bottom();
-                return;
-            }
-        }
-        // No message with round_index <= target_round — append at end
-        self.messages.push(message);
-        self.scroll.reset_to_bottom();
-    }
-
-    /// Insert a message after all messages with `round_index <= message.round_index`,
-    /// respecting the streaming zone boundary (only `AssistantStreaming` messages).
-    ///
-    /// This is the round-aware replacement for `insert_before_streaming_zone()`
-    /// when dealing with inter-round content from multi-round LLM tool call cycles.
-    /// When a multi-round tool cycle occurs (e.g., model searches → observes results →
-    /// searches again), inter-round content (thinking, text from a post-tool
-    /// streaming turn) must appear AFTER all messages of the previous round and
-    /// BEFORE messages of subsequent rounds.
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Find the boundary before any `AssistantStreaming` messages at the tail.
-    ///    (Unlike `streaming_zone_start()`, this does NOT include `Thinking` blocks,
-    ///    because finalized inter-round Thinking content should be treated as stable
-    ///    for round boundary purposes.)
-    /// 2. Within the stable zone (before `AssistantStreaming`), find the last message
-    ///    with `round_index <= target_round`. Insert after that message.
-    /// 3. If no `AssistantStreaming` zone exists, search all messages.
-    /// 4. Fallback: if no message has `round_index <= target_round`, insert at
-    ///    position 0 (all messages have higher round_index).
-    pub fn insert_at_round_boundary(&mut self, message: ChatMessage) {
-        let target_round = message.round_index;
-
-        // Find the boundary before AssistantStreaming messages at the tail.
-        // We only exclude AssistantStreaming (actively streaming, incomplete content)
-        // from the round-boundary search. Finalized inter-round Thinking blocks are
-        // stable content and should participate in the search.
-        let stream_boundary = self
-            .messages
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, m)| m.msg_type != MessageType::AssistantStreaming)
-            .map(|(i, _)| i + 1)
-            .unwrap_or(0);
-
-        let search_end = if stream_boundary < self.messages.len() {
-            stream_boundary
-        } else {
-            self.messages.len()
-        };
-
-        if search_end == 0 {
-            // All messages are AssistantStreaming — insert at position 0
-            self.messages.insert(0, message);
-        } else {
-            // Find the last message in the stable zone with round_index <= target_round
-            let insert_pos = self.messages[..search_end]
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, m)| m.round_index <= target_round)
-                .map(|(i, _)| i + 1)
-                .unwrap_or(0);
-
-            self.messages.insert(insert_pos, message);
-        }
-        self.scroll.reset_to_bottom();
-    }
-
     /// Get the current round index.
     pub fn current_round(&self) -> usize {
         self.live_turn
@@ -896,7 +703,8 @@ impl App {
 
             // Override accumulated thinking with authoritative content.
             if let Some(thinking_content) = thinking {
-                turn.blocks.retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Thinking { .. }));
+                turn.blocks
+                    .retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Thinking { .. }));
                 if !thinking_content.is_empty() {
                     turn.blocks.insert(
                         0,
@@ -909,7 +717,8 @@ impl App {
             }
 
             // Override accumulated text with authoritative content.
-            turn.blocks.retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Text { .. }));
+            turn.blocks
+                .retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Text { .. }));
             if !content.is_empty() {
                 turn.blocks.push(super::tui::live_turn::TurnBlock::Text {
                     content: content.to_string(),
@@ -2182,6 +1991,7 @@ fn common_prefix_str(strings: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::tui::components::chat_area::MessageType;
     use crate::chat::tui::live_turn::TurnState;
 
     /// Create a minimal App for testing streaming message operations.
@@ -2199,10 +2009,7 @@ mod tests {
         assert!(app.live_turn().is_none());
         app.append_stream_token("Hello");
         assert!(app.live_turn().is_some());
-        assert_eq!(
-            app.live_turn().unwrap().state,
-            TurnState::Streaming
-        );
+        assert_eq!(app.live_turn().unwrap().state, TurnState::Streaming);
     }
 
     #[test]
@@ -2278,9 +2085,7 @@ mod tests {
         app.increment_round(); // round 1
 
         // Round 1 tool call + result (simulated via add_message for now)
-        app.add_message(
-            ChatMessage::tool("🔧 search(weather)".to_string()).with_round_index(1),
-        );
+        app.add_message(ChatMessage::tool("🔧 search(weather)".to_string()).with_round_index(1));
         app.add_message(ChatMessage::tool("Sunny".to_string()).with_round_index(1));
 
         // Round 1 post-tool streaming
@@ -2339,7 +2144,7 @@ mod tests {
         let rendered = app.render_messages();
         assert_eq!(rendered.len(), 1);
         assert_eq!(rendered[0].msg_type, MessageType::Tool);
-        assert!(rendered[0].is_tool_preview);
+        assert!(rendered[0].is_streaming);
         assert_eq!(rendered[0].tool_call_id.as_deref(), Some("call_1"));
     }
 
@@ -2352,8 +2157,68 @@ mod tests {
 
         let rendered = app.render_messages();
         assert_eq!(rendered.len(), 2);
-        assert!(!rendered[0].is_tool_preview);
-        assert!(!rendered[1].is_tool_preview);
+        assert!(!rendered[0].is_streaming);
+        assert!(!rendered[1].is_streaming);
+    }
+
+    #[test]
+    fn test_tool_result_attached_to_live_turn_block() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.upsert_tool_preview(
+            "call_1".to_string(),
+            "🔧 weather(`call_1`)\n```json\n{\"city\": \"São Paulo\"}\n```".to_string(),
+        );
+        app.freeze_all_tool_previews();
+        app.set_tool_result("call_1", "sunny".to_string(), false, false);
+
+        let rendered = app.render_messages();
+        assert_eq!(rendered.len(), 2);
+        assert_eq!(rendered[1].msg_type, MessageType::Tool);
+        assert_eq!(rendered[1].tool_call_id.as_deref(), Some("call_1"));
+        assert!(rendered[1].content.contains("sunny"));
+    }
+
+    #[test]
+    fn test_multi_round_tool_results_stay_ordered() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+
+        app.upsert_tool_preview("a".to_string(), "🔧 search(`a`)".to_string());
+        app.freeze_all_tool_previews();
+        app.increment_round();
+        app.set_tool_result("a", "result-a".to_string(), false, false);
+
+        app.append_stream_thinking("Hmm");
+        app.append_stream_token("Based on...");
+        app.finalize_streaming_zone_as_is();
+
+        app.upsert_tool_preview("b".to_string(), "🔧 calc(`b`)".to_string());
+        app.freeze_all_tool_previews();
+        app.increment_round();
+        app.set_tool_result("b", "result-b".to_string(), false, false);
+
+        app.finalize_stream("Final answer", None);
+
+        // The committed order preserves the live turn's block order:
+        // user, first tool result, inter-round thinking, second tool result,
+        // final assistant text.
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert!(
+            app.messages[1].content.contains("result-a"),
+            "{}",
+            app.messages[1].content
+        );
+        assert!(
+            app.messages[3].content.contains("result-b"),
+            "{}",
+            app.messages[3].content
+        );
     }
 
     #[test]

@@ -187,25 +187,13 @@ pub fn setup_coordinator(
         //
         match event {
             crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
-                if let Some(ref tx) = llm_tx {
-                    // W2 #122: all ReAct turns now stream. Pre-tool content from the
-                    // non-streaming fallback path (terminal/CLI query) is forwarded as
-                    // view actions so it appears before the tool-call preview. In the
-                    // streaming TUI path the text is already on screen via StreamToken
-                    // and will be finalized by ToolCallStarted.
-                    if let Some(thinking_text) = thinking {
-                        let _ = tx.try_send(super::llm_event::LlmEvent::ViewAction(
-                            super::llm_event::ViewAction::ShowThinking(thinking_text),
-                        ));
-                    }
-                    let cleaned = strip_thinking_tags(&content);
-                    if !cleaned.trim().is_empty() {
-                        let _ = tx.try_send(super::llm_event::LlmEvent::ViewAction(
-                            super::llm_event::ViewAction::ShowMarkdown(cleaned),
-                        ));
-                    }
+                if llm_tx.is_some() {
+                    // TUI streaming path: pre-tool content is already on screen via
+                    // StreamToken/StreamThinking and will be finalized by ToolCallStarted.
+                    // Forwarding it again would duplicate the text.
+                    let _ = (content, thinking);
                 } else {
-                    // Terminal mode: emit as ViewEvent for batch processing
+                    // Terminal mode: emit as ViewEvent for batch processing.
                     let cleaned = strip_thinking_tags(&content);
                     if thinking.is_some() || !cleaned.trim().is_empty() {
                         view_event_sender.send(super::view::ViewEvent::PreToolContent {

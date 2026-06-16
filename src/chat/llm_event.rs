@@ -19,11 +19,10 @@
 //!
 //! # Tool Message Ordering
 //!
-//! Tool messages from `debug_tools::TUI_CALLBACK` flow through a
-//! separate `tool_call_rx` channel. They are drained in the event
-//! loop (not in `render()`) and inserted before the streaming zone
-//! when the LLM is in `ToolCall` or `Streaming` state, ensuring
-//! correct visual ordering relative to streaming content.
+//! Tool calls and results are lifecycle events (`ToolCallPreview`,
+//! `ToolExecutionStarted`, `ToolExecutionFinished`). They are rendered inside
+//! the volatile `LiveTurn` and committed to history together with the rest of
+//! the assistant turn. No separate channel is used for tool indicators.
 
 use super::command_output::CommandOutput;
 use super::session::ChatSession;
