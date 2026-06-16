@@ -98,6 +98,18 @@ pub struct ChatMessage {
     /// Only meaningful when `msg_type == MessageType::Tool`. Defaults to
     /// `false` for all other message types.
     pub is_tool_preview: bool,
+    /// Optional tool-call id associated with this message.
+    ///
+    /// Used by the live-turn model to match tool-call previews, executions,
+    /// and results. `None` for messages that are not tied to a specific tool
+    /// call. This field is ephemeral and not persisted to SQLite.
+    pub tool_call_id: Option<String>,
+    /// Whether this message is still being streamed.
+    ///
+    /// Used by the live-turn renderer to distinguish volatile blocks from
+    /// committed history. Visual styling for streaming content is reserved
+    /// for future work; the field is structural groundwork.
+    pub is_streaming: bool,
 }
 
 impl ChatMessage {
@@ -108,6 +120,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -118,6 +132,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -128,6 +144,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -138,6 +156,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -148,6 +168,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -162,6 +184,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: true,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -177,6 +201,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -187,6 +213,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -200,6 +228,8 @@ impl ChatMessage {
             content: String::new(),
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -213,6 +243,8 @@ impl ChatMessage {
             content,
             round_index: 0,
             is_tool_preview: false,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
