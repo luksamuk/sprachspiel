@@ -270,6 +270,16 @@ pub struct CustomCoordinator<C: ChatHistory> {
     think: Option<ThinkType>,
     /// Callback for events
     event_callback: Option<Box<dyn Fn(ChatEvent) + Send + Sync>>,
+    /// Streaming token callback (stored for multi-round ReAct loops).
+    token_callback: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// Streaming thinking callback (stored for multi-round ReAct loops).
+    thinking_callback: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// Tool-call detected callback (stored for multi-round ReAct loops).
+    tool_call_callback: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Tool-call preview callback (stored for multi-round ReAct loops).
+    tool_preview_callback: Option<Box<dyn Fn(String, String, serde_json::Value) + Send + Sync>>,
+    /// Provider retry/event callback (stored for multi-round ReAct loops).
+    provider_event_callback: Option<Box<dyn Fn(LlmEvent) + Send + Sync>>,
     /// Context window size for overflow detection during tool execution
     context_window: Option<usize>,
     /// System prompt for token estimation
@@ -305,6 +315,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             tools: HashMap::default(),
             think: None,
             event_callback: None,
+            token_callback: None,
+            thinking_callback: None,
+            tool_call_callback: None,
+            tool_preview_callback: None,
+            provider_event_callback: None,
             context_window: None,
             system_prompt: None,
             real_history_tokens: None,
@@ -314,6 +329,27 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ephemeral_messages: Vec::new(),
             cancel_token: None,
         }
+    }
+
+    /// Store streaming callbacks so they can be reused across ReAct rounds.
+    ///
+    /// W2 #122: `process_response` executes tools and then needs to continue
+    /// streaming the next assistant turn. The callbacks are owned by the
+    /// original caller (`core.rs`), so we box them here rather than threading
+    /// them through every recursive call.
+    fn set_streaming_callbacks(
+        &mut self,
+        on_token: impl Fn(String) + Send + Sync + 'static,
+        on_thinking: impl Fn(String) + Send + Sync + 'static,
+        on_tool_call: impl Fn() + Send + Sync + 'static,
+        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync + 'static,
+        on_provider_event: impl Fn(LlmEvent) + Send + Sync + 'static,
+    ) {
+        self.token_callback = Some(Box::new(on_token));
+        self.thinking_callback = Some(Box::new(on_thinking));
+        self.tool_call_callback = Some(Box::new(on_tool_call));
+        self.tool_preview_callback = Some(Box::new(on_tool_call_preview));
+        self.provider_event_callback = Some(Box::new(on_provider_event));
     }
 
     /// Check context overflow and handle truncation if needed
@@ -745,11 +781,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     pub async fn chat_stream(
         &mut self,
         messages: Vec<ChatMessage>,
-        on_token: impl Fn(String) + Send + Sync,
-        on_thinking: impl Fn(String) + Send + Sync,
-        on_tool_call: impl Fn() + Send + Sync,
-        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync,
-        on_provider_event: impl Fn(LlmEvent) + Send + Sync,
+        on_token: impl Fn(String) + Send + Sync + 'static,
+        on_thinking: impl Fn(String) + Send + Sync + 'static,
+        on_tool_call: impl Fn() + Send + Sync + 'static,
+        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync + 'static,
+        on_provider_event: impl Fn(LlmEvent) + Send + Sync + 'static,
         cancel_token: Option<tokio_util::sync::CancellationToken>,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         for m in &messages {
@@ -775,29 +811,59 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Store how many messages we started with
         self.initial_message_count = self.history.messages().len();
 
-        // W2 #122: consume the raw event stream so we can emit tool-call
-        // previews, retry status, and other lifecycle events to the TUI.
+        // Store callbacks for reuse in later ReAct rounds.
+        self.set_streaming_callbacks(
+            on_token,
+            on_thinking,
+            on_tool_call,
+            on_tool_call_preview,
+            on_provider_event,
+        );
+        self.cancel_token = cancel_token;
+
+        // Start the streaming request
+        let request = self.build_request();
+        let response = self.stream_turn(request).await?;
+
+        // ReAct loop: while the assistant keeps emitting tool calls, execute
+        // them and stream the next turn.
+        let mut current_response = response;
+        loop {
+            if current_response.message.tool_calls.is_empty() {
+                return Ok(current_response);
+            }
+            current_response = self.process_response(current_response, true).await?;
+        }
+    }
+
+    /// Internal streaming turn handler. Consumes a raw `LlmStreamEvent` stream
+    /// and returns a legacy `ChatMessageResponse` for the rest of the
+    /// coordinator to process.
+    async fn stream_turn(
+        &mut self,
+        request: ChatMessageRequest,
+    ) -> ollama_rs::error::Result<ChatMessageResponse> {
         let mut stream = self
             .ollama
-            .send_chat_messages_stream_events(self.build_request())
+            .send_chat_messages_stream_events(request)
             .await
             .map_err(crate::provider::ollama_shim::convert_provider_error)?;
 
-        // Accumulate the full response while streaming
         let mut full_content = String::new();
         let mut full_thinking: Option<String> = None;
         let final_data = None;
         let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
-        let mut tool_call_previews: std::collections::HashMap<u32, (String, String, serde_json::Value)> =
-            std::collections::HashMap::new();
+        let mut tool_call_previews: std::collections::HashMap<
+            u32,
+            (String, String, serde_json::Value),
+        > = std::collections::HashMap::new();
         let model = self.model.clone();
         let created_at = String::new();
 
         use futures::StreamExt;
 
         while let Some(event_result) = stream.next().await {
-            // Check for cancellation during streaming
-            if let Some(ref ct) = cancel_token
+            if let Some(ref ct) = self.cancel_token
                 && ct.is_cancelled()
             {
                 log::debug!("Stream cancelled by user");
@@ -807,11 +873,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             match event_result {
                 Ok(event) => match event {
                     crate::provider::types::LlmStreamEvent::TextDelta { delta } => {
-                        on_token(delta.clone());
+                        if let Some(ref cb) = self.token_callback {
+                            cb(delta.clone());
+                        }
                         full_content.push_str(&delta);
                     }
                     crate::provider::types::LlmStreamEvent::ThinkingDelta { delta } => {
-                        on_thinking(delta.clone());
+                        if let Some(ref cb) = self.thinking_callback {
+                            cb(delta.clone());
+                        }
                         full_thinking
                             .get_or_insert_with(String::new)
                             .push_str(&delta);
@@ -825,13 +895,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         let name = name.unwrap_or_default();
                         tool_call_previews.insert(
                             index,
-                            (id.clone(), name.clone(), serde_json::Value::Object(serde_json::Map::new())),
+                            (
+                                id.clone(),
+                                name.clone(),
+                                serde_json::Value::Object(serde_json::Map::new()),
+                            ),
                         );
-                        on_tool_call_preview(
-                            id,
-                            name,
-                            serde_json::Value::Object(serde_json::Map::new()),
-                        );
+                        if let Some(ref cb) = self.tool_preview_callback {
+                            cb(id, name, serde_json::Value::Object(serde_json::Map::new()));
+                        }
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallDelta {
                         index,
@@ -848,9 +920,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             if let Some(name) = name_delta {
                                 *existing_name = name;
                             }
-                            // Merge argument delta into the partial JSON object.
-                            // OpenAI sends fragments of a JSON string; we keep the
-                            // raw concatenated arguments and attempt to parse.
                             let raw = if let serde_json::Value::String(s) = existing_args {
                                 let mut s = s.clone();
                                 s.push_str(&argument_delta);
@@ -866,7 +935,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                                 }
                             });
                             *existing_args = parsed.clone();
-                            on_tool_call_preview(existing_id.clone(), existing_name.clone(), parsed);
+                            if let Some(ref cb) = self.tool_preview_callback {
+                                cb(existing_id.clone(), existing_name.clone(), parsed);
+                            }
                         }
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallEnd { call, .. } => {
@@ -877,101 +948,55 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             },
                         });
                     }
-                    crate::provider::types::LlmStreamEvent::Done { .. } => {
-                        // End-of-turn marker; the loop will exit naturally when
-                        // the underlying stream closes.
-                    }
-                    crate::provider::types::LlmStreamEvent::ProviderRetryStarted { .. }
-                    | crate::provider::types::LlmStreamEvent::ProviderRetryFinished { .. } => {
-                        let llm_event = match event {
-                            crate::provider::types::LlmStreamEvent::ProviderRetryStarted {
+                    crate::provider::types::LlmStreamEvent::Done { .. } => {}
+                    crate::provider::types::LlmStreamEvent::ProviderRetryStarted {
+                        attempt,
+                        max_attempts,
+                        delay_ms,
+                        reason,
+                    } => {
+                        if let Some(ref cb) = self.provider_event_callback {
+                            cb(LlmEvent::ProviderRetryStarted {
                                 attempt,
                                 max_attempts,
                                 delay_ms,
                                 reason,
-                            } => LlmEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms,
-                                reason,
-                            },
-                            crate::provider::types::LlmStreamEvent::ProviderRetryFinished {
-                                success,
-                                attempt,
-                            } => LlmEvent::ProviderRetryFinished { success, attempt },
-                            _ => unreachable!(),
-                        };
-                        on_provider_event(llm_event);
+                            });
+                        }
                     }
-                    // Start/TextEnd/ThinkingEnd/Error are not directly actionable here.
+                    crate::provider::types::LlmStreamEvent::ProviderRetryFinished {
+                        success,
+                        attempt,
+                    } => {
+                        if let Some(ref cb) = self.provider_event_callback {
+                            cb(LlmEvent::ProviderRetryFinished { success, attempt });
+                        }
+                    }
                     _ => {}
                 },
                 Err(err) => {
-                    // W2 #121/122: stream errors are terminal. Convert the
-                    // provider error back to an OllamaError so the caller's
-                    // retry classification still works.
                     log::error!("Stream error in custom_coordinator: {err}");
                     return Err(crate::provider::ollama_shim::convert_provider_error(err));
                 }
             }
         }
 
-        // Build a ChatMessageResponse from the accumulated content
-        if !tool_calls.is_empty() {
-            // Notify the event loop that tool calls were detected
-            // (so it can transition LlmState to ToolCall)
-            on_tool_call();
+        let msg = ollama_rs::generation::chat::ChatMessage {
+            role: ollama_rs::generation::chat::MessageRole::Assistant,
+            content: full_content,
+            tool_calls: tool_calls.clone(),
+            images: None,
+            thinking: full_thinking,
+        };
 
-            // Build response with tool calls for process_response
-            let msg_with_tools = ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content,
-                tool_calls: tool_calls.clone(),
-                images: None,
-                thinking: full_thinking,
-            };
-
-            let response = ChatMessageResponse {
-                model,
-                created_at,
-                message: msg_with_tools,
-                logprobs: None,
-                done: true,
-                final_data,
-            };
-
-            // Content was already streamed via on_token callback —
-            // mark as already_streamed to prevent InterToolText duplication.
-            self.process_response(response, /*already_streamed=*/ true)
-                .await
-        } else {
-            // No tool calls — this is the final response
-            // Push to history
-            self.history.push(ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content.clone(),
-                tool_calls: Vec::new(),
-                images: None,
-                thinking: full_thinking.clone(),
-            });
-
-            let msg = ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content,
-                tool_calls: Vec::new(),
-                images: None,
-                thinking: full_thinking,
-            };
-
-            Ok(ChatMessageResponse {
-                model,
-                created_at,
-                message: msg,
-                logprobs: None,
-                done: true,
-                final_data,
-            })
-        }
+        Ok(ChatMessageResponse {
+            model,
+            created_at,
+            message: msg,
+            logprobs: None,
+            done: true,
+            final_data,
+        })
     }
 
     /// Apply optional settings to request
@@ -1188,8 +1213,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 tools_executed.push(tool_name);
             }
 
-            // Recurse to get next response
-            Box::pin(self.process_next()).await
+            // Recurse to get next response using streaming.
+            Box::pin(self.process_next_stream()).await
         } else {
             // No tool calls - this is the final response
             // Push to history
@@ -1199,7 +1224,69 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
     }
 
-    /// Process next response after tool calls
+    /// Process next response after tool calls, using streaming.
+    async fn process_next_stream(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
+        // Check for user cancellation before making next request
+        if let Some(ref ct) = self.cancel_token
+            && ct.is_cancelled()
+        {
+            log::debug!("process_next_stream cancelled by user");
+            return Err(ollama_rs::error::OllamaError::Other(
+                CANCELLED_BY_USER.to_string(),
+            ));
+        }
+
+        // Context overflow check (same as process_next).
+        if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
+            let usage = match self.real_history_tokens {
+                Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+                None => {
+                    log::debug!(
+                        "[process_next_stream] No real_history_tokens; falling back to estimate"
+                    );
+                    let messages = self.history.messages();
+                    let system = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+                    let history: usize = messages
+                        .iter()
+                        .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+                        .sum();
+                    ContextUsage {
+                        system_tokens: system,
+                        tools_tokens: 0,
+                        history_tokens: history,
+                        total_tokens: system + history,
+                        source: crate::tokens::ContextSource::Estimated,
+                    }
+                }
+            };
+
+            let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
+            let threshold = ctx_window.saturating_sub(emergency_threshold);
+
+            if usage.total_tokens > threshold {
+                let msg = format!(
+                    "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
+                    usage.total_tokens, ctx_window
+                );
+                return Err(ollama_rs::error::OllamaError::Other(msg));
+            }
+        }
+
+        let request = self.build_request();
+        let response = self.stream_turn(request).await?;
+
+        // Continue the ReAct loop: if more tool calls arrive, execute them.
+        if response.message.tool_calls.is_empty() {
+            Ok(response)
+        } else {
+            self.process_response(response, /*already_streamed=*/ true).await
+        }
+    }
+
+    /// Process next response after tool calls (legacy non-streaming path).
+    ///
+    /// Kept for callers that need a synchronous continuation; the streaming
+    /// ReAct loop uses `process_next_stream` instead.
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check for user cancellation before making next request
         if let Some(ref ct) = self.cancel_token

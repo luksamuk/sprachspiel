@@ -817,7 +817,9 @@ pub async fn send_message_stream(
         vec![]
     };
 
-    // Create streaming callbacks that send tokens through the LlmEvent channel
+    // Create streaming callbacks that send tokens through the LlmEvent channel.
+    // W2 #122: these closures are moved into the coordinator and stored as
+    // boxed callbacks so they can be reused across ReAct rounds.
     let llm_tx_token = llm_tx.clone();
     let on_token = move |token: String| {
         let _ = llm_tx_token.try_send(LlmEvent::StreamToken(token));
@@ -834,13 +836,14 @@ pub async fn send_message_stream(
     };
 
     let llm_tx_preview = llm_tx.clone();
-    let on_tool_call_preview = move |tool_call_id: String, name: String, args: serde_json::Value| {
-        let _ = llm_tx_preview.try_send(LlmEvent::ToolCallPreview {
-            tool_call_id,
-            name,
-            args,
-        });
-    };
+    let on_tool_call_preview =
+        move |tool_call_id: String, name: String, args: serde_json::Value| {
+            let _ = llm_tx_preview.try_send(LlmEvent::ToolCallPreview {
+                tool_call_id,
+                name,
+                args,
+            });
+        };
 
     let llm_tx_provider_event = llm_tx.clone();
     let on_provider_event = move |event: LlmEvent| {
@@ -858,11 +861,11 @@ pub async fn send_message_stream(
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
-                    &on_token,
-                    &on_thinking,
-                    &on_tool_call,
-                    &on_tool_call_preview,
-                    &on_provider_event,
+                    on_token.clone(),
+                    on_thinking.clone(),
+                    on_tool_call.clone(),
+                    on_tool_call_preview.clone(),
+                    on_provider_event.clone(),
                     cancel_token.clone(),
                 ),
             )
@@ -873,11 +876,11 @@ pub async fn send_message_stream(
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
-                    &on_token,
-                    &on_thinking,
-                    &on_tool_call,
-                    &on_tool_call_preview,
-                    &on_provider_event,
+                    on_token.clone(),
+                    on_thinking.clone(),
+                    on_tool_call.clone(),
+                    on_tool_call_preview.clone(),
+                    on_provider_event.clone(),
                     cancel_token.clone(),
                 ),
             )
