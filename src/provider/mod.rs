@@ -12,6 +12,7 @@ pub mod factory;
 pub mod ollama_shim;
 pub mod openai_compat;
 pub mod openai_types;
+pub mod tool_accumulator;
 pub mod types;
 
 /// Re-export of `crate::provider::Ollama`-compatible shim. Production code

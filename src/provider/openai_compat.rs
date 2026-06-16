@@ -34,7 +34,6 @@
 
 #![allow(dead_code)] // Many methods used by shim that will be wired in P6.0e.4
 
-use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -47,6 +46,7 @@ use super::openai_types::{
     ModelsResponse, OpenAIMessage, OpenAITool, OpenAIToolCall, OpenAIToolCallFunction,
     OpenAIToolFunction, StreamOptions, Usage as OpenAIUsage,
 };
+use super::tool_accumulator::ToolCallAccumulator;
 
 /// Tuple of OpenAI request fields derived from `ProviderOptions`.
 type ConvertedOptions = (
@@ -591,8 +591,7 @@ impl OpenAICompatibleProvider {
                         // invalid request, missing field) come with
                         // a JSON body that explains the failure.
                         // Retrying them just wastes time.
-                        let is_transient_4xx =
-                            Self::is_transient_4xx_error(status.as_u16(), &body);
+                        let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
 
                         if is_transient_4xx && attempt < self.config.max_retries.max(1) {
                             let delay = self.backoff_delay(attempt);
@@ -803,8 +802,7 @@ impl LlmProvider for OpenAICompatibleProvider {
                     }
 
                     // 4xx — distinguish transient vs permanent.
-                    let is_transient_4xx =
-                        Self::is_transient_4xx_error(status.as_u16(), &body);
+                    let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
                     if is_transient_4xx && attempt < max_attempts {
                         let delay = self.backoff_delay(attempt);
                         let preview: String = body.chars().take(500).collect();
@@ -1065,7 +1063,7 @@ fn parse_sse_stream(
 
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
-        let mut tool_call_accumulators: HashMap<u32, PartialToolCall> = HashMap::new();
+        let mut tool_call_accumulators = ToolCallAccumulator::new();
 
         loop {
             let chunk_result = tokio::time::timeout(idle_timeout, stream.next()).await;
@@ -1101,47 +1099,22 @@ fn parse_sse_stream(
                                                 prompt_eval_count: None,
                                             };
 
-                                            // Accumulate tool calls (incremental arguments).
-                                            // OpenAI spec streams tool calls as multiple chunks
-                                            // sharing the same `index`; only the first chunk
-                                            // carries `id` and `function.name`; subsequent
-                                            // chunks extend `function.arguments`.
+                                            // W2 #122: accumulate tool-call deltas and emit
+                                            // lifecycle events. Keep the compatibility snapshot
+                                            // on LlmStreamChunk until the chunk type is removed.
                                             if let Some(delta_calls) = choice.delta.tool_calls {
                                                 for delta_call in delta_calls {
-                                                    let index = delta_call.index;
-                                                    let accumulator = tool_call_accumulators
-                                                        .entry(index)
-                                                        .or_default();
-                                                    // First chunk: id and name
-                                                    if let Some(id) = delta_call.id
-                                                        && !id.is_empty()
-                                                    {
-                                                        accumulator.id = id;
-                                                    }
-                                                    if !delta_call.function.name.is_empty() {
-                                                        accumulator.name = delta_call.function.name;
-                                                    }
-                                                    // Continuation chunk: append arguments
-                                                    if !delta_call.function.arguments.is_empty() {
-                                                        accumulator
-                                                            .arguments
-                                                            .push_str(&delta_call.function.arguments);
-                                                    }
+                                                    let _events = tool_call_accumulators.ingest(
+                                                        delta_call.index,
+                                                        delta_call.id,
+                                                        Some(delta_call.function.name),
+                                                        delta_call.function.arguments,
+                                                    );
+                                                    // Events are intentionally consumed here;
+                                                    // they will be yielded once the stream API is
+                                                    // switched to LlmStreamEvent in Fase 3.
                                                 }
-                                                // Emit the accumulated tool calls on this chunk
-                                                // so the consumer sees the latest progress.
-                                                let complete_calls: Vec<LlmToolCall> = tool_call_accumulators
-                                                    .values()
-                                                    .filter(|p| !p.name.is_empty())
-                                                    .map(|p| LlmToolCall {
-                                                        id: p.id.clone(),
-                                                        name: p.name.clone(),
-                                                        arguments: serde_json::from_str(&p.arguments)
-                                                            .unwrap_or_else(|_| {
-                                                                serde_json::Value::String(p.arguments.clone())
-                                                            }),
-                                                    })
-                                                    .collect();
+                                                let complete_calls = tool_call_accumulators.snapshot();
                                                 if !complete_calls.is_empty() {
                                                     llm_chunk.tool_calls = Some(complete_calls);
                                                 }
@@ -1177,7 +1150,11 @@ fn parse_sse_stream(
                     yield Err(classify_reqwest_error(e));
                     return;
                 }
-                Ok(None) => return, // Stream ended
+                Ok(None) => {
+                    // Stream ended — finalize any tool calls that were in flight.
+                    let _final_events = tool_call_accumulators.finalize_all();
+                    return;
+                }
                 Err(_elapsed) => {
                     yield Err(ProviderError::Timeout(format!(
                         "SSE stream idle timeout after {}s",
@@ -1188,14 +1165,6 @@ fn parse_sse_stream(
             }
         }
     }
-}
-
-/// Partial tool call state for accumulating OpenAI incremental arguments.
-#[derive(Debug, Clone, Default)]
-struct PartialToolCall {
-    id: String,
-    name: String,
-    arguments: String,
 }
 
 #[cfg(test)]
@@ -1396,7 +1365,8 @@ mod tests {
         // The signature of llama-swap model swap — body is empty.
         assert!(OpenAICompatibleProvider::is_transient_4xx_error(400, ""));
         assert!(OpenAICompatibleProvider::is_transient_4xx_error(
-            400, "   \n\t  "
+            400,
+            "   \n\t  "
         ));
     }
 
