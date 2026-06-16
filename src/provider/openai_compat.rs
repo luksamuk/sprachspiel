@@ -57,8 +57,8 @@ type ConvertedOptions = (
     Option<u32>,         // seed
 );
 use super::types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmToolCall, ProviderCapabilities,
-    ProviderError, ProviderOptions, ToolInfo, ToolType,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmStreamEvent, LlmToolCall,
+    ProviderCapabilities, ProviderError, ProviderOptions, ToolInfo, ToolType,
 };
 use crate::provider::LlmProvider;
 use crate::user_models::ProviderConfig;
@@ -425,21 +425,26 @@ impl OpenAICompatibleProvider {
     ///      (proxy returned HTML or plain text — usually a
     ///      transient 502/503 misclassified as 4xx by the proxy).
     fn is_transient_4xx_error(status: u16, body: &str) -> bool {
+        Self::transient_4xx_reason(status, body).is_some()
+    }
+
+    /// Return a human-readable reason if a 4xx response is transient.
+    ///
+    /// W2 #122: this reason is surfaced to the UI via `ProviderRetryStarted`
+    /// so the user sees "model warming up" instead of a raw HTTP status.
+    fn transient_4xx_reason(status: u16, body: &str) -> Option<String> {
         // (1) Always-transient codes (within 4xx)
         if matches!(status, 408 | 425) {
-            return true;
+            return Some(format!("transient client error (HTTP {status})"));
         }
-        // Caller should not pass 5xx; this helper exists to
-        // refine the 4xx branch only. (5xx is already retried
-        // unconditionally.)
         if !(400..500).contains(&status) {
-            return false;
+            return None;
         }
 
         // (2) Empty body — llama-swap model swap signature
         let trimmed = body.trim();
         if trimmed.is_empty() {
-            return true;
+            return Some("empty response from proxy (model loading?)".to_string());
         }
 
         // (3) JSON envelope — classify by message
@@ -475,7 +480,7 @@ impl OpenAICompatibleProvider {
                 "parse",
             ];
             if PERMANENT.iter().any(|p| msg_lower.contains(p)) {
-                return false;
+                return None;
             }
 
             // Transient patterns (the proxy/upstream is not ready)
@@ -492,16 +497,16 @@ impl OpenAICompatibleProvider {
                 "try again",
                 "overloaded",
             ];
-            if TRANSIENT.iter().any(|p| msg_lower.contains(p)) {
-                return true;
+            if let Some(matched) = TRANSIENT.iter().find(|p| msg_lower.contains(*p)) {
+                return Some(format!("{matched} (HTTP {status})"));
             }
 
             // Default for unknown JSON shape: transient
-            return true;
+            return Some(format!("transient client error (HTTP {status})"));
         }
 
         // (4) Non-JSON body — likely a proxy misclassification
-        true
+        Some(format!("non-JSON error body (HTTP {status})"))
     }
 
     /// Backoff delay for an attempt (with jitter).
@@ -529,15 +534,21 @@ impl OpenAICompatibleProvider {
     }
 
     /// Send a chat completion (non-streaming) with retry.
+    ///
+    /// W2 #122: `on_event` is called with `ProviderRetryStarted/Finished`
+    /// events so the caller can surface retry status to the UI. For
+    /// callers that do not need visibility, pass `|_| {}`.
     async fn chat_with_retry(
         &self,
         _model: &str,
         request: ChatRequest,
+        on_event: impl Fn(LlmStreamEvent),
     ) -> Result<LlmResponse, ProviderError> {
         let url = self.url("/chat/completions");
         let mut last_error: Option<ProviderError> = None;
+        let max_attempts = self.config.max_retries.max(1);
 
-        for attempt in 1..=self.config.max_retries.max(1) {
+        for attempt in 1..=max_attempts {
             let response = self
                 .client
                 .post(&url)
@@ -550,6 +561,10 @@ impl OpenAICompatibleProvider {
                 Ok(resp) => {
                     let status = resp.status();
                     if status.is_success() {
+                        on_event(LlmStreamEvent::ProviderRetryFinished {
+                            success: true,
+                            attempt,
+                        });
                         let chat_resp: ChatResponse = resp.json().await.map_err(|e| {
                             ProviderError::Other(format!("Failed to parse response: {e}"))
                         })?;
@@ -564,8 +579,14 @@ impl OpenAICompatibleProvider {
                             message: format!("HTTP 429 (attempt {attempt})"),
                             retry_after,
                         });
-                        if attempt < self.config.max_retries.max(1) {
+                        if attempt < max_attempts {
                             let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
+                            on_event(LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms: delay.as_millis() as u64,
+                                reason: "rate limited (HTTP 429)".to_string(),
+                            });
                             tokio::time::sleep(delay).await;
                         }
                     } else if status.is_server_error() {
@@ -573,8 +594,15 @@ impl OpenAICompatibleProvider {
                             status: status.as_u16(),
                             body: format!("HTTP {} (attempt {})", status.as_u16(), attempt),
                         });
-                        if attempt < self.config.max_retries.max(1) {
-                            tokio::time::sleep(self.backoff_delay(attempt)).await;
+                        if attempt < max_attempts {
+                            let delay = self.backoff_delay(attempt);
+                            on_event(LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms: delay.as_millis() as u64,
+                                reason: format!("server error (HTTP {})", status.as_u16()),
+                            });
+                            tokio::time::sleep(delay).await;
                         }
                     } else {
                         let body = resp.text().await.unwrap_or_default();
@@ -593,8 +621,19 @@ impl OpenAICompatibleProvider {
                         // Retrying them just wastes time.
                         let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
 
-                        if is_transient_4xx && attempt < self.config.max_retries.max(1) {
+                        if is_transient_4xx && attempt < max_attempts {
                             let delay = self.backoff_delay(attempt);
+                            // W2 #122: emit retry event with human-readable reason.
+                            if let Some(reason) =
+                                Self::transient_4xx_reason(status.as_u16(), &body)
+                            {
+                                on_event(LlmStreamEvent::ProviderRetryStarted {
+                                    attempt,
+                                    max_attempts,
+                                    delay_ms: delay.as_millis() as u64,
+                                    reason,
+                                });
+                            }
                             // W2 #121: log the 4xx body on transient retry too,
                             // not only when surfacing to the user. Without this,
                             // cold-model 400s (llama-swap model swap, Jinja exception
@@ -606,7 +645,7 @@ impl OpenAICompatibleProvider {
                                 "[chat_with_retry] transient 4xx body (HTTP {}, attempt {}/{}): {}",
                                 status.as_u16(),
                                 attempt,
-                                self.config.max_retries.max(1),
+                                max_attempts,
                                 preview
                             );
                             log::info!(
@@ -615,7 +654,7 @@ impl OpenAICompatibleProvider {
                                 status.as_u16(),
                                 delay.as_millis(),
                                 attempt,
-                                self.config.max_retries.max(1)
+                                max_attempts
                             );
                             last_error = Some(ProviderError::Api {
                                 status: status.as_u16(),
@@ -637,6 +676,10 @@ impl OpenAICompatibleProvider {
                         let preview: String = body.chars().take(500).collect();
                         log::debug!("[chat_with_retry] 4xx body: {}", preview);
 
+                        on_event(LlmStreamEvent::ProviderRetryFinished {
+                            success: false,
+                            attempt,
+                        });
                         return Err(ProviderError::Api {
                             status: status.as_u16(),
                             body,
@@ -644,14 +687,26 @@ impl OpenAICompatibleProvider {
                     }
                 }
                 Err(e) => {
-                    last_error = Some(classify_reqwest_error(e));
-                    if attempt < self.config.max_retries.max(1) {
-                        tokio::time::sleep(self.backoff_delay(attempt)).await;
+                    let err = classify_reqwest_error(e);
+                    last_error = Some(err.clone());
+                    if attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        on_event(LlmStreamEvent::ProviderRetryStarted {
+                            attempt,
+                            max_attempts,
+                            delay_ms: delay.as_millis() as u64,
+                            reason: format!("network error: {err}"),
+                        });
+                        tokio::time::sleep(delay).await;
                     }
                 }
             }
         }
 
+        on_event(LlmStreamEvent::ProviderRetryFinished {
+            success: false,
+            attempt: max_attempts,
+        });
         Err(last_error.unwrap_or_else(|| ProviderError::Other("Unknown error".to_string())))
     }
 }
@@ -683,7 +738,11 @@ impl LlmProvider for OpenAICompatibleProvider {
             stream_options: None,
         };
 
-        self.chat_with_retry(model, request).await
+        // W2 #122: non-streaming chat retries are surfaced through the
+        // `on_event` callback. Currently no caller needs the events; the
+        // coordinator will pass a real callback once it consumes
+        // `LlmStreamEvent` directly in phase 4.
+        self.chat_with_retry(model, request, |_| {}).await
     }
 
     async fn chat_stream(
@@ -901,7 +960,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             stream_options: None,
         };
 
-        let response = self.chat_with_retry(model, request).await?;
+        let response = self.chat_with_retry(model, request, |_| {}).await?;
         Ok(response.content)
     }
 
