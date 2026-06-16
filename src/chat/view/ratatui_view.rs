@@ -556,10 +556,9 @@ impl RatatuiView {
         self.render();
     }
 
-    /// Append a streaming token to the chat area.
+    /// Append a streaming token to the current live turn.
     ///
-    /// Creates or appends to an `AssistantStreaming` message.
-    /// Called for each token chunk from the LLM during streaming.
+    /// Delegates to `App::append_stream_token` and transitions state.
     pub fn stream_token(&mut self, token: &str) {
         // If we're in Thinking or ToolCall state, transition to Streaming
         if self.app.llm_state() == LlmState::Thinking || self.app.llm_state() == LlmState::ToolCall
@@ -570,10 +569,9 @@ impl RatatuiView {
         self.render();
     }
 
-    /// Append a streaming thinking token to the chat area.
+    /// Append a streaming thinking token to the current live turn.
     ///
-    /// Creates or appends to a `Thinking` message.
-    /// Called for each thinking chunk from the LLM during streaming.
+    /// Delegates to `App::append_stream_thinking` and transitions state.
     pub fn stream_thinking(&mut self, token: &str) {
         // If we're in Idle or ToolCall state, transition to Thinking
         if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall {
@@ -585,9 +583,7 @@ impl RatatuiView {
 
     /// Finalize the streaming response.
     ///
-    /// Replaces the `AssistantStreaming` message with the final
-    /// markdown-rendered `Assistant` message. Shows token metrics
-    /// if available. Transitions LLM state to Idle.
+    /// Delegates to `App::finalize_stream`. Shows token metrics if available.
     pub fn stream_done(
         &mut self,
         content: &str,
