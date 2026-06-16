@@ -30,7 +30,7 @@ use futures::Stream;
 
 use crate::provider::LlmProvider;
 use crate::provider::openai_compat::{OpenAICompatibleConfig, OpenAICompatibleProvider};
-use crate::provider::types::{LlmMessage, LlmRole, ProviderOptions};
+use crate::provider::types::{LlmMessage, LlmRole, LlmStreamEvent, ProviderOptions};
 use crate::user_models::ProviderConfig;
 
 /// Re-export of `crate::provider::Ollama` — a shim that delegates to OpenAI-compatible transport.
@@ -326,6 +326,29 @@ impl CompatOllama {
         Ok(pinned)
     }
 
+    /// Send a streaming chat completion request and return the raw
+    /// `LlmStreamEvent` stream.
+    ///
+    /// W2 #122: the coordinator uses this to observe lifecycle events
+    /// (tool-call previews, retry status) that do not map to legacy
+    /// `ChatMessage` chunks.
+    pub async fn send_chat_messages_stream_events(
+        &self,
+        request: ChatMessageRequest,
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, crate::provider::types::ProviderError>> + Send>>,
+        crate::provider::types::ProviderError,
+    > {
+        let model = request.model_name.clone();
+        let messages = convert_ollama_messages_to_llm(request.messages.clone());
+        let tools = convert_ollama_tools_to_tool_info(request.tools.clone());
+        let options = ProviderOptions::default();
+
+        self.inner
+            .chat_stream(&model, messages, tools, options)
+            .await
+    }
+
     /// Generate a completion.
     pub async fn generate(
         &self,
@@ -414,7 +437,13 @@ pub struct LocalModel {
 /// W2 #121: previously this conversion was missing, so the shim dropped
 /// all tools on the floor — the LLM never knew what tools were available
 /// and never emitted `delta.tool_calls` in streaming responses.
-fn convert_provider_error(
+/// Convert a `ProviderError` into an `ollama_rs::error::OllamaError`.
+///
+/// W2 #121/122: this is public so that callers that consume the raw
+/// `LlmStreamEvent` stream (e.g., `custom_coordinator`) can still map
+/// terminal provider errors back to the legacy error type expected by
+/// the retry layer.
+pub fn convert_provider_error(
     err: crate::provider::types::ProviderError,
 ) -> ollama_rs::error::OllamaError {
     use crate::provider::types::ProviderError;

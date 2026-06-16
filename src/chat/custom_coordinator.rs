@@ -24,9 +24,10 @@ use ollama_rs::{
 };
 use serde_json::Value;
 
+use crate::chat::llm_event::LlmEvent;
 use crate::context_overflow::{
-    calculate_available_budget, calculate_thresholds,
-    is_emergency_context, needs_inter_tool_compaction,
+    calculate_available_budget, calculate_thresholds, is_emergency_context,
+    needs_inter_tool_compaction,
 };
 use crate::tokens::{ContextUsage, MESSAGE_OVERHEAD, estimate_tokens};
 use crate::utils::truncate_to_budget;
@@ -351,9 +352,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let base_usage = match self.real_history_tokens {
             Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
             None => {
-                log::debug!(
-                    "[check_and_handle] No real_history_tokens; using local estimate"
-                );
+                log::debug!("[check_and_handle] No real_history_tokens; using local estimate");
                 ContextUsage {
                     system_tokens: 0, // diagnostic only — `total` is what matters
                     tools_tokens: 0,
@@ -372,10 +371,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let base_tokens = base_usage.total_tokens;
         // growth_tokens / result_tokens are kept only for the diagnostic
         // log lines below (which print them separately).
-        let growth_tokens = usage.history_tokens.saturating_sub(base_usage.history_tokens);
-        let result_tokens = usage.total_tokens
-            - base_usage.total_tokens
-            - growth_tokens;
+        let growth_tokens = usage
+            .history_tokens
+            .saturating_sub(base_usage.history_tokens);
+        let result_tokens = usage.total_tokens - base_usage.total_tokens - growth_tokens;
 
         // Tool definitions (each tool: name + description + parameters + overhead)
         // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
@@ -749,6 +748,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         on_token: impl Fn(String) + Send + Sync,
         on_thinking: impl Fn(String) + Send + Sync,
         on_tool_call: impl Fn() + Send + Sync,
+        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync,
+        on_provider_event: impl Fn(LlmEvent) + Send + Sync,
         cancel_token: Option<tokio_util::sync::CancellationToken>,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         for m in &messages {
@@ -774,23 +775,27 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Store how many messages we started with
         self.initial_message_count = self.history.messages().len();
 
-        // Start the streaming request
+        // W2 #122: consume the raw event stream so we can emit tool-call
+        // previews, retry status, and other lifecycle events to the TUI.
         let mut stream = self
             .ollama
-            .send_chat_messages_stream(self.build_request())
-            .await?;
+            .send_chat_messages_stream_events(self.build_request())
+            .await
+            .map_err(crate::provider::ollama_shim::convert_provider_error)?;
 
         // Accumulate the full response while streaming
         let mut full_content = String::new();
         let mut full_thinking: Option<String> = None;
         let final_data = None;
         let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
-        let mut model = String::new();
-        let mut created_at = String::new();
+        let mut tool_call_previews: std::collections::HashMap<u32, (String, String, serde_json::Value)> =
+            std::collections::HashMap::new();
+        let model = self.model.clone();
+        let created_at = String::new();
 
         use futures::StreamExt;
 
-        while let Some(chunk_result) = stream.next().await {
+        while let Some(event_result) = stream.next().await {
             // Check for cancellation during streaming
             if let Some(ref ct) = cancel_token
                 && ct.is_cancelled()
@@ -799,58 +804,114 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 break;
             }
 
-            match chunk_result {
-                Ok(chunk) => {
-                    // Stream content tokens
-                    // W2 #121: shim returns ChatMessage (the message itself),
-                    // not ChatMessageResponseChunk. Use the chunk directly.
-                    if !chunk.content.is_empty() {
-                        on_token(chunk.content.clone());
-                        full_content.push_str(&chunk.content);
+            match event_result {
+                Ok(event) => match event {
+                    crate::provider::types::LlmStreamEvent::TextDelta { delta } => {
+                        on_token(delta.clone());
+                        full_content.push_str(&delta);
                     }
-
-                    // Stream thinking tokens
-                    if let Some(ref thinking) = chunk.thinking {
-                        on_thinking(thinking.clone());
-                        if let Some(ref mut accumulated) = full_thinking {
-                            accumulated.push_str(thinking);
-                        } else {
-                            full_thinking = Some(thinking.clone());
+                    crate::provider::types::LlmStreamEvent::ThinkingDelta { delta } => {
+                        on_thinking(delta.clone());
+                        full_thinking
+                            .get_or_insert_with(String::new)
+                            .push_str(&delta);
+                    }
+                    crate::provider::types::LlmStreamEvent::ToolCallStart {
+                        index,
+                        id,
+                        name,
+                    } => {
+                        let id = id.unwrap_or_default();
+                        let name = name.unwrap_or_default();
+                        tool_call_previews.insert(
+                            index,
+                            (id.clone(), name.clone(), serde_json::Value::Object(serde_json::Map::new())),
+                        );
+                        on_tool_call_preview(
+                            id,
+                            name,
+                            serde_json::Value::Object(serde_json::Map::new()),
+                        );
+                    }
+                    crate::provider::types::LlmStreamEvent::ToolCallDelta {
+                        index,
+                        id,
+                        name_delta,
+                        argument_delta,
+                    } => {
+                        if let Some((existing_id, existing_name, existing_args)) =
+                            tool_call_previews.get_mut(&index)
+                        {
+                            if let Some(id) = id {
+                                *existing_id = id;
+                            }
+                            if let Some(name) = name_delta {
+                                *existing_name = name;
+                            }
+                            // Merge argument delta into the partial JSON object.
+                            // OpenAI sends fragments of a JSON string; we keep the
+                            // raw concatenated arguments and attempt to parse.
+                            let raw = if let serde_json::Value::String(s) = existing_args {
+                                let mut s = s.clone();
+                                s.push_str(&argument_delta);
+                                s
+                            } else {
+                                argument_delta.clone()
+                            };
+                            let parsed = serde_json::from_str(&raw).unwrap_or_else(|_| {
+                                if raw.is_empty() {
+                                    serde_json::Value::Object(serde_json::Map::new())
+                                } else {
+                                    serde_json::Value::String(raw.clone())
+                                }
+                            });
+                            *existing_args = parsed.clone();
+                            on_tool_call_preview(existing_id.clone(), existing_name.clone(), parsed);
                         }
                     }
-
-                    // Collect tool calls from the response
-                    if !chunk.tool_calls.is_empty() {
-                        tool_calls = chunk.tool_calls.clone();
+                    crate::provider::types::LlmStreamEvent::ToolCallEnd { call, .. } => {
+                        tool_calls.push(ollama_rs::generation::tools::ToolCall {
+                            function: ollama_rs::generation::tools::ToolCallFunction {
+                                name: call.name,
+                                arguments: call.arguments,
+                            },
+                        });
                     }
-
-                    // W2 #121: shim returns ChatMessage per chunk, not
-                    // ChatMessageResponseChunk. Metadata (model, created_at)
-                    // is set on the final response. Use the model from
-                    // the original request.
-                    model = self.model.clone();
-                    created_at = String::new();
-
-                    // On final chunk (empty content + no tool_calls), mark done
-                    if chunk.content.is_empty() && chunk.tool_calls.is_empty() {
-                        // End of stream
+                    crate::provider::types::LlmStreamEvent::Done { .. } => {
+                        // End-of-turn marker; the loop will exit naturally when
+                        // the underlying stream closes.
                     }
-                }
-                Err(_err) => {
-                    // Stream error — propagate the error to the caller so
-                    // the TUI can display it (user policy: errors that
-                    // interrupt the cycle MUST be visible). Previously
-                    // this only `break`-ed, which caused the partial
-                    // content to be returned as a complete response,
-                    // hiding the error from the user.
-                    //
-                    // W2 #121: errors coming from the OpenAI-compatible
-                    // backend arrive as `OllamaError::InternalError`
-                    // (5xx) or `OllamaError::Other` (4xx) after the
-                    // `convert_provider_error` mapping in ollama_shim.
-                    // We preserve the formatted message here.
-                    log::error!("Stream error in custom_coordinator: {_err}");
-                    return Err(_err);
+                    crate::provider::types::LlmStreamEvent::ProviderRetryStarted { .. }
+                    | crate::provider::types::LlmStreamEvent::ProviderRetryFinished { .. } => {
+                        let llm_event = match event {
+                            crate::provider::types::LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms,
+                                reason,
+                            } => LlmEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms,
+                                reason,
+                            },
+                            crate::provider::types::LlmStreamEvent::ProviderRetryFinished {
+                                success,
+                                attempt,
+                            } => LlmEvent::ProviderRetryFinished { success, attempt },
+                            _ => unreachable!(),
+                        };
+                        on_provider_event(llm_event);
+                    }
+                    // Start/TextEnd/ThinkingEnd/Error are not directly actionable here.
+                    _ => {}
+                },
+                Err(err) => {
+                    // W2 #121/122: stream errors are terminal. Convert the
+                    // provider error back to an OllamaError so the caller's
+                    // retry classification still works.
+                    log::error!("Stream error in custom_coordinator: {err}");
+                    return Err(crate::provider::ollama_shim::convert_provider_error(err));
                 }
             }
         }
@@ -1167,9 +1228,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let usage = match self.real_history_tokens {
                 Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
                 None => {
-                    log::debug!(
-                        "[process_next] No real_history_tokens; falling back to estimate"
-                    );
+                    log::debug!("[process_next] No real_history_tokens; falling back to estimate");
                     // No session available here (coordinator is decoupled from
                     // the session layer). Build an estimate from the messages
                     // in our own history.

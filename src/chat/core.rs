@@ -833,6 +833,20 @@ pub async fn send_message_stream(
         let _ = llm_tx_tool.try_send(LlmEvent::ToolCallStarted);
     };
 
+    let llm_tx_preview = llm_tx.clone();
+    let on_tool_call_preview = move |tool_call_id: String, name: String, args: serde_json::Value| {
+        let _ = llm_tx_preview.try_send(LlmEvent::ToolCallPreview {
+            tool_call_id,
+            name,
+            args,
+        });
+    };
+
+    let llm_tx_provider_event = llm_tx.clone();
+    let on_provider_event = move |event: LlmEvent| {
+        let _ = llm_tx_provider_event.try_send(event);
+    };
+
     // Execute with retry logic using streaming
     let mut attempts = 0;
     let result = loop {
@@ -847,6 +861,8 @@ pub async fn send_message_stream(
                     &on_token,
                     &on_thinking,
                     &on_tool_call,
+                    &on_tool_call_preview,
+                    &on_provider_event,
                     cancel_token.clone(),
                 ),
             )
@@ -860,6 +876,8 @@ pub async fn send_message_stream(
                     &on_token,
                     &on_thinking,
                     &on_tool_call,
+                    &on_tool_call_preview,
+                    &on_provider_event,
                     cancel_token.clone(),
                 ),
             )
@@ -1422,6 +1440,12 @@ async fn compact_with_llm(
                 // Compaction is an internal operation — the user only sees the summary.
             },
             || {},
+            |_tool_call_id, _name, _args| {
+                // Compaction does not use tools.
+            },
+            |_event| {
+                // Compaction does not surface provider events.
+            },
             None,
         )
         .await;
