@@ -252,8 +252,12 @@ impl CompatOllama {
     }
 
     /// Send a streaming chat completion request.
-    /// W2 #121: streams LlmStreamChunk from OpenAICompatibleProvider
-    /// converted to ollama-rs ChatMessage per chunk.
+    ///
+    /// W2 #122: consumes `LlmStreamEvent` from `OpenAICompatibleProvider` and
+    /// adapts it to the legacy `ollama_rs::ChatMessage` per-event API.
+    /// Text/thinking/tool-call deltas are accumulated; a final `ChatMessage`
+    /// is yielded on `Done`. This preserves compatibility with callers that
+    /// still expect `ChatMessage` chunks.
     pub async fn send_chat_messages_stream(
         &self,
         request: ChatMessageRequest,
@@ -274,36 +278,42 @@ impl CompatOllama {
             .await
             .map_err(convert_provider_error)?;
 
-        // Convert LlmStreamChunk → ChatMessage. The shim returns ChatMessage
-        // (not ChatMessageResponseChunk) so the legacy coordinator's
-        // `while let Some(chunk_result) = stream.next().await { match chunk_result { Ok(chunk) => ... chunk.content ... } }`
-        // loop works unchanged. See custom_coordinator.rs:725-733.
         let mapped = async_stream::stream! {
             use futures::StreamExt;
             let mut stream = stream;
-            while let Some(chunk_result) = stream.next().await {
-                match chunk_result {
-                    Ok(chunk) => {
-                        let content = chunk.content.clone().unwrap_or_default();
-                        let tool_calls = chunk
-                            .tool_calls
-                            .clone()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|c| ollama_rs::generation::tools::ToolCall {
+            let mut content = String::new();
+            let mut thinking = String::new();
+            let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
+
+            while let Some(event_result) = stream.next().await {
+                match event_result {
+                    Ok(event) => match event {
+                        crate::provider::types::LlmStreamEvent::TextDelta { delta } => {
+                            content.push_str(&delta);
+                        }
+                        crate::provider::types::LlmStreamEvent::ThinkingDelta { delta } => {
+                            thinking.push_str(&delta);
+                        }
+                        crate::provider::types::LlmStreamEvent::ToolCallEnd { call, .. } => {
+                            tool_calls.push(ollama_rs::generation::tools::ToolCall {
                                 function: ollama_rs::generation::tools::ToolCallFunction {
-                                    name: c.name,
-                                    arguments: c.arguments,
+                                    name: call.name,
+                                    arguments: call.arguments,
                                 },
-                            })
-                            .collect();
-                        yield Ok(ChatMessage {
-                            role: MessageRole::Assistant,
-                            content,
-                            tool_calls,
-                            images: None,
-                            thinking: chunk.thinking,
-                        });
+                            });
+                        }
+                        crate::provider::types::LlmStreamEvent::Done { .. } => {
+                            yield Ok(ChatMessage {
+                                role: MessageRole::Assistant,
+                                content: content.clone(),
+                                tool_calls: tool_calls.clone(),
+                                images: None,
+                                thinking: if thinking.is_empty() { None } else { Some(thinking.clone()) },
+                            });
+                        }
+                        // Lifecycle/Start/TextEnd/ThinkingEnd/ToolCallStart/Delta
+                        // and retry events do not map to legacy ChatMessage chunks.
+                        _ => {}
                     }
                     Err(e) => yield Err(convert_provider_error(e)),
                 }
@@ -426,9 +436,7 @@ fn convert_provider_error(
         ProviderError::RateLimit { .. } => OllamaError::Other(format!("{err}")),
         // 4xx (other than 429) — non-retryable, but preserve
         // the body in the error message for diagnostics.
-        ProviderError::Api { status, body } => {
-            OllamaError::Other(format!("HTTP {status}: {body}"))
-        }
+        ProviderError::Api { status, body } => OllamaError::Other(format!("HTTP {status}: {body}")),
         // Connection / Timeout → ollama_rs::Other. We can't
         // construct a real reqwest::Error here without the
         // reqwest types, and the legacy classify_for_retry

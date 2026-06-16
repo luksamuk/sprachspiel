@@ -39,12 +39,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Stream;
+use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 
 use super::openai_types::{
     ChatChoice, ChatChunk, ChatRequest, ChatResponse, EmbeddingsRequest, EmbeddingsResponse,
-    ModelsResponse, OpenAIMessage, OpenAITool, OpenAIToolCall, OpenAIToolCallFunction,
-    OpenAIToolFunction, StreamOptions, Usage as OpenAIUsage,
+    ModelsResponse, OpenAITool, OpenAIToolFunction, StreamOptions,
 };
 use super::tool_accumulator::ToolCallAccumulator;
 
@@ -57,7 +57,7 @@ type ConvertedOptions = (
     Option<u32>,         // seed
 );
 use super::types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmStreamEvent, LlmToolCall,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage,
     ProviderCapabilities, ProviderError, ProviderOptions, ToolInfo, ToolType,
 };
 use crate::provider::LlmProvider;
@@ -709,6 +709,182 @@ impl OpenAICompatibleProvider {
         });
         Err(last_error.unwrap_or_else(|| ProviderError::Other("Unknown error".to_string())))
     }
+
+    /// Send the streaming request, applying retry logic, and collect retry
+    /// events so they can be yielded at the head of the event stream.
+    ///
+    /// W2 #122: retry visibility for the streaming path. The HTTP retry loop
+    /// is identical to `chat_with_retry`, but instead of calling a callback
+    /// it appends `ProviderRetryStarted/Finished` events to a vector that is
+    /// prepended to the SSE event stream.
+    async fn send_stream_request(
+        &self,
+        request: &ChatRequest,
+    ) -> Result<(reqwest::Response, Vec<LlmStreamEvent>), ProviderError> {
+        let url = self.url("/chat/completions");
+        let mut attempt: u32 = 1;
+        let max_attempts = self.config.max_retries.max(1);
+        let mut retry_events: Vec<LlmStreamEvent> = Vec::new();
+
+        let response = loop {
+            let resp = self
+                .client
+                .post(&url)
+                .headers(self.headers())
+                .json(request)
+                .send()
+                .await;
+
+            match resp {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success() {
+                        if attempt > 1 {
+                            retry_events.push(LlmStreamEvent::ProviderRetryFinished {
+                                success: true,
+                                attempt,
+                            });
+                        }
+                        break r;
+                    }
+
+                    let retry_after = r
+                        .headers()
+                        .get(RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(parse_retry_after);
+                    let body = r.text().await.unwrap_or_default();
+
+                    if status.as_u16() == 429 {
+                        if attempt < max_attempts {
+                            let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
+                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms: delay.as_millis() as u64,
+                                reason: "rate limited (HTTP 429)".to_string(),
+                            });
+                            log::info!(
+                                "[chat_stream] HTTP 429, retrying in {}ms (attempt {}/{})",
+                                delay.as_millis(),
+                                attempt,
+                                max_attempts
+                            );
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        }
+                        return Err(ProviderError::RateLimit {
+                            message: body,
+                            retry_after,
+                        });
+                    }
+
+                    if status.is_server_error() {
+                        if attempt < max_attempts {
+                            let delay = self.backoff_delay(attempt);
+                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms: delay.as_millis() as u64,
+                                reason: format!("server error (HTTP {})", status.as_u16()),
+                            });
+                            log::info!(
+                                "[chat_stream] {} (server error), retrying in {}ms (attempt {}/{})",
+                                status.as_u16(),
+                                delay.as_millis(),
+                                attempt,
+                                max_attempts
+                            );
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        }
+                        return Err(ProviderError::Api {
+                            status: status.as_u16(),
+                            body: format!("HTTP {} (server error)", status.as_u16()),
+                        });
+                    }
+
+                    let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
+                    if is_transient_4xx && attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        if let Some(reason) = Self::transient_4xx_reason(status.as_u16(), &body) {
+                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
+                                attempt,
+                                max_attempts,
+                                delay_ms: delay.as_millis() as u64,
+                                reason,
+                            });
+                        }
+                        let preview: String = body.chars().take(500).collect();
+                        log::debug!(
+                            "[chat_stream] transient 4xx body (HTTP {}, attempt {}/{}): {}",
+                            status.as_u16(),
+                            attempt,
+                            max_attempts,
+                            preview
+                        );
+                        log::info!(
+                            "[chat_stream] transient 4xx (HTTP {}), \
+                             retrying in {}ms (attempt {}/{})",
+                            status.as_u16(),
+                            delay.as_millis(),
+                            attempt,
+                            max_attempts
+                        );
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        continue;
+                    }
+
+                    let preview: String = body.chars().take(500).collect();
+                    log::debug!("[chat_stream] 4xx body (surfacing): {}", preview);
+                    if attempt > 1 {
+                        retry_events.push(LlmStreamEvent::ProviderRetryFinished {
+                            success: false,
+                            attempt,
+                        });
+                    }
+                    return Err(ProviderError::Api {
+                        status: status.as_u16(),
+                        body,
+                    });
+                }
+                Err(e) => {
+                    let err = classify_reqwest_error(e);
+                    if attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        retry_events.push(LlmStreamEvent::ProviderRetryStarted {
+                            attempt,
+                            max_attempts,
+                            delay_ms: delay.as_millis() as u64,
+                            reason: format!("network error: {err}"),
+                        });
+                        log::info!(
+                            "[chat_stream] network error: {}, retrying in {}ms (attempt {}/{})",
+                            err,
+                            delay.as_millis(),
+                            attempt,
+                            max_attempts
+                        );
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    if attempt > 1 {
+                        retry_events.push(LlmStreamEvent::ProviderRetryFinished {
+                            success: false,
+                            attempt,
+                        });
+                    }
+                    return Err(err);
+                }
+            }
+        };
+
+        Ok((response, retry_events))
+    }
 }
 
 #[async_trait]
@@ -752,7 +928,7 @@ impl LlmProvider for OpenAICompatibleProvider {
         tools: Vec<ToolInfo>,
         options: ProviderOptions,
     ) -> Result<
-        Pin<Box<dyn Stream<Item = Result<LlmStreamChunk, ProviderError>> + Send>>,
+        Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, ProviderError>> + Send>>,
         ProviderError,
     > {
         let (temperature, top_p, max_tokens, stop, seed) = Self::convert_options(&options);
@@ -777,145 +953,14 @@ impl LlmProvider for OpenAICompatibleProvider {
             }),
         };
 
-        let url = self.url("/chat/completions");
-
-        // W2 #121 follow-up: streaming previously bypassed
-        // `chat_with_retry` — any 4xx/5xx response would surface
-        // immediately without applying the transient/permanent
-        // classification. This caused llama-swap cold-start 400s
-        // (empty body, model not yet loaded) to fail the user's
-        // request instead of retrying with backoff.
-        //
-        // Now: send the streaming request, but if the response is
-        // non-2xx, apply the same retry logic as `chat_with_retry`
-        // BEFORE yielding the SSE stream to the caller. Only when
-        // we have a successful 2xx response do we start the stream.
-        let mut attempt: u32 = 1;
-        let max_attempts = self.config.max_retries.max(1);
-        let response = loop {
-            let resp = self
-                .client
-                .post(&url)
-                .headers(self.headers())
-                .json(&request)
-                .send()
-                .await;
-
-            match resp {
-                Ok(r) => {
-                    let status = r.status();
-                    if status.is_success() {
-                        break r;
-                    }
-
-                    // Non-2xx — extract Retry-After header BEFORE reading
-                    // the body (which moves the response).
-                    let retry_after = r
-                        .headers()
-                        .get(RETRY_AFTER)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(parse_retry_after);
-
-                    // Now read the body for classification.
-                    let body = r.text().await.unwrap_or_default();
-
-                    // 429 has special handling: respect Retry-After.
-                    if status.as_u16() == 429 {
-                        if attempt < max_attempts {
-                            let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
-                            log::info!(
-                                "[chat_stream] HTTP 429, retrying in {}ms (attempt {}/{})",
-                                delay.as_millis(),
-                                attempt,
-                                max_attempts
-                            );
-                            tokio::time::sleep(delay).await;
-                            attempt += 1;
-                            continue;
-                        }
-                        return Err(ProviderError::RateLimit {
-                            message: body,
-                            retry_after,
-                        });
-                    }
-
-                    // 5xx — always retry.
-                    if status.is_server_error() {
-                        if attempt < max_attempts {
-                            let delay = self.backoff_delay(attempt);
-                            log::info!(
-                                "[chat_stream] {} (server error), retrying in {}ms (attempt {}/{})",
-                                status.as_u16(),
-                                delay.as_millis(),
-                                attempt,
-                                max_attempts
-                            );
-                            tokio::time::sleep(delay).await;
-                            attempt += 1;
-                            continue;
-                        }
-                        return Err(ProviderError::Api {
-                            status: status.as_u16(),
-                            body: format!("HTTP {} (server error)", status.as_u16()),
-                        });
-                    }
-
-                    // 4xx — distinguish transient vs permanent.
-                    let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
-                    if is_transient_4xx && attempt < max_attempts {
-                        let delay = self.backoff_delay(attempt);
-                        let preview: String = body.chars().take(500).collect();
-                        log::debug!(
-                            "[chat_stream] transient 4xx body (HTTP {}, attempt {}/{}): {}",
-                            status.as_u16(),
-                            attempt,
-                            max_attempts,
-                            preview
-                        );
-                        log::info!(
-                            "[chat_stream] transient 4xx (HTTP {}), \
-                             retrying in {}ms (attempt {}/{})",
-                            status.as_u16(),
-                            delay.as_millis(),
-                            attempt,
-                            max_attempts
-                        );
-                        tokio::time::sleep(delay).await;
-                        attempt += 1;
-                        continue;
-                    }
-
-                    // Permanent 4xx or transient-but-exhausted — surface.
-                    let preview: String = body.chars().take(500).collect();
-                    log::debug!("[chat_stream] 4xx body (surfacing): {}", preview);
-                    return Err(ProviderError::Api {
-                        status: status.as_u16(),
-                        body,
-                    });
-                }
-                Err(e) => {
-                    // Network error — retry with backoff.
-                    let err = classify_reqwest_error(e);
-                    if attempt < max_attempts {
-                        let delay = self.backoff_delay(attempt);
-                        log::info!(
-                            "[chat_stream] network error: {}, retrying in {}ms (attempt {}/{})",
-                            err,
-                            delay.as_millis(),
-                            attempt,
-                            max_attempts
-                        );
-                        tokio::time::sleep(delay).await;
-                        attempt += 1;
-                        continue;
-                    }
-                    return Err(err);
-                }
-            }
-        };
-
+        let (response, retry_events) = self.send_stream_request(&request).await?;
         let idle_timeout = Duration::from_secs(self.config.stream_idle_timeout_secs);
-        let stream = parse_sse_stream(response, idle_timeout);
+        let sse_stream = parse_sse_stream(response, idle_timeout);
+
+        // Prepend retry lifecycle events so the consumer sees them before
+        // any content events.
+        let prelude = futures::stream::iter(retry_events.into_iter().map(Ok));
+        let stream = prelude.chain(sse_stream);
 
         Ok(Box::pin(stream))
     }
@@ -1116,13 +1161,15 @@ fn classify_reqwest_error(err: reqwest::Error) -> ProviderError {
 fn parse_sse_stream(
     response: reqwest::Response,
     idle_timeout: Duration,
-) -> impl Stream<Item = Result<LlmStreamChunk, ProviderError>> + Send {
+) -> impl Stream<Item = Result<LlmStreamEvent, ProviderError>> + Send {
     async_stream::stream! {
         use futures::StreamExt;
 
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut tool_call_accumulators = ToolCallAccumulator::new();
+        let mut text_started = false;
+        let mut thinking_started = false;
 
         loop {
             let chunk_result = tokio::time::timeout(idle_timeout, stream.next()).await;
@@ -1139,6 +1186,10 @@ fn parse_sse_stream(
                             if let Some(data) = line.strip_prefix("data: ") {
                                 let data = data.trim();
                                 if data == "[DONE]" {
+                                    // Stream ended normally — finalize tool calls.
+                                    for event in tool_call_accumulators.finalize_all() {
+                                        yield Ok(event);
+                                    }
                                     return;
                                 }
                                 if data.is_empty() {
@@ -1146,54 +1197,63 @@ fn parse_sse_stream(
                                 }
                                 match serde_json::from_str::<ChatChunk>(data) {
                                     Ok(chunk) => {
-                                        // Convert each choice's delta to an LlmStreamChunk
                                         for choice in chunk.choices {
-                                            let mut llm_chunk = LlmStreamChunk {
-                                                content: choice.delta.content.clone(),
-                                                thinking: choice.delta.reasoning_content.clone(),
-                                                tool_calls: None,
-                                                done: false,
-                                                done_reason: choice.finish_reason.clone(),
-                                                eval_count: None,
-                                                prompt_eval_count: None,
-                                            };
+                                            // Content delta
+                                            if let Some(delta) = choice.delta.content
+                                                && !delta.is_empty()
+                                            {
+                                                if !text_started {
+                                                    text_started = true;
+                                                    yield Ok(LlmStreamEvent::TextStart);
+                                                }
+                                                yield Ok(LlmStreamEvent::TextDelta { delta });
+                                            }
 
-                                            // W2 #122: accumulate tool-call deltas and emit
-                                            // lifecycle events. Keep the compatibility snapshot
-                                            // on LlmStreamChunk until the chunk type is removed.
+                                            // Thinking delta
+                                            if let Some(delta) = choice.delta.reasoning_content.clone()
+                                                && !delta.is_empty()
+                                            {
+                                                if !thinking_started {
+                                                    thinking_started = true;
+                                                    yield Ok(LlmStreamEvent::ThinkingStart { signature: None });
+                                                }
+                                                yield Ok(LlmStreamEvent::ThinkingDelta { delta });
+                                            }
+
+                                            // Tool-call lifecycle events
                                             if let Some(delta_calls) = choice.delta.tool_calls {
                                                 for delta_call in delta_calls {
-                                                    let _events = tool_call_accumulators.ingest(
+                                                    for event in tool_call_accumulators.ingest(
                                                         delta_call.index,
                                                         delta_call.id,
                                                         Some(delta_call.function.name),
                                                         delta_call.function.arguments,
-                                                    );
-                                                    // Events are intentionally consumed here;
-                                                    // they will be yielded once the stream API is
-                                                    // switched to LlmStreamEvent in Fase 3.
-                                                }
-                                                let complete_calls = tool_call_accumulators.snapshot();
-                                                if !complete_calls.is_empty() {
-                                                    llm_chunk.tool_calls = Some(complete_calls);
+                                                    ) {
+                                                        yield Ok(event);
+                                                    }
                                                 }
                                             }
 
-                                            yield Ok(llm_chunk);
+                                            // Finish reason on this choice means the turn
+                                            // is ending; finalize any in-flight tool calls.
+                                            if choice.finish_reason.is_some() {
+                                                for event in tool_call_accumulators.finalize_all() {
+                                                    yield Ok(event);
+                                                }
+                                                text_started = false;
+                                                thinking_started = false;
+                                            }
                                         }
 
-                                        // If usage is reported in the chunk (with stream_options.include_usage),
-                                        // propagate it.
+                                        // Usage reported in the final chunk.
                                         if let Some(usage) = chunk.usage {
-                                            // We don't have a current chunk to attach to; yield a "done" sentinel
-                                            yield Ok(LlmStreamChunk {
-                                                content: None,
-                                                thinking: None,
-                                                tool_calls: None,
-                                                done: true,
-                                                done_reason: Some("stop".to_string()),
-                                                eval_count: Some(usage.completion_tokens),
-                                                prompt_eval_count: Some(usage.prompt_tokens),
+                                            yield Ok(LlmStreamEvent::Done {
+                                                reason: Some("stop".to_string()),
+                                                usage: Some(LlmUsage {
+                                                    prompt_tokens: usage.prompt_tokens,
+                                                    completion_tokens: usage.completion_tokens,
+                                                    total_tokens: usage.total_tokens,
+                                                }),
                                             });
                                         }
                                     }
@@ -1211,7 +1271,9 @@ fn parse_sse_stream(
                 }
                 Ok(None) => {
                     // Stream ended — finalize any tool calls that were in flight.
-                    let _final_events = tool_call_accumulators.finalize_all();
+                    for event in tool_call_accumulators.finalize_all() {
+                        yield Ok(event);
+                    }
                     return;
                 }
                 Err(_elapsed) => {

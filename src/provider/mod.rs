@@ -22,7 +22,7 @@ pub use ollama_shim::CompatOllama as Ollama;
 
 #[allow(unused_imports)]
 pub use types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamChunk, LlmToolCall, LlmToolResult,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmToolResult,
     ProviderCapabilities, ProviderError, ProviderOptions, RetryCategory, ToolFunctionInfo,
     ToolInfo, ToolType, retry_delay,
 };
@@ -48,7 +48,10 @@ pub trait LlmProvider: Send + Sync {
         options: ProviderOptions,
     ) -> Result<LlmResponse, ProviderError>;
 
-    /// Streaming chat completion — returns a stream of response chunks.
+    /// Streaming chat completion — returns a stream of semantic events.
+    ///
+    /// W2 #122: the stream carries `LlmStreamEvent` (text/thinking/tool-call
+    /// deltas, retry lifecycle, completion) instead of aggregated chunks.
     ///
     /// Default implementation returns `Err(ProviderError::Unsupported)`.
     /// Providers that support streaming MUST override this.
@@ -60,7 +63,7 @@ pub trait LlmProvider: Send + Sync {
         _tools: Vec<ToolInfo>,
         _options: ProviderOptions,
     ) -> Result<
-        Pin<Box<dyn futures::Stream<Item = Result<LlmStreamChunk, ProviderError>> + Send>>,
+        Pin<Box<dyn futures::Stream<Item = Result<LlmStreamEvent, ProviderError>> + Send>>,
         ProviderError,
     > {
         Err(ProviderError::Unsupported(

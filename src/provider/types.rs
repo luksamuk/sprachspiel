@@ -229,24 +229,6 @@ pub struct LlmResponse {
     pub prompt_eval_count: Option<u32>,
 }
 
-/// Streaming chunk from an LLM chat completion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmStreamChunk {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<LlmToolCall>>,
-    pub done: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub done_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eval_count: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt_eval_count: Option<u32>,
-}
-
 /// Token usage reported in a streaming or non-streaming response.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct LlmUsage {
