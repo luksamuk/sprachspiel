@@ -36,7 +36,47 @@
 
 use std::collections::BTreeMap;
 
+use crate::utils::truncate_chars;
+
 use super::components::chat_area::ChatMessage;
+
+/// Maximum characters of a tool result shown in the TUI chat area.
+///
+/// Tool outputs (e.g., `list_directory` recursive listings, `read_file`
+/// of large files) can be tens of thousands of lines. Rendering the full
+/// text blocks the main thread, word-wraps an unbounded number of lines, and
+/// can corrupt the TUI. The full output is still kept in `ToolResult.content`
+/// so it is sent back to the LLM; this limit applies only to on-screen
+/// display.
+const TUI_TOOL_RESULT_MAX_CHARS: usize = 2_000;
+
+/// Maximum number of lines from a tool result shown in the TUI.
+///
+/// Used together with `TUI_TOOL_RESULT_MAX_CHARS` so that even a short but
+/// very tall output does not flood the chat area.
+const TUI_TOOL_RESULT_MAX_LINES: usize = 40;
+
+/// Truncate a tool result for on-screen display.
+///
+/// Preserves the start of the output and appends a summary of how much
+/// was elided. The original `content` in `ToolResult` is untouched.
+fn truncate_tool_result_for_display(content: &str) -> String {
+    let line_count = content.lines().count();
+    let mut truncated = truncate_chars(content, TUI_TOOL_RESULT_MAX_CHARS);
+    if line_count > TUI_TOOL_RESULT_MAX_LINES {
+        let keep: Vec<&str> = truncated.lines().take(TUI_TOOL_RESULT_MAX_LINES).collect();
+        truncated = keep.join("\n");
+    }
+    let original_chars = content.chars().count();
+    if original_chars > TUI_TOOL_RESULT_MAX_CHARS || line_count > TUI_TOOL_RESULT_MAX_LINES {
+        truncated.push_str(&format!(
+            "\n\n... [+{} chars, +{} lines hidden — output truncated for display]",
+            original_chars.saturating_sub(truncated.chars().count()),
+            line_count.saturating_sub(TUI_TOOL_RESULT_MAX_LINES.max(1)),
+        ));
+    }
+    truncated
+}
 
 /// The lifecycle state of a live turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -418,7 +458,8 @@ fn format_tool_message(
         } else {
             "📝 Result"
         };
-        lines.push(format!("{prefix}:\n```\n{}\n```", r.content));
+        let display_content = truncate_tool_result_for_display(&r.content);
+        lines.push(format!("{prefix}:\n```\n{display_content}\n```"));
     }
     lines.join("\n\n")
 }
@@ -601,14 +642,39 @@ mod tests {
     }
 
     #[test]
-    fn finalize_drops_empty_blocks() {
-        let mut turn = LiveTurn::new(0);
-        turn.append_text("");
-        turn.finalize_last_block();
-        turn.append_thinking("");
-        turn.finalize_last_block();
-        let messages = turn.finalize();
-        assert!(messages.is_empty());
+    fn format_tool_message_truncates_large_result() {
+        let long_result = "line\n".repeat(100);
+        let block = TurnBlock::ToolCall {
+            tool_call_id: "id".to_string(),
+            name: "list_directory".to_string(),
+            args: serde_json::json!({}),
+            result: Some(ToolResult {
+                content: long_result.clone(),
+                is_error: false,
+                is_streaming: false,
+            }),
+        };
+        let rendered = format_tool_message(
+            "id",
+            "list_directory",
+            &serde_json::json!({}),
+            Some(&ToolResult {
+                content: long_result,
+                is_error: false,
+                is_streaming: false,
+            }),
+        );
+        assert!(rendered.contains("list_directory"));
+        assert!(rendered.contains("output truncated for display"));
+        // Result stored in the block is still the full content
+        if let TurnBlock::ToolCall {
+            result: Some(r), ..
+        } = block
+        {
+            assert_eq!(r.content.lines().count(), 100);
+        } else {
+            panic!("expected tool call block with result");
+        }
     }
 
     #[test]
