@@ -213,13 +213,9 @@ pub fn parse_continuation_tag(content: &str) -> (String, Option<ContinuationTag>
 #[derive(Debug, Clone)]
 pub enum ChatEvent {
     /// Content generated before tool calls (often thinking/intro text).
-    /// `already_streamed` is `true` when the content was already emitted
-    /// via streaming tokens (e.g. first tool-call round); `false` when it
-    /// comes from a non-streaming path such as `process_next()`.
     PreToolContent {
         content: String,
         thinking: Option<String>,
-        already_streamed: bool,
     },
     /// Context is near limit after tool execution (inter-tool threshold)
     /// Indicates compaction may be needed before next tool
@@ -1064,7 +1060,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     ///
     /// `already_streamed` should be `true` when the content was already
     /// streamed via `chat_stream()` — this prevents emitting an extra
-    /// `PreToolContent` event that would duplicate the text.
+    /// `PreToolContent` event that would duplicate the text. With W2 #122,
+    /// all ReAct turns stream, so the only remaining non-streaming call site
+    /// is `chat()` (terminal/CLI query path).
     async fn process_response(
         &mut self,
         resp: ChatMessageResponse,
@@ -1077,18 +1075,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let has_thinking = resp.message.thinking.is_some();
 
             if has_content || has_thinking {
-                // Only accumulate content into pre_tool_content when it was
-                // already streamed (first round via chat_stream). In that case,
-                // take_pre_tool_content() is used by send_message_stream()
-                // to compute post_tool_content (final response minus pre-tool
-                // prefix) and to emit StreamBlockDone.
-                //
-                // When already_streamed=false (subsequent rounds via
-                // process_next), the content is displayed in real-time via
-                // LlmEvent::InterToolText — accumulating it here would cause
-                // the content to be included in pre_tool_display, which
-                // send_message_stream() would then subtract from the final
-                // response (or worse, StreamBlockDone would re-display it).
+                // W2 #122: pre-tool content is accumulated only when it was
+                // already streamed via chat_stream(). send_message_stream()
+                // uses take_pre_tool_content() to compute post_tool_content
+                // (final response minus pre-tool prefix) and emit StreamBlockDone.
                 if already_streamed {
                     if !resp.message.content.trim().is_empty() {
                         if !self.pre_tool_content.is_empty() {
@@ -1102,12 +1092,13 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     }
                 }
 
-                // Emit event — mark already_streamed so the TUI event loop
-                // knows whether to skip InterToolText injection.
+                // Emit event so callers can display pre-tool text in the
+                // terminal/CLI path. In streaming TUI mode the content is
+                // already on screen, so the listener skips it via
+                // `already_streamed`.
                 self.emit_event(ChatEvent::PreToolContent {
                     content: resp.message.content.clone(),
                     thinking: resp.message.thinking.clone(),
-                    already_streamed,
                 });
             }
 
@@ -1264,7 +1255,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ));
         }
 
-        // Context overflow check (same as process_next).
+        // Context overflow check (same as the previous non-streaming path).
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
             let usage = match self.real_history_tokens {
                 Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
@@ -1310,80 +1301,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             self.process_response(response, /*already_streamed=*/ true)
                 .await
         }
-    }
-
-    /// Process next response after tool calls (legacy non-streaming path).
-    ///
-    /// Kept for callers that need a synchronous continuation; the streaming
-    /// ReAct loop uses `process_next_stream` instead. Test-only in this PR.
-    #[cfg(test)]
-    async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
-        // Check for user cancellation before making next request
-        if let Some(ref ct) = self.cancel_token
-            && ct.is_cancelled()
-        {
-            log::debug!("process_next cancelled by user");
-            return Err(ollama_rs::error::OllamaError::Other(
-                CANCELLED_BY_USER.to_string(),
-            ));
-        }
-
-        // Check context overflow before sending to Ollama.
-        //
-        // W2 #121 follow-up: previously this block recomputed
-        // history_tokens + system_tokens locally via `estimate_chat_messages_tokens`,
-        // duplicating the calculation done by `check_and_handle_context_overflow`
-        // (which uses `real_history_tokens` from the API). The two could disagree
-        // and we'd be checking overflow against two different numbers.
-        //
-        // Now: use `ContextUsage::from_api_usage` when we have the real value
-        // (preferred — it's what the LLM server actually counted), falling
-        // back to `from_session_estimate` otherwise. Same `ContextUsage` type
-        // feeds the inter-tool check at `check_and_handle_context_overflow`,
-        // so we have ONE source of truth.
-        if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let usage = match self.real_history_tokens {
-                Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
-                None => {
-                    log::debug!("[process_next] No real_history_tokens; falling back to estimate");
-                    // No session available here (coordinator is decoupled from
-                    // the session layer). Build an estimate from the messages
-                    // in our own history.
-                    let messages = self.history.messages();
-                    let system = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-                    let history: usize = messages
-                        .iter()
-                        .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
-                        .sum();
-                    ContextUsage {
-                        system_tokens: system,
-                        tools_tokens: 0,
-                        history_tokens: history,
-                        total_tokens: system + history,
-                        source: crate::tokens::ContextSource::Estimated,
-                    }
-                }
-            };
-
-            // Use emergency threshold to detect overflow.
-            let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
-            let threshold = ctx_window.saturating_sub(emergency_threshold);
-
-            if usage.total_tokens > threshold {
-                // Return error that will be caught by caller
-                let msg = format!(
-                    "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
-                    usage.total_tokens, ctx_window
-                );
-                return Err(ollama_rs::error::OllamaError::Other(msg));
-            }
-        }
-
-        let resp = self.ollama.send_chat_messages(self.build_request()).await?;
-
-        // Non-streaming path — content was not streamed.
-        self.process_response(resp, /*already_streamed=*/ false)
-            .await
     }
 }
 

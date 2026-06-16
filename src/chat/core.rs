@@ -185,38 +185,24 @@ pub fn setup_coordinator(
         // This avoids requiring the callback closure to hold a mutable
         // reference to ChatView, which is not possible with 'static closures.
         //
-        // For streaming TUI mode: PreToolContent from inter-tool rounds
-        // is sent DIRECTLY to the LLM event channel via LlmEvent::InterToolText
-        // so the event loop can process it in real-time. Without this, the
-        // content would be batched via ViewEvents and either (a) dropped due
-        // to streaming deduplication, or (b) appear in the wrong order.
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
-                content,
-                thinking,
-                already_streamed,
-            } => {
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
                 if let Some(ref tx) = llm_tx {
-                    // Streaming mode: only emit InterToolText when the content
-                    // was NOT already streamed. In the streaming path (chat_stream
-                    // → process_response with already_streamed=true), tokens
-                    // are displayed in real time via StreamToken.
-                    // In the non-streaming path (process_next via send_chat_commands),
-                    // tokens are not shown until here — emit InterToolText
-                    // so the user sees inter-tool text before tool calls.
-                    //
-                    // Include thinking so that pre-tool reasoning appears
-                    // BEFORE the tool call indicators, not after them.
-                    // Without this, thinking from process_next() rounds would
-                    // only arrive via ViewAction (drain_into_llm_channel) AFTER
-                    // chat_stream() returns, causing tool calls to appear
-                    // above thinking blocks.
-                    if !already_streamed {
-                        let _ = tx.try_send(super::llm_event::LlmEvent::InterToolText {
-                            content: content.clone(),
-                            thinking: thinking.clone(),
-                            metrics: None,
-                        });
+                    // W2 #122: all ReAct turns now stream. Pre-tool content from the
+                    // non-streaming fallback path (terminal/CLI query) is forwarded as
+                    // view actions so it appears before the tool-call preview. In the
+                    // streaming TUI path the text is already on screen via StreamToken
+                    // and will be finalized by ToolCallStarted.
+                    if let Some(thinking_text) = thinking {
+                        let _ = tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            super::llm_event::ViewAction::ShowThinking(thinking_text),
+                        ));
+                    }
+                    let cleaned = strip_thinking_tags(&content);
+                    if !cleaned.trim().is_empty() {
+                        let _ = tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            super::llm_event::ViewAction::ShowMarkdown(cleaned),
+                        ));
                     }
                 } else {
                     // Terminal mode: emit as ViewEvent for batch processing
@@ -225,9 +211,6 @@ pub fn setup_coordinator(
                         view_event_sender.send(super::view::ViewEvent::PreToolContent {
                             content: cleaned,
                             thinking,
-                            // Terminal mode never streams; the content
-                            // was not yet visible to the user.
-                            already_streamed: false,
                         });
                     }
                 }

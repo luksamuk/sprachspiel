@@ -494,13 +494,14 @@ impl App {
     /// to it. Otherwise creates a new one.
     ///
     /// **Round-awareness:** Streaming tokens are always round 0 (final response).
-    /// If the last `AssistantStreaming` block has `round_index > 0` (inserted via
-    /// InterToolText), streaming tokens must NOT append to it — they belong to a
-    /// different round. Instead, a new `AssistantStreaming` block is created.
+    /// If the last `AssistantStreaming` block has `round_index > 0` (a stable
+    /// inter-round block from a previous turn), streaming tokens must NOT append
+    /// to it — they belong to a different round. Instead, a new `AssistantStreaming`
+    /// block is created.
     pub fn append_stream_token(&mut self, token: &str) {
         // Happy path: last message is AssistantStreaming — append directly,
         // but only if it's a streaming block (round 0). Stable blocks
-        // (round > 0, from InterToolText) must not receive streaming tokens.
+        // (round > 0) must not receive streaming tokens.
         if let Some(last) = self.messages.last_mut()
             && last.msg_type == MessageType::AssistantStreaming
             && last.round_index == 0
@@ -515,7 +516,7 @@ impl App {
 
         // Interleaved tokens: search backward within the streaming zone
         // for an existing AssistantStreaming block (round 0) to append to.
-        // Skip blocks with round_index > 0 — those are stable InterToolText blocks.
+        // Skip blocks with round_index > 0 — those are stable inter-round blocks.
         if let Some(prev_streaming) = self
             .messages
             .iter_mut()
@@ -546,13 +547,14 @@ impl App {
     /// creates a new one.
     ///
     /// **Round-awareness:** Streaming thinking tokens are always round 0 (final
-    /// response). If the last `Thinking` block has `round_index > 0` (inserted
-    /// via InterToolText), streaming thinking tokens must NOT append to it —
-    /// they belong to a different round. Instead, a new `Thinking` block is created.
+    /// response). If the last `Thinking` block has `round_index > 0` (a stable
+    /// inter-round block from a previous turn), streaming thinking tokens must NOT
+    /// append to it — they belong to a different round. Instead, a new `Thinking`
+    /// block is created.
     pub fn append_stream_thinking(&mut self, token: &str) {
         // Happy path: last message is Thinking — append directly,
         // but only if it's a streaming block (round 0). Stable blocks
-        // (round > 0, from InterToolText) must not receive streaming tokens.
+        // (round > 0) must not receive streaming tokens.
         if let Some(last) = self.messages.last_mut()
             && last.msg_type == MessageType::Thinking
             && last.round_index == 0
@@ -567,7 +569,7 @@ impl App {
 
         // Interleaved tokens: search backward within the streaming zone
         // for an existing Thinking block (round 0) to append to.
-        // Skip blocks with round_index > 0 — those are stable InterToolText blocks.
+        // Skip blocks with round_index > 0 — those are stable inter-round blocks.
         if let Some(prev_thinking) = self
             .messages
             .iter_mut()
@@ -598,8 +600,8 @@ impl App {
     /// streaming operations.
     ///
     /// **Round-awareness:** `Thinking` blocks with `round_index > 0` are
-    /// stable inter-round blocks (inserted via InterToolText) and must NOT
-    /// be included in the streaming zone. Including them would cause
+    /// stable inter-round blocks from previous turns and must NOT be
+    /// included in the streaming zone. Including them would cause
     /// `finalize_stream()` to consolidate inter-round thinking into a
     /// single block, merging thinking from different rounds.
     fn streaming_zone_start(&self) -> usize {
@@ -627,9 +629,9 @@ impl App {
     ///
     /// If there is no streaming zone (all messages are stable), this
     /// finds the boundary before any trailing Tool messages and inserts
-    /// before them. This ensures inter-tool text (from `InterToolText`
-    /// events) appears in the correct position — after pre-tool content
-    /// and before subsequent tool calls — rather than appended after
+    /// before them. This ensures inter-tool text (from a post-tool
+    /// streaming turn) appears in the correct position — after pre-tool
+    /// content and before subsequent tool calls — rather than appended after
     /// all existing tool messages.
     ///
     /// Fallback: if there are no trailing tool messages either, appends
@@ -641,8 +643,8 @@ impl App {
             self.messages.insert(zone_start, message);
         } else {
             // No streaming zone — find the boundary before trailing
-            // Tool messages. Inter-tool text (from InterToolText events)
-            // must appear BEFORE tool messages, not after them.
+            // Tool messages. Inter-tool text must appear BEFORE tool
+            // messages, not after them.
             let tool_boundary = self
                 .messages
                 .iter()
@@ -652,11 +654,9 @@ impl App {
                 .map(|(i, _)| i + 1)
                 .unwrap_or(0);
             if tool_boundary < self.messages.len() {
-                // There are trailing tool messages — insert before them
                 self.messages.insert(tool_boundary, message);
             } else {
-                // No trailing tool messages — just append
-                self.messages.push(message);
+                self.add_message(message);
             }
         }
         self.scroll.reset_to_bottom();
@@ -710,10 +710,10 @@ impl App {
     ///
     /// Note: this is different from `insert_at_round_boundary`, which
     /// excludes `AssistantStreaming` from the search range (because
-    /// InterToolText is text that should be inserted before the
-    /// currently-streaming content). Tool messages, by contrast, go
-    /// AFTER the round-0 content (including the streaming Assistant
-    /// if it's still active) — they don't interleave with the stream.
+    /// inter-round text should be inserted before the currently-streaming
+    /// content). Tool messages, by contrast, go AFTER the round-0 content
+    /// (including the streaming Assistant if it's still active) — they don't
+    /// interleave with the stream.
     pub fn insert_after_round_0(&mut self, message: ChatMessage) {
         let target_round = message.round_index;
         for i in (0..self.messages.len()).rev() {
@@ -734,16 +734,16 @@ impl App {
     /// This is the round-aware replacement for `insert_before_streaming_zone()`
     /// when dealing with inter-round content from multi-round LLM tool call cycles.
     /// When a multi-round tool cycle occurs (e.g., model searches → observes results →
-    /// searches again), inter-round content (thinking, text from `InterToolText`)
-    /// must appear AFTER all messages of the previous round and BEFORE messages
-    /// of subsequent rounds.
+    /// searches again), inter-round content (thinking, text from a post-tool
+    /// streaming turn) must appear AFTER all messages of the previous round and
+    /// BEFORE messages of subsequent rounds.
     ///
     /// # Algorithm
     ///
     /// 1. Find the boundary before any `AssistantStreaming` messages at the tail.
     ///    (Unlike `streaming_zone_start()`, this does NOT include `Thinking` blocks,
-    ///    because finalized Thinking content from `InterToolText` should be treated
-    ///    as stable for round boundary purposes.)
+    ///    because finalized inter-round Thinking content should be treated as stable
+    ///    for round boundary purposes.)
     /// 2. Within the stable zone (before `AssistantStreaming`), find the last message
     ///    with `round_index <= target_round`. Insert after that message.
     /// 3. If no `AssistantStreaming` zone exists, search all messages.
@@ -754,8 +754,8 @@ impl App {
 
         // Find the boundary before AssistantStreaming messages at the tail.
         // We only exclude AssistantStreaming (actively streaming, incomplete content)
-        // from the round-boundary search. Finalized Thinking blocks from
-        // InterToolText are stable content and should participate in the search.
+        // from the round-boundary search. Finalized inter-round Thinking blocks are
+        // stable content and should participate in the search.
         let stream_boundary = self
             .messages
             .iter()
