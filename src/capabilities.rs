@@ -27,7 +27,6 @@
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
 
-use crate::provider::Ollama;
 use crate::provider::ollama_shim::ModelInfo;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.
@@ -174,6 +173,7 @@ impl ModelCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::Ollama;
 
     #[test]
     fn test_capabilities_detection() {

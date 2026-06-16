@@ -297,6 +297,7 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// Tool-call detected callback (stored for multi-round ReAct loops).
     tool_call_callback: Option<Box<dyn Fn() + Send + Sync>>,
     /// Tool-call preview callback (stored for multi-round ReAct loops).
+    #[allow(clippy::type_complexity)] // signature mirrors `on_tool_call_preview` callback
     tool_preview_callback: Option<Box<dyn Fn(String, String, serde_json::Value) + Send + Sync>>,
     /// Provider retry/event callback (stored for multi-round ReAct loops).
     provider_event_callback: Option<Box<dyn Fn(LlmEvent) + Send + Sync>>,
@@ -430,7 +431,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let growth_tokens = usage
             .history_tokens
             .saturating_sub(base_usage.history_tokens);
-        let result_tokens = usage.total_tokens - base_usage.total_tokens - growth_tokens;
+        let _result_tokens = usage.total_tokens - base_usage.total_tokens - growth_tokens;
 
         // Tool definitions (each tool: name + description + parameters + overhead)
         // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
@@ -798,6 +799,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// If `cancel_token` is provided and becomes cancelled during streaming,
     /// the stream is aborted and the accumulated partial content is returned
     /// as the response.
+    #[expect(clippy::too_many_arguments)] // callback set is intentionally explicit
     pub async fn chat_stream(
         &mut self,
         messages: Vec<ChatMessage>,
@@ -1313,7 +1315,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Process next response after tool calls (legacy non-streaming path).
     ///
     /// Kept for callers that need a synchronous continuation; the streaming
-    /// ReAct loop uses `process_next_stream` instead.
+    /// ReAct loop uses `process_next_stream` instead. Test-only in this PR.
+    #[cfg(test)]
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check for user cancellation before making next request
         if let Some(ref ct) = self.cancel_token

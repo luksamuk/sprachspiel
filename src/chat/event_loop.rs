@@ -32,7 +32,6 @@ use super::tui::components::chat_selection::mouse_to_visual_pos;
 use super::view::ChatView;
 use super::view::RatatuiView;
 use crate::capabilities::ModelCapabilities;
-use crate::utils::strip_ansi_codes;
 
 /// Format a tool-call preview for display in the chat area.
 ///

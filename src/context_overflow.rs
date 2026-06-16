@@ -30,7 +30,6 @@
 
 use crate::chat::session::{ChatSession, MessageRole, SavedMessage};
 use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
-use ollama_rs::generation::chat::ChatMessage;
 
 /// Percentage thresholds (as fractions of context window)
 /// Based on LongICLBench research showing LLM degradation patterns.

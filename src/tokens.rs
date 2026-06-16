@@ -44,15 +44,6 @@ pub fn estimate_tokens_code(text: &str) -> usize {
     ((text.len() as f32) * 0.5).ceil() as usize
 }
 
-/// Count tokens in a list of chat messages.
-///
-/// NOTE: Removed in W2 #121 commit 4. The functionality is now provided
-/// by `ContextUsage::with_growth(&[ChatMessage])` (in this same file),
-/// which uses the unified `estimate_tokens` + `MESSAGE_OVERHEAD` math.
-/// All call sites have been migrated. The function was redundant: its
-/// only purpose (estimating per-message tokens for context calculation)
-/// is now centralized in `ContextUsage`.
-
 /// Context window usage metrics
 #[derive(Debug, Clone, Copy)]
 pub struct ContextMetrics {

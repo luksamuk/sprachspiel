@@ -21,7 +21,7 @@ use std::time::Duration;
 use tokio::sync::{OnceCell, Semaphore};
 
 use super::truncate::{
-    FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
+    TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
 };
 
 /// Default context length when model info is unavailable.
@@ -296,6 +296,7 @@ mod tests {
 
     #[test]
     fn test_full_dimensions() {
+        use crate::embeddings::truncate::FULL_DIMENSIONS;
         assert_eq!(FULL_DIMENSIONS, 768);
     }
 
