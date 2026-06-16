@@ -2646,12 +2646,9 @@ mod tests {
         let mut app = test_app();
 
         app.add_message(ChatMessage::user("Search".to_string()));
+        app.add_message(ChatMessage::thinking("Let me think".to_string()).with_round_index(0));
         app.add_message(
-            ChatMessage::thinking("Let me think".to_string()).with_round_index(0),
-        );
-        app.add_message(
-            ChatMessage::assistant_markdown("I will search".to_string())
-                .with_round_index(0),
+            ChatMessage::assistant_markdown("I will search".to_string()).with_round_index(0),
         );
 
         // Tool messages arriving now (round 1)
@@ -2660,9 +2657,7 @@ mod tests {
         app.insert_after_round_0(
             ChatMessage::tool("🔧 search: results".to_string()).with_round_index(1),
         );
-        app.insert_after_round_0(
-            ChatMessage::tool("Found X".to_string()).with_round_index(1),
-        );
+        app.insert_after_round_0(ChatMessage::tool("Found X".to_string()).with_round_index(1));
 
         // Expected order: User, Thinking, Assistant, Tool_call, Tool_result
         assert_eq!(app.messages.len(), 5);
@@ -2683,9 +2678,7 @@ mod tests {
 
         app.add_message(ChatMessage::user("Hello".to_string()));
 
-        app.insert_after_round_0(
-            ChatMessage::tool("Tool msg".to_string()).with_round_index(1),
-        );
+        app.insert_after_round_0(ChatMessage::tool("Tool msg".to_string()).with_round_index(1));
 
         assert_eq!(app.messages.len(), 2);
         assert_eq!(app.messages[0].msg_type, MessageType::User);

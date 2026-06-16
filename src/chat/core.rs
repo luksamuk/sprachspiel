@@ -246,6 +246,32 @@ pub fn setup_coordinator(
                 // Already logged via log::warn! — no view event needed
                 // (this is informational, not user-facing)
             }
+            crate::chat::custom_coordinator::ChatEvent::ToolExecutionStarted {
+                tool_call_id,
+                name,
+                args,
+            } => {
+                if let Some(ref tx) = llm_tx {
+                    let _ = tx.try_send(super::llm_event::LlmEvent::ToolExecutionStarted {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                    });
+                }
+            }
+            crate::chat::custom_coordinator::ChatEvent::ToolExecutionFinished {
+                tool_call_id,
+                result,
+                is_error,
+            } => {
+                if let Some(ref tx) = llm_tx {
+                    let _ = tx.try_send(super::llm_event::LlmEvent::ToolExecutionFinished {
+                        tool_call_id: tool_call_id.clone(),
+                        result: result.clone(),
+                        is_error,
+                    });
+                }
+            }
             _ => {
                 // Other events (ContextNearLimit) are handled by
                 // log_tool_call/log_tool_result/log::debug

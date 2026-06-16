@@ -243,6 +243,26 @@ pub enum ChatEvent {
         context_window: usize,
         tools_executed: Vec<String>,
     },
+    /// Tool execution lifecycle events (W2 #122 skeleton).
+    ///
+    /// Emitted when a tool starts and finishes execution. Full
+    /// partial-output streaming is deferred to a follow-up PR.
+    ToolExecutionStarted {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool name.
+        name: String,
+        /// Final parsed arguments.
+        args: serde_json::Value,
+    },
+    ToolExecutionFinished {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool result string (or error message).
+        result: String,
+        /// Whether the tool returned an error.
+        is_error: bool,
+    },
 }
 
 /// Result of checking context overflow after tool execution
@@ -886,11 +906,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             .get_or_insert_with(String::new)
                             .push_str(&delta);
                     }
-                    crate::provider::types::LlmStreamEvent::ToolCallStart {
-                        index,
-                        id,
-                        name,
-                    } => {
+                    crate::provider::types::LlmStreamEvent::ToolCallStart { index, id, name } => {
                         let id = id.unwrap_or_default();
                         let name = name.unwrap_or_default();
                         tool_call_previews.insert(
@@ -1118,8 +1134,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
+                let tool_call_id = call.function.name.clone().replace(' ', "_");
 
                 log::debug!("Tool call: {:?}", call.function);
+
+                self.emit_event(ChatEvent::ToolExecutionStarted {
+                    tool_call_id: tool_call_id.clone(),
+                    name: tool_name.clone(),
+                    args: args.clone(),
+                });
 
                 let Some(tool) = self.tools.get_mut(&tool_name) else {
                     log::debug!(
@@ -1133,7 +1156,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 };
 
                 let result = match tool.call(args.clone()).await {
-                    Ok(result) => result,
+                    Ok(result) => {
+                        self.emit_event(ChatEvent::ToolExecutionFinished {
+                            tool_call_id: tool_call_id.clone(),
+                            result: result.clone(),
+                            is_error: false,
+                        });
+                        result
+                    }
                     Err(e) => {
                         log::warn!("Tool '{}' execution failed: {e}", tool_name);
                         log::debug!(
@@ -1144,19 +1174,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // recoverable — push the error as a tool message so the
                         // LLM can self-correct within the same turn instead of
                         // aborting the conversation.
-                        //
-                        // Note: this call site uses `ChatMessage::tool()`
-                        // directly instead of the `recovery::push_tool_result`
-                        // wrapper (see src/chat/recovery.rs) because
-                        // `self.history` is generic over `C: ChatHistory` (an
-                        // ollama-rs trait), while the wrapper is typed for
-                        // `Vec<ChatMessage>`. In #121 (Consumer Migration) this
-                        // call site migrates to the wrapper together with the
-                        // rest of the consumer migration.
                         let error_msg = format!(
                             "Error executing tool '{tool_name}': {e}. \
                              Please try again with different arguments or use a different approach."
                         );
+                        self.emit_event(ChatEvent::ToolExecutionFinished {
+                            tool_call_id: tool_call_id.clone(),
+                            result: error_msg.clone(),
+                            is_error: true,
+                        });
                         self.history.push(ChatMessage::tool(error_msg));
                         tools_executed.push(tool_name.clone());
                         continue;
@@ -1279,7 +1305,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         if response.message.tool_calls.is_empty() {
             Ok(response)
         } else {
-            self.process_response(response, /*already_streamed=*/ true).await
+            self.process_response(response, /*already_streamed=*/ true)
+                .await
         }
     }
 

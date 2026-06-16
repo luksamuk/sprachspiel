@@ -57,8 +57,8 @@ type ConvertedOptions = (
     Option<u32>,         // seed
 );
 use super::types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage,
-    ProviderCapabilities, ProviderError, ProviderOptions, ToolInfo, ToolType,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage, ProviderCapabilities,
+    ProviderError, ProviderOptions, ToolInfo, ToolType,
 };
 use crate::provider::LlmProvider;
 use crate::user_models::ProviderConfig;
@@ -624,8 +624,7 @@ impl OpenAICompatibleProvider {
                         if is_transient_4xx && attempt < max_attempts {
                             let delay = self.backoff_delay(attempt);
                             // W2 #122: emit retry event with human-readable reason.
-                            if let Some(reason) =
-                                Self::transient_4xx_reason(status.as_u16(), &body)
+                            if let Some(reason) = Self::transient_4xx_reason(status.as_u16(), &body)
                             {
                                 on_event(LlmStreamEvent::ProviderRetryStarted {
                                     attempt,
@@ -1291,6 +1290,9 @@ fn parse_sse_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::openai_types::{
+        OpenAIMessage, OpenAIToolCall, OpenAIToolCallFunction, Usage as OpenAIUsage,
+    };
 
     #[test]
     fn test_parse_retry_after_seconds() {

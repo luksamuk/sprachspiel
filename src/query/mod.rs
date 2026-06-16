@@ -138,6 +138,18 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
                 tools_executed.len()
             );
         }
+        ChatEvent::ToolExecutionStarted { name, args, .. } => {
+            log::debug!("[INFO] Tool execution started: {}({})", name, args);
+        }
+        ChatEvent::ToolExecutionFinished {
+            is_error, result, ..
+        } => {
+            if is_error {
+                log::warn!("[WARN] Tool execution finished with error: {}", result);
+            } else {
+                log::debug!("[INFO] Tool execution finished");
+            }
+        }
     }
 }
 

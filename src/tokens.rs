@@ -116,11 +116,8 @@ pub fn calculate_context_metrics(
             // system+tools estimate, history saturates to 0 instead of
             // going negative. Same path as process_next and the inter-tool
             // check — single source of truth.
-            let usage = ContextUsage::from_api_usage(
-                prompt_tokens as u32,
-                system_prompt,
-                tools_tokens,
-            );
+            let usage =
+                ContextUsage::from_api_usage(prompt_tokens as u32, system_prompt, tools_tokens);
             (usage.total_tokens, usage.history_tokens)
         }
         None => {
@@ -209,11 +206,7 @@ impl ContextUsage {
     /// history — the LLM server counted the whole prompt. We attribute it
     /// to `history_tokens` and store `system_tokens`/`tools_tokens` from
     /// the local estimate for display purposes only.
-    pub fn from_api_usage(
-        prompt_tokens: u32,
-        system_prompt: &str,
-        tools_tokens: usize,
-    ) -> Self {
+    pub fn from_api_usage(prompt_tokens: u32, system_prompt: &str, tools_tokens: usize) -> Self {
         let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
         // Derive history by subtraction; saturate to 0 to avoid negatives
         // (see P10: real < system+tools is rare but possible with very
@@ -316,7 +309,12 @@ mod context_usage_tests {
     fn test_from_api_usage_real_total() {
         let usage = ContextUsage::from_api_usage(1234, "You are helpful.", 100);
         assert_eq!(usage.total_tokens, 1234);
-        assert_eq!(usage.source, ContextSource::Real { prompt_tokens: 1234 });
+        assert_eq!(
+            usage.source,
+            ContextSource::Real {
+                prompt_tokens: 1234
+            }
+        );
         // history = 1234 - system - tools (subtraction may saturate to 0)
         assert!(usage.history_tokens <= 1234);
     }
@@ -325,7 +323,11 @@ mod context_usage_tests {
     fn test_from_api_usage_saturation_protection() {
         // Real prompt smaller than system+tools estimate (rare but possible).
         // Must NOT produce negative history_tokens.
-        let usage = ContextUsage::from_api_usage(100, "Very long system prompt that pushes estimate high.", 500);
+        let usage = ContextUsage::from_api_usage(
+            100,
+            "Very long system prompt that pushes estimate high.",
+            500,
+        );
         assert_eq!(usage.total_tokens, 100);
         assert_eq!(usage.history_tokens, 0); // saturated, not negative
     }
@@ -349,8 +351,10 @@ mod context_usage_tests {
         let grown = base.with_growth(&extra);
         assert!(grown.history_tokens > base.history_tokens);
         assert!(grown.total_tokens > base.total_tokens);
-        assert_eq!(grown.total_tokens - base.total_tokens,
-                   grown.history_tokens - base.history_tokens);
+        assert_eq!(
+            grown.total_tokens - base.total_tokens,
+            grown.history_tokens - base.history_tokens
+        );
     }
 
     #[test]
@@ -360,17 +364,19 @@ mod context_usage_tests {
         let grown = base.with_tool_result(result);
         assert!(grown.history_tokens > base.history_tokens);
         assert!(grown.total_tokens > base.total_tokens);
-        assert_eq!(grown.total_tokens - base.total_tokens,
-                   grown.history_tokens - base.history_tokens);
+        assert_eq!(
+            grown.total_tokens - base.total_tokens,
+            grown.history_tokens - base.history_tokens
+        );
     }
 
     #[test]
     fn test_is_above_percent() {
         let usage = ContextUsage::from_api_usage(8000, "sys", 0);
-        assert!(usage.is_above_percent(10000, 0.75));   // 80% >= 75%
-        assert!(usage.is_above_percent(10000, 0.80));   // 80% >= 80%
-        assert!(!usage.is_above_percent(10000, 0.85));  // 80% < 85%
-        assert!(!usage.is_above_percent(0, 0.5));      // 0 ctx → never above
+        assert!(usage.is_above_percent(10000, 0.75)); // 80% >= 75%
+        assert!(usage.is_above_percent(10000, 0.80)); // 80% >= 80%
+        assert!(!usage.is_above_percent(10000, 0.85)); // 80% < 85%
+        assert!(!usage.is_above_percent(0, 0.5)); // 0 ctx → never above
     }
 
     #[test]

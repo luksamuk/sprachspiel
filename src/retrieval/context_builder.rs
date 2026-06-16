@@ -1011,16 +1011,27 @@ mod tests {
             ..RetrievalConfig::default()
         };
 
-        let result = build_context(&session, None, None, "user query",
-                                   "You are a helpful assistant.",
-                                   &config).await;
+        let result = build_context(
+            &session,
+            None,
+            None,
+            "user query",
+            "You are a helpful assistant.",
+            &config,
+        )
+        .await;
 
         // Exactly one system message.
-        let system_count = result.messages.iter()
+        let system_count = result
+            .messages
+            .iter()
             .filter(|m| m.role == OllamaMessageRole::System)
             .count();
-        assert_eq!(system_count, 1, "build_context must emit exactly one system message; got {}",
-                   system_count);
+        assert_eq!(
+            system_count, 1,
+            "build_context must emit exactly one system message; got {}",
+            system_count
+        );
         // And that single system message is at index 0.
         assert_eq!(result.messages[0].role, OllamaMessageRole::System);
     }
@@ -1036,17 +1047,20 @@ mod tests {
             ..RetrievalConfig::default()
         };
 
-        let result = build_context(&session, None, None, "query",
-                                   "You are helpful.",
-                                   &config).await;
+        let result =
+            build_context(&session, None, None, "query", "You are helpful.", &config).await;
 
         // The system message is the user's prompt verbatim.
         assert_eq!(result.messages[0].role, OllamaMessageRole::System);
         assert!(result.messages[0].content.contains("You are helpful."));
         // No other system messages anywhere.
         for (i, m) in result.messages.iter().enumerate().skip(1) {
-            assert_ne!(m.role, OllamaMessageRole::System,
-                "message at index {i} is system — should not happen", i = i);
+            assert_ne!(
+                m.role,
+                OllamaMessageRole::System,
+                "message at index {i} is system — should not happen",
+                i = i
+            );
         }
     }
 
@@ -1065,15 +1079,18 @@ mod tests {
             ..RetrievalConfig::default()
         };
 
-        let result = build_context(&session, None, None, "q",
-                                   "System prompt.",
-                                   &config).await;
+        let result = build_context(&session, None, None, "q", "System prompt.", &config).await;
 
-        let system_count = result.messages.iter()
+        let system_count = result
+            .messages
+            .iter()
             .filter(|m| m.role == OllamaMessageRole::System)
             .count();
-        assert_eq!(system_count, 1, "summary must be folded into the single system message; got {}",
-                   system_count);
+        assert_eq!(
+            system_count, 1,
+            "summary must be folded into the single system message; got {}",
+            system_count
+        );
         assert!(result.messages[0].content.contains("System prompt."));
         assert!(result.messages[0].content.contains("compacted summary"));
         assert!(result.messages[0].content.contains("<summary_context>"));

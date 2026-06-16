@@ -1269,12 +1269,20 @@ mod tests {
         // target=10 should keep only a small prefix.
         let long = "x ".repeat(1000);
         let kept = chars_for_tokens(&long, 10);
-        assert!(kept < long.chars().count(), "Should truncate ({} of {})", kept, long.chars().count());
+        assert!(
+            kept < long.chars().count(),
+            "Should truncate ({} of {})",
+            kept,
+            long.chars().count()
+        );
         // The kept prefix should estimate to <= 10 tokens.
         let prefix: String = long.chars().take(kept).collect();
-        assert!(estimate_tokens(&prefix) <= 10,
-                "Prefix of {} chars estimated at {} tokens, should be <= 10",
-                prefix.chars().count(), estimate_tokens(&prefix));
+        assert!(
+            estimate_tokens(&prefix) <= 10,
+            "Prefix of {} chars estimated at {} tokens, should be <= 10",
+            prefix.chars().count(),
+            estimate_tokens(&prefix)
+        );
     }
 
     #[test]

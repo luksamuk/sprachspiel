@@ -336,7 +336,12 @@ impl CompatOllama {
         &self,
         request: ChatMessageRequest,
     ) -> Result<
-        Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, crate::provider::types::ProviderError>> + Send>>,
+        Pin<
+            Box<
+                dyn Stream<Item = Result<LlmStreamEvent, crate::provider::types::ProviderError>>
+                    + Send,
+            >,
+        >,
         crate::provider::types::ProviderError,
     > {
         let model = request.model_name.clone();
