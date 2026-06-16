@@ -87,6 +87,17 @@ pub struct ChatMessage {
     /// Default is 0 for backward compatibility with messages created by helpers
     /// that don't specify a round.
     pub round_index: usize,
+    /// Whether this tool message is a live preview of an in-flight tool call.
+    ///
+    /// `true` while the LLM is still streaming the tool-call arguments.
+    /// Once the call is finalized (`ToolCallEnd`), the flag is cleared via
+    /// `freeze_preview()` and the message becomes a normal tool result entry.
+    /// This lets the UI show "🔧 name({partial args})" progressively without
+    /// committing a final tool message until the arguments are complete.
+    ///
+    /// Only meaningful when `msg_type == MessageType::Tool`. Defaults to
+    /// `false` for all other message types.
+    pub is_tool_preview: bool,
 }
 
 impl ChatMessage {
@@ -96,6 +107,7 @@ impl ChatMessage {
             msg_type: MessageType::User,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -105,6 +117,7 @@ impl ChatMessage {
             msg_type: MessageType::AssistantStreaming,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -114,6 +127,7 @@ impl ChatMessage {
             msg_type: MessageType::Assistant,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -123,6 +137,7 @@ impl ChatMessage {
             msg_type: MessageType::Thinking,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -132,7 +147,27 @@ impl ChatMessage {
             msg_type: MessageType::Tool,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
+    }
+
+    /// Create a tool-call preview message.
+    ///
+    /// This is a transient `Tool` message that will be updated as the LLM
+    /// streams partial arguments. Call `freeze_preview()` when the tool call
+    /// is complete to turn it into a normal tool message.
+    pub fn tool_preview(content: String) -> Self {
+        Self {
+            msg_type: MessageType::Tool,
+            content,
+            round_index: 0,
+            is_tool_preview: true,
+        }
+    }
+
+    /// Clear the preview flag, making this a finalized tool message.
+    pub fn freeze_preview(&mut self) {
+        self.is_tool_preview = false;
     }
 
     /// Create a system info message (dim text, no prefix).
@@ -141,6 +176,7 @@ impl ChatMessage {
             msg_type: MessageType::System,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -150,6 +186,7 @@ impl ChatMessage {
             msg_type: MessageType::Error,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -162,6 +199,7 @@ impl ChatMessage {
             msg_type: MessageType::Separator,
             content: String::new(),
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 
@@ -174,6 +212,7 @@ impl ChatMessage {
             msg_type: MessageType::Banner,
             content,
             round_index: 0,
+            is_tool_preview: false,
         }
     }
 

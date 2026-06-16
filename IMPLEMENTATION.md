@@ -4420,47 +4420,97 @@ During smoke testing of #121, three apparent ReAct regression bugs were investig
 
 ---
 
-#### OpenAI-Compatible Provider — #122 [M1]
+#### OpenAI-Compatible Provider Resilience — #122 [M1]
 
-**Status:** 📋 PLANNED  
-**Depends on:** #121 (all consumers using LlmProvider)  
-**Estimated effort:** 2 weeks  
-**Merge criterion:** `--provider openai` works with OpenAI / llama.cpp / LM Studio
+**Status:** 🔄 IN PROGRESS (continues branch `feat/121-consumer-migration-openai`)  
+**Depends on:** #121 (OpenAI-compatible provider already implemented and merged into this branch)  
+**Estimated effort:** 2–3 weeks  
+**Issue:** #122  
+**Merge criterion:** Provider consumer layer treats the LLM call as a first-class event stream: tool-call preview, post-tool streaming, visible retry, and tool-execution lifecycle events.
 
-**Goal:** Implement `OpenAICompatibleProvider` supporting `/v1/chat/completions`, function calling, and `/v1/embeddings`.
+**Strategic context:** The OpenAI-compatible HTTP transport and agnostic provider types were built in #121. Smoke testing revealed that the **consumer layer** (`custom_coordinator.rs` and the TUI event loop) still sees streaming as "accumulate chunks, then run the non-streaming tool loop". This makes the provider feel fragile: tool arguments are collected silently, post-tool turns are not streamed, retry is invisible, and long tool executions give no progress feedback. A comparison with the Pi Coding Agent (`~/git/thirdparty/pi`) showed that Pi's robustness comes from treating the LLM call as a **rich, push-based event stream** consumed uniformly by the loop and the UI. This issue refactors Sprachspiel's consumer layer to match that model.
 
-**Files to create:**
+**Reference analysis:** `~/papers/sprachspiel-openai-provider-lessons-from-pi.md` maps Pi's event-stream design onto Sprachspiel's types and derives the implementation plan below.
 
-| File | Content |
-|------|---------|
-| `src/provider/openai_compat.rs` | `OpenAICompatibleProvider` struct, `LlmProvider` impl |
-| `src/provider/openai_types.rs` | OpenAI API request/response structs (serde) |
+**Design decisions (approved):**
 
-**Sub-deliverables:**
+| Topic | Decision | Rationale |
+|---|---|---|
+| Tool-call accumulator | `ToolCallAccumulator` lives in the provider | Single source of truth for `LlmToolCall`; no duplicated JSON parsing in coordinator |
+| Stream API | `chat_stream` returns `Stream<Item = Result<LlmStreamEvent, ProviderError>>` | Replaces pull-based `LlmStreamChunk`; enables lifecycle events |
+| `LlmStreamChunk` | Remove completely | Superseded by `LlmStreamEvent` |
+| `ollama_shim.rs` | Can be broken/simplified/removed | Ollama is reachable via OpenAI-compatible endpoints; shim no longer needs to preserve `ollama_rs` API |
+| Retry events | Variants inside `LlmStreamEvent` | Keeps the stream unified; rendered in the **status bar** (red, right-aligned), not the message buffer |
+| Tool-call preview | Anchored in the message buffer as a temporary `Tool` message with `is_tool_preview = true` | Visually tied to the turn; render style can be changed later (e.g., collapsible stream like Pi) |
+| Post-tool streaming | All ReAct turns stream, including after tool results | Removes `InterToolText` event and the non-streaming `process_next()` path |
+| Tool execution output | Skeleton only (`Started` / `Finished`) | Full partial-output callbacks are deferred to a follow-up |
 
-| Sub | Description | Effort |
-|-----|-------------|--------|
-| P6.0f.1 | Chat completions (with streaming) | 1 week |
-| P6.0f.2 | Function calling (Ollama ↔ OpenAI tool format conversion) | 3 days |
-| P6.0f.3 | Embeddings (`/v1/embeddings`) | 2 days |
-| P6.0f.4 | Configuration (`[providers.openai]` in models.toml, `api_key_env`) | 1 day |
+**New event vocabulary (`src/provider/types.rs`):**
 
-**Configuration:**
+```rust
+pub enum LlmStreamEvent {
+    // Lifecycle
+    Start,
+    Done { reason: Option<String>, usage: Option<LlmUsage> },
+    Error { error: ProviderError },
 
-```toml
-# models.toml
-[providers.ollama]
-base_url = "http://localhost:11434"
+    // Content blocks
+    TextStart,
+    TextDelta { delta: String },
+    TextEnd { content: String },
 
-[providers.openai]
-base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY"
+    ThinkingStart { signature: Option<String> },
+    ThinkingDelta { delta: String },
+    ThinkingEnd { content: String },
 
-[models."gpt-4o"]
-provider = "openai"
-tools = true
-vision = true
+    // Tool-call lifecycle
+    ToolCallStart { index: u32, id: Option<String>, name: Option<String> },
+    ToolCallDelta { index: u32, id: Option<String>, name_delta: Option<String>, argument_delta: String },
+    ToolCallEnd { index: u32, call: LlmToolCall },
+
+    // Retry lifecycle (rendered in status bar)
+    ProviderRetryStarted { attempt: u32, max_attempts: u32, delay_ms: u64, reason: String },
+    ProviderRetryFinished { success: bool, attempt: u32 },
+}
 ```
+
+**New `LlmEvent` variants (`src/chat/llm_event.rs`):**
+
+```rust
+ToolCallPreview { tool_call_id: String, name: String, args: serde_json::Value }
+ToolExecutionStarted { tool_call_id: String, name: String, args: serde_json::Value }
+ToolExecutionFinished { tool_call_id: String, result: String, is_error: bool }
+ProviderRetryStarted { attempt: u32, max_attempts: u32, delay_ms: u64, reason: String }
+ProviderRetryFinished { success: bool, attempt: u32 }
+```
+
+**Implementation phases (each a granular commit):**
+
+| Phase | Commit focus | Files | Risk |
+|---|---|---|---|
+| 0 | Add `LlmStreamEvent`, `LlmUsage`, lifecycle `LlmEvent` variants, `ChatMessage::is_tool_preview` flag | `src/provider/types.rs`, `src/chat/llm_event.rs`, `src/chat/app.rs` | Low |
+| 1 | Extract `ToolCallAccumulator` from SSE parser | `src/provider/openai_compat.rs` (+ new `src/provider/tool_accumulator.rs`) | Medium |
+| 2 | Emit retry lifecycle events from `chat_with_retry` and `chat_stream` | `src/provider/openai_compat.rs` | Medium |
+| 3 | Replace `LlmStreamChunk` with `LlmStreamEvent`; simplify/remove `ollama_shim.rs` | `src/provider/openai_compat.rs`, `src/provider/ollama_shim.rs`, `src/provider/types.rs` | High |
+| 4a | `chat_stream` consumes `LlmStreamEvent`; emits `ToolCallPreview` | `src/chat/custom_coordinator.rs` | High |
+| 4b | Make post-tool turns streaming (`process_next_stream`) | `src/chat/custom_coordinator.rs` | High |
+| 5 | Tool execution lifecycle events | `src/chat/custom_coordinator.rs`, `src/chat/llm_event.rs` | Medium |
+| 6a | Render tool-call preview in message buffer | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | Medium |
+| 6b | Render tool execution finished state | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | Medium |
+| 6c | Render retry status in status bar | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | Low/Medium |
+| 7 | Remove `InterToolText`, dead code, docs, clippy, tests | All above | Low |
+
+**Testing plan:**
+
+- SSE parser events with incremental tool-call arguments.
+- Post-tool streaming (mock provider returns streaming response after tool result).
+- Retry events (mock 400 empty → 200; assert `ProviderRetryStarted/Finished`).
+- llama-swap cold-start 400 retry vs permanent 400 (context exceeded).
+- Tool lifecycle event sequence (`Started` → `Finished`).
+- TUI preview insertion order (after round-0 content, before tool results).
+- TUI retry message in status bar.
+
+**Related:** Issue #122, #121 (predecessor), #123 (final ollama-rs removal). Reference: `~/papers/sprachspiel-openai-provider-lessons-from-pi.md`.
 
 ---
 

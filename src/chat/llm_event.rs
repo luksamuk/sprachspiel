@@ -126,6 +126,67 @@ pub enum LlmEvent {
     /// so the status bar shows "Running tool..." with a fresh spinner.
     ToolCallStarted,
 
+    /// Partial tool call known so far (name + parsed partial arguments).
+    ///
+    /// Emitted while the LLM is still streaming `tool_calls` deltas.
+    /// The TUI should display this as a transient tool message in the
+    /// current turn, updating it as new deltas arrive. Once the call is
+    /// finalized, the preview is frozen into a normal tool message.
+    ToolCallPreview {
+        /// Tool-call id (may be empty if not yet provided by the provider).
+        tool_call_id: String,
+        /// Tool name.
+        name: String,
+        /// Parsed partial arguments (best-effort JSON object).
+        args: serde_json::Value,
+    },
+
+    /// A tool execution has started.
+    ///
+    /// W2 #122 skeleton: in this PR we only mark start/end. Future work
+    /// will add `ToolExecutionOutput` for long-running tools.
+    ToolExecutionStarted {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool name.
+        name: String,
+        /// Final parsed arguments.
+        args: serde_json::Value,
+    },
+
+    /// A tool execution has finished.
+    ToolExecutionFinished {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool result string (or error message).
+        result: String,
+        /// Whether the tool returned an error.
+        is_error: bool,
+    },
+
+    /// Provider is about to retry a failed HTTP request.
+    ///
+    /// Rendered in the status bar (right-aligned, red) so the user sees
+    /// transient failures such as "model warming up" instead of a frozen UI.
+    ProviderRetryStarted {
+        /// 1-based attempt number.
+        attempt: u32,
+        /// Maximum attempts configured.
+        max_attempts: u32,
+        /// Delay before the next attempt, in milliseconds.
+        delay_ms: u64,
+        /// Human-readable reason (e.g., "model warming up").
+        reason: String,
+    },
+
+    /// Provider retry finished.
+    ProviderRetryFinished {
+        /// Whether the retry succeeded.
+        success: bool,
+        /// Last attempt number.
+        attempt: u32,
+    },
+
     /// A streaming token chunk from compaction.
     ///
     /// Display as `AssistantStreaming` in the chat area, just like
@@ -210,6 +271,53 @@ impl std::fmt::Debug for LlmEvent {
             Self::Error(msg) => f.debug_tuple("Error").field(msg).finish(),
             Self::Cancelled => write!(f, "Cancelled"),
             Self::ToolCallStarted => write!(f, "ToolCallStarted"),
+            Self::ToolCallPreview {
+                tool_call_id,
+                name,
+                args,
+            } => f
+                .debug_struct("ToolCallPreview")
+                .field("tool_call_id", tool_call_id)
+                .field("name", name)
+                .field("args", args)
+                .finish_non_exhaustive(),
+            Self::ToolExecutionStarted {
+                tool_call_id,
+                name,
+                args,
+            } => f
+                .debug_struct("ToolExecutionStarted")
+                .field("tool_call_id", tool_call_id)
+                .field("name", name)
+                .field("args", args)
+                .finish_non_exhaustive(),
+            Self::ToolExecutionFinished {
+                tool_call_id,
+                result,
+                is_error,
+            } => f
+                .debug_struct("ToolExecutionFinished")
+                .field("tool_call_id", tool_call_id)
+                .field("result_len", &result.len())
+                .field("is_error", is_error)
+                .finish_non_exhaustive(),
+            Self::ProviderRetryStarted {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            } => f
+                .debug_struct("ProviderRetryStarted")
+                .field("attempt", attempt)
+                .field("max_attempts", max_attempts)
+                .field("delay_ms", delay_ms)
+                .field("reason", reason)
+                .finish_non_exhaustive(),
+            Self::ProviderRetryFinished { success, attempt } => f
+                .debug_struct("ProviderRetryFinished")
+                .field("success", success)
+                .field("attempt", attempt)
+                .finish_non_exhaustive(),
             Self::CompactStreamToken(token) => f
                 .debug_tuple("CompactStreamToken")
                 .field(&token.len())

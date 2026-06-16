@@ -490,6 +490,70 @@ pub fn handle_llm_event(
             // ToolCallStarted happens before any round's tool execution.
             drain_and_add_tool_messages(view, 0);
         }
+        LlmEvent::ToolCallPreview {
+            tool_call_id,
+            name,
+            args,
+        } => {
+            // W2 #122: tool-call preview. Rendered in the message buffer as a
+            // transient Tool message. Full implementation in phase 6a; for now
+            // log so we can verify the event flow.
+            log::debug!(
+                "ToolCallPreview: id={} name={} args={}",
+                tool_call_id,
+                name,
+                args
+            );
+        }
+        LlmEvent::ToolExecutionStarted {
+            tool_call_id,
+            name,
+            args,
+        } => {
+            // W2 #122 skeleton: mark tool execution start. Full UI state in phase 6b.
+            log::debug!(
+                "ToolExecutionStarted: id={} name={} args={}",
+                tool_call_id,
+                name,
+                args
+            );
+        }
+        LlmEvent::ToolExecutionFinished {
+            tool_call_id,
+            result,
+            is_error,
+        } => {
+            // W2 #122 skeleton: tool execution finished. Full UI state in phase 6b.
+            log::debug!(
+                "ToolExecutionFinished: id={} is_error={} result_len={}",
+                tool_call_id,
+                is_error,
+                result.len()
+            );
+        }
+        LlmEvent::ProviderRetryStarted {
+            attempt,
+            max_attempts,
+            delay_ms,
+            reason,
+        } => {
+            // W2 #122: retry status. Rendered in the status bar in phase 6c.
+            log::debug!(
+                "ProviderRetryStarted: attempt={}/{} delay={}ms reason={}",
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason
+            );
+        }
+        LlmEvent::ProviderRetryFinished { success, attempt } => {
+            // W2 #122: retry status. Rendered in the status bar in phase 6c.
+            log::debug!(
+                "ProviderRetryFinished: success={} attempt={}",
+                success,
+                attempt
+            );
+        }
         LlmEvent::CompactStreamToken(token) => {
             // Compaction is streaming — display as assistant streaming
             view.stream_token(&token);
@@ -594,9 +658,8 @@ pub fn drain_and_add_tool_messages(view: &mut RatatuiView, round: usize) {
         // the same round land successively at the same insertion
         // point, producing the correct order:
         //   [User, Thinking(0), Assistant(0), Tool_call(1), Tool_result(1)]
-        view.app_mut().insert_after_round_0(
-            ChatMessage::tool(msg).with_round_index(round),
-        );
+        view.app_mut()
+            .insert_after_round_0(ChatMessage::tool(msg).with_round_index(round));
     }
 }
 

@@ -247,6 +247,75 @@ pub struct LlmStreamChunk {
     pub prompt_eval_count: Option<u32>,
 }
 
+/// Token usage reported in a streaming or non-streaming response.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct LlmUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+/// Provider-agnostic event emitted by a streaming LLM chat completion.
+///
+/// W2 #122: replaces the pull-based `LlmStreamChunk` model. The provider
+/// pushes semantic lifecycle events (text/thinking/tool-call deltas, retry
+/// status, completion) instead of forcing the consumer to diff successive
+/// chunks. This matches the event-stream design used by the Pi Coding Agent.
+#[derive(Debug, Clone)]
+pub enum LlmStreamEvent {
+    /// Response headers received; a new assistant turn has started.
+    Start,
+
+    /// A new text content block has started.
+    TextStart,
+    /// Incremental text token.
+    TextDelta { delta: String },
+    /// Text content block finalized.
+    TextEnd { content: String },
+
+    /// A new thinking/reasoning block has started.
+    ThinkingStart { signature: Option<String> },
+    /// Incremental thinking token.
+    ThinkingDelta { delta: String },
+    /// Thinking block finalized.
+    ThinkingEnd { content: String },
+
+    /// A new tool call has started (name may still be `None`).
+    ToolCallStart {
+        index: u32,
+        id: Option<String>,
+        name: Option<String>,
+    },
+    /// Partial update to a tool call (name and/or arguments delta).
+    ToolCallDelta {
+        index: u32,
+        id: Option<String>,
+        name_delta: Option<String>,
+        argument_delta: String,
+    },
+    /// Tool call finalized with parsed arguments.
+    ToolCallEnd { index: u32, call: LlmToolCall },
+
+    /// Provider is about to retry a failed HTTP request.
+    ProviderRetryStarted {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        reason: String,
+    },
+    /// Provider retry finished (success or exhausted).
+    ProviderRetryFinished { success: bool, attempt: u32 },
+
+    /// Stream completed normally.
+    Done {
+        reason: Option<String>,
+        usage: Option<LlmUsage>,
+    },
+    /// Stream failed. The consumer may still have partial content from previous
+    /// deltas; the error is terminal for this turn.
+    Error { error: ProviderError },
+}
+
 /// Capabilities reported by a model/provider.
 ///
 /// Based on llama-swap feature flags for OpenAI-compatible backends.
