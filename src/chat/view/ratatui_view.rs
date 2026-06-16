@@ -550,6 +550,12 @@ impl RatatuiView {
         self.render();
     }
 
+    /// Set or clear the transient status-bar overlay (retry warning).
+    pub fn set_status_overlay(&mut self, overlay: Option<String>) {
+        self.app.set_status_overlay(overlay);
+        self.render();
+    }
+
     /// Append a streaming token to the chat area.
     ///
     /// Creates or appends to an `AssistantStreaming` message.

@@ -439,6 +439,48 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Find the index of the last message that is a tool-call preview for
+    /// the given tool call id.
+    ///
+    /// Returns `None` if no matching preview exists.
+    pub fn find_tool_preview_index(&self, tool_call_id: &str) -> Option<usize> {
+        self.messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, m)| {
+                m.msg_type == MessageType::Tool
+                    && m.is_tool_preview
+                    && m.content.contains(tool_call_id)
+            })
+            .map(|(i, _)| i)
+    }
+
+    /// Replace the content of the last tool-call preview for `tool_call_id`
+    /// or append a new preview if none exists.
+    ///
+    /// This is used to update the transient tool call message as the LLM
+    /// streams partial arguments.
+    pub fn upsert_tool_preview(&mut self, tool_call_id: String, content: String) {
+        if let Some(idx) = self.find_tool_preview_index(&tool_call_id) {
+            self.messages[idx].content = content;
+        } else {
+            self.add_message(ChatMessage::tool_preview(content));
+        }
+    }
+
+    /// Freeze every tool-call preview message into a finalized tool message.
+    ///
+    /// Called when tool calls are fully collected (on `ToolCallStarted` or
+    /// when a round ends) so the transient preview becomes a stable entry.
+    pub fn freeze_all_tool_previews(&mut self) {
+        for msg in &mut self.messages {
+            if msg.msg_type == MessageType::Tool && msg.is_tool_preview {
+                msg.freeze_preview();
+            }
+        }
+    }
+
     /// Return the number of messages in the chat area.
     pub fn message_count(&self) -> usize {
         self.messages.len()
@@ -1104,6 +1146,13 @@ impl App {
         while let Ok(msg) = self.async_message_rx.try_recv() {
             self.add_message(ChatMessage::system(msg));
         }
+    }
+
+    /// Set a transient status-bar message (right-aligned, red).
+    ///
+    /// Used for provider retry warnings (W2 #122). Pass `None` to clear.
+    pub fn set_status_overlay(&mut self, overlay: Option<String>) {
+        self.status_bar.overlay = overlay;
     }
 
     /// Advance the spinner frame.

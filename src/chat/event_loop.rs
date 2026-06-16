@@ -34,6 +34,21 @@ use super::view::RatatuiView;
 use crate::capabilities::ModelCapabilities;
 use crate::utils::strip_ansi_codes;
 
+/// Format a tool-call preview for display in the chat area.
+///
+/// The preview is rendered as a transient Tool message so the user can
+/// see what tool the model is calling while the arguments are still
+/// streaming in. Use the compact one-line form `🔧 name(args)` when the
+/// arguments fit, otherwise show a code block with pretty-printed JSON.
+fn format_tool_call_preview(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
+    let compact = format!("🔧 {name}({args})");
+    if compact.len() <= 80 && !matches!(args, serde_json::Value::Object(_)) {
+        return compact;
+    }
+    let pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
+    format!("🔧 {name} (`{tool_call_id}`)\n```json\n{pretty}\n```")
+}
+
 /// Channel capacity for LLM view actions.
 ///
 /// Each `show_*` call during LLM processing sends one `ViewAction`.
@@ -479,6 +494,7 @@ pub fn handle_llm_event(
         LlmEvent::ToolCallStarted => {
             // Tool calls detected — finalize streaming and transition.
             // Increment round counter: we're entering the next tool call round.
+            view.app_mut().freeze_all_tool_previews();
             view.app_mut().increment_round();
             view.app_mut().finalize_streaming_zone_as_is();
             view.set_llm_state(LlmState::ToolCall);
@@ -495,15 +511,11 @@ pub fn handle_llm_event(
             name,
             args,
         } => {
-            // W2 #122: tool-call preview. Rendered in the message buffer as a
-            // transient Tool message. Full implementation in phase 6a; for now
-            // log so we can verify the event flow.
-            log::debug!(
-                "ToolCallPreview: id={} name={} args={}",
-                tool_call_id,
-                name,
-                args
-            );
+            // W2 #122 Fase 6a: render the in-progress tool call as a transient
+            // Tool message in the message buffer. The preview is updated in
+            // place as new deltas arrive and frozen when the call is finalized.
+            let content = format_tool_call_preview(&name, &args, &tool_call_id);
+            view.app_mut().upsert_tool_preview(tool_call_id, content);
         }
         LlmEvent::ToolExecutionStarted {
             tool_call_id,
@@ -537,22 +549,15 @@ pub fn handle_llm_event(
             delay_ms,
             reason,
         } => {
-            // W2 #122: retry status. Rendered in the status bar in phase 6c.
-            log::debug!(
-                "ProviderRetryStarted: attempt={}/{} delay={}ms reason={}",
-                attempt,
-                max_attempts,
-                delay_ms,
-                reason
-            );
+            // W2 #122 Fase 6c: render transient retry warning in the status bar.
+            let overlay = format!("⚠ Retry {attempt}/{max_attempts} in {delay_ms}ms: {reason}");
+            view.set_status_overlay(Some(overlay));
         }
-        LlmEvent::ProviderRetryFinished { success, attempt } => {
-            // W2 #122: retry status. Rendered in the status bar in phase 6c.
-            log::debug!(
-                "ProviderRetryFinished: success={} attempt={}",
-                success,
-                attempt
-            );
+        LlmEvent::ProviderRetryFinished { success, .. } => {
+            // Clear the retry overlay once the retry finishes.
+            if success {
+                view.set_status_overlay(None);
+            }
         }
         LlmEvent::CompactStreamToken(token) => {
             // Compaction is streaming — display as assistant streaming
