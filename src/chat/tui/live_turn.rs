@@ -614,48 +614,103 @@ fn format_tool_preview(name: &str, args: &serde_json::Value, tool_call_id: &str)
 
 /// Build the compact single-line representation of a tool call.
 ///
-/// Format: `🔧 name(k1=v1, k2=v2) (`id`)`
+/// Normal mode: `🔧 name(k1=v1, k2=v2)`
+/// Debug mode:  `🔧 name(k1=v1, k2=v2) (`id`)`
+///
 /// Empty-string and null argument values are omitted to keep the line short.
 /// Very long combined lines are truncated to protect the chat area width.
 fn format_tool_line(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
     let compact_args = compact_args_for_display(args);
     let compact = format!("🔧 {name}({compact_args})");
-    // Reserve budget for the tool-call id suffix " (`id`)". Use a generous cap
-    // so the line remains usable on narrow terminals without wrapping.
     const MAX_LINE_WIDTH: usize = 120;
-    let suffix = format!(" (`{tool_call_id}`)");
-    let budget = MAX_LINE_WIDTH.saturating_sub(suffix.chars().count());
-    let display_compact = crate::utils::truncate_chars(
-        &compact,
-        budget.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
-    );
-    format!("{display_compact}{suffix}")
+
+    // Show the tool-call id only in debug/trace mode — it's diagnostic info,
+    // not useful for the everyday user.
+    let show_id = log::max_level() == log::LevelFilter::Trace && !tool_call_id.is_empty();
+
+    if show_id {
+        let suffix = format!(" (`{tool_call_id}`)");
+        let budget = MAX_LINE_WIDTH.saturating_sub(suffix.chars().count());
+        let display_compact = crate::utils::truncate_chars(
+            &compact,
+            budget.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
+        );
+        format!("{display_compact}{suffix}")
+    } else {
+        crate::utils::truncate_chars(
+            &compact,
+            MAX_LINE_WIDTH.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
+        )
+    }
 }
+
+/// Argument keys that are "identifiers" — always shown first in the compact
+/// display, regardless of the order the provider sent them. These are short,
+/// high-value fields like `path`, `query`, `task_id` that the user needs to
+/// see. Long-content fields like `content` are deferred to the end.
+const PRIORITY_ARG_KEYS: &[&str] = &[
+    "path",
+    "file_path",
+    "filename",
+    "command_line",
+    "command",
+    "query",
+    "search_term",
+    "task_id",
+    "id",
+    "url",
+    "model",
+    "name",
+    "language",
+    "mode",
+    "status",
+    "action",
+    "overwrite",
+    "recursive",
+    "recursive",
+];
+
+/// Maximum characters to display for a single argument value. Long values
+/// (e.g., file `content`) are truncated to this length so they don't
+/// monopolize the display line and hide shorter, more important args.
+const MAX_ARG_VALUE_DISPLAY: usize = 30;
 
 /// Build a compact, comma-separated `key=value` string from tool arguments.
 ///
-/// Empty values and nested objects are rendered as inline JSON to keep the
-/// representation a single line. This is display-only; the LLM still receives
-/// the full structured arguments.
+/// Priority args (path, query, id, etc.) are shown first, regardless of JSON
+/// order. Each value is truncated to `MAX_ARG_VALUE_DISPLAY` chars so a long
+/// `content` field doesn't hide the `path` field. This is display-only; the
+/// LLM still receives the full structured arguments.
 fn compact_args_for_display(args: &serde_json::Value) -> String {
     let obj = match args {
         serde_json::Value::Object(o) if !o.is_empty() => o,
         _ => return String::new(),
     };
-    let pairs: Vec<String> = obj
+
+    let format_pair = |k: &str, v: &serde_json::Value| -> Option<String> {
+        let value_str = match v {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Null => return None,
+            other => other.to_string(),
+        };
+        if value_str.is_empty() {
+            return None;
+        }
+        let truncated = crate::utils::truncate_chars(&value_str, MAX_ARG_VALUE_DISPLAY);
+        Some(format!("{k}={truncated}"))
+    };
+
+    // Partition into priority (identifiers) and others (content, body, etc.)
+    let (priority, others): (Vec<_>, Vec<_>) = obj
         .iter()
-        .filter_map(|(k, v)| {
-            let value_str = match v {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Null => return None,
-                other => other.to_string(),
-            };
-            if value_str.is_empty() {
-                return None;
-            }
-            Some(format!("{k}={value_str}"))
-        })
+        .partition(|(k, _)| PRIORITY_ARG_KEYS.contains(&k.as_str()));
+
+    let mut pairs: Vec<String> = priority
+        .iter()
+        .filter_map(|(k, v)| format_pair(k, v))
         .collect();
+    pairs.extend(others.iter().filter_map(|(k, v)| format_pair(k, v)));
+
     pairs.join(", ")
 }
 
@@ -949,9 +1004,10 @@ mod tests {
             !rendered.contains("output truncated for display"),
             "Tool results should not be rendered in the TUI chat area"
         );
+        // In normal (non-trace) mode, the tool_call_id is NOT shown.
         assert_eq!(
-            rendered, "🔧 list_directory() (`id`)",
-            "Compact tool line should only show name, args, and id"
+            rendered, "🔧 list_directory()",
+            "Compact tool line should show name and args; id hidden in normal mode"
         );
         // Result stored in the block is still the full content
         if let TurnBlock::ToolCall {

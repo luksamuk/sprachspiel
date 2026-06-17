@@ -153,6 +153,22 @@ pub enum LlmEvent {
         attempt: u32,
     },
 
+    /// Token metrics from a completed ReAct round (intermediate status bar update).
+    ///
+    /// Emitted after each `stream_turn` completes, carrying the real
+    /// `prompt_tokens` from the provider's `Done` event. This lets the
+    /// status bar update during multi-round ReAct loops instead of
+    /// freezing until the final `Complete`.
+    ///
+    /// Only emitted when the provider actually sends `usage`. When absent,
+    /// the status bar falls back to `estimate_status_bar()`.
+    TurnMetrics {
+        /// Prompt tokens from the provider's usage report.
+        prompt_tokens: u32,
+        /// Completion tokens from the provider's usage report.
+        completion_tokens: u32,
+    },
+
     /// A streaming token chunk from compaction.
     ///
     /// Display as `AssistantStreaming` in the chat area, just like
@@ -274,6 +290,14 @@ impl std::fmt::Debug for LlmEvent {
                 .field("success", success)
                 .field("attempt", attempt)
                 .finish_non_exhaustive(),
+            Self::TurnMetrics {
+                prompt_tokens,
+                completion_tokens,
+            } => f
+                .debug_struct("TurnMetrics")
+                .field("prompt_tokens", prompt_tokens)
+                .field("completion_tokens", completion_tokens)
+                .finish(),
             Self::CompactStreamToken(token) => f
                 .debug_tuple("CompactStreamToken")
                 .field(&token.len())

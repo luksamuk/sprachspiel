@@ -183,8 +183,10 @@ pub enum ContextSource {
 #[derive(Debug, Clone, Copy)]
 pub struct ContextUsage {
     /// Tokens consumed by the system prompt (includes MESSAGE_OVERHEAD).
+    #[allow(dead_code)] // Public API field — read in /context display and tests
     pub system_tokens: usize,
     /// Tokens consumed by tool definitions (if any).
+    #[allow(dead_code)] // Public API field — read in /context display and tests
     pub tools_tokens: usize,
     /// Tokens consumed by conversation history (active messages + summary).
     /// When `source == Real`, this is derived by subtraction
@@ -195,6 +197,7 @@ pub struct ContextUsage {
     /// When `source == Real`, this equals `prompt_tokens` exactly.
     pub total_tokens: usize,
     /// Where the total came from.
+    #[allow(dead_code)] // Public API field — read in tests for source verification
     pub source: ContextSource,
 }
 
@@ -292,6 +295,7 @@ impl ContextUsage {
     }
 
     /// Returns true if usage is at or above `threshold_pct` of `context_window`.
+    #[cfg(test)]
     pub fn is_above_percent(&self, context_window: usize, threshold_pct: f32) -> bool {
         if context_window == 0 {
             return false;

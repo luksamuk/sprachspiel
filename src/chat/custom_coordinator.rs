@@ -988,6 +988,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                                     eval_count: u.completion_tokens as u64,
                                     eval_duration: 0,
                                 });
+                            // TurnMetrics: emit intermediate status bar update so
+                            // the context count reflects each ReAct round, not
+                            // just the final Complete.
+                            if let Some(ref cb) = self.provider_event_callback {
+                                cb(LlmEvent::TurnMetrics {
+                                    prompt_tokens: u.prompt_tokens,
+                                    completion_tokens: u.completion_tokens,
+                                });
+                            }
                         }
                     }
                     crate::provider::types::LlmStreamEvent::ProviderRetryStarted {

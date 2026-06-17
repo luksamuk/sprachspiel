@@ -22,9 +22,9 @@ pub use ollama_shim::CompatOllama as Ollama;
 
 #[allow(unused_imports)]
 pub use types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmToolResult,
-    ProviderCapabilities, ProviderError, ProviderOptions, RetryCategory, ToolFunctionInfo,
-    ToolInfo, ToolType, retry_delay,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, ProviderCapabilities,
+    ProviderError, ProviderOptions, RetryCategory, ToolFunctionInfo, ToolInfo, ToolType,
+    retry_delay,
 };
 
 #[allow(unused_imports)]

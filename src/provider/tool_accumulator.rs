@@ -155,8 +155,8 @@ impl ToolCallAccumulator {
 
     /// Return a snapshot of all complete-enough tool calls seen so far.
     ///
-    /// This is the compatibility view used while `LlmStreamChunk` still
-    /// exists; it will be removed when the chunk type is deleted in Fase 3.
+    /// Test-only: compatibility view from the pre-event-stream era.
+    #[cfg(test)]
     pub fn snapshot(&self) -> Vec<LlmToolCall> {
         let mut result: Vec<(u32, LlmToolCall)> = self
             .by_index

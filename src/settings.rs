@@ -986,27 +986,9 @@ impl Settings {
     /// Get the configured indexing model upstream `model_id` (after
     /// alias resolution).
     ///
-    /// W2 #121 extension: returns the empty string by default;
-    /// resolve_indexing_model is the authoritative resolver.
-    /// This thin helper exists for backward compat in tests.
-    #[deprecated(note = "Use Settings::resolve_indexing_model instead")]
-    pub fn indexing_model_name(&self) -> &str {
-        ""
-    }
-
     /// Whether the embedding endpoint should be probed at startup.
     pub fn indexing_probe_enabled(&self) -> bool {
         self.indexing.probe
-    }
-
-    /// RRF keyword weight (moved from `[retrieval]`).
-    pub fn indexing_keyword_weight(&self) -> f32 {
-        self.indexing.keyword_weight
-    }
-
-    /// RRF semantic weight (moved from `[retrieval]`).
-    pub fn indexing_semantic_weight(&self) -> f32 {
-        self.indexing.semantic_weight
     }
 
     // W2 #121 extension: `resolve_embedding_provider` is removed
@@ -1205,21 +1187,7 @@ impl Settings {
 
     /// Create an Ollama client using the configured host and port
     ///
-    /// **DEPRECATED** (#120): This method is kept for backward compatibility during
-    /// the transition. Use `crate::provider::factory::build_provider()` instead.
-    /// The provider config is now read from `models.toml` under `[provider]`.
-    /// This will be removed in #121 (Consumer Migration).
-    #[deprecated(note = "Use provider factory (#120). Will be removed in #121.")]
-    pub fn ollama_client(&self) -> crate::provider::Ollama {
-        // W2 #121 (temporary, until #121 is merged): Use the default
-        // localhost Ollama instance. The #121 PR removes this method
-        // in favor of factory::build_provider(provider_name, ...)
-        // which selects the right provider per model.
-        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
-    }
-
     /// Build a client for a named provider from `models.toml`.
-    /// W2 #121: temporary helper until `Settings::ollama_client()` is removed.
     /// Each model declares its `provider = "<name>"` in `models.toml`; this
     /// function returns the appropriate `Ollama` (shim) for that provider.
     pub fn ollama_client_for(&self, provider_name: &str) -> crate::provider::Ollama {

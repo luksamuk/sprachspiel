@@ -107,6 +107,7 @@ pub struct LlmMessage {
     pub tool_call_id: Option<String>,
 }
 
+#[cfg(test)]
 impl LlmMessage {
     pub fn user(content: String) -> Self {
         Self {
@@ -203,14 +204,6 @@ pub struct LlmToolCall {
     pub arguments: serde_json::Value,
 }
 
-/// A tool result to send back to the LLM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmToolResult {
-    pub tool_call_id: String,
-    pub name: String,
-    pub content: String,
-}
-
 /// Response from an LLM chat completion.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessageResponse`.
@@ -245,22 +238,18 @@ pub struct LlmUsage {
 /// chunks. This matches the event-stream design used by the Pi Coding Agent.
 #[derive(Debug, Clone)]
 pub enum LlmStreamEvent {
-    /// Response headers received; a new assistant turn has started.
-    Start,
-
     /// A new text content block has started.
     TextStart,
     /// Incremental text token.
     TextDelta { delta: String },
-    /// Text content block finalized.
-    TextEnd { content: String },
 
     /// A new thinking/reasoning block has started.
-    ThinkingStart { signature: Option<String> },
+    ThinkingStart {
+        #[allow(dead_code)] // Reasoning signature — used when provider implements signed thinking
+        signature: Option<String>,
+    },
     /// Incremental thinking token.
     ThinkingDelta { delta: String },
-    /// Thinking block finalized.
-    ThinkingEnd { content: String },
 
     /// A new tool call has started (name may still be `None`).
     ToolCallStart {
@@ -276,7 +265,11 @@ pub enum LlmStreamEvent {
         argument_delta: String,
     },
     /// Tool call finalized with parsed arguments.
-    ToolCallEnd { index: u32, call: LlmToolCall },
+    ToolCallEnd {
+        #[allow(dead_code)] // Debug correlation — matches ToolCallStart.index
+        index: u32,
+        call: LlmToolCall,
+    },
 
     /// Provider is about to retry a failed HTTP request.
     ProviderRetryStarted {
@@ -290,12 +283,10 @@ pub enum LlmStreamEvent {
 
     /// Stream completed normally.
     Done {
+        #[allow(dead_code)] // Finish reason — used when provider emits it
         reason: Option<String>,
         usage: Option<LlmUsage>,
     },
-    /// Stream failed. The consumer may still have partial content from previous
-    /// deltas; the error is terminal for this turn.
-    Error { error: ProviderError },
 }
 
 /// Capabilities reported by a model/provider.

@@ -475,6 +475,23 @@ pub fn handle_llm_event(
                 view.set_status_overlay(None);
             }
         }
+        LlmEvent::TurnMetrics {
+            prompt_tokens,
+            completion_tokens: _,
+        } => {
+            // Intermediate context update from a completed ReAct round.
+            // The provider reports the real prompt_tokens for this round's
+            // prompt (system + tools + all accumulated history). This keeps
+            // the status bar current during multi-round tool loops instead
+            // of freezing until the final Complete event.
+            let max_tokens = view.app().status_bar().max_tokens;
+            let percent = if max_tokens > 0 {
+                ((prompt_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            view.update_status_tokens(prompt_tokens as usize, max_tokens, percent);
+        }
         LlmEvent::CompactStreamToken(token) => {
             // Compaction is streaming — display as assistant streaming
             view.stream_token(&token);

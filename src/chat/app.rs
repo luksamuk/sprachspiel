@@ -2228,7 +2228,11 @@ mod tests {
             "Tool result must not appear in rendered chat content"
         );
         assert!(rendered[1].content.contains("weather"));
-        assert!(rendered[1].content.contains("call_1"));
+        // tool_call_id is NOT shown in normal (non-trace) mode
+        assert!(
+            !rendered[1].content.contains("call_1"),
+            "Tool call id should not appear in normal mode"
+        );
     }
 
     #[test]

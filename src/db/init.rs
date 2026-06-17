@@ -46,6 +46,8 @@ pub struct IndexingInit {
     pub dimensions: u32,
     /// Whether to probe `/v1/embeddings` at startup (from
     /// `[indexing].probe` in `config.toml`).
+    #[allow(dead_code)]
+    // Config flag — passed to run_indexing_probe(), not read via field access
     pub probe: bool,
 }
 
