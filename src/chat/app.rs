@@ -441,17 +441,8 @@ impl App {
 
     // ── Live turn API ───────────────────────────────────────────────────
 
-    /// Start a new live turn at the given round.
-    ///
-    /// Returns a mutable reference to the new turn.
-    pub fn start_live_turn(&mut self, round_index: usize) -> &mut LiveTurn {
-        self.live_turn = Some(LiveTurn::new(round_index));
-        // SAFETY: `live_turn` was just assigned `Some(...)` above.
-        #[allow(clippy::expect_used)]
-        self.live_turn.as_mut().expect("just created")
-    }
-
     /// Get a reference to the current live turn, if any.
+    #[cfg(test)]
     pub fn live_turn(&self) -> Option<&LiveTurn> {
         self.live_turn.as_ref()
     }
@@ -464,6 +455,7 @@ impl App {
     /// Finalize the current live turn and commit its blocks to the message history.
     ///
     /// Returns the committed messages. If no live turn exists, returns an empty vec.
+    #[cfg(test)]
     pub fn commit_live_turn(&mut self) -> Vec<ChatMessage> {
         if let Some(turn) = self.live_turn.take() {
             let committed = turn.finalize();
@@ -477,6 +469,7 @@ impl App {
     }
 
     /// Cancel the current live turn without committing anything.
+    #[cfg(test)]
     pub fn cancel_live_turn(&mut self) {
         self.live_turn = None;
     }
@@ -499,6 +492,10 @@ impl App {
     ///
     /// Creates the live turn if it does not exist. In the two-buffer model,
     /// previews live in `LiveTurn::tool_previews` keyed by `tool_call_id`.
+    ///
+    /// Test-only: production code uses [`upsert_tool_preview_direct`] which
+    /// avoids the string format → parse roundtrip.
+    #[cfg(test)]
     pub fn upsert_tool_preview(&mut self, tool_call_id: String, content: String) {
         let (name, args) = Self::parse_tool_preview_content(&content, &tool_call_id);
         let turn = self
@@ -539,6 +536,10 @@ impl App {
     /// Called when `ToolExecutionFinished` arrives from the coordinator.
     /// If the live turn does not exist or does not contain a matching block,
     /// a warning is logged and the result is dropped.
+    ///
+    /// Test-only: production code calls `LiveTurn::set_tool_result` directly
+    /// via `view.app_mut().live_turn_mut()`.
+    #[cfg(test)]
     pub fn set_tool_result(
         &mut self,
         tool_call_id: &str,
@@ -557,6 +558,7 @@ impl App {
     }
 
     /// Best-effort parse of the formatted preview content used by the old API.
+    #[cfg(test)]
     fn parse_tool_preview_content(
         content: &str,
         tool_call_id: &str,

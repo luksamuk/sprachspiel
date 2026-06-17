@@ -99,8 +99,6 @@ pub enum TurnState {
     Thinking,
     /// The model is emitting content text tokens.
     Streaming,
-    /// Tool calls have been finalized and tools are executing.
-    ToolCall,
     /// The turn is being finalized and committed.
     Finalizing,
     /// The turn has been committed and the slot is empty.
@@ -185,11 +183,6 @@ impl LiveTurn {
     /// Transition to `Streaming` state.
     pub fn start_streaming(&mut self) {
         self.state = TurnState::Streaming;
-    }
-
-    /// Transition to `ToolCall` state.
-    pub fn start_tool_call(&mut self) {
-        self.state = TurnState::ToolCall;
     }
 
     /// Transition to `Finalizing` state.
