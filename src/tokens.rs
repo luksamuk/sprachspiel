@@ -7,6 +7,14 @@ use ollama_rs::generation::chat::ChatMessage;
 /// Tokens per message overhead (role, formatting)
 pub const MESSAGE_OVERHEAD: usize = 4;
 
+/// Approximate token overhead per tool definition in the system prompt.
+///
+/// Used by `estimate_status_bar()`, `format_context_info()`, and other
+/// context-display functions to estimate how many tokens the tool definitions
+/// consume. This is a coarse approximation — the actual count depends on the
+/// tool's parameter schema complexity.
+pub const TOKENS_PER_TOOL: usize = 50;
+
 /// Estimate tokens in text using word-based estimation.
 /// ~0.75 words per token for English text (GPT-style).
 ///

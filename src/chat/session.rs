@@ -999,7 +999,23 @@ impl ChatSession {
     ///
     /// For context display purposes, callers should NOT add system + tools
     /// again — the value already includes them.
+    ///
+    /// # Bug B fix: fallback includes system+tools overhead
+    ///
+    /// The `overhead` parameter adds a fixed token count (system prompt +
+    /// tool definitions) to the fallback estimate. When the server reports
+    /// a valid `prompt_tokens > 0`, the overhead is NOT added (the server
+    /// already counted it). When the server reports 0/None (streaming path
+    /// where usage was lost — see Bug A), the overhead IS added so the
+    /// status bar shows a realistic total instead of just message content.
     pub fn history_real_tokens(&self) -> usize {
+        self.history_real_tokens_with_overhead(0)
+    }
+
+    /// Like [`history_real_tokens`] but adds `overhead` tokens to the
+    /// fallback estimate (used when the server didn't report valid
+    /// `prompt_tokens`). See the Bug B fix docs on [`history_real_tokens`].
+    pub fn history_real_tokens_with_overhead(&self, overhead: usize) -> usize {
         // Find the most recent message with prompt_tokens
         // This value is ALREADY cumulative from Ollama's prompt_eval_count
         let last_prompt_tokens = self
@@ -1011,11 +1027,14 @@ impl ChatSession {
 
         match last_prompt_tokens {
             // Only use real tokens if non-zero (0 means invalid/not-set)
+            // Server-reported values already include system+tools, so we
+            // do NOT add the overhead here.
             Some(tokens) if tokens > 0 => tokens as usize,
             _ => {
                 // Fallback: estimate from message content when no real tokens available
                 // This happens when loading from DB before first interaction
-                // or when prompt_tokens is 0 or None
+                // or when prompt_tokens is 0 or None (e.g., streaming path
+                // where the provider didn't return usage — see Bug A).
                 //
                 // IMPORTANT: If there's a compacted summary, only count:
                 // - Summary tokens
@@ -1053,7 +1072,9 @@ impl ChatSession {
                     0
                 };
 
-                messages_tokens + summary_tokens
+                // Bug B fix: add system+tools overhead so the fallback
+                // estimate is realistic (not just message content).
+                messages_tokens + summary_tokens + overhead
             }
         }
     }

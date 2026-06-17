@@ -318,6 +318,12 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// When cancelled, the tool loop stops after the current tool finishes
     /// and returns an error that the caller interprets as user cancellation.
     cancel_token: Option<tokio_util::sync::CancellationToken>,
+    /// Monotonic counter for generating unique tool_call_ids.
+    /// Bug D fix: previously tool_call_id was synthesized from the tool name
+    /// alone (`call.function.name.replace(' ', "_")`), which collided when
+    /// the same tool was called in multiple ReAct rounds. Now we generate
+    /// `{tool_name}_{counter}` so every call has a unique id.
+    tool_call_counter: u64,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -345,6 +351,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
             cancel_token: None,
+            tool_call_counter: 0,
         }
     }
 
@@ -869,7 +876,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         let mut full_content = String::new();
         let mut full_thinking: Option<String> = None;
-        let final_data = None;
+        // Bug A fix: capture usage from LlmStreamEvent::Done so the final
+        // ChatMessageResponse carries real prompt_eval_count / eval_count.
+        // Previously this was always None, causing TokenMetrics::default()
+        // (all zeros) and a misleadingly low status bar token count.
+        let mut final_data: Option<ollama_rs::generation::chat::ChatMessageFinalResponseData> =
+            None;
         let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
         let mut tool_call_previews: std::collections::HashMap<
             u32,
@@ -962,7 +974,22 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             },
                         });
                     }
-                    crate::provider::types::LlmStreamEvent::Done { .. } => {}
+                    crate::provider::types::LlmStreamEvent::Done { reason: _, usage } => {
+                        // Bug A fix: capture usage so final_data is populated.
+                        if let Some(u) = usage
+                            && (u.prompt_tokens > 0 || u.completion_tokens > 0)
+                        {
+                            final_data =
+                                Some(ollama_rs::generation::chat::ChatMessageFinalResponseData {
+                                    total_duration: 0,
+                                    load_duration: 0,
+                                    prompt_eval_count: u.prompt_tokens as u64,
+                                    prompt_eval_duration: 0,
+                                    eval_count: u.completion_tokens as u64,
+                                    eval_duration: 0,
+                                });
+                        }
+                    }
                     crate::provider::types::LlmStreamEvent::ProviderRetryStarted {
                         attempt,
                         max_attempts,
@@ -1127,7 +1154,13 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
-                let tool_call_id = call.function.name.clone().replace(' ', "_");
+                // Bug D fix: generate a unique tool_call_id using a monotonic
+                // counter. Previously this used just the tool name, which
+                // collided when the same tool was called in multiple ReAct
+                // rounds — causing earlier tool calls to be overwritten and
+                // their previews to be orphaned.
+                self.tool_call_counter += 1;
+                let tool_call_id = format!("{tool_name}_{}", self.tool_call_counter);
 
                 log::debug!("Tool call: {:?}", call.function);
 

@@ -34,13 +34,11 @@ use super::commands::{ChatCommand, FactListScope, SessionForgetTarget};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
-/// Approximate token overhead per tool definition in the system prompt.
-const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
-use crate::tokens::{calculate_context_metrics, estimate_tokens};
+use crate::tokens::{TOKENS_PER_TOOL, calculate_context_metrics, estimate_tokens};
 
 pub use super::session::ChatSession;
 

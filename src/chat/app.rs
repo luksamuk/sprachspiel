@@ -507,6 +507,23 @@ impl App {
         turn.upsert_tool_preview(tool_call_id, name, args);
     }
 
+    /// Update or insert a tool-call preview with explicit name and args.
+    ///
+    /// More efficient than [`upsert_tool_preview`] because it avoids the
+    /// string format → parse roundtrip. Used by the streaming
+    /// `ToolCallPreview` handler which already has the name and args.
+    pub fn upsert_tool_preview_direct(
+        &mut self,
+        tool_call_id: String,
+        name: String,
+        args: serde_json::Value,
+    ) {
+        let turn = self
+            .live_turn
+            .get_or_insert_with(|| LiveTurn::new(self.current_round));
+        turn.upsert_tool_preview(tool_call_id, name, args);
+    }
+
     /// Freeze every tool-call preview message into a finalized tool message.
     ///
     /// Called when tool calls are fully collected (on `ToolCallStarted` or
@@ -717,8 +734,19 @@ impl App {
             }
 
             // Override accumulated text with authoritative content.
-            turn.blocks
-                .retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Text { .. }));
+            // Bug C fix: previously this used `retain` to remove ALL Text
+            // blocks and replaced them with a single Text block containing
+            // only `post_tool_content`. This destroyed pre-tool text from
+            // earlier ReAct rounds that was already frozen and displayed.
+            // Now we only remove the LAST Text block (the one being finalized
+            // with authoritative content) and preserve earlier Text blocks.
+            if let Some(last_text_idx) = turn
+                .blocks
+                .iter()
+                .rposition(|b| matches!(b, super::tui::live_turn::TurnBlock::Text { .. }))
+            {
+                turn.blocks.remove(last_text_idx);
+            }
             if !content.is_empty() {
                 turn.blocks.push(super::tui::live_turn::TurnBlock::Text {
                     content: content.to_string(),
@@ -1992,7 +2020,7 @@ fn common_prefix_str(strings: &[String]) -> String {
 mod tests {
     use super::*;
     use crate::chat::tui::components::chat_area::MessageType;
-    use crate::chat::tui::live_turn::TurnState;
+    use crate::chat::tui::live_turn::{TurnBlock, TurnState};
 
     /// Create a minimal App for testing streaming message operations.
     fn test_app() -> App {
@@ -2101,8 +2129,13 @@ mod tests {
         // Final response commits the whole live turn
         app.finalize_stream("Final answer", Some("Final thinking"));
 
-        // Messages: User, Tool(1), Tool(1), Tool(2), Tool(2), Thinking, Assistant
-        assert_eq!(app.messages.len(), 7);
+        // Bug C fix: Text blocks from earlier rounds are now PRESERVED
+        // (previously they were all removed by finalize_stream). So we have:
+        // User, Tool(1), Tool(1), Tool(2), Tool(2), Thinking, Text("Searching..."),
+        // Text("Final answer") = 8 messages.
+        // Note: "Based on..." (the last Text block) is removed and replaced
+        // by "Final answer"; but "Searching..." (from round 0) is preserved.
+        assert_eq!(app.messages.len(), 8);
         assert_eq!(app.messages[0].msg_type, MessageType::User);
         assert_eq!(app.messages[1].msg_type, MessageType::Tool);
         assert_eq!(app.messages[2].msg_type, MessageType::Tool);
@@ -2110,8 +2143,11 @@ mod tests {
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
         assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
         assert_eq!(app.messages[5].content, "Final thinking");
+        // "Searching..." text from round 0 is preserved (Bug C fix)
         assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
-        assert_eq!(app.messages[6].content, "Final answer");
+        assert_eq!(app.messages[6].content, "Searching...");
+        assert_eq!(app.messages[7].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[7].content, "Final answer");
     }
 
     #[test]
@@ -2172,11 +2208,25 @@ mod tests {
         app.freeze_all_tool_previews();
         app.set_tool_result("call_1", "sunny".to_string(), false, false);
 
+        // The result is stored in the live-turn block for the LLM.
+        let turn = app.live_turn.as_ref().expect("live turn should exist");
+        let block = &turn.blocks[0];
+        assert!(
+            matches!(block, TurnBlock::ToolCall { tool_call_id, result: Some(r), .. } if tool_call_id == "call_1" && r.content == "sunny")
+        );
+
+        // The rendered chat message only shows the compact tool line; results
+        // are suppressed from the TUI chat area.
         let rendered = app.render_messages();
         assert_eq!(rendered.len(), 2);
         assert_eq!(rendered[1].msg_type, MessageType::Tool);
         assert_eq!(rendered[1].tool_call_id.as_deref(), Some("call_1"));
-        assert!(rendered[1].content.contains("sunny"));
+        assert!(
+            !rendered[1].content.contains("sunny"),
+            "Tool result must not appear in rendered chat content"
+        );
+        assert!(rendered[1].content.contains("weather"));
+        assert!(rendered[1].content.contains("call_1"));
     }
 
     #[test]
@@ -2189,6 +2239,20 @@ mod tests {
         app.increment_round();
         app.set_tool_result("a", "result-a".to_string(), false, false);
 
+        // Result-a is stored in the live-turn block for the LLM before it is
+        // suppressed from the TUI display.
+        {
+            let turn = app.live_turn.as_ref().expect("live turn should exist");
+            assert!(
+                matches!(
+                    &turn.blocks[0],
+                    TurnBlock::ToolCall { tool_call_id, result: Some(r), .. }
+                    if tool_call_id == "a" && r.content == "result-a"
+                ),
+                "result-a should be attached to tool-call block a"
+            );
+        }
+
         app.append_stream_thinking("Hmm");
         app.append_stream_token("Based on...");
         app.finalize_streaming_zone_as_is();
@@ -2198,10 +2262,30 @@ mod tests {
         app.increment_round();
         app.set_tool_result("b", "result-b".to_string(), false, false);
 
+        {
+            let turn = app
+                .live_turn
+                .as_ref()
+                .expect("live turn should still exist");
+            let b_block = turn.blocks.iter().rev().find_map(|b| match b {
+                TurnBlock::ToolCall {
+                    tool_call_id,
+                    result,
+                    ..
+                } if tool_call_id == "b" => result.as_ref(),
+                _ => None,
+            });
+            assert_eq!(
+                b_block.map(|r| r.content.as_str()),
+                Some("result-b"),
+                "result-b should be attached to tool-call block b"
+            );
+        }
+
         app.finalize_stream("Final answer", None);
 
         // The committed order preserves the live turn's block order:
-        // user, first tool result, inter-round thinking, second tool result,
+        // user, first tool call, inter-round thinking, second tool call,
         // final assistant text.
         assert_eq!(app.messages.len(), 5);
         assert_eq!(app.messages[0].msg_type, MessageType::User);
@@ -2209,14 +2293,16 @@ mod tests {
         assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
         assert_eq!(app.messages[3].msg_type, MessageType::Tool);
         assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+
+        // Tool results are suppressed from the rendered chat messages.
         assert!(
-            app.messages[1].content.contains("result-a"),
-            "{}",
+            !app.messages[1].content.contains("result-a"),
+            "Tool result must not appear in rendered chat content: {}",
             app.messages[1].content
         );
         assert!(
-            app.messages[3].content.contains("result-b"),
-            "{}",
+            !app.messages[3].content.contains("result-b"),
+            "Tool result must not appear in rendered chat content: {}",
             app.messages[3].content
         );
     }

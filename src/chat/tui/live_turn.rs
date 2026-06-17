@@ -48,18 +48,32 @@ use super::components::chat_area::ChatMessage;
 /// can corrupt the TUI. The full output is still kept in `ToolResult.content`
 /// so it is sent back to the LLM; this limit applies only to on-screen
 /// display.
+///
+/// Currently unused in the TUI display path because tool results are completely
+/// suppressed from the chat area (only the compact `🔧 name(args) (id)` line is
+/// shown). Kept for milestone 2, which will reintroduce optional result
+/// display.
+#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
 const TUI_TOOL_RESULT_MAX_CHARS: usize = 2_000;
 
 /// Maximum number of lines from a tool result shown in the TUI.
 ///
 /// Used together with `TUI_TOOL_RESULT_MAX_CHARS` so that even a short but
 /// very tall output does not flood the chat area.
+///
+/// Currently unused in the TUI display path because tool results are completely
+/// suppressed from the chat area. Kept for milestone 2.
+#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
 const TUI_TOOL_RESULT_MAX_LINES: usize = 40;
 
 /// Truncate a tool result for on-screen display.
 ///
 /// Preserves the start of the output and appends a summary of how much
 /// was elided. The original `content` in `ToolResult` is untouched.
+///
+/// Currently unused in the TUI display path because tool results are completely
+/// suppressed from the chat area. Kept for milestone 2.
+#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
 fn truncate_tool_result_for_display(content: &str) -> String {
     let line_count = content.lines().count();
     let mut truncated = truncate_chars(content, TUI_TOOL_RESULT_MAX_CHARS);
@@ -270,9 +284,126 @@ impl LiveTurn {
         self.blocks.push(block);
     }
 
+    /// Promote a preview to a committed `TurnBlock::ToolCall`, matching by
+    /// tool name when the exact `tool_call_id` doesn't match any preview.
+    ///
+    /// This handles the common case where the streaming preview used the
+    /// provider's call id (e.g., `"call_abc123"`) but the ReAct loop
+    /// synthesizes `tool_call_id` from the tool name (e.g.,
+    /// `"list_directory"`). Without name-based matching, `freeze_tool_preview`
+    /// would create a new block with an empty name, producing
+    /// `🔧 () (list_directory)` in the chat area.
+    ///
+    /// When a name match is found, the preview is updated with the correct
+    /// `tool_call_id` (so future `set_tool_result` calls can find it) and
+    /// the name/args from `ToolExecutionStarted` are used to fill in any
+    /// gaps (e.g., empty name from a provider that didn't stream the name).
+    ///
+    /// If no match is found at all, creates a block with the provided
+    /// `name` and `args` (not empty) so the user always sees the tool name.
+    pub fn freeze_tool_preview_by_name(
+        &mut self,
+        tool_call_id: &str,
+        name: &str,
+        args: &serde_json::Value,
+    ) {
+        // Bug E fix: if a block with this tool_call_id already exists (e.g.,
+        // it was frozen earlier by freeze_all_tool_previews), do nothing —
+        // don't create a duplicate block.
+        if self.blocks.iter().any(|b| {
+            matches!(
+                b,
+                TurnBlock::ToolCall {
+                    tool_call_id: id, ..
+                } if id == tool_call_id
+            )
+        }) {
+            return;
+        }
+
+        // First try exact id match. If the preview has empty args, fill them
+        // from the ToolExecutionStarted args (provider didn't stream them).
+        if let Some(mut preview) = self.tool_previews.remove(tool_call_id) {
+            if preview.name.is_empty() && !name.is_empty() {
+                preview.name = name.to_string();
+            }
+            let is_preview_args_empty = matches!(
+                &preview.args,
+                serde_json::Value::Object(o) if o.is_empty()
+            );
+            let final_args = if is_preview_args_empty && !args.is_null() {
+                args.clone()
+            } else {
+                preview.args
+            };
+            self.blocks.push(TurnBlock::ToolCall {
+                tool_call_id: preview.tool_call_id,
+                name: preview.name,
+                args: final_args,
+                result: None,
+            });
+            return;
+        }
+
+        // Try name match: find a preview whose name matches, or a preview
+        // with an empty name (placeholder from a provider that didn't stream
+        // the name — it should be claimed by the first ToolExecutionStarted).
+        if !name.is_empty() {
+            if let Some(preview_id) = self.tool_previews.iter().find_map(|(id, p)| {
+                if p.name == name || p.name.is_empty() {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            }) {
+                if let Some(mut preview) = self.tool_previews.remove(&preview_id) {
+                    // Update the preview's tool_call_id to the execution id
+                    preview.tool_call_id = tool_call_id.to_string();
+                    // Fill in empty name (provider didn't stream it)
+                    if preview.name.is_empty() {
+                        preview.name = name.to_string();
+                    }
+                    // If the preview has empty args (provider didn't stream
+                    // argument_delta — common with Ollama/cloud providers that
+                    // only send args in the final ToolCallEnd), use the args
+                    // from ToolExecutionStarted which carries the parsed args.
+                    let is_preview_args_empty = matches!(
+                        &preview.args,
+                        serde_json::Value::Object(o) if o.is_empty()
+                    );
+                    let final_args = if is_preview_args_empty && !args.is_null() {
+                        args.clone()
+                    } else {
+                        preview.args
+                    };
+                    self.blocks.push(TurnBlock::ToolCall {
+                        tool_call_id: preview.tool_call_id,
+                        name: preview.name,
+                        args: final_args,
+                        result: None,
+                    });
+                    return;
+                }
+            }
+        }
+
+        // No match — create block with the provided name/args (not empty)
+        self.blocks.push(TurnBlock::ToolCall {
+            tool_call_id: tool_call_id.to_string(),
+            name: name.to_string(),
+            args: args.clone(),
+            result: None,
+        });
+    }
+
     /// Set the result for the most recent tool-call block matching `tool_call_id`.
     ///
     /// If the tool call has not been frozen yet, freezes the preview first.
+    ///
+    /// Bug F fix: only fills a block that does NOT already have a result.
+    /// Previously this would overwrite an earlier round's result if the same
+    /// `tool_call_id` appeared in multiple rounds. With Bug D fix (unique
+    /// ids), collisions are rare, but this is defense in depth.
     pub fn set_tool_result(
         &mut self,
         tool_call_id: &str,
@@ -285,6 +416,29 @@ impl LiveTurn {
             self.freeze_tool_preview(tool_call_id);
         }
 
+        // Bug F fix: prefer a block that has NO result yet. Only fall back
+        // to overwriting an existing result if no empty block is found.
+        for block in self.blocks.iter_mut().rev() {
+            if let TurnBlock::ToolCall {
+                tool_call_id: id,
+                result,
+                ..
+            } = block
+                && id == tool_call_id
+                && result.is_none()
+            {
+                *result = Some(ToolResult {
+                    content,
+                    is_error,
+                    is_streaming,
+                });
+                return;
+            }
+        }
+
+        // No empty block found — fall back to the last block with this id
+        // (even if it already has a result). This handles the edge case
+        // where a provider sends duplicate ToolExecutionFinished events.
         for block in self.blocks.iter_mut().rev() {
             if let TurnBlock::ToolCall {
                 tool_call_id: id,
@@ -441,37 +595,75 @@ impl LiveTurn {
 }
 
 /// Format a finalized tool-call message.
+///
+/// Renders as a single compact line showing the tool name and its arguments.
+/// Tool results are intentionally **not** displayed in the chat area — they are
+/// kept in `ToolResult.content` and sent back to the LLM, but rendering them
+/// causes TUI overflow/corruption and adds visual noise. Milestone 2 will
+/// reintroduce optional result display.
 fn format_tool_message(
     tool_call_id: &str,
     name: &str,
     args: &serde_json::Value,
-    result: Option<&ToolResult>,
+    _result: Option<&ToolResult>,
 ) -> String {
-    let mut lines = vec![format!("🔧 {name} (`{tool_call_id}`)")];
-    if !args.is_null() && !matches!(args, serde_json::Value::Object(m) if m.is_empty()) {
-        let pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
-        lines.push(format!("```json\n{pretty}\n```"));
-    }
-    if let Some(r) = result {
-        let prefix = if r.is_error {
-            "⛔ Error"
-        } else {
-            "📝 Result"
-        };
-        let display_content = truncate_tool_result_for_display(&r.content);
-        lines.push(format!("{prefix}:\n```\n{display_content}\n```"));
-    }
-    lines.join("\n\n")
+    format_tool_line(name, args, tool_call_id)
 }
 
 /// Format a transient tool-call preview.
+///
+/// Uses the same compact single-line format as `format_tool_message` so the
+/// preview updates in-place when the call is finalized, without changing size
+/// or jumping in the chat buffer.
 fn format_tool_preview(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
-    let compact = format!("🔧 {name}({args})");
-    if compact.len() <= 80 && !matches!(args, serde_json::Value::Object(_)) {
-        return format!("{compact} (`{tool_call_id}`)");
-    }
-    let pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
-    format!("🔧 {name} (`{tool_call_id}`)\n```json\n{pretty}\n```")
+    format_tool_line(name, args, tool_call_id)
+}
+
+/// Build the compact single-line representation of a tool call.
+///
+/// Format: `🔧 name(k1=v1, k2=v2) (`id`)`
+/// Empty-string and null argument values are omitted to keep the line short.
+/// Very long combined lines are truncated to protect the chat area width.
+fn format_tool_line(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
+    let compact_args = compact_args_for_display(args);
+    let compact = format!("🔧 {name}({compact_args})");
+    // Reserve budget for the tool-call id suffix " (`id`)". Use a generous cap
+    // so the line remains usable on narrow terminals without wrapping.
+    const MAX_LINE_WIDTH: usize = 120;
+    let suffix = format!(" (`{tool_call_id}`)");
+    let budget = MAX_LINE_WIDTH.saturating_sub(suffix.chars().count());
+    let display_compact = crate::utils::truncate_chars(
+        &compact,
+        budget.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
+    );
+    format!("{display_compact}{suffix}")
+}
+
+/// Build a compact, comma-separated `key=value` string from tool arguments.
+///
+/// Empty values and nested objects are rendered as inline JSON to keep the
+/// representation a single line. This is display-only; the LLM still receives
+/// the full structured arguments.
+fn compact_args_for_display(args: &serde_json::Value) -> String {
+    let obj = match args {
+        serde_json::Value::Object(o) if !o.is_empty() => o,
+        _ => return String::new(),
+    };
+    let pairs: Vec<String> = obj
+        .iter()
+        .filter_map(|(k, v)| {
+            let value_str = match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Null => return None,
+                other => other.to_string(),
+            };
+            if value_str.is_empty() {
+                return None;
+            }
+            Some(format!("{k}={value_str}"))
+        })
+        .collect();
+    pairs.join(", ")
 }
 
 #[cfg(test)]
@@ -580,6 +772,101 @@ mod tests {
     }
 
     #[test]
+    fn freeze_tool_preview_by_name_matches_on_name() {
+        // Simulate the common case: streaming preview used the provider's
+        // call id ("call_abc123"), but ToolExecutionStarted synthesizes
+        // tool_call_id from the tool name ("list_directory").
+        let mut turn = LiveTurn::new(0);
+        turn.upsert_tool_preview(
+            "call_abc123".to_string(),
+            "list_directory".to_string(),
+            serde_json::json!({"path": "."}),
+        );
+
+        // Freeze with the execution id — should match by name
+        turn.freeze_tool_preview_by_name(
+            "list_directory",
+            "list_directory",
+            &serde_json::json!({"path": "."}),
+        );
+
+        assert!(turn.tool_previews.is_empty());
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "list_directory");
+                assert_eq!(name, "list_directory");
+                assert_eq!(args, &serde_json::json!({"path": "."}));
+            }
+            _ => panic!("expected tool call block"),
+        }
+    }
+
+    #[test]
+    fn freeze_tool_preview_by_name_fills_empty_name() {
+        // Provider streamed id but no name — name arrives in
+        // ToolExecutionStarted. The block should get the correct name.
+        let mut turn = LiveTurn::new(0);
+        turn.upsert_tool_preview("call_xyz".to_string(), String::new(), serde_json::json!({}));
+
+        turn.freeze_tool_preview_by_name(
+            "list_directory",
+            "list_directory",
+            &serde_json::json!({"path": "/tmp"}),
+        );
+
+        assert!(turn.tool_previews.is_empty());
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "list_directory");
+                assert_eq!(name, "list_directory");
+                // Args: preview had empty args, so the args from
+                // ToolExecutionStarted are used as fallback.
+                assert_eq!(args, &serde_json::json!({"path": "/tmp"}));
+            }
+            _ => panic!("expected tool call block"),
+        }
+    }
+
+    #[test]
+    fn freeze_tool_preview_by_name_no_match_uses_provided_name() {
+        // No preview at all — block should still have the correct name
+        // (not empty), preventing `🔧 () (id)` in the chat area.
+        let mut turn = LiveTurn::new(0);
+        turn.freeze_tool_preview_by_name(
+            "list_directory",
+            "list_directory",
+            &serde_json::json!({"path": "."}),
+        );
+
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "list_directory");
+                assert_eq!(name, "list_directory");
+                assert_eq!(args, &serde_json::json!({"path": "."}));
+            }
+            _ => panic!("expected tool call block"),
+        }
+    }
+
+    #[test]
     fn freeze_all_tool_previews_promotes_everything() {
         let mut turn = LiveTurn::new(0);
         turn.upsert_tool_preview("a".to_string(), "search".to_string(), serde_json::json!({}));
@@ -665,7 +952,14 @@ mod tests {
             }),
         );
         assert!(rendered.contains("list_directory"));
-        assert!(rendered.contains("output truncated for display"));
+        assert!(
+            !rendered.contains("output truncated for display"),
+            "Tool results should not be rendered in the TUI chat area"
+        );
+        assert_eq!(
+            rendered, "🔧 list_directory() (`id`)",
+            "Compact tool line should only show name, args, and id"
+        );
         // Result stored in the block is still the full content
         if let TurnBlock::ToolCall {
             result: Some(r), ..

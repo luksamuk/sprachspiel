@@ -33,21 +33,6 @@ use super::view::ChatView;
 use super::view::RatatuiView;
 use crate::capabilities::ModelCapabilities;
 
-/// Format a tool-call preview for display in the chat area.
-///
-/// The preview is rendered as a transient Tool message so the user can
-/// see what tool the model is calling while the arguments are still
-/// streaming in. Use the compact one-line form `🔧 name(args)` when the
-/// arguments fit, otherwise show a code block with pretty-printed JSON.
-fn format_tool_call_preview(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
-    let compact = format!("🔧 {name}({args})");
-    if compact.len() <= 80 && !matches!(args, serde_json::Value::Object(_)) {
-        return compact;
-    }
-    let pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
-    format!("🔧 {name} (`{tool_call_id}`)\n```json\n{pretty}\n```")
-}
-
 /// Channel capacity for LLM view actions.
 ///
 /// Each `show_*` call during LLM processing sends one `ViewAction`.
@@ -434,8 +419,8 @@ pub fn handle_llm_event(
             name,
             args,
         } => {
-            let content = format_tool_call_preview(&name, &args, &tool_call_id);
-            view.app_mut().upsert_tool_preview(tool_call_id, content);
+            view.app_mut()
+                .upsert_tool_preview_direct(tool_call_id, name, args);
         }
         LlmEvent::ToolExecutionStarted {
             tool_call_id,
@@ -449,10 +434,14 @@ pub fn handle_llm_event(
                 args
             );
             if let Some(turn) = view.app_mut().live_turn_mut() {
-                // Ensure a matching tool-call block exists for the result.
-                if !turn.blocks.iter().any(|b| matches!(b, crate::chat::tui::live_turn::TurnBlock::ToolCall { tool_call_id: id, .. } if id == &tool_call_id)) {
-                    turn.freeze_tool_preview(&tool_call_id);
-                }
+                // Bug E fix: always call freeze_tool_preview_by_name.
+                // Previously this skipped the freeze when a block with the
+                // same tool_call_id already existed, which orphaned previews
+                // from later ReAct rounds. With Bug D fix (unique ids), the
+                // collision no longer happens, but always calling is safer —
+                // freeze_tool_preview_by_name handles the no-match case by
+                // creating a block with the provided name/args.
+                turn.freeze_tool_preview_by_name(&tool_call_id, &name, &args);
             }
         }
         LlmEvent::ToolExecutionFinished {
@@ -728,8 +717,23 @@ fn spawn_llm_task(
             return;
         }
 
-        // Send the updated session and token counts back
-        let used_tokens = task_state.session.history_real_tokens();
+        // Send the updated session and token counts back.
+        // Bug B fix: when the server didn't return valid prompt_tokens (0 or
+        // None — common in the streaming path), history_real_tokens falls
+        // back to an estimate that excludes system prompt + tool definitions.
+        // We add the overhead so the status bar shows a realistic total.
+        let system_prompt = super::continuation::build_pre_tool_prompt(&task_state);
+        let system_tokens =
+            crate::tokens::estimate_tokens(&system_prompt) + crate::tokens::MESSAGE_OVERHEAD;
+        let tools_tokens = if task_state.tools_active {
+            let tool_count = crate::tools::get_available_tool_names(&task_state.settings).len();
+            tool_count * crate::tokens::TOKENS_PER_TOOL
+        } else {
+            0
+        };
+        let used_tokens = task_state
+            .session
+            .history_real_tokens_with_overhead(system_tokens + tools_tokens);
         let max_tokens = task_state.model_config.num_ctx as usize;
         let percent = if max_tokens > 0 {
             ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8

@@ -238,6 +238,12 @@ impl ReplState {
     /// the W2 #121 TODO in src/tokens.rs), but that's acceptable for a
     /// status bar — the user wants to see the TREND, not the exact number.
     ///
+    /// **Bug fix:** Previously this used `String::new()` as the system prompt,
+    /// which meant system prompt tokens (~3.5K) and tool definition tokens
+    /// (~2.9K) were NOT counted, producing a misleadingly low total (e.g.,
+    /// 277 tokens instead of ~6.4K). Now we build the real system prompt via
+    /// `build_pre_tool_prompt` so the estimate includes system + tools.
+    ///
     /// Returns `(used_tokens, max_tokens, percent)` suitable for
     /// `view.update_status_tokens`. Returns `None` if `num_ctx` is unset.
     pub fn estimate_status_bar(&self) -> Option<(usize, usize, u8)> {
@@ -245,22 +251,29 @@ impl ReplState {
         if ctx_window == 0 {
             return None;
         }
-        // Build a system prompt for the estimator. The real system prompt
-        // isn't stored on ReplState (it's reconstructed per request), so
-        // we use a coarse approximation: the build_session_system_prompt
-        // is typically 2-3K tokens. We don't need exact sizing here.
-        let system_prompt_approx = String::new(); // Estimator will use 0 + overhead
+        // Build the real system prompt so system + tool tokens are counted.
+        // This uses the same builder as the pre-tool check in repl.rs.
+        let system_prompt = super::continuation::build_pre_tool_prompt(self);
         let usage = crate::tokens::ContextUsage::from_session_estimate(
             &self.session,
-            &system_prompt_approx,
+            &system_prompt,
             self.tools_active,
         );
-        let percent = if ctx_window > 0 {
-            ((usage.total_tokens as f64 / ctx_window as f64) * 100.0) as u8
+        // from_session_estimate sets tools_tokens to 0 — add the real count
+        // so tool definitions are reflected in the total.
+        let tools_tokens = if self.tools_active {
+            let tool_count = crate::tools::get_available_tool_names(&self.settings).len();
+            tool_count * crate::tokens::TOKENS_PER_TOOL
         } else {
             0
         };
-        Some((usage.total_tokens, ctx_window, percent.min(100)))
+        let total = usage.total_tokens + tools_tokens;
+        let percent = if ctx_window > 0 {
+            ((total as f64 / ctx_window as f64) * 100.0) as u8
+        } else {
+            0
+        };
+        Some((total, ctx_window, percent.min(100)))
     }
 
     /// Bucket for throttling status bar updates.
