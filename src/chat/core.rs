@@ -934,6 +934,32 @@ pub async fn send_message_stream(
                     continue;
                 } else {
                     let error_str = e.to_string();
+                    // "invalid tool call arguments" é um erro 400 do provider
+                    // que indica que os argumentos da tool call enviada pelo
+                    // modelo são inválidos (JSON malformado, campos ausentes,
+                    // etc.). Em vez de quebrar o ciclo ReAct, devemos retornar
+                    // o erro como uma tool message para que a LLM possa
+                    // self-correct.
+                    if error_str.contains("invalid tool call arguments") {
+                        log::debug!(
+                            "Provider rejected tool call arguments — \
+                             pushing error as tool message and retrying"
+                        );
+                        let recovery_msg = format!(
+                            "Error: The provider rejected the tool call arguments \
+                             as invalid. This usually means the arguments were \
+                             malformed JSON or had missing/invalid fields. \
+                             Please try again with valid arguments.\n\n\
+                             Provider error: {error_str}"
+                        );
+                        push_tool_result(&mut messages, recovery_msg);
+                        attempts += 1;
+                        if attempts > 3 {
+                            // Too many attempts — give up to avoid infinite loop
+                            break Err(error_str);
+                        }
+                        continue;
+                    }
                     break Err(error_str);
                 }
             }
