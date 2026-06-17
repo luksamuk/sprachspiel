@@ -1192,10 +1192,17 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => {
+                        // Tools follow the convention "always return Ok(String)"
+                        // (AGENTS.md: "Tools must NEVER crash"). When the string
+                        // indicates an error, it's a soft error — the LLM still
+                        // receives it as a tool message and can self-correct, but
+                        // we flag is_error=true so the TUI can show a visual
+                        // indicator (✗ prefix instead of 🔧).
+                        let is_error = is_tool_error(&result);
                         self.emit_event(ChatEvent::ToolExecutionFinished {
                             tool_call_id: tool_call_id.clone(),
                             result: result.clone(),
-                            is_error: false,
+                            is_error,
                         });
                         result
                     }
@@ -1346,6 +1353,26 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     }
 }
 
+/// Heuristic: detect whether a tool result string represents an error.
+///
+/// Tools follow the convention "always return Ok(String)" (AGENTS.md: "Tools
+/// must NEVER crash"). Error messages use various prefixes depending on the
+/// tool and the error path (validate_path, blocklist, file ops, etc.).
+/// This function checks the common error prefixes so the coordinator can flag
+/// `is_error=true` and the TUI can show a visual indicator (✗ prefix).
+fn is_tool_error(result: &str) -> bool {
+    // Trim leading whitespace — some tools may have leading spaces.
+    let trimmed = result.trim_start();
+    // Common error prefixes used across all tools.
+    trimmed.starts_with("Error:")
+        || trimmed.starts_with("Access denied:")
+        || trimmed.starts_with("FILE NOT FOUND:")
+        || trimmed.starts_with("NOT A FILE:")
+        || trimmed.starts_with("NOT A DIRECTORY:")
+        || trimmed.starts_with("BLOCKED:")
+        || trimmed.starts_with("Error executing tool")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1467,5 +1494,23 @@ Next step: Should ignore
         let tag = tag.unwrap();
         assert_eq!(tag.paused_at, "Nested"); // Last "Reasoning paused:" wins
         assert_eq!(tag.next_step, "Should ignore"); // Last "Next step:" wins
+    }
+
+    #[test]
+    fn test_is_tool_error_detects_common_prefixes() {
+        assert!(is_tool_error("Error: File not found"));
+        assert!(is_tool_error("Access denied: path not accessible"));
+        assert!(is_tool_error("FILE NOT FOUND: '/tmp/missing.txt'. ..."));
+        assert!(is_tool_error("NOT A FILE: '/tmp'. ..."));
+        assert!(is_tool_error("NOT A DIRECTORY: '/tmp/file'. ..."));
+        assert!(is_tool_error("BLOCKED: '/tmp/.env'. ..."));
+        assert!(is_tool_error("Error executing tool 'read_file': ..."));
+        // Leading whitespace is trimmed
+        assert!(is_tool_error("  Error: indented"));
+        // Success cases are NOT errors
+        assert!(!is_tool_error("file1.txt\nfile2.txt"));
+        assert!(!is_tool_error("Contents of the file..."));
+        assert!(!is_tool_error("Task 1 marked as in_progress"));
+        assert!(!is_tool_error(""));
     }
 }

@@ -590,17 +590,18 @@ impl LiveTurn {
 /// Format a finalized tool-call message.
 ///
 /// Renders as a single compact line showing the tool name and its arguments.
-/// Tool results are intentionally **not** displayed in the chat area — they are
-/// kept in `ToolResult.content` and sent back to the LLM, but rendering them
-/// causes TUI overflow/corruption and adds visual noise. Milestone 2 will
-/// reintroduce optional result display.
+/// Uses `✗` prefix when the tool returned an error (instead of `🔧`).
+/// Tool result content is intentionally **not** displayed in the chat area —
+/// it is kept in `ToolResult.content` and sent back to the LLM. Milestone 2
+/// will reintroduce optional result display.
 fn format_tool_message(
     tool_call_id: &str,
     name: &str,
     args: &serde_json::Value,
-    _result: Option<&ToolResult>,
+    result: Option<&ToolResult>,
 ) -> String {
-    format_tool_line(name, args, tool_call_id)
+    let is_error = result.is_some_and(|r| r.is_error);
+    format_tool_line(name, args, tool_call_id, is_error)
 }
 
 /// Format a transient tool-call preview.
@@ -609,38 +610,43 @@ fn format_tool_message(
 /// preview updates in-place when the call is finalized, without changing size
 /// or jumping in the chat buffer.
 fn format_tool_preview(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
-    format_tool_line(name, args, tool_call_id)
+    format_tool_line(name, args, tool_call_id, false)
 }
 
 /// Build the compact single-line representation of a tool call.
 ///
-/// Normal mode: `🔧 name(k1=v1, k2=v2)`
-/// Debug mode:  `🔧 name(k1=v1, k2=v2) (`id`)`
+/// Normal mode: `🔧 name(k1=v1, k2=v2)` (success) or `✗ name(k1=v1, k2=v2)` (error)
+/// Debug mode:  `🔧 name(k1=v1, k2=v2) (`id`)` (success) or `✗ name(k1=v1, k2=v2) (`id`)` (error)
 ///
 /// Empty-string and null argument values are omitted to keep the line short.
 /// Very long combined lines are truncated to protect the chat area width.
-fn format_tool_line(name: &str, args: &serde_json::Value, tool_call_id: &str) -> String {
+fn format_tool_line(
+    name: &str,
+    args: &serde_json::Value,
+    tool_call_id: &str,
+    is_error: bool,
+) -> String {
     let compact_args = compact_args_for_display(args);
-    let compact = format!("🔧 {name}({compact_args})");
+    // ✗ prefix for errors, 🔧 for success — gives the user an immediate
+    // visual cue that a tool call failed without reading the result content.
+    let prefix = if is_error { "✗" } else { "🔧" };
+    let compact = format!("{prefix} {name}({compact_args})");
     const MAX_LINE_WIDTH: usize = 120;
 
     // Show the tool-call id only in debug/trace mode — it's diagnostic info,
     // not useful for the everyday user.
     let show_id = log::max_level() == log::LevelFilter::Trace && !tool_call_id.is_empty();
 
+    let min_budget =
+        format!("{prefix} ").chars().count() + name.chars().count() + "()".chars().count();
+
     if show_id {
         let suffix = format!(" (`{tool_call_id}`)");
         let budget = MAX_LINE_WIDTH.saturating_sub(suffix.chars().count());
-        let display_compact = crate::utils::truncate_chars(
-            &compact,
-            budget.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
-        );
+        let display_compact = crate::utils::truncate_chars(&compact, budget.max(min_budget));
         format!("{display_compact}{suffix}")
     } else {
-        crate::utils::truncate_chars(
-            &compact,
-            MAX_LINE_WIDTH.max("🔧 ".chars().count() + name.chars().count() + "()".chars().count()),
-        )
+        crate::utils::truncate_chars(&compact, MAX_LINE_WIDTH.max(min_budget))
     }
 }
 
@@ -1005,6 +1011,7 @@ mod tests {
             "Tool results should not be rendered in the TUI chat area"
         );
         // In normal (non-trace) mode, the tool_call_id is NOT shown.
+        // The test uses is_error=false so the prefix is 🔧.
         assert_eq!(
             rendered, "🔧 list_directory()",
             "Compact tool line should show name and args; id hidden in normal mode"
@@ -1018,6 +1025,69 @@ mod tests {
         } else {
             panic!("expected tool call block with result");
         }
+    }
+
+    #[test]
+    fn format_tool_line_shows_error_prefix_on_failure() {
+        let args = serde_json::json!({"path": "/nonexistent"});
+        let result = ToolResult {
+            content: "Error: file not found".to_string(),
+            is_error: true,
+            is_streaming: false,
+        };
+        let rendered = format_tool_message("call_1", "read_file", &args, Some(&result));
+        assert!(
+            rendered.starts_with("✗ "),
+            "Expected error prefix '✗ ', got: {rendered}"
+        );
+        assert!(rendered.contains("read_file"));
+        assert!(rendered.contains("path=/nonexistent"));
+        // Error result content is NOT rendered in the chat area
+        assert!(!rendered.contains("file not found"));
+    }
+
+    #[test]
+    fn format_tool_line_shows_normal_prefix_on_success() {
+        let args = serde_json::json!({"path": "."});
+        let result = ToolResult {
+            content: "file1.txt\nfile2.txt".to_string(),
+            is_error: false,
+            is_streaming: false,
+        };
+        let rendered = format_tool_message("call_1", "list_directory", &args, Some(&result));
+        assert!(
+            rendered.starts_with("🔧 "),
+            "Expected normal prefix '🔧 ', got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn set_tool_result_with_error_preserves_is_error_flag() {
+        // Fix 2 regression test: verify that a tool error result stores
+        // is_error=true, which the ReAct loop uses to send the error back
+        // to the LLM (the loop continues, it does NOT break).
+        let mut turn = LiveTurn::new(0);
+        turn.upsert_tool_preview(
+            "call_1".to_string(),
+            "read_file".to_string(),
+            serde_json::json!({"path": "/nonexistent"}),
+        );
+        turn.freeze_tool_preview("call_1");
+
+        turn.set_tool_result("call_1", "Error: file not found".to_string(), true, false);
+
+        // Verify the block has is_error=true
+        for block in &turn.blocks {
+            if let TurnBlock::ToolCall {
+                result: Some(r), ..
+            } = block
+            {
+                assert!(r.is_error, "is_error should be true for failed tool");
+                assert_eq!(r.content, "Error: file not found");
+                return;
+            }
+        }
+        panic!("expected a ToolCall block with a result");
     }
 
     #[test]
