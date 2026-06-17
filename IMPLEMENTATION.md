@@ -4246,7 +4246,7 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 
 #### Consumer Migration — #121 [M1]
 
-**Status:** 🔄 IN PROGRESS (branch `feat/121-consumer-migration-openai`)  
+**Status:** ✅ COMPLETED (branch `feat/121-consumer-migration-openai`, PR #207 — implementation complete, 47 commits, awaiting final review/merge)  
 **Depends on:** #118 (Tool trait) ✅ + #119 (agnostic types) ✅ + #120 (OllamaProvider) ✅  
 **Estimated effort:** 2–3 weeks (revised: ~5 weeks for OpenAI-first strategy)  
 **Issue:** #121  
@@ -4507,7 +4507,7 @@ ProviderRetryFinished { success: bool, attempt: u32 }
 
 **Testing plan (executed):**
 
-- 1538 lib tests passing (`cargo test --features all-tools --lib`) after Two-Buffer cleanup.
+- 1543 lib tests passing (`cargo test --features all-tools --lib`) after Two-Buffer cleanup + TUI bug fixes.
 - SSE parser events with incremental tool-call arguments (unit tests in `tool_accumulator.rs`).
 - Post-tool streaming validated by code path; mock-provider test deferred to follow-up.
 - Retry events emitted from `OpenAICompatibleProvider::chat_with_retry` (integration scenario deferred to manual test).
@@ -4522,6 +4522,57 @@ ProviderRetryFinished { success: bool, attempt: u32 }
 - `cargo clippy` (default features) passes; `--all-features` and individual feature flags still expose pre-existing dead-code/feature-gating warnings that are out of scope for #122 (documented in AGENTS.md and to be addressed in W2 close-out).
 
 **Related:** Issue #122, #121 (predecessor), #123 (final ollama-rs removal). Reference: `~/papers/sprachspiel-openai-provider-lessons-from-pi.md`.
+
+---
+
+#### TUI Streaming Bug Fixes — #121/#122 follow-up (commit `baab7be`)
+
+**Status:** ✅ COMPLETED  
+**Commits:** `02e2a9f` (tool result truncation) + `baab7be` (7 interconnected bug fixes)
+
+Smoke testing of PR #207 with `glm-5.2:cloud` and `gemma4-e2b:think` revealed seven interconnected bugs in the TUI streaming path. The symptoms were:
+
+1. **Context count drops** from ~16K (during reasoning) to ~766/1.0K (after completion).
+2. **Tool calls disappear** — N tool calls accumulate during the ReAct loop, then "all disappear" and only 3 remain.
+3. **Text is replaced** — pre-tool text streamed before tool calls vanishes when the final response is committed.
+4. **Tool call arguments not shown** — `🔧 list_directory() (id)` with no args displayed.
+5. **Empty tool name** — `🔧 () (list_directory)` with the name field empty and the id in its place.
+6. **Status bar corruption** — `eprintln!` leaking into the ratatui alternate screen, producing artifacts like `cursive=` from tool result content appearing in the modeline.
+
+**Root causes and fixes:**
+
+| Bug | Root cause | Fix | Files |
+|-----|-----------|-----|-------|
+| A: Context drops to ~1K | `stream_turn` ignores `LlmStreamEvent::Done` usage → `final_data` always `None` → `TokenMetrics::default()` (zeros) | Capture `usage` from `Done` event and populate `final_data` with `prompt_eval_count`/`eval_count` | `custom_coordinator.rs` |
+| B: Fallback excludes system+tools | `history_real_tokens()` fallback estimates only message content, not system prompt (~3.5K) + tools (~2.9K) | Add `history_real_tokens_with_overhead(overhead)`; `spawn_llm_task` passes `system_tokens + tools_tokens` | `session.rs`, `event_loop.rs` |
+| C: Text replaced | `finalize_stream()` uses `retain()` to remove ALL `Text` blocks, replacing with single `post_tool_content` block | Remove only the LAST `Text` block (via `rposition`+`remove`), preserving earlier rounds' pre-tool text | `app.rs` |
+| D: Tool calls collide | `tool_call_id = call.function.name.replace(' ', '_')` — same tool in multiple rounds shares the same id → `set_tool_result` overwrites earlier results, `ToolExecutionStarted` skips freezing later previews | Generate unique id via monotonic counter: `{tool_name}_{counter}` | `custom_coordinator.rs` |
+| E: Previews orphaned | `ToolExecutionStarted` handler skips `freeze_tool_preview_by_name` when a block with the same id already exists | Always call `freeze_tool_preview_by_name`; add guard against duplicate blocks | `event_loop.rs`, `live_turn.rs` |
+| F: Results overwritten | `set_tool_result` finds the last block with `id == tool_call_id` without checking if it already has a result | Prefer blocks with `result.is_none()` before overwriting | `live_turn.rs` |
+| Args: Arguments not displayed | `freeze_tool_preview_by_name` uses preview args (empty `Object({})`) when the provider didn't stream `argument_delta` — common with Ollama/cloud providers that only send args in `ToolCallEnd` | Fall back to `ToolExecutionStarted` args when preview args are empty | `live_turn.rs` |
+
+**Additional fix (earlier in session, commit `baab7be`):**
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| eprintln leak | After commit `5c4df48` removed `set_tui_callback()` from `RatatuiView::new()`, `tui_aware_print`/`display_tool_call`/`log_tool_result` fell through to `eprintln!`, corrupting the alternate screen | Add `if crate::logging::is_tui_mode() { return; }` early return to all three functions |
+
+**Token count fix (earlier in session, commit `baab7be`):**
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| estimate_status_bar ignores system+tools | `estimate_status_bar()` passed `String::new()` as system prompt, so system (~3.5K) + tools (~2.9K) were not counted during streaming | Use `build_pre_tool_prompt(self)` for the real system prompt and add `tool_count * TOKENS_PER_TOOL` |
+
+**Verification (terminal-use / tu with `glm-5.2:cloud`):**
+
+- Tool calls show name and args: `🔧  list_directory(path=.) (list_directory_1)`, `🔧  read_file(path=Cargo.toml) (read_file_2)` ✅
+- 80+ tool calls accumulate across ReAct rounds without disappearing ✅
+- Pre-tool text preserved between rounds (not replaced) ✅
+- Status bar shows 23K–94K (realistic), not 1K–766 ✅
+- No status bar corruption from `eprintln!` leaks ✅
+- IDs unique: `list_directory_1`, `list_directory_2`, ..., `read_file_67`, etc. ✅
+
+**Test count:** 1543 lib tests passing (`cargo test --features all-tools --lib`), up from 1538.
 
 ---
 
