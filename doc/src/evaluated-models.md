@@ -25,7 +25,7 @@ based on their strengths. Current role taxonomy:
 | **Coder** | Code generation, tool calling, agentic loops | qwopus-coder-9b, gpt-oss-20b, qwen3.6-35b-moe |
 | **Translator** | Translation quality, multi-language | hy-mt2-1.8b, translategemma-4b |
 | **Vision** | Image understanding, OCR | lfm2.5-vl-450m, minicpm-v-4.6 |
-| **Reasoner** | Deep thinking, math, logic | gemma4-26b-moe, gemma4-e4b, qwen3.5-9b:think |
+| **Reasoner** | Deep thinking, math, logic | gemma4-e4b, qwen3.5-9b:think |
 | **Lightweight** | Fast, low VRAM, simple tasks | lfm2.5-1.2b, littlelamb-0.3b-tc |
 | **World Model** | Web interaction prediction | webworld-8b |
 
@@ -36,35 +36,6 @@ based on their strengths. Current role taxonomy:
 ---
 
 ## Models
-
-### gemma4-26b-moe — Gemma 4 26B A4B MoE
-
-| Field | Value |
-|-------|-------|
-| Status | ✅ Running |
-| Source | [mudler/gemma-4-26B-A4B-it-APEX-GGUF](https://huggingface.co/mudler/gemma-4-26B-A4B-it-APEX-GGUF) |
-| License | Gemma Terms of Use |
-| Architecture | Gemma4ForCausalLM (gemma4) — MoE 26B, 128 experts, top-8 routing, 4B active/token |
-| Params | 26B total / 4B active per token |
-| Quant | APEX I-Compact (~15.5 GB) — edges Q4_K, middle Q3_K, shared Q6_K, attn Q4_K |
-| Context | 16K–128K (dynamic) |
-| Backend | llama.cpp upstream (v674) |
-| KV cache | q4_0 + attn_rot (iSWA fix) |
-| Thinking | ✅ Yes (dual mode: base + :think) |
-| Tool Calling | ✅ Yes |
-| Vision | ❌ Disabled (mmproj crash on CUDA #21402) |
-| attn_rot | ✅ head_dim=256 (256%64==0) |
-
-**Sprachspiel Sub-Agent Fit:**
-- **Reasoner** ✅ — 4B active params with deep MoE reasoning, best for complex logic/math
-- ⚠️ Heavy offload to RAM (~10GB) — high latency, use only when quality > speed
-- ❌ Vision not available
-
-**Recommended params:** temp=1.0/top-p=0.95 (think), temp=0.7/top-p=0.95 (chat)
-
-**Issues:** mmproj crash on CUDA, APEX without MTP is hardware ceiling (6GB VRAM soldered)
-
----
 
 ### gemma4-e4b — Gemma 4 E4B Dense
 
