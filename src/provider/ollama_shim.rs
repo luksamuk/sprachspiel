@@ -474,9 +474,24 @@ pub fn convert_provider_error(
         // Connection / Timeout → ollama_rs::Other. We can't
         // construct a real reqwest::Error here without the
         // reqwest types, and the legacy classify_for_retry
-        // already routes `Other(_)` to NoRetry. The user
-        // should retry these manually if needed (or use the
-        // new chat_stream retry layer added in #121).
+        // already routes `Other(_)` to NoRetry.
+        //
+        // TODO #123: this is a KNOWN BUG — Timeout and Connection
+        // errors should be retryable (NetworkRetry), but because
+        // they are mapped to OllamaError::Other, the legacy
+        // classify_for_retry classifies them as NoRetry and the
+        // ReAct loop breaks instead of retrying.
+        //
+        // The fix is to migrate the retry loop in core.rs from
+        // classify_for_retry(&OllamaError) to
+        // ProviderError::retry_category() (which correctly maps
+        // Timeout → NetworkRetry and Connection → NetworkRetry).
+        // This migration is part of #123 (Remove ollama-rs).
+        //
+        // Workaround: the stream_idle_timeout_secs default was
+        // raised from 60s to 180s (user_models.rs) to reduce the
+        // frequency of timeouts. Users can increase it further
+        // via models.toml.
         ProviderError::Connection(_) | ProviderError::Timeout(_) => {
             OllamaError::Other(format!("{err}"))
         }

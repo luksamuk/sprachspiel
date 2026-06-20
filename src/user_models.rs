@@ -10,7 +10,7 @@
 //! base_url = "http://localhost:12434/v1"   # /v1 suffix REQUIRED
 //! connect_timeout_secs = 5
 //! read_timeout_secs = 300
-//! stream_idle_timeout_secs = 60
+//! stream_idle_timeout_secs = 180
 //! max_retries = 3
 //! retry_base_delay_ms = 2000
 //! retry_max_delay_ms = 16000
@@ -114,7 +114,13 @@ fn default_read_timeout() -> u64 {
     300
 }
 fn default_stream_idle_timeout() -> u64 {
-    60
+    // 180s — aligned with Hermes Agent's base stale-stream timeout.
+    // Cloud reasoning models (MiniMax M3, Nemotron 3 Ultra, etc.) can
+    // take 60-120s between SSE connection and the first token during
+    // prefill + thinking. The previous 60s default caused spurious
+    // "SSE stream idle timeout" errors with cloud providers.
+    // Users can override via stream_idle_timeout_secs in models.toml.
+    180
 }
 fn default_max_retries() -> u32 {
     3
@@ -814,7 +820,7 @@ provider = "my-ollama"
 
         assert_eq!(prov.connect_timeout_secs, 5);
         assert_eq!(prov.read_timeout_secs, 300);
-        assert_eq!(prov.stream_idle_timeout_secs, 60);
+        assert_eq!(prov.stream_idle_timeout_secs, 180);
         assert_eq!(prov.max_retries, 3);
         assert_eq!(prov.retry_base_delay_ms, 2000);
         assert_eq!(prov.retry_max_delay_ms, 16000);

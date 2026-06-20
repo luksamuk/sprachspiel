@@ -287,6 +287,14 @@ pub async fn handle_user_message_stream(
                 // the error reaches the TUI. The event loop's
                 // LlmEvent::Error handler (event_loop.rs) renders it
                 // with the same ⛔ prefix as ChannelView::show_error.
+                //
+                // IMPORTANT: do NOT call view.show_error() here — it
+                // executes synchronously and inserts the error message
+                // BEFORE pending streaming events (StreamToken,
+                // ToolCallPreview) still queued in the event loop,
+                // causing the error to appear out of order (before
+                // tool calls instead of after). The LlmEvent::Error
+                // above is processed in-order by the event loop.
                 let formatted = format_tool_error(&error_str);
                 let _ = llm_tx
                     .send(super::llm_event::LlmEvent::Error(formatted))
@@ -294,7 +302,6 @@ pub async fn handle_user_message_stream(
 
                 match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
                     OverflowHandleResult::NotOverflow => {
-                        view.show_error(&format_tool_error(&error_str));
                         break;
                     }
                     OverflowHandleResult::HandledContinue => {
