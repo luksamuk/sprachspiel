@@ -319,11 +319,11 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// and returns an error that the caller interprets as user cancellation.
     cancel_token: Option<tokio_util::sync::CancellationToken>,
     /// Monotonic counter for generating unique tool_call_ids.
-    /// Bug D fix: previously tool_call_id was synthesized from the tool name
-    /// alone (`call.function.name.replace(' ', "_")`), which collided when
-    /// the same tool was called in multiple ReAct rounds. Now we generate
-    /// `{tool_name}_{counter}` so every call has a unique id.
     tool_call_counter: u64,
+    /// Counter for "invalid tool call arguments" retries inside
+    /// process_next_stream. Prevents infinite loops when the provider
+    /// persistently rejects tool call arguments.
+    invalid_args_retry_count: u32,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -352,6 +352,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ephemeral_messages: Vec::new(),
             cancel_token: None,
             tool_call_counter: 0,
+            invalid_args_retry_count: 0,
         }
     }
 
@@ -1138,8 +1139,36 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 });
             }
 
-            // Push assistant message to history (with tool calls)
-            self.history.push(resp.message.clone());
+            // Push assistant message to history (with tool calls).
+            // Sanitize invalid tool_call arguments BEFORE persisting: when
+            // the provider sends malformed JSON (e.g., MiniMax M3 concatenates
+            // multiple objects like {"a":1}{"b":2}), the parser falls back to
+            // Value::String(raw). If we persist that, the next request
+            // includes the invalid arguments and the provider rejects with
+            // HTTP 400 "invalid tool call arguments", breaking the ReAct loop.
+            // Replace Value::String with Value::Object({}) so the next
+            // request sends valid (empty) arguments instead.
+            let mut sanitized_message = resp.message.clone();
+            let mut had_invalid_args = false;
+            for tc in &mut sanitized_message.tool_calls {
+                if matches!(tc.function.arguments, serde_json::Value::String(_)) {
+                    log::warn!(
+                        "Sanitizing invalid tool call arguments for '{}': \
+                         replacing Value::String (malformed JSON) with empty Object",
+                        tc.function.name
+                    );
+                    tc.function.arguments = serde_json::Value::Object(serde_json::Map::new());
+                    had_invalid_args = true;
+                }
+            }
+            if had_invalid_args {
+                log::debug!(
+                    "Sanitized {} tool call(s) with invalid arguments \
+                     before persisting to history",
+                    sanitized_message.tool_calls.len()
+                );
+            }
+            self.history.push(sanitized_message);
 
             // Execute each tool call
             let mut tools_executed = Vec::new();
@@ -1341,7 +1370,51 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
 
         let request = self.build_request();
-        let response = self.stream_turn(request).await?;
+        let response = match self.stream_turn(request).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                let error_str = e.to_string();
+                // "invalid tool call arguments" é um erro 400 do provider
+                // que indica que os argumentos das tool calls no histórico
+                // são inválidos (JSON malformado). Em vez de propagar o erro
+                // e quebrar o ciclo ReAct, devemos:
+                // 1. Push de uma tool message de erro para a LLM
+                // 2. Retry (o Fix A já sanitizou as tool_calls inválidas
+                //    no histórico, então o próximo request deve ser aceito)
+                if error_str.contains("invalid tool call arguments") {
+                    self.invalid_args_retry_count += 1;
+                    if self.invalid_args_retry_count > 3 {
+                        log::warn!(
+                            "Provider rejected tool call arguments {} times — \
+                             giving up to avoid infinite loop",
+                            self.invalid_args_retry_count
+                        );
+                        return Err(e);
+                    }
+                    log::debug!(
+                        "Provider rejected tool call arguments (attempt {}/3) — \
+                         pushing error as tool message and retrying",
+                        self.invalid_args_retry_count
+                    );
+                    let recovery_msg = format!(
+                        "Error: The provider rejected the tool call arguments \
+                         as invalid. This usually means the arguments were \
+                         malformed JSON or had missing/invalid fields. \
+                         Please try again with valid arguments.\n\n\
+                         Provider error: {error_str}"
+                    );
+                    self.history.push(ChatMessage::tool(recovery_msg));
+                    // Rebuild request (sanitized tool_calls) and retry
+                    let request = self.build_request();
+                    self.stream_turn(request).await?
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // Reset retry counter on success
+        self.invalid_args_retry_count = 0;
 
         // Continue the ReAct loop: if more tool calls arrive, execute them.
         if response.message.tool_calls.is_empty() {
@@ -1512,5 +1585,64 @@ Next step: Should ignore
         assert!(!is_tool_error("Contents of the file..."));
         assert!(!is_tool_error("Task 1 marked as in_progress"));
         assert!(!is_tool_error(""));
+    }
+
+    #[test]
+    fn test_sanitizes_invalid_tool_call_arguments() {
+        // Simulate a model that sends malformed JSON as tool call arguments
+        // (e.g., MiniMax M3 concatenates multiple objects: {"a":1}{"b":2}).
+        // The parser falls back to Value::String(raw). The coordinator should
+        // sanitize this to Value::Object({}) before persisting to history,
+        // so the next request doesn't get rejected with HTTP 400.
+        use ollama_rs::generation::chat::ChatMessage;
+        use ollama_rs::generation::chat::MessageRole;
+        use ollama_rs::generation::tools::{ToolCall, ToolCallFunction};
+
+        let msg = ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: vec![
+                ToolCall {
+                    function: ToolCallFunction {
+                        name: "todo_add".to_string(),
+                        // Malformed: multiple JSON objects concatenated
+                        arguments: serde_json::Value::String(
+                            r#"{"description":"task1","priority":"high"}{"description":"task2"}"#
+                                .to_string(),
+                        ),
+                    },
+                },
+                ToolCall {
+                    function: ToolCallFunction {
+                        name: "read_file".to_string(),
+                        // Valid JSON
+                        arguments: serde_json::json!({"path": "test.txt"}),
+                    },
+                },
+            ],
+            images: None,
+            thinking: None,
+        };
+
+        // Apply the same sanitization logic as process_response
+        let mut sanitized = msg.clone();
+        for tc in &mut sanitized.tool_calls {
+            if matches!(tc.function.arguments, serde_json::Value::String(_)) {
+                tc.function.arguments = serde_json::Value::Object(serde_json::Map::new());
+            }
+        }
+
+        // The invalid one should be sanitized
+        assert_eq!(
+            sanitized.tool_calls[0].function.arguments,
+            serde_json::Value::Object(serde_json::Map::new()),
+            "Invalid Value::String args should be sanitized to empty Object"
+        );
+        // The valid one should be preserved
+        assert_eq!(
+            sanitized.tool_calls[1].function.arguments,
+            serde_json::json!({"path": "test.txt"}),
+            "Valid args should be preserved"
+        );
     }
 }
