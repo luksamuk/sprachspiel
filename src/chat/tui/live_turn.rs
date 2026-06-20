@@ -702,7 +702,22 @@ fn compact_args_for_display(args: &serde_json::Value) -> String {
         if value_str.is_empty() {
             return None;
         }
-        let truncated = crate::utils::truncate_chars(&value_str, MAX_ARG_VALUE_DISPLAY);
+        // For multiline values (e.g., file content), truncate at the first
+        // line break and add ellipsis — much more readable than showing
+        // a partial second line cut mid-word.
+        let truncated = if value_str.contains('\n') {
+            let first_line = value_str.lines().next().unwrap_or("");
+            if first_line.len() > MAX_ARG_VALUE_DISPLAY {
+                format!(
+                    "{}...",
+                    crate::utils::truncate_chars(first_line, MAX_ARG_VALUE_DISPLAY)
+                )
+            } else {
+                format!("{first_line}...")
+            }
+        } else {
+            crate::utils::truncate_chars(&value_str, MAX_ARG_VALUE_DISPLAY)
+        };
         Some(format!("{k}={truncated}"))
     };
 

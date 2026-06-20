@@ -380,11 +380,25 @@ pub fn handle_llm_event(
             *llm_rx = None;
         }
         LlmEvent::Error(error) => {
-            // W2 #121 fix: route through view.show_error() so the
-            // user gets the same ⛔ ERROR (interrupts input) prefix
-            // as ChannelView::show_error. Previously we just called
-            // add_message(ChatMessage::error) which used the default
-            // ✗ marker — easy to miss in scrollback.
+            // Finalize any pending live_turn blocks (tool calls, streaming
+            // text) BEFORE adding the error message. Without this,
+            // render_messages puts self.messages (with the error) before
+            // live_turn (with tool calls), causing the error to appear
+            // out of order — before the tool calls instead of after.
+            //
+            // This is safe because LlmEvent::Error is only sent for fatal
+            // system errors (timeout, connection lost, etc.) where the
+            // ReAct loop has already been interrupted. Tool call errors
+            // (invalid args, tool failure) are handled inside the coordinator
+            // and never reach this handler — they use ToolExecutionFinished
+            // with is_error=true instead.
+            //
+            // Only finalize if there's an active live_turn with content;
+            // calling finalize_stream("", None) when there's no live_turn
+            // would add an empty assistant message to the chat.
+            if view.app().has_streaming_zone() {
+                view.app_mut().finalize_stream("", None);
+            }
             view.show_error(&error);
             log::debug!(
                 "Complete (after error): messages_count={}, current_round={}",
