@@ -1157,6 +1157,11 @@ fn classify_reqwest_error(err: reqwest::Error) -> ProviderError {
 }
 
 /// Parse a Server-Sent Events stream from an OpenAI chat completion response.
+///
+/// TODO #123: add a TTFB (time-to-first-byte) watchdog here. If no SSE chunk
+/// arrives within ~120s of stream start, reconnect instead of waiting the
+/// full idle_timeout (300s). Inspired by Hermes Agent's
+/// HERMES_CODEX_TTFB_TIMEOUT_SECONDS. See IMPLEMENTATION.md #123 open topics.
 fn parse_sse_stream(
     response: reqwest::Response,
     idle_timeout: Duration,

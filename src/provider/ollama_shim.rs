@@ -488,10 +488,20 @@ pub fn convert_provider_error(
         // Timeout → NetworkRetry and Connection → NetworkRetry).
         // This migration is part of #123 (Remove ollama-rs).
         //
-        // Workaround: the stream_idle_timeout_secs default was
-        // raised from 60s to 180s (user_models.rs) to reduce the
-        // frequency of timeouts. Users can increase it further
-        // via models.toml.
+        // Additional #123 work: add a TTFB (time-to-first-byte) watchdog
+        // in parse_sse_stream (openai_compat.rs) inspired by Hermes Agent's
+        // HERMES_CODEX_TTFB_TIMEOUT_SECONDS — if no SSE chunk arrives within
+        // ~120s of stream start, reconnect instead of waiting the full
+        // idle_timeout (300s). Also consider TCP keepalive injection (Hermes
+        // uses SO_KEEPALIVE + TCP_KEEPIDLE=30 + TCP_KEEPINTVL=10 + TCP_KEEPCNT=3)
+        // though reqwest already has tcp_keepalive=15s by default.
+        //
+        // Current workaround: the stream_idle_timeout_secs default was
+        // raised from 60s to 300s (user_models.rs) to reduce the frequency
+        // of timeouts. The coordinator's process_next_stream also catches
+        // "SSE stream idle timeout" and retries (up to 3 times) instead of
+        // breaking the ReAct loop. Users can override the timeout via
+        // stream_idle_timeout_secs in models.toml.
         ProviderError::Connection(_) | ProviderError::Timeout(_) => {
             OllamaError::Other(format!("{err}"))
         }

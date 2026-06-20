@@ -4620,6 +4620,7 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 | Provider health check | `is_available()` on trait | P6.0f |
 | Streaming integration in TUI | Requires TUI first | M3 |
 | **Timeout/Connection retry** | **Migrate retry loop in `core.rs` from `classify_for_retry(&OllamaError)` to `ProviderError::retry_category()`. Currently `ProviderError::Timeout` and `Connection` are converted to `OllamaError::Other` (which `classify_for_retry` maps to `NoRetry`), breaking the ReAct loop instead of retrying. `ProviderError::retry_category()` already correctly maps Timeout → NetworkRetry and Connection → NetworkRetry. The migration eliminates the `convert_provider_error` layer and the string-sniffing workaround. See comments in `ollama_shim.rs:480` and `retry.rs:107`.** | **#123** |
+| **TTFB watchdog** | **Implement a "time-to-first-byte" watchdog in `parse_sse_stream` (openai_compat.rs). If no SSE chunk arrives within ~120s of stream start, reconnect instead of waiting the full idle_timeout (300s). Inspired by Hermes Agent's `HERMES_CODEX_TTFB_TIMEOUT_SECONDS=120`. The Hermes Agent also injects TCP keepalive (`SO_KEEPALIVE`, `TCP_KEEPIDLE=30`, `TCP_KEEPINTVL=10`, `TCP_KEEPCNT=3`) to detect dead peer connections in ~60s — reqwest already has `tcp_keepalive=15s` by default, but explicit socket options could be added. See `agent_runtime_helpers.py:1402` and `chat_completion_helpers.py:308` in the Hermes Agent codebase.** | **#123** |
 
 **Related:** Issue #72
 

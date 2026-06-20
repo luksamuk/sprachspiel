@@ -320,10 +320,12 @@ pub struct CustomCoordinator<C: ChatHistory> {
     cancel_token: Option<tokio_util::sync::CancellationToken>,
     /// Monotonic counter for generating unique tool_call_ids.
     tool_call_counter: u64,
-    /// Counter for "invalid tool call arguments" retries inside
-    /// process_next_stream. Prevents infinite loops when the provider
-    /// persistently rejects tool call arguments.
-    invalid_args_retry_count: u32,
+    /// Counter for retries inside the ReAct loop (process_next_stream).
+    /// Covers two cases: "invalid tool call arguments" (provider rejects
+    /// malformed tool call JSON) and "SSE stream idle timeout" (provider
+    /// accepts connection but doesn't emit chunks within the idle timeout).
+    /// Prevents infinite loops when the provider persistently fails.
+    react_retry_count: u32,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -352,7 +354,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             ephemeral_messages: Vec::new(),
             cancel_token: None,
             tool_call_counter: 0,
-            invalid_args_retry_count: 0,
+            react_retry_count: 0,
         }
     }
 
@@ -1374,27 +1376,24 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             Ok(resp) => resp,
             Err(e) => {
                 let error_str = e.to_string();
-                // "invalid tool call arguments" é um erro 400 do provider
-                // que indica que os argumentos das tool calls no histórico
-                // são inválidos (JSON malformado). Em vez de propagar o erro
-                // e quebrar o ciclo ReAct, devemos:
-                // 1. Push de uma tool message de erro para a LLM
-                // 2. Retry (o Fix A já sanitizou as tool_calls inválidas
-                //    no histórico, então o próximo request deve ser aceito)
                 if error_str.contains("invalid tool call arguments") {
-                    self.invalid_args_retry_count += 1;
-                    if self.invalid_args_retry_count > 3 {
+                    // Provider rejected malformed tool call arguments (JSON
+                    // invalid). Push tool error message and retry — the Fix A
+                    // sanitization already replaced Value::String args with
+                    // empty Object, so the next request should be accepted.
+                    self.react_retry_count += 1;
+                    if self.react_retry_count > 3 {
                         log::warn!(
                             "Provider rejected tool call arguments {} times — \
                              giving up to avoid infinite loop",
-                            self.invalid_args_retry_count
+                            self.react_retry_count
                         );
                         return Err(e);
                     }
                     log::debug!(
                         "Provider rejected tool call arguments (attempt {}/3) — \
                          pushing error as tool message and retrying",
-                        self.invalid_args_retry_count
+                        self.react_retry_count
                     );
                     let recovery_msg = format!(
                         "Error: The provider rejected the tool call arguments \
@@ -1404,7 +1403,35 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                          Provider error: {error_str}"
                     );
                     self.history.push(ChatMessage::tool(recovery_msg));
-                    // Rebuild request (sanitized tool_calls) and retry
+                    let request = self.build_request();
+                    self.stream_turn(request).await?
+                } else if error_str.contains("SSE stream idle timeout") {
+                    // Timeout é retryable — o provider pode estar sob carga
+                    // ou fazendo prefill longo após receber tool results
+                    // grandes (8KB+ de conteúdo de write_file no histórico).
+                    // Em vez de quebrar o ReAct loop, push tool message de
+                    // aviso e retry. O contador previne loop infinito.
+                    self.react_retry_count += 1;
+                    if self.react_retry_count > 3 {
+                        log::warn!(
+                            "SSE stream timed out {} times in ReAct loop — \
+                             giving up to avoid infinite loop",
+                            self.react_retry_count
+                        );
+                        return Err(e);
+                    }
+                    log::debug!(
+                        "SSE stream timeout in ReAct loop (attempt {}/3) — \
+                         retrying",
+                        self.react_retry_count
+                    );
+                    let recovery_msg = format!(
+                        "Error: The request timed out after the provider accepted \
+                         the connection but did not produce any output. \
+                         The provider may be under load or processing a large \
+                         context. Please continue from where you left off."
+                    );
+                    self.history.push(ChatMessage::tool(recovery_msg));
                     let request = self.build_request();
                     self.stream_turn(request).await?
                 } else {
@@ -1414,7 +1441,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         };
 
         // Reset retry counter on success
-        self.invalid_args_retry_count = 0;
+        self.react_retry_count = 0;
 
         // Continue the ReAct loop: if more tool calls arrive, execute them.
         if response.message.tool_calls.is_empty() {
