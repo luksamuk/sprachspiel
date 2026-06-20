@@ -1405,24 +1405,39 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     self.history.push(ChatMessage::tool(recovery_msg));
                     let request = self.build_request();
                     self.stream_turn(request).await?
-                } else if error_str.contains("SSE stream idle timeout") {
-                    // Timeout é retryable — o provider pode estar sob carga
-                    // ou fazendo prefill longo após receber tool results
-                    // grandes (8KB+ de conteúdo de write_file no histórico).
-                    // Em vez de quebrar o ReAct loop, push tool message de
-                    // aviso e retry. O contador previne loop infinito.
+                } else if error_str.contains("Timeout:") {
+                    // WORKAROUND (TODO #123): string sniffing for timeout errors.
+                    //
+                    // Two timeout sources exist:
+                    //   1. Sprachspiel's idle_timeout: "Timeout: SSE stream idle
+                    //      timeout after 300s" (from parse_sse_stream)
+                    //   2. reqwest's read_timeout: "Timeout: error decoding
+                    //      response body" (from ReadTimeoutBody, when the HTTP
+                    //      read_timeout fires before the idle_timeout)
+                    //
+                    // Both are retryable — the provider accepted the connection
+                    // but didn't produce chunks in time (under load, long
+                    // prefill after large tool results, etc.).
+                    //
+                    // TODO #123: eliminate this string sniffing. The proper fix
+                    // is to migrate stream_turn to return ProviderError directly
+                    // (instead of OllamaError via convert_provider_error), then
+                    // use `err.retry_category()` which type-safely maps
+                    // ProviderError::Timeout → NetworkRetry. This eliminates
+                    // the convert_provider_error layer and all string matching.
+                    // See comments in ollama_shim.rs:479, retry.rs:107, and
+                    // IMPLEMENTATION.md #123 open topics.
                     self.react_retry_count += 1;
                     if self.react_retry_count > 3 {
                         log::warn!(
-                            "SSE stream timed out {} times in ReAct loop — \
+                            "Stream timed out {} times in ReAct loop — \
                              giving up to avoid infinite loop",
                             self.react_retry_count
                         );
                         return Err(e);
                     }
                     log::debug!(
-                        "SSE stream timeout in ReAct loop (attempt {}/3) — \
-                         retrying",
+                        "Stream timeout in ReAct loop (attempt {}/3): {error_str} — retrying",
                         self.react_retry_count
                     );
                     let recovery_msg = format!(
