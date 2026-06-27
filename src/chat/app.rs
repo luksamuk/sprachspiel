@@ -721,9 +721,22 @@ impl App {
             turn.finalize_last_block();
 
             // Override accumulated thinking with authoritative content.
+            // BUG-2 fix: previously this used `retain` to remove ALL Thinking
+            // blocks and replaced them with a single one at index 0. This
+            // destroyed thinking blocks from earlier ReAct rounds that were
+            // already frozen and displayed during streaming. Now we only
+            // remove the LAST Thinking block (the one being finalized with
+            // authoritative content) and preserve earlier Thinking blocks.
+            // The authoritative thinking is inserted at index 0 so it
+            // appears before any earlier-round thinking in the scrollback.
             if let Some(thinking_content) = thinking {
-                turn.blocks
-                    .retain(|b| !matches!(b, super::tui::live_turn::TurnBlock::Thinking { .. }));
+                if let Some(last_thinking_idx) = turn
+                    .blocks
+                    .iter()
+                    .rposition(|b| matches!(b, super::tui::live_turn::TurnBlock::Thinking { .. }))
+                {
+                    turn.blocks.remove(last_thinking_idx);
+                }
                 if !thinking_content.is_empty() {
                     turn.blocks.insert(
                         0,
@@ -2131,25 +2144,32 @@ mod tests {
         // Final response commits the whole live turn
         app.finalize_stream("Final answer", Some("Final thinking"));
 
-        // Bug C fix: Text blocks from earlier rounds are now PRESERVED
-        // (previously they were all removed by finalize_stream). So we have:
-        // User, Tool(1), Tool(1), Tool(2), Tool(2), Thinking, Text("Searching..."),
-        // Text("Final answer") = 8 messages.
-        // Note: "Based on..." (the last Text block) is removed and replaced
-        // by "Final answer"; but "Searching..." (from round 0) is preserved.
-        assert_eq!(app.messages.len(), 8);
+        // Bug C fix + BUG-2 fix: Text AND Thinking blocks from earlier
+        // rounds are now PRESERVED (previously all were removed by
+        // finalize_stream). The last Thinking block ("Got weather") is
+        // removed and replaced by "Final thinking" at index 0, but
+        // "Need weather" (from round 0) is preserved. The last Text block
+        // ("Based on...") is removed and replaced by "Final answer", but
+        // "Searching..." (from round 0) is preserved.
+        // Messages: User, Tool, Tool, Tool, Tool, Thinking("Final thinking"),
+        // Thinking("Need weather"), Text("Searching..."), Text("Final answer") = 9
+        assert_eq!(app.messages.len(), 9);
         assert_eq!(app.messages[0].msg_type, MessageType::User);
         assert_eq!(app.messages[1].msg_type, MessageType::Tool);
         assert_eq!(app.messages[2].msg_type, MessageType::Tool);
         assert_eq!(app.messages[3].msg_type, MessageType::Tool);
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+        // "Final thinking" inserted at index 0 of the live turn blocks
         assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
         assert_eq!(app.messages[5].content, "Final thinking");
+        // "Need weather" from round 0 is preserved (BUG-2 fix)
+        assert_eq!(app.messages[6].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[6].content, "Need weather");
         // "Searching..." text from round 0 is preserved (Bug C fix)
-        assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
-        assert_eq!(app.messages[6].content, "Searching...");
         assert_eq!(app.messages[7].msg_type, MessageType::Assistant);
-        assert_eq!(app.messages[7].content, "Final answer");
+        assert_eq!(app.messages[7].content, "Searching...");
+        assert_eq!(app.messages[8].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[8].content, "Final answer");
     }
 
     #[test]

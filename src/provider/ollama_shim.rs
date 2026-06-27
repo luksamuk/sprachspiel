@@ -15,6 +15,7 @@
 
 #![allow(dead_code)]
 #![allow(clippy::all)]
+#![allow(unused_imports)] // W2 #123: these re-exports will be removed when ollama-rs is dropped
 
 pub use ollama_rs::generation::chat::request::ChatMessageRequest;
 pub use ollama_rs::generation::chat::{ChatMessage, ChatMessageResponse, MessageRole};

@@ -4,6 +4,8 @@
 //! (Ollama, OpenAI-compatible, etc.). They mirror the JSON shapes used
 //! by LLM provider APIs while providing a unified surface for business logic.
 
+#![allow(dead_code)] // W2 #123: retry_category, RetryCategory, LlmMessage methods will be consumed when the retry loop migrates from OllamaError to ProviderError
+
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

@@ -300,18 +300,41 @@ impl LiveTurn {
         name: &str,
         args: &serde_json::Value,
     ) {
-        // Bug E fix: if a block with this tool_call_id already exists (e.g.,
-        // it was frozen earlier by freeze_all_tool_previews), do nothing —
-        // don't create a duplicate block.
-        if self.blocks.iter().any(|b| {
-            matches!(
-                b,
-                TurnBlock::ToolCall {
-                    tool_call_id: id, ..
-                } if id == tool_call_id
-            )
-        }) {
-            return;
+        // Bug E fix + BUG-1 fix: if a block with this tool_call_id already
+        // exists (frozen earlier by freeze_all_tool_previews), don't create
+        // a duplicate — but DO update its args if they're empty and we now
+        // have real args from ToolExecutionStarted. This handles the case
+        // where the provider didn't stream argument_delta (common with
+        // local models via llama-swap/DFlash), so the preview was frozen
+        // with empty args but the ToolExecutionStarted has the real parsed
+        // args.
+        for block in self.blocks.iter_mut() {
+            if let TurnBlock::ToolCall {
+                tool_call_id: id,
+                args: block_args,
+                name: block_name,
+                ..
+            } = block
+                && id == tool_call_id
+            {
+                let is_block_args_empty = match block_args {
+                    serde_json::Value::Object(o) if o.is_empty() => true,
+                    serde_json::Value::Null => true,
+                    _ => false,
+                };
+                if is_block_args_empty && !args.is_null() {
+                    *block_args = args.clone();
+                    log::debug!(
+                        "Updated empty args on existing block {} with \
+                         ToolExecutionStarted args",
+                        tool_call_id
+                    );
+                }
+                if block_name.is_empty() && !name.is_empty() {
+                    *block_name = name.to_string();
+                }
+                return;
+            }
         }
 
         // First try exact id match. If the preview has empty args, fill them
@@ -320,10 +343,14 @@ impl LiveTurn {
             if preview.name.is_empty() && !name.is_empty() {
                 preview.name = name.to_string();
             }
-            let is_preview_args_empty = matches!(
-                &preview.args,
-                serde_json::Value::Object(o) if o.is_empty()
-            );
+            // BUG-1 fix: broaden the empty-args check to also catch Null
+            // (some providers send null instead of empty Object for args
+            // when the tool call arguments are not streamed via deltas).
+            let is_preview_args_empty = match &preview.args {
+                serde_json::Value::Object(o) if o.is_empty() => true,
+                serde_json::Value::Null => true,
+                _ => false,
+            };
             let final_args = if is_preview_args_empty && !args.is_null() {
                 args.clone()
             } else {
@@ -341,43 +368,43 @@ impl LiveTurn {
         // Try name match: find a preview whose name matches, or a preview
         // with an empty name (placeholder from a provider that didn't stream
         // the name — it should be claimed by the first ToolExecutionStarted).
-        if !name.is_empty() {
-            if let Some(preview_id) = self.tool_previews.iter().find_map(|(id, p)| {
+        if !name.is_empty()
+            && let Some(preview_id) = self.tool_previews.iter().find_map(|(id, p)| {
                 if p.name == name || p.name.is_empty() {
                     Some(id.clone())
                 } else {
                     None
                 }
-            }) {
-                if let Some(mut preview) = self.tool_previews.remove(&preview_id) {
-                    // Update the preview's tool_call_id to the execution id
-                    preview.tool_call_id = tool_call_id.to_string();
-                    // Fill in empty name (provider didn't stream it)
-                    if preview.name.is_empty() {
-                        preview.name = name.to_string();
-                    }
-                    // If the preview has empty args (provider didn't stream
-                    // argument_delta — common with Ollama/cloud providers that
-                    // only send args in the final ToolCallEnd), use the args
-                    // from ToolExecutionStarted which carries the parsed args.
-                    let is_preview_args_empty = matches!(
-                        &preview.args,
-                        serde_json::Value::Object(o) if o.is_empty()
-                    );
-                    let final_args = if is_preview_args_empty && !args.is_null() {
-                        args.clone()
-                    } else {
-                        preview.args
-                    };
-                    self.blocks.push(TurnBlock::ToolCall {
-                        tool_call_id: preview.tool_call_id,
-                        name: preview.name,
-                        args: final_args,
-                        result: None,
-                    });
-                    return;
-                }
+            })
+            && let Some(mut preview) = self.tool_previews.remove(&preview_id)
+        {
+            // Update the preview's tool_call_id to the execution id
+            preview.tool_call_id = tool_call_id.to_string();
+            // Fill in empty name (provider didn't stream it)
+            if preview.name.is_empty() {
+                preview.name = name.to_string();
             }
+            // If the preview has empty args (provider didn't stream
+            // argument_delta — common with Ollama/cloud providers that
+            // only send args in the final ToolCallEnd), use the args
+            // from ToolExecutionStarted which carries the parsed args.
+            let is_preview_args_empty = match &preview.args {
+                serde_json::Value::Object(o) if o.is_empty() => true,
+                serde_json::Value::Null => true,
+                _ => false,
+            };
+            let final_args = if is_preview_args_empty && !args.is_null() {
+                args.clone()
+            } else {
+                preview.args
+            };
+            self.blocks.push(TurnBlock::ToolCall {
+                tool_call_id: preview.tool_call_id,
+                name: preview.name,
+                args: final_args,
+                result: None,
+            });
+            return;
         }
 
         // No match — create block with the provided name/args (not empty)

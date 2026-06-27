@@ -7,6 +7,8 @@
 //! `OpenAICompatibleProvider`, which talks to Ollama via `/v1/chat/completions`
 //! and also handles OpenAI, llama.cpp, vLLM, LM Studio, llama-swap, etc.
 
+#![allow(dead_code)] // W2 #123: trait methods (detect_capabilities, provider_name, is_available) will be consumed when ollama-rs is removed
+
 pub mod embedding_models;
 pub mod factory;
 pub mod ollama_shim;

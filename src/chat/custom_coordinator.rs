@@ -1440,13 +1440,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         "Stream timeout in ReAct loop (attempt {}/3): {error_str} — retrying",
                         self.react_retry_count
                     );
-                    let recovery_msg = format!(
-                        "Error: The request timed out after the provider accepted \
+                    let recovery_msg = "Error: The request timed out after the provider accepted \
                          the connection but did not produce any output. \
                          The provider may be under load or processing a large \
-                         context. Please continue from where you left off."
-                    );
-                    self.history.push(ChatMessage::tool(recovery_msg));
+                         context. Please continue from where you left off.";
+                    self.history
+                        .push(ChatMessage::tool(recovery_msg.to_string()));
                     let request = self.build_request();
                     self.stream_turn(request).await?
                 } else {

@@ -4,6 +4,8 @@
 //! `ProviderKind::Ollama` is mapped to `OllamaLegacy` which returns a
 //! runtime error prompting the user to run `sprach models upgrade`.
 
+#![allow(dead_code)] // W2 #123: build_provider will be wired when ollama-rs is removed
+
 use crate::provider::openai_compat::{OpenAICompatibleConfig, OpenAICompatibleProvider};
 use crate::provider::types::ProviderError;
 use crate::user_models::{ProviderConfig as UserProviderConfig, ProviderKind};
