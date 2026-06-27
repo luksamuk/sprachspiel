@@ -1722,17 +1722,19 @@ EOF
 
 Verify tool call rendering, context count, and ReAct loop resilience fixes from PR #207.
 
-### 26.1 Tool Call Display Format
+### 26.1 Tool Call Display Format (including BUG-1 fix: args with local models)
 
-**Objective:** Tool calls show name + priority args, no ID in normal mode, ✗ on error.
+**Objective:** Tool calls show name + priority args, no ID in normal mode, ✗ on error. Args must be visible even with local models that don't stream argument_delta.
 
 - [ ] Start chat with tools enabled: `./target/release/sprach --soulless --ignore-agents chat`
 - [ ] Send: "List the current directory, then read Cargo.toml"
 - [ ] Verify: tool calls show as `🔧  list_directory(path=.)` and `🔧  read_file(path=Cargo.toml)` — args visible
+- [ ] **Critical (BUG-1):** If using a local model (e.g., qwen3.5-4b via llama-swap), verify args are NOT empty — should show `🔧  read_file(path=Cargo.toml)`, NOT `🔧  read_file()`
 - [ ] Verify: NO `(tool_call_id)` suffix in normal mode
 - [ ] Type `/debug` to enable trace mode
 - [ ] Send another tool-triggering message
 - [ ] Verify: tool call IDs now visible, e.g. `🔧  list_directory(path=.) (\`list_directory_1\`)`
+- [ ] Verify: args are STILL visible in debug mode (BUG-1 report noted args missing in debug too)
 - [ ] Type `/debug` to disable
 
 ### 26.2 Error Indicator on Failed Tool Call
@@ -1757,11 +1759,20 @@ Verify tool call rendering, context count, and ReAct loop resilience fixes from 
 - [ ] Verify: earlier rounds' tool calls are NOT overwritten by later calls
 - [ ] Verify: same tool called multiple times shows separate entries (unique IDs in debug mode)
 
-### 26.5 Pre-tool Text Preservation
+### 26.5 Pre-tool Text AND Thinking Block Preservation (including BUG-2 fix)
 
-- [ ] Send a message where the model writes text BEFORE calling tools
-- [ ] Verify: pre-tool text remains visible in scrollback after final response
-- [ ] Verify: text is NOT replaced by the post-tool content
+**Objective:** Verify pre-tool text AND thinking blocks from earlier ReAct rounds are preserved in scrollback.
+
+- [ ] Ensure thinking is enabled (`/think on` if needed)
+- [ ] Send a message where the model writes text AND thinking BEFORE calling tools, then more thinking after
+  Example: "Read the file Cargo.toml and then search for the word 'test' in the current directory"
+- [ ] During streaming, observe: Thinking1 → ToolCall → Thinking2 → Response
+- [ ] After final response, scroll through chat:
+- [ ] Verify: pre-tool text remains visible (Bug C fix — not replaced by post-tool content)
+- [ ] **Critical (BUG-2):** Verify: Thinking1 (from before the first tool call) is STILL VISIBLE in scrollback
+- [ ] Verify: Thinking2 (from after the tool call) is ALSO visible
+- [ ] Verify: order is preserved: Thinking1 → ToolCall → Thinking2 → Response (not reordered)
+- [ ] If only one thinking block is visible, BUG-2 is NOT fixed
 
 ### 26.6 Error Ordering (Timeout)
 
@@ -1782,6 +1793,16 @@ Verify tool call rendering, context count, and ReAct loop resilience fixes from 
   - Verify: model can continue after retry
   - Verify: prompt is NOT opened for user
 - [ ] Note: if neither occurs, these tests pass by default
+
+### 26.8 Clippy Strict Gate (BUG-3 fix)
+
+```bash
+cd /home/alchemist/git/sprachspiel
+cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity 2>&1 | grep "^error"
+# Expected: no output (0 errors — BUG-3 was blocking, now fixed)
+```
+
+- [ ] **Critical (BUG-3):** clippy strict gate passes with 0 errors
 
 ---
 
