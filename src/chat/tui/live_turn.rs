@@ -408,6 +408,13 @@ impl LiveTurn {
         }
 
         // No match — create block with the provided name/args (not empty)
+        log::debug!(
+            "freeze_tool_preview_by_name: no match for id={}, name={} — \
+             creating block with args={}",
+            tool_call_id,
+            name,
+            args
+        );
         self.blocks.push(TurnBlock::ToolCall {
             tool_call_id: tool_call_id.to_string(),
             name: name.to_string(),

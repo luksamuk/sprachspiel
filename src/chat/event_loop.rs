@@ -447,15 +447,24 @@ pub fn handle_llm_event(
                 name,
                 args
             );
+            let has_live_turn = view.app().has_streaming_zone();
             if let Some(turn) = view.app_mut().live_turn_mut() {
-                // Bug E fix: always call freeze_tool_preview_by_name.
-                // Previously this skipped the freeze when a block with the
-                // same tool_call_id already existed, which orphaned previews
-                // from later ReAct rounds. With Bug D fix (unique ids), the
-                // collision no longer happens, but always calling is safer —
-                // freeze_tool_preview_by_name handles the no-match case by
-                // creating a block with the provided name/args.
+                log::debug!(
+                    "freeze_tool_preview_by_name: live_turn exists={}, \
+                     blocks={}, previews={}, tool_call_id={}",
+                    has_live_turn,
+                    turn.blocks.len(),
+                    turn.tool_previews.len(),
+                    tool_call_id
+                );
                 turn.freeze_tool_preview_by_name(&tool_call_id, &name, &args);
+            } else {
+                log::warn!(
+                    "ToolExecutionStarted: no live_turn when trying to freeze \
+                     tool_call_id={} — block will be created by set_tool_result \
+                     with empty args (BUG-1)",
+                    tool_call_id
+                );
             }
         }
         LlmEvent::ToolExecutionFinished {

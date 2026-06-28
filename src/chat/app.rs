@@ -722,22 +722,31 @@ impl App {
 
             // Override accumulated thinking with authoritative content.
             // BUG-2 fix: previously this used `retain` to remove ALL Thinking
-            // blocks and replaced them with a single one at index 0. This
-            // destroyed thinking blocks from earlier ReAct rounds that were
-            // already frozen and displayed during streaming. Now we only
-            // remove the LAST Thinking block (the one being finalized with
-            // authoritative content) and preserve earlier Thinking blocks.
-            // The authoritative thinking is inserted at index 0 so it
-            // appears before any earlier-round thinking in the scrollback.
+            // blocks, destroying earlier-round thinking. The intermediate fix
+            // removed only the last Thinking but re-inserted at index 0, which
+            // REVERSED the order (Thinking2 appeared before Thinking1).
+            //
+            // Correct fix: replace the LAST Thinking block's content IN-PLACE,
+            // preserving its position in the block order. This keeps the
+            // chronological order: Thinking1 → ToolCall → Thinking2(now
+            // authoritative) → Response.
             if let Some(thinking_content) = thinking {
                 if let Some(last_thinking_idx) = turn
                     .blocks
                     .iter()
                     .rposition(|b| matches!(b, super::tui::live_turn::TurnBlock::Thinking { .. }))
                 {
-                    turn.blocks.remove(last_thinking_idx);
-                }
-                if !thinking_content.is_empty() {
+                    // Replace in-place — maintains scroll position and order
+                    if let super::tui::live_turn::TurnBlock::Thinking {
+                        content,
+                        is_streaming,
+                    } = &mut turn.blocks[last_thinking_idx]
+                    {
+                        *content = thinking_content.to_string();
+                        *is_streaming = false;
+                    }
+                } else if !thinking_content.is_empty() {
+                    // No existing Thinking block — insert at the beginning
                     turn.blocks.insert(
                         0,
                         super::tui::live_turn::TurnBlock::Thinking {
@@ -2145,29 +2154,29 @@ mod tests {
         app.finalize_stream("Final answer", Some("Final thinking"));
 
         // Bug C fix + BUG-2 fix: Text AND Thinking blocks from earlier
-        // rounds are now PRESERVED (previously all were removed by
-        // finalize_stream). The last Thinking block ("Got weather") is
-        // removed and replaced by "Final thinking" at index 0, but
-        // "Need weather" (from round 0) is preserved. The last Text block
-        // ("Based on...") is removed and replaced by "Final answer", but
-        // "Searching..." (from round 0) is preserved.
-        // Messages: User, Tool, Tool, Tool, Tool, Thinking("Final thinking"),
-        // Thinking("Need weather"), Text("Searching..."), Text("Final answer") = 9
+        // rounds are now PRESERVED with correct ordering. The last Thinking
+        // block ("Got weather") is replaced IN-PLACE by "Final thinking"
+        // (not removed and re-inserted at index 0, which reversed the order).
+        // The last Text block ("Based on...") is removed and replaced by
+        // "Final answer", but "Searching..." (from round 0) is preserved.
+        // Messages: User, Tool, Tool, Tool, Tool,
+        //   Thinking("Need weather"), Text("Searching..."),
+        //   Thinking("Final thinking"), Text("Final answer") = 9
         assert_eq!(app.messages.len(), 9);
         assert_eq!(app.messages[0].msg_type, MessageType::User);
         assert_eq!(app.messages[1].msg_type, MessageType::Tool);
         assert_eq!(app.messages[2].msg_type, MessageType::Tool);
         assert_eq!(app.messages[3].msg_type, MessageType::Tool);
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
-        // "Final thinking" inserted at index 0 of the live turn blocks
+        // "Need weather" from round 0 is preserved (BUG-2 fix) — comes first
         assert_eq!(app.messages[5].msg_type, MessageType::Thinking);
-        assert_eq!(app.messages[5].content, "Final thinking");
-        // "Need weather" from round 0 is preserved (BUG-2 fix)
-        assert_eq!(app.messages[6].msg_type, MessageType::Thinking);
-        assert_eq!(app.messages[6].content, "Need weather");
+        assert_eq!(app.messages[5].content, "Need weather");
         // "Searching..." text from round 0 is preserved (Bug C fix)
-        assert_eq!(app.messages[7].msg_type, MessageType::Assistant);
-        assert_eq!(app.messages[7].content, "Searching...");
+        assert_eq!(app.messages[6].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[6].content, "Searching...");
+        // "Final thinking" replaces "Got weather" IN-PLACE (not at index 0)
+        assert_eq!(app.messages[7].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[7].content, "Final thinking");
         assert_eq!(app.messages[8].msg_type, MessageType::Assistant);
         assert_eq!(app.messages[8].content, "Final answer");
     }
