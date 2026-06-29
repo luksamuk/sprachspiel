@@ -1035,7 +1035,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             }
                             *existing_args = call.arguments.clone();
                             if let Some(ref cb) = self.tool_preview_callback {
-                                cb(existing_id.clone(), existing_name.clone(), call.arguments.clone());
+                                cb(
+                                    existing_id.clone(),
+                                    existing_name.clone(),
+                                    call.arguments.clone(),
+                                );
                             }
                         }
                         tool_calls.push(ollama_rs::generation::tools::ToolCall {

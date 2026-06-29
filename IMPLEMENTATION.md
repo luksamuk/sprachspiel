@@ -4618,6 +4618,34 @@ Re-testing of PR #207 (round 3, commit `e24a146`) confirmed BUG-2 (thinking bloc
 
 **Why the previous fix `e24a146` didn't work:** The correction in `freeze_tool_preview_by_name` (lines 303-338) assumed the block frozen by `freeze_all_tool_previews` had the **same** `tool_call_id` as the `ToolExecutionStarted`. This was only true for cloud models (which stream `call_123` and the coordinator reused that id). For BeeLama, (i) prevented `freeze_all_tool_previews` from running at all, so no block existed to match; and (ii) made the synthesized id diverge from the (empty) stream id, so even after (i) was hypothetically fixed, the id-match would still fail. The combination of (i) + (ii) + (iii) + (iv) is required to close BUG-1 for both local and cloud models.
 
+**R4 completion:** Commit `294133c` (applied by Hermes Agent during R4 testing) added the final BUG-1 layer: the `ToolCallEnd` handler now updates the preview with the final parsed `call.arguments` (during streaming, each `argument_delta` is a partial JSON fragment that cannot parse alone, so the preview stayed as a partial `Value::String`), and the `ToolCallDelta` handler now treats `Value::Object({})` (from `ToolCallStart`) as an empty string base for concatenation. See R4 results: `~/PR207-BUG1-R4-TEST-RESULTS.md`.
+
+---
+
+#### Provider Switching Bug — /model does not rebuild LLM client (R4 finding)
+
+**Status:** ✅ COMPLETED
+**Found in:** R4 re-test (`~/PR207-BUG1-R4-TEST-RESULTS.md` section "Bug Adicional Encontrado")
+
+**Bug:** Switching models via `/model <novo>` mid-session updated `state.model_config` (carrying the new model's `model_id`) but did NOT rebuild `state.ollama` — the HTTP client/shim that actually sends requests. The `ollama` client stayed bound to the initial model's provider (e.g., `llama-swap`), even when the new model declared `provider = "ollama"` in `models.toml`. Result: the next prompt went to the wrong provider → `⛔ no router for requested model` (from llama-swap, which doesn't know `glm-5.2:cloud`).
+
+**Root cause:** `model_switch::switch_model()` received `ollama: &Ollama` (immutable) only for `ModelCapabilities::detect()` — it could not rebuild the client and return it. `ModelSwitchResult` did not carry the new client. The caller `handle_model_switch` updated 5 state fields but omitted `state.ollama`.
+
+**Fix (Opção B1 — refactor `switch_model` to build and return the new client):** `switch_model` now receives `settings: &Settings` instead of `ollama: &Ollama`. It builds the new client internally via `settings.ollama_client_for_model(model_name)` (which resolves the provider from `models.toml` — each model declares `provider = "<name>"`), uses it for capability detection (so detection hits the right provider from the start — previously it used the old provider and could fall back to the old model's capabilities), and returns the new client in `ModelSwitchResult.ollama`. The caller assigns `state.ollama = result.ollama;`.
+
+| Layer | File | Change |
+|-------|------|--------|
+| Signature | `model_switch.rs` | `ollama: &Ollama` → `settings: &Settings`; build client internally via `settings.ollama_client_for_model()` |
+| Struct | `model_switch.rs` | Add `pub ollama: crate::provider::Ollama` field to `ModelSwitchResult` |
+| Caller | `command_handlers.rs` | Pass `&state.settings` instead of `&state.ollama`; add `state.ollama = result.ollama;` |
+| Test | `model_switch.rs` | `switch_model_rebuilds_ollama_for_new_provider` — verifies `result.ollama` points to the new model's provider `base_url` (via `CompatOllama` Debug impl), using the environment's `models.toml` (skips if models missing) |
+
+**Note on #123:** The `ollama` field carries the `CompatOllama` shim type because `CustomCoordinator` still uses the shim's API (`send_chat_messages_stream_events`), not the `LlmProvider` trait. When #123 (Remove ollama-rs) migrates the coordinator to `Box<dyn LlmProvider>`, this field's type changes alongside — a localized change. This fix does NOT invade #123's scope.
+
+**Verification:** 
+- Unit test: `switch_model_rebuilds_ollama_for_new_provider` ✅ (1553 lib tests pass, up from 1552)
+- Manual R5 re-test (Hermes Agent, pending): reproduce R4 scenario — start with local model (llama-swap), `/model glm-5.2:cloud` (ollama provider), send prompt → must work without `no router for requested model`; switch back to local, send prompt → must work.
+
 ---
 
 #### Remove ollama-rs — #123 [M1]

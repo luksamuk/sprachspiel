@@ -2154,7 +2154,7 @@ pub async fn handle_model_switch(
 
     let result = match switch_model(
         model_name,
-        &state.ollama,
+        &state.settings,
         current_capabilities,
         state.session.think,
         state.tools_active,
@@ -2167,6 +2167,12 @@ pub async fn handle_model_switch(
         }
     };
 
+    // Rebuild the LLM client with the new model's provider (resolved from
+    // models.toml inside switch_model). Without this, state.ollama would
+    // stay bound to the initial model's provider and the next prompt would
+    // hit the wrong provider — causing `no router for requested model`
+    // when switching across providers (e.g., llama-swap → ollama).
+    state.ollama = result.ollama;
     state.current_model_name = result.model_name.clone();
     state.session.set_model(result.model_name.clone());
     state.model_config = result.model_config;
