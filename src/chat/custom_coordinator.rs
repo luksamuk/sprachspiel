@@ -978,12 +978,22 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             if let Some(name) = name_delta {
                                 *existing_name = name;
                             }
-                            let raw = if let serde_json::Value::String(s) = existing_args {
-                                let mut s = s.clone();
-                                s.push_str(&argument_delta);
-                                s
-                            } else {
-                                argument_delta.clone()
+                            // BUG-1 fix: accumulate argument_delta from the
+                            // start. The initial args from ToolCallStart is
+                            // an empty Object, but the first argument_delta
+                            // (e.g. "{") is a partial JSON string. We need to
+                            // treat the empty Object as an empty string base
+                            // and concatenate the delta, then try to parse.
+                            let raw = match existing_args {
+                                serde_json::Value::String(s) => {
+                                    let mut s = s.clone();
+                                    s.push_str(&argument_delta);
+                                    s
+                                }
+                                serde_json::Value::Object(o) if o.is_empty() => {
+                                    argument_delta.clone()
+                                }
+                                _ => argument_delta.clone(),
                             };
                             let parsed = serde_json::from_str(&raw).unwrap_or_else(|_| {
                                 if raw.is_empty() {
@@ -1005,6 +1015,29 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // the execution's id in sync. `ollama_rs::ToolCall`
                         // has no `id` field, so we carry it in a parallel vec.
                         self.stream_tool_call_ids.push(call.id.clone());
+                        // BUG-1 fix: update the preview with the FINAL parsed
+                        // arguments from ToolCallEnd. During streaming, the
+                        // preview's args may be a partial JSON string (each
+                        // argument_delta is a fragment that can't parse alone).
+                        // ToolCallEnd carries the complete, parsed arguments.
+                        // Find the preview by matching the stream_tool_call_ids
+                        // position with the tool_calls length (they grow in
+                        // parallel).
+                        let preview_index = tool_calls.len() as u32;
+                        if let Some((existing_id, existing_name, existing_args)) =
+                            tool_call_previews.get_mut(&preview_index)
+                        {
+                            if !call.id.is_empty() {
+                                *existing_id = call.id.clone();
+                            }
+                            if existing_name.is_empty() && !call.name.is_empty() {
+                                *existing_name = call.name.clone();
+                            }
+                            *existing_args = call.arguments.clone();
+                            if let Some(ref cb) = self.tool_preview_callback {
+                                cb(existing_id.clone(), existing_name.clone(), call.arguments.clone());
+                            }
+                        }
                         tool_calls.push(ollama_rs::generation::tools::ToolCall {
                             function: ollama_rs::generation::tools::ToolCallFunction {
                                 name: call.name,
