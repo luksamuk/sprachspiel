@@ -4576,6 +4576,50 @@ Smoke testing of PR #207 with `glm-5.2:cloud` and `gemma4-e2b:think` revealed se
 
 ---
 
+#### BUG-1 Root Cause Re-test (Round 3) — Revised Diagnosis & Fix
+
+**Status:** ✅ COMPLETED (commit pending — awaiting Hermes Agent re-test)
+**Previous rounds:** `PR207-TEST-RESULTS.md` (R1), `PR207-RETEST2-RESULTS.md` (R2), `PR207-RETEST3-RESULTS.md` (R3)
+**Previous fix attempts:** `9162fd7` (broaden empty-args check), `e24a146` (BUG-2 ordering + BUG-1 debug logging)
+
+Re-testing of PR #207 (round 3, commit `e24a146`) confirmed BUG-2 (thinking block ordering) is **FIXED** but BUG-1 (empty tool call args with local models) **still fails** with BeeLama/DFlash. The debug logs added in `e24a146` revealed the previous diagnosis was incomplete: the `freeze_tool_preview_by_name` correction (lines 303-338) presumed the streaming preview and the `ToolExecutionStarted` used the **same** `tool_call_id`, which is only true for cloud models. A deeper code review found **two interlinked bugs**:
+
+| Bug | Root cause (revised) | Fix |
+|-----|---------------------|-----|
+| (i) `tool_call_callback` dead | `custom_coordinator.rs:377` registers the callback that emits `LlmEvent::ToolCallStarted` (which drives `freeze_all_tool_previews` + `LlmState::ToolCall` transition), but the callback was **never invoked** in `stream_turn` after the migration to `LlmStreamEvent` granular events. Consequence: the event_loop never froze previews in the streaming path, leaving them orphaned and causing `freeze_tool_preview_by_name` to miss the match. | Invoke `tool_call_callback` on the **first** `LlmStreamEvent::ToolCallStart` of each turn (flag `tool_call_started_emitted` reset per `stream_turn`). Preserves single-fire semantics for multi-tool turns. |
+| (ii) `tool_call_id` divergence | `LlmStreamEvent::ToolCallStart` creates the preview with the provider's id (empty for BeeLama, `"call_123"` for cloud). `ToolExecutionStarted` (coordinator:1203) synthesizes `format!("{name}_{counter}")` — a different id. `freeze_tool_preview_by_name` can't match by id, and name-match fails when the name is also empty (BeeLama). | Preserve the stream id in a new `stream_tool_call_ids: Vec<String>` field, populated in `ToolCallEnd` (preserving `LlmToolCall.id` which `ollama_rs::ToolCall` lacks). The ReAct execution loop reuses this id when non-empty, falling back to the `{name}_{counter}` synthetic id only when the stream id is empty. |
+| (iii) `freeze_all_tool_previews` timing | Calling `freeze_all_tool_previews` in the `ToolCallStarted` handler (event_loop:426) froze previews **before** `argument_delta` populated args (for cloud models), replicating BUG-1 for cloud too once (i) was fixed. | Move `freeze_all_tool_previews` from the `ToolCallStarted` handler to the start of the `ToolExecutionStarted` handler (after the stream ended and all previews are fully populated). `ToolCallStarted` still does `finalize_streaming_zone_as_is` + `increment_round` + `set_llm_state(ToolCall)` for immediate visual feedback. |
+| (iv) name-match defense | Even with (i)+(ii)+(iii), an edge case remains: a frozen block with a divergent stream id AND an empty name (provider streamed neither) leaves no match path in `freeze_tool_preview_by_name`. | Add a defense-in-depth fallback in `freeze_tool_preview_by_name`: after id-match in `blocks` and `tool_previews` fail, scan `blocks` in reverse for the last `TurnBlock::ToolCall` with `result.is_none()`, empty/matching name, and empty args; update its name, args, and `tool_call_id` so `set_tool_result` can find it. |
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `src/chat/custom_coordinator.rs` | Add `stream_tool_call_ids: Vec<String>` field; reset at start of `stream_turn`; populate in `ToolCallEnd`; reuse in ReAct loop (prefer stream id, fallback to `{name}_{counter}`); invoke `tool_call_callback` on first `ToolCallStart` per turn via `tool_call_started_emitted` flag |
+| `src/chat/event_loop.rs` | Move `freeze_all_tool_previews()` from `ToolCallStarted` handler to `ToolExecutionStarted` handler (before `freeze_tool_preview_by_name`); keep `finalize_streaming_zone_as_is` + `increment_round` + `set_llm_state` in `ToolCallStarted` |
+| `src/chat/tui/live_turn.rs` | Add BUG-1 fallback (iii) in `freeze_tool_preview_by_name`: name-match over frozen `blocks` (last block with no result + empty/matching name + empty args) updates name/args/tool_call_id |
+
+**Unit tests added (4):**
+
+| Test | Scenario |
+|------|----------|
+| `freeze_tool_preview_by_name_local_model_empty_stream_id` | BeeLama flow: preview id="" name="" args={} → freeze_all → `freeze_tool_preview_by_name("read_file_1", "read_file", {path})` → block has args (via fallback) + `set_tool_result` finds it |
+| `freeze_tool_preview_by_name_cloud_model_streamed_id_and_args` | Cloud flow: preview id="call_123" name="read_file" args={path} → freeze_all → `freeze_tool_preview_by_name("call_123", ...)` → match by id, args preserved |
+| `freeze_tool_preview_by_name_multi_round_no_collision` | Same tool in R1 and R2 — unique ids via counter, `set_tool_result` finds correct block each round |
+| `freeze_tool_preview_by_name_fallback_updates_frozen_block_by_name` | Divergent non-empty stream id + matching name + empty args → fallback updates block without duplicate |
+
+**Verification:**
+
+- `cargo build --features all-tools` ✅
+- `cargo test --lib --features all-tools` → **1552 passed, 0 failed** (up from 1548) ✅
+- `cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity` → **0 errors** ✅
+- `cargo fmt --check` → clean ✅
+- Manual re-test with BeeLama/DFlash (local) and glm-5.2:cloud: **pending Hermes Agent re-test** (skill `pr-testing`)
+
+**Why the previous fix `e24a146` didn't work:** The correction in `freeze_tool_preview_by_name` (lines 303-338) assumed the block frozen by `freeze_all_tool_previews` had the **same** `tool_call_id` as the `ToolExecutionStarted`. This was only true for cloud models (which stream `call_123` and the coordinator reused that id). For BeeLama, (i) prevented `freeze_all_tool_previews` from running at all, so no block existed to match; and (ii) made the synthesized id diverge from the (empty) stream id, so even after (i) was hypothetically fixed, the id-match would still fail. The combination of (i) + (ii) + (iii) + (iv) is required to close BUG-1 for both local and cloud models.
+
+---
+
 #### Remove ollama-rs — #123 [M1]
 
 **Status:** 📋 PLANNED  

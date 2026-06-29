@@ -421,9 +421,21 @@ pub fn handle_llm_event(
         // LlmEvent::InterToolText removed in W2 #122 — all ReAct turns stream
         // and post-tool text arrives via StreamToken/StreamThinking.
         LlmEvent::ToolCallStarted => {
-            // Tool calls detected — freeze any previews, finalize the current
-            // content block, and transition to the next round.
-            view.app_mut().freeze_all_tool_previews();
+            // Tool calls detected — finalize the current content block and
+            // transition to the next round. The visual transition
+            // (`LlmState::ToolCall`) happens here so the user gets immediate
+            // feedback that tool calls are coming.
+            //
+            // BUG-1 fix (i)+(ii): `freeze_all_tool_previews` is NOT called
+            // here anymore. When `ToolCallStarted` fires (on the first
+            // `ToolCallStart` of the stream), the provider may not have sent
+            // `argument_delta` yet, so freezing now would commit previews
+            // with empty args — replicating the BUG-1 symptom for cloud
+            // models too. Instead, `freeze_all_tool_previews` is called in
+            // the `ToolExecutionStarted` handler (after the stream ended and
+            // all previews are fully populated), right before
+            // `freeze_tool_preview_by_name` reconciles any remaining
+            // preview with the execution args.
             view.app_mut().finalize_streaming_zone_as_is();
             view.app_mut().increment_round();
             view.set_llm_state(LlmState::ToolCall);
@@ -447,6 +459,14 @@ pub fn handle_llm_event(
                 name,
                 args
             );
+            // BUG-1 fix (i)+(ii): freeze all previews NOW — the stream has
+            // ended and every preview is fully populated (args included for
+            // cloud models that send `argument_delta`). Freezing here
+            // promotes previews to `TurnBlock::ToolCall` blocks keyed by the
+            // stream's tool_call_id, so `freeze_tool_preview_by_name` below
+            // can match by id and update empty args from the execution args
+            // (local models that don't stream `argument_delta`).
+            view.app_mut().freeze_all_tool_previews();
             let has_live_turn = view.app().has_streaming_zone();
             if let Some(turn) = view.app_mut().live_turn_mut() {
                 log::debug!(

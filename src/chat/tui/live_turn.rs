@@ -407,6 +407,58 @@ impl LiveTurn {
             return;
         }
 
+        // BUG-1 fix (iii): defense in depth — if we still haven't matched,
+        // look for the LAST frozen `TurnBlock::ToolCall` in `self.blocks`
+        // that (a) has no result yet, (b) has an empty name OR a matching
+        // name, and (c) has empty args. This catches the edge case where
+        // the preview was frozen by `freeze_all_tool_previews` (in the
+        // `ToolExecutionStarted` handler) with a stream id that diverges
+        // from the execution id AND the name was empty (provider didn't
+        // stream the name). Without this fallback, the block would keep
+        // empty args and a second block would be created by the
+        // "No match" branch below, leaving an empty-args block visible
+        // to the user. We update args, name, AND tool_call_id so the
+        // later `set_tool_result` can find the block by execution id.
+        if !name.is_empty() {
+            for block in self.blocks.iter_mut().rev() {
+                if let TurnBlock::ToolCall {
+                    tool_call_id: bid,
+                    name: bn,
+                    args: ba,
+                    result,
+                } = block
+                {
+                    if result.is_some() {
+                        // Already has a result — belongs to a previous round,
+                        // skip to avoid overwriting.
+                        continue;
+                    }
+                    let is_args_empty = match ba {
+                        serde_json::Value::Object(o) if o.is_empty() => true,
+                        serde_json::Value::Null => true,
+                        _ => false,
+                    };
+                    let name_matches = bn.is_empty() || bn == name;
+                    if name_matches && is_args_empty {
+                        if bn.is_empty() {
+                            *bn = name.to_string();
+                        }
+                        if !args.is_null() {
+                            *ba = args.clone();
+                        }
+                        *bid = tool_call_id.to_string();
+                        log::debug!(
+                            "BUG-1 fallback: updated frozen block by name \
+                             match (name={}) with execution id={}",
+                            name,
+                            tool_call_id
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+
         // No match — create block with the provided name/args (not empty)
         log::debug!(
             "freeze_tool_preview_by_name: no match for id={}, name={} — \
@@ -977,6 +1029,194 @@ mod tests {
         turn.freeze_all_tool_previews();
         assert!(turn.tool_previews.is_empty());
         assert_eq!(turn.blocks.len(), 2);
+    }
+
+    /// BUG-1 regression test (i)+(ii): simulates the BeeLama/DFlash local
+    /// model flow where the provider does NOT stream `argument_delta` and
+    /// may send an empty tool_call id. The event_loop freezes all previews
+    /// (now done in the `ToolExecutionStarted` handler), then calls
+    /// `freeze_tool_preview_by_name` with the execution-synthesized id.
+    ///
+    /// Flow:
+    ///   1. `ToolCallStart` with id="" name="" (BeeLama sends neither) →
+    ///      preview created with id="", name="", args=empty Object.
+    ///   2. `freeze_all_tool_previews()` (now in `ToolExecutionStarted`
+    ///      handler) promotes the preview to a block with id="", name="",
+    ///      args=empty.
+    ///   3. `freeze_tool_preview_by_name("read_file_1", "read_file",
+    ///      {"path": "/tmp/x"})` — no id match in blocks (block has ""),
+    ///      no preview in `tool_previews` (already frozen), so the BUG-1
+    ///      fallback (iii) matches the block by empty name + empty args
+    ///      and updates it with the execution name, args, and id.
+    ///
+    /// Verifies the block has the correct args (not empty) and the
+    /// tool_call_id is updated so `set_tool_result` can find it.
+    #[test]
+    fn freeze_tool_preview_by_name_local_model_empty_stream_id() {
+        let mut turn = LiveTurn::new(0);
+        // Step 1: stream creates a preview with empty id/name/args
+        turn.upsert_tool_preview(String::new(), String::new(), serde_json::json!({}));
+        // Step 2: event_loop freezes all previews (now in ToolExecutionStarted)
+        turn.freeze_all_tool_previews();
+        assert!(turn.tool_previews.is_empty());
+        assert_eq!(turn.blocks.len(), 1);
+        // Step 3: ToolExecutionStarted arrives with synthesized id + real args
+        turn.freeze_tool_preview_by_name(
+            "read_file_1",
+            "read_file",
+            &serde_json::json!({"path": "/tmp/pr207_local.txt"}),
+        );
+        // No duplicate block should be created
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                result,
+            } => {
+                assert_eq!(tool_call_id, "read_file_1");
+                assert_eq!(name, "read_file");
+                assert_eq!(args, &serde_json::json!({"path": "/tmp/pr207_local.txt"}));
+                assert!(result.is_none(), "result should be None before execution");
+            }
+            _ => panic!("expected tool call block"),
+        }
+        // Step 4: set_tool_result must find the block by the updated id
+        turn.set_tool_result("read_file_1", "file contents".to_string(), false, false);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall { result, .. } => {
+                assert_eq!(result.as_ref().unwrap().content, "file contents");
+            }
+            _ => panic!("expected tool call block"),
+        }
+    }
+
+    /// BUG-1 regression test (cloud path): the provider streams `call_123`
+    /// as the tool_call id and the args via `argument_delta`. After
+    /// `freeze_all_tool_previews`, the block has id="call_123" and the
+    /// streamed args. `freeze_tool_preview_by_name` is called with the
+    /// SAME id (now that the coordinator reuses the stream id), so the
+    /// match-by-id branch (lines 311-338) finds it. Since args are NOT
+    /// empty (streamed), they are preserved — no overwrite.
+    #[test]
+    fn freeze_tool_preview_by_name_cloud_model_streamed_id_and_args() {
+        let mut turn = LiveTurn::new(0);
+        turn.upsert_tool_preview(
+            "call_123".to_string(),
+            "read_file".to_string(),
+            serde_json::json!({"path": "/tmp/cloud.txt"}),
+        );
+        turn.freeze_all_tool_previews();
+        // ToolExecutionStarted reuses the stream id (Passo 2)
+        turn.freeze_tool_preview_by_name(
+            "call_123",
+            "read_file",
+            &serde_json::json!({"path": "/tmp/cloud.txt"}),
+        );
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "call_123");
+                assert_eq!(name, "read_file");
+                assert_eq!(args, &serde_json::json!({"path": "/tmp/cloud.txt"}));
+            }
+            _ => panic!("expected tool call block"),
+        }
+    }
+
+    /// BUG-1 regression test (multi-round): the same tool is called in
+    /// consecutive ReAct rounds. Each round's block has a unique
+    /// `tool_call_id` (synthesized via the monotonic counter when the
+    /// stream id is empty), so the second round's `set_tool_result`
+    /// finds the second block, not the first.
+    #[test]
+    fn freeze_tool_preview_by_name_multi_round_no_collision() {
+        let mut turn = LiveTurn::new(0);
+        // Round 1: read_file with /tmp/a
+        turn.upsert_tool_preview(String::new(), String::new(), serde_json::json!({}));
+        turn.freeze_all_tool_previews();
+        turn.freeze_tool_preview_by_name(
+            "read_file_1",
+            "read_file",
+            &serde_json::json!({"path": "/tmp/a"}),
+        );
+        turn.set_tool_result("read_file_1", "contents A".to_string(), false, false);
+        // Round 2: read_file with /tmp/b — different synthesized id
+        turn.upsert_tool_preview(String::new(), String::new(), serde_json::json!({}));
+        turn.freeze_all_tool_previews();
+        turn.freeze_tool_preview_by_name(
+            "read_file_2",
+            "read_file",
+            &serde_json::json!({"path": "/tmp/b"}),
+        );
+        turn.set_tool_result("read_file_2", "contents B".to_string(), false, false);
+        assert_eq!(turn.blocks.len(), 2);
+        // First block keeps its result
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                result,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "read_file_1");
+                assert_eq!(result.as_ref().unwrap().content, "contents A");
+            }
+            _ => panic!("expected first tool call block"),
+        }
+        // Second block has its own result — not overwritten
+        match &turn.blocks[1] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                result,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "read_file_2");
+                assert_eq!(result.as_ref().unwrap().content, "contents B");
+            }
+            _ => panic!("expected second tool call block"),
+        }
+    }
+
+    /// BUG-1 fallback test (iii): the frozen block has a DIVERGENT stream id
+    /// (non-empty) and a matching name, with empty args. The fallback
+    /// should match by name and update args + id without creating a
+    /// duplicate block.
+    #[test]
+    fn freeze_tool_preview_by_name_fallback_updates_frozen_block_by_name() {
+        let mut turn = LiveTurn::new(0);
+        // Provider streamed a non-empty id that diverges from the execution id
+        turn.upsert_tool_preview(
+            "stream_id_xyz".to_string(),
+            "read_file".to_string(),
+            serde_json::json!({}),
+        );
+        turn.freeze_all_tool_previews();
+        // Execution synthesizes a different id (coordinator fallback path)
+        turn.freeze_tool_preview_by_name(
+            "read_file_5",
+            "read_file",
+            &serde_json::json!({"path": "/tmp/fallback.txt"}),
+        );
+        assert_eq!(turn.blocks.len(), 1);
+        match &turn.blocks[0] {
+            TurnBlock::ToolCall {
+                tool_call_id,
+                name,
+                args,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "read_file_5");
+                assert_eq!(name, "read_file");
+                assert_eq!(args, &serde_json::json!({"path": "/tmp/fallback.txt"}));
+            }
+            _ => panic!("expected tool call block"),
+        }
     }
 
     #[test]

@@ -326,6 +326,15 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// accepts connection but doesn't emit chunks within the idle timeout).
     /// Prevents infinite loops when the provider persistently fails.
     react_retry_count: u32,
+    /// BUG-1 fix (ii): ids emitted by the provider in the SSE stream
+    /// (`LlmStreamEvent::ToolCallStart`/`ToolCallEnd`), preserved in the
+    /// same order as `tool_calls` so the ReAct execution loop can reuse
+    /// the stream's id instead of synthesizing a divergent one. This keeps
+    /// the preview's `tool_call_id` (set during streaming) and the
+    /// `ToolExecutionStarted`'s `tool_call_id` in sync, allowing
+    /// `freeze_tool_preview_by_name` to match by id and update empty args
+    /// from the execution args. Reset at the start of each `stream_turn`.
+    stream_tool_call_ids: Vec<String>,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -355,6 +364,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             cancel_token: None,
             tool_call_counter: 0,
             react_retry_count: 0,
+            stream_tool_call_ids: Vec::new(),
         }
     }
 
@@ -890,6 +900,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             u32,
             (String, String, serde_json::Value),
         > = std::collections::HashMap::new();
+        // BUG-1 fix (i): emit `LlmEvent::ToolCallStarted` exactly once per
+        // turn, on the first `ToolCallStart`. Without this, the event_loop
+        // never transitions `LlmState::ToolCall` and `freeze_all_tool_previews`
+        // is never called in the streaming path, leaving previews orphaned
+        // and causing the empty-args rendering with local models.
+        let mut tool_call_started_emitted = false;
+        // BUG-1 fix (ii): reset the stream id buffer so it lines up with
+        // `tool_calls` for the upcoming ReAct execution loop.
+        self.stream_tool_call_ids.clear();
         let model = self.model.clone();
         let created_at = String::new();
 
@@ -920,6 +939,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             .push_str(&delta);
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallStart { index, id, name } => {
+                        // BUG-1 fix (i): emit `ToolCallStarted` exactly once
+                        // per turn so the event_loop transitions
+                        // `LlmState::ToolCall` and the user gets immediate
+                        // visual feedback that tool calls are coming.
+                        if !tool_call_started_emitted {
+                            tool_call_started_emitted = true;
+                            if let Some(ref cb) = self.tool_call_callback {
+                                cb();
+                            }
+                        }
                         let id = id.unwrap_or_default();
                         let name = name.unwrap_or_default();
                         tool_call_previews.insert(
@@ -970,6 +999,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         }
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallEnd { call, .. } => {
+                        // BUG-1 fix (ii): preserve the stream's tool_call id so
+                        // the ReAct execution loop can reuse it in
+                        // `ToolExecutionStarted`, keeping the preview's id and
+                        // the execution's id in sync. `ollama_rs::ToolCall`
+                        // has no `id` field, so we carry it in a parallel vec.
+                        self.stream_tool_call_ids.push(call.id.clone());
                         tool_calls.push(ollama_rs::generation::tools::ToolCall {
                             function: ollama_rs::generation::tools::ToolCallFunction {
                                 name: call.name,
@@ -1175,7 +1210,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             // Execute each tool call
             let mut tools_executed = Vec::new();
 
-            for call in resp.message.tool_calls.clone() {
+            for (call_idx, call) in resp.message.tool_calls.clone().into_iter().enumerate() {
                 // Check for user cancellation before each tool call.
                 // When Ctrl+C is pressed during multi-tool execution,
                 // the cancel token is set and we stop the loop after
@@ -1194,13 +1229,19 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
-                // Bug D fix: generate a unique tool_call_id using a monotonic
-                // counter. Previously this used just the tool name, which
-                // collided when the same tool was called in multiple ReAct
-                // rounds — causing earlier tool calls to be overwritten and
-                // their previews to be orphaned.
+                // BUG-1 fix (ii): prefer the tool_call_id emitted by the
+                // provider in the SSE stream so it matches the id used when
+                // the preview was created during streaming. This lets
+                // `freeze_tool_preview_by_name` match by id and update empty
+                // args from the execution args. When the stream id is empty
+                // (local models via BeeLama/DFlash that don't send an id),
+                // fall back to the Bug D synthetic id so tool calls remain
+                // unique across ReAct rounds.
                 self.tool_call_counter += 1;
-                let tool_call_id = format!("{tool_name}_{}", self.tool_call_counter);
+                let tool_call_id = match self.stream_tool_call_ids.get(call_idx) {
+                    Some(stream_id) if !stream_id.is_empty() => stream_id.clone(),
+                    _ => format!("{tool_name}_{}", self.tool_call_counter),
+                };
 
                 log::debug!("Tool call: {:?}", call.function);
 
