@@ -95,10 +95,37 @@ pub async fn switch_model(
     // model lives on a different provider (e.g., switching from llama-swap
     // to ollama). The same client is used for capability detection below,
     // so detection hits the right provider from the start.
+    //
+    // R5 recommendation: log the provider resolution for auditability. If
+    // something goes wrong with provider switching in production, these
+    // logs are the trail that shows which provider was resolved and whether
+    // the client was rebuilt.
+    let provider_name = user_models::get_provider_for_model(model_name);
+    match &provider_name {
+        Some(p) => log::info!(
+            "Model switch: '{}' resolves to provider '{}' — rebuilding LLM client",
+            model_name,
+            p
+        ),
+        None => log::warn!(
+            "Model switch: no provider declared for '{}' in models.toml — \
+             falling back to first available OpenAI-compatible provider",
+            model_name
+        ),
+    }
     let ollama = settings.ollama_client_for_model(model_name);
+    log::debug!(
+        "Model switch: built new LLM client for '{}' (provider: {})",
+        model_name,
+        provider_name.as_deref().unwrap_or("<fallback>")
+    );
 
     // 3. Initialize warnings and detect capabilities (with fallback)
     let mut warnings = Vec::new();
+    log::debug!(
+        "Model switch: detecting capabilities for '{}' via the new provider",
+        model_config.model_id
+    );
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
         Ok(c) => c,
         Err(e) => {
