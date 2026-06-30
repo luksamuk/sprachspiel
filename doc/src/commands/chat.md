@@ -362,7 +362,7 @@ Show token usage and context utilization for the current session:
 ```
 > /context
 Context Information:
-  Model:          qwen3.5:4b (131K context)
+  Model:          qwen3.5:4b (96K context)
 
   Token Breakdown:
     System prompt:    ~890 tokens

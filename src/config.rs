@@ -22,7 +22,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         "qwen3.5:4b",
         ModelConfig {
             model_id: "qwen3.5:4b".to_string(),
-            num_ctx: 131072,
+            num_ctx: 98304,
             temperature: 1.0,
             top_p: Some(0.95),
             thinking: true,
@@ -162,7 +162,7 @@ mod tests {
     fn test_qwen35_4b_parameters() {
         let qwen = ModelConfig::get("qwen3.5:4b").unwrap();
         assert_eq!(qwen.model_id, "qwen3.5:4b");
-        assert_eq!(qwen.num_ctx, 131072);
+        assert_eq!(qwen.num_ctx, 98304);
         assert_eq!(qwen.temperature, 1.0);
         assert_eq!(qwen.top_p, Some(0.95));
         assert!(qwen.thinking);

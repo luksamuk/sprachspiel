@@ -139,7 +139,7 @@ sprach vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 
 | Model | Size | Context | Multi-Image | Best For |
 |-------|------|---------|-------------|----------|
-| `qwen3.5:4b` | 3.4 GB | 131K | Yes | Default, multimodal, good quality |
+| `qwen3.5:4b` | 3.4 GB | 96K | Yes | Default, multimodal, good quality |
 | `moondream:1.8b` | 1.7 GB | 2K | No | Lightweight alternative |
 | `llava:13b` | 8.0 GB | 4K | No | Better quality |
 | `ministral-3:14b` | 7.5 GB | 32K | Yes | Multi-image, general purpose |
