@@ -14,13 +14,11 @@
 //! This shim is REMOVED in #123 (Remove ollama-rs).
 
 #![allow(dead_code)]
-#![allow(clippy::all)]
+#![allow(redundant_imports)] // Re-exports trigger redundant_imports until #123 removes them
 #![allow(unused_imports)] // W2 #123: these re-exports will be removed when ollama-rs is dropped
 
 pub use ollama_rs::generation::chat::request::ChatMessageRequest;
 pub use ollama_rs::generation::chat::{ChatMessage, ChatMessageResponse, MessageRole};
-pub use ollama_rs::generation::completion::request::GenerationRequest as _GenerationRequest;
-pub use ollama_rs::generation::images::Image as _Image;
 pub use ollama_rs::models::ModelInfo;
 pub use ollama_rs::models::ModelOptions as _ModelOptions;
 
@@ -33,6 +31,22 @@ use crate::provider::LlmProvider;
 use crate::provider::openai_compat::{OpenAICompatibleConfig, OpenAICompatibleProvider};
 use crate::provider::types::{LlmMessage, LlmRole, LlmStreamEvent, ProviderOptions};
 use crate::user_models::ProviderConfig;
+
+const FALLBACK_BASE_URL: &str = "http://localhost:11434/v1";
+
+fn fallback_config() -> OpenAICompatibleConfig {
+    OpenAICompatibleConfig {
+        base_url: FALLBACK_BASE_URL.to_string(),
+        api_key: None,
+        connect_timeout_secs: 5,
+        read_timeout_secs: 300,
+        stream_idle_timeout_secs: 60,
+        max_retries: 0,
+        retry_base_delay_ms: 1000,
+        retry_max_delay_ms: 1000,
+        retry_jitter_percent: 0,
+    }
+}
 
 /// Re-export of `crate::provider::Ollama` — a shim that delegates to OpenAI-compatible transport.
 pub type Ollama = CompatOllama;
@@ -66,18 +80,7 @@ impl CompatOllama {
             // Fall back to a provider pointing at localhost:11434/v1.
             // This will fail at request time if the server is unreachable,
             // but at least the struct is constructible.
-            let fallback = OpenAICompatibleConfig {
-                base_url: "http://localhost:11434/v1".to_string(),
-                api_key: None,
-                connect_timeout_secs: 5,
-                read_timeout_secs: 300,
-                stream_idle_timeout_secs: 60,
-                max_retries: 0,
-                retry_base_delay_ms: 1000,
-                retry_max_delay_ms: 1000,
-                retry_jitter_percent: 0,
-            };
-            match OpenAICompatibleProvider::new(fallback) {
+            match OpenAICompatibleProvider::new(fallback_config()) {
                 Ok(p) => p,
                 Err(e2) => {
                     log::error!("Fallback config also failed: {e2}");
@@ -97,7 +100,7 @@ impl CompatOllama {
     /// Create a shim from a `ProviderConfig` (preferred).
     pub fn from_provider_config(cfg: &ProviderConfig) -> Self {
         let mut base_url = cfg.base_url.clone();
-        if !base_url.contains("/v1") && !base_url.ends_with('/') {
+        if !base_url.ends_with("/v1") && !base_url.ends_with('/') {
             base_url.push_str("/v1");
         }
         let openai_cfg = OpenAICompatibleConfig::from(cfg);
@@ -105,18 +108,7 @@ impl CompatOllama {
             log::error!(
                 "Failed to create OpenAI provider from config (check base_url syntax): {e}"
             );
-            let fallback = OpenAICompatibleConfig {
-                base_url: "http://localhost:11434/v1".to_string(),
-                api_key: None,
-                connect_timeout_secs: 5,
-                read_timeout_secs: 300,
-                stream_idle_timeout_secs: 60,
-                max_retries: 0,
-                retry_base_delay_ms: 1000,
-                retry_max_delay_ms: 1000,
-                retry_jitter_percent: 0,
-            };
-            match OpenAICompatibleProvider::new(fallback) {
+            match OpenAICompatibleProvider::new(fallback_config()) {
                 Ok(p) => p,
                 Err(e2) => {
                     log::error!("Fallback config also failed: {e2}");
@@ -198,7 +190,7 @@ impl CompatOllama {
     ///
     /// Policy: assume a permissive default set so that capability-driven
     /// code paths (tool calling, embeddings, etc.) engage. The user is
-    /// responsável for disabling capabilities they do not want in
+    /// responsible for disabling capabilities they do not want in
     /// `models.toml` (e.g. `thinking = false`, `tools = false`,
     /// `vision = false`). Errors from the model itself (refusal,
     /// tool-call failure, missing embedding endpoint) are surfaced
@@ -436,13 +428,6 @@ pub struct LocalModel {
 
 // === Helper conversion functions ===
 
-/// Convert ollama-rs `ToolInfo` (from `ChatMessageRequest.tools`) into our
-/// agnostic `LlmToolInfo` so the OpenAI-compatible backend receives the
-/// tool definitions on every chat call.
-///
-/// W2 #121: previously this conversion was missing, so the shim dropped
-/// all tools on the floor — the LLM never knew what tools were available
-/// and never emitted `delta.tool_calls` in streaming responses.
 /// Convert a `ProviderError` into an `ollama_rs::error::OllamaError`.
 ///
 /// W2 #121/122: this is public so that callers that consume the raw
@@ -513,6 +498,13 @@ pub fn convert_provider_error(
     }
 }
 
+/// Convert ollama-rs `ToolInfo` (from `ChatMessageRequest.tools`) into our
+/// agnostic `LlmToolInfo` so the OpenAI-compatible backend receives the
+/// tool definitions on every chat call.
+///
+/// W2 #121: previously this conversion was missing, so the shim dropped
+/// all tools on the floor — the LLM never knew what tools were available
+/// and never emitted `delta.tool_calls` in streaming responses.
 fn convert_ollama_tools_to_tool_info(
     tools: Vec<ollama_rs::generation::tools::ToolInfo>,
 ) -> Vec<crate::provider::ToolInfo> {
