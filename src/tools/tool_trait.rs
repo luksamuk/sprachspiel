@@ -32,23 +32,12 @@ pub trait Parameters: DeserializeOwned + JsonSchema {}
 
 impl<P: DeserializeOwned + JsonSchema> Parameters for P {}
 
-/// Tool trait: our own implementation, decoupled from `ollama-rs`.
+/// Tool trait: decoupled from `ollama-rs`.
 ///
-/// `#[sprachspiel::tool]`-generated tools implement this trait along with
-/// `ollama_rs::generation::tools::Tool` via the dual-impl macro. The
-/// ollama-rs impl is kept for serialization compatibility with the
-/// ollama-rs JSON shape (`ToolInfo` / `ToolCall`), used by the
-/// `CustomCoordinator` to send tool definitions to Ollama. The
-/// `ollama_rs::coordinator::Coordinator` itself is no longer used
-/// (see the registry's `ToolRegistrar` impls); the dual-impl
-/// exists purely for the trait that ollama-rs exposes for
-/// `ToolInfo`/tool-call serialization.
-///
-/// # W2 Wave Context (Issue #118)
-///
-/// This trait is the foundation of the W2 Provider Chain. In #123 (Remove
-/// ollama-rs), the dual-impl macro and the ollama-rs trait reference go
-/// away, leaving this trait as the sole Tool trait in the codebase.
+/// `#[sprachspiel::tool]`-generated tools implement this trait. Tool
+/// definitions are serialized to the provider via `serde` (JSON Schema),
+/// not via `ollama-rs` types. The `CustomCoordinator` sends tool
+/// definitions through the `OpenAICompatibleProvider` shim.
 pub trait Tool: Send + Sync {
     type Params: Parameters;
 

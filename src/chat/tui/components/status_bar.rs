@@ -43,8 +43,7 @@ pub struct StatusBarState {
     pub embedding_progress: Option<EmbeddingProgress>,
     /// Optional transient right-aligned overlay (e.g., provider retry warning).
     ///
-    /// W2 #122: retry status is rendered in red on the right side of the
-    /// status bar so the user sees transient failures without freezing UI.
+    /// Rendered in red on the right side of the status bar.
     pub overlay: Option<String>,
 }
 
