@@ -88,7 +88,7 @@ pub enum LlmRole {
 /// A message in an LLM conversation.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessage`.
-/// W2 #121: extended with `name` and `tool_call_id` for OpenAI tool support.
+/// Extended with `name` and `tool_call_id` for OpenAI tool support.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
@@ -234,10 +234,10 @@ pub struct LlmUsage {
 
 /// Provider-agnostic event emitted by a streaming LLM chat completion.
 ///
-/// W2 #122: replaces the pull-based `LlmStreamChunk` model. The provider
-/// pushes semantic lifecycle events (text/thinking/tool-call deltas, retry
-/// status, completion) instead of forcing the consumer to diff successive
-/// chunks. This matches the event-stream design used by the Pi Coding Agent.
+/// The provider pushes semantic lifecycle events (text/thinking/tool-call
+/// deltas, retry status, completion) instead of forcing the consumer to diff
+/// successive chunks. This matches the event-stream design used by the Pi
+/// Coding Agent.
 #[derive(Debug, Clone)]
 pub enum LlmStreamEvent {
     /// A new text content block has started.
@@ -312,7 +312,7 @@ pub struct ProviderCapabilities {
 /// Options for provider requests.
 ///
 /// Mirrors `ollama_rs::models::ModelOptions` with additions.
-/// W2 #121: removed `top_k`, `repeat_penalty`, `think` (not OpenAI-portable).
+/// Removed `top_k`, `repeat_penalty`, `think` (not OpenAI-portable).
 /// Added `seed` (cross-provider, optional).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderOptions {

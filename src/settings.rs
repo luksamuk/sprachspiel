@@ -69,7 +69,7 @@ pub struct Settings {
     /// Thinking Trace Transform configuration
     #[serde(default)]
     pub thinking_trace: ThinkingTraceSettings,
-    /// Indexing configuration (W2 #121 extension).
+    /// Indexing configuration.
     ///
     /// The `[indexing]` section in `config.toml` is **required** in
     /// production. It declares the alias (from `models.toml
@@ -318,8 +318,7 @@ fn default_semantic_threshold() -> f32 {
     DEFAULT_SEMANTIC_THRESHOLD
 }
 
-// W2 #121 extension: RetrievalSettings was REMOVED.
-// The keyword_weight and semantic_weight fields now live in
+// The keyword_weight and semantic_weight fields live in
 // IndexingSettings (the [indexing] section), since indexing and
 // retrieval are two sides of the same concern. Use the
 // `default_keyword_weight()` / `default_semantic_weight()` helpers
@@ -351,7 +350,7 @@ pub struct ThinkingTraceSettings {
     pub enabled: bool,
 }
 
-/// Indexing configuration (W2 #121 extension).
+/// Indexing configuration.
 ///
 /// The `[indexing]` section in `config.toml` merges two concerns:
 /// (1) which model to use for vector embedding generation, and
@@ -442,8 +441,7 @@ impl Default for IndexingSettings {
     }
 }
 
-// W2 #121 extension: EmbeddingSettings removed; replaced by
-// IndexingSettings (defined above, line ~399).
+// Embedding settings live in IndexingSettings (defined above).
 
 /// The complete sample configuration exposed as a static string.
 ///
@@ -763,8 +761,8 @@ skin = "dark"
 # Default: 0.70
 # semantic_threshold = 0.70
 
-# W2 #121 extension: [retrieval] was REMOVED. The keyword_weight and
-# semantic_weight fields now live in the [indexing] section (above).
+# The [retrieval] section was removed. The keyword_weight and
+# semantic_weight fields live in the [indexing] section (above).
 # Indexing and retrieval are two sides of the same concern.
 
 # =============================================================================
@@ -784,7 +782,7 @@ skin = "dark"
 # enabled = false
 
 # =============================================================================
-# INDEXING CONFIGURATION (W2 #121 extension — REQUIRED)
+# INDEXING CONFIGURATION (REQUIRED)
 # =============================================================================
 # Configures the embedding model and the hybrid RRF weights used by
 # /search and the indexing pipeline. This section is REQUIRED —
@@ -974,7 +972,7 @@ impl Settings {
 
     /// Get the configured indexing model alias.
     ///
-    /// W2 #121 extension: returns `&self.indexing.model` (the value
+    /// Returns `&self.indexing.model` (the value
     /// from `[indexing].model` in `config.toml`). This is an ALIAS
     /// from `models.toml [models.*]`, NOT the upstream `model_id`.
     /// The alias is resolved via `Settings::resolve_indexing_model`
@@ -991,13 +989,11 @@ impl Settings {
         self.indexing.probe
     }
 
-    // W2 #121 extension: `resolve_embedding_provider` is removed
-    // (it operated on `ProviderConfig.embedding`, which no longer
-    // exists). The new alias-based resolver
-    // `Settings::resolve_indexing_model(alias)` is added below.
+    // The alias-based resolver `Settings::resolve_indexing_model(alias)`
+    // is defined below.
 
     /// Resolve the indexing configuration for the alias in
-    /// `[indexing].model` of `config.toml` (W2 #121 extension).
+    /// `[indexing].model` of `config.toml`.
     ///
     /// Reads the alias (e.g. `"nomic"`) from `settings.indexing.model`,
     /// looks it up in `models.toml [models.*]`, and returns:
@@ -1201,8 +1197,8 @@ impl Settings {
     }
 
     /// Build a client for the provider of a given model name.
-    /// W2 #121: temporary helper. Resolves the model's `provider = "<name>"`
-    /// from `models.toml` and returns the appropriate `Ollama` shim.
+    /// Resolves the model's `provider = "<name>"` from `models.toml`
+    /// and returns the appropriate `Ollama` shim.
     /// Falls back to default Ollama if model is not found or has no provider.
     pub fn ollama_client_for_model(&self, model_name: &str) -> crate::provider::Ollama {
         if let Some(provider_name) = crate::user_models::get_provider_for_model(model_name) {
@@ -1409,9 +1405,8 @@ tools = false
     #[test]
     fn test_get_subcommand_config_ocr_model_resolution() {
         // Verify that config key "glm-ocr" resolves to a model_id
-        // via get_model_config. W2 #121 extension: the resolution
-        // can hit either the builtin (`glm-ocr:bf16`) or the
-        // user's models.toml override. We just verify the
+        // via get_model_config. The resolution can hit either the
+        // builtin (`glm-ocr:bf16`) or the user's models.toml override. We just verify the
         // model_id is non-empty and contains "glm-ocr".
         use crate::user_models::get_model_config;
         let config = get_model_config("glm-ocr");
@@ -1504,8 +1499,8 @@ semantic_threshold = 0.80
 
     #[test]
     fn test_indexing_settings_defaults() {
-        // W2 #121 extension: keyword_weight and semantic_weight now
-        // live in IndexingSettings, not RetrievalSettings.
+        // keyword_weight and semantic_weight live in IndexingSettings,
+        // not RetrievalSettings.
         let settings = Settings::default();
         assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
@@ -1592,11 +1587,10 @@ semantic_weight = 0.7
 
     #[test]
     fn test_indexing_settings_omitted_uses_default() {
-        // W2 #121 extension: serde(default) makes the [indexing]
-        // section optional at the TOML level. The real check that
-        // settings.indexing.model is non-empty happens in
-        // init_chat_database, where sprach bails out with a clear
-        // error.
+        // serde(default) makes the [indexing] section optional at the
+        // TOML level. The real check that settings.indexing.model is
+        // non-empty happens in init_chat_database, where sprach bails
+        // out with a clear error.
         let sample = r#"
 [model]
 default = "qwen3.5:4b"
@@ -1607,7 +1601,7 @@ default = "qwen3.5:4b"
 
     #[test]
     fn test_resolve_indexing_model_empty_alias() {
-        // W2 #121 extension: [indexing].model is empty.
+        // [indexing].model is empty.
         let mut settings = Settings::default();
         settings.indexing.model = String::new();
         let result = settings.resolve_indexing_model();

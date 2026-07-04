@@ -326,10 +326,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     let query = args.get_query()?;
 
-    // W2 #121 extension: reject embedding-only models at the
-    // CLI layer (the `--model` / `-m` flag). The same check
-    // lives in `model_switch::switch_model` for the `/model`
-    // slash command.
+    // Reject embedding-only models at the CLI layer (the `--model` /
+    // `-m` flag). The same check lives in `model_switch::switch_model`
+    // for the `/model` slash command.
     if let Some(model) = cli.model.as_deref()
         && user_models::is_model_embedding_only(model)
     {
@@ -369,7 +368,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         std::process::exit(1);
     }
 
-    // W2 #121 extension: reject embedding-only models.
+    // Reject embedding-only models.
     if let Some(model) = cli.model.as_deref()
         && user_models::is_model_embedding_only(model)
     {
@@ -464,9 +463,8 @@ fn print_available_options() {
             } else {
                 ""
             };
-            // W2 #121 extension: mark embedding-only models so
-            // the user can see they exist but understand they
-            // can't be used for chat.
+            // Mark embedding-only models so the user can see
+            // they exist but understand they can't be used for chat.
             let embedding_marker = if user_models::is_model_embedding_only(&name) {
                 " [embeddings-only]"
             } else {

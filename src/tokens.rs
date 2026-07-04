@@ -30,7 +30,7 @@ pub const TOKENS_PER_TOOL: usize = 50;
 /// 75% preemptive threshold) for how this is handled in practice.
 ///
 /// A real tokenizer (tiktoken-rs, Ollama's /api/tokenize) would
-/// remove the bias. See W2 #121 follow-up TODO in custom_coordinator.rs.
+/// remove the bias. See the TODO in custom_coordinator.rs.
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;
@@ -104,7 +104,7 @@ pub fn calculate_context_metrics(
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // W2 #121 follow-up: delegate to ContextUsage so the breakdown
+    // Delegate to ContextUsage so the breakdown
     // (system/tools/history/total) is computed by the SAME logic that
     // process_next and the inter-tool check use. This is the single
     // source of truth for "how full is the context".
@@ -150,11 +150,7 @@ pub fn calculate_context_metrics(
 
 // ── ContextUsage: single source of truth for "how full is the context" ─────
 //
-// W2 #121 follow-up: Before this struct, context token counts were computed
-// in 6+ different places (history_real_tokens fallback, check_context_overflow,
-// custom_coordinator inline at line 1110, calculate_context_metrics, etc.)
-// using 3 different heuristics (`words/0.75`, `chars*4`, `chars*0.5`).
-// This struct is the canonical place to ask "how much context is the session
+// ContextUsage is the canonical place to ask "how much context is the session
 // using right now". Every consumer (compaction trigger, inter-tool check,
 // `/context` command, status bar, log lines) should build a `ContextUsage`
 // and read from it — instead of recomputing locally with ad-hoc math.
@@ -429,8 +425,7 @@ mod tests {
         assert_eq!(estimate_tokens_code(code), 6);
     }
 
-    // NOTE: test_count_messages_tokens_* removed in W2 #121 commit 4.
-    // The functionality is now tested via test_with_growth_* in the
+    // The functionality is tested via test_with_growth_* in the
     // context_usage_tests module below (which exercises the same math
     // through the unified ContextUsage::with_growth path).
 

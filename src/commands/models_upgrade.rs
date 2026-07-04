@@ -1,5 +1,5 @@
 //! Implements `sprach models upgrade` — migrate `models.toml` to the
-//! current format (W2 #121, OpenAI-First):
+//! current format (OpenAI-first):
 //!
 //! 1. **Missing `[provider]` section**: Creates a default
 //!    `[provider."my-ollama"]` block with `kind = "openai"` and
@@ -58,7 +58,7 @@ pub enum ModelsMigration {
         old_url: String,
     },
     /// A model is declared as embedding-only (`embeddings = true`)
-    /// but has no `dimensions` field (W2 #121 extension).
+    /// but has no `dimensions` field.
     ///
     /// This is a **warning-only** migration. The upgrader never
     /// auto-adds `dimensions` (the user must know what dim count the
@@ -196,12 +196,10 @@ pub fn run_models_upgrade(
         output.push(String::new());
     }
 
-    // W2 #121: warn when a [provider.*] block is missing `embedding = true`.
-    // W2 #121 extension: warn when an embedding model is missing
-    // its `dimensions` field. The startup probe will fail-fast if
-    // the alias is referenced from [indexing] and the dimensions
-    // don't match the provider's response; this warning is just
-    // informational.
+    // Warn when an embedding model is missing its `dimensions`
+    // field. The startup probe will fail-fast if the alias is
+    // referenced from [indexing] and the dimensions don't match the
+    // provider's response; this warning is just informational.
     if !embedding_warnings.is_empty() {
         output.push(format!(
             "WARN: {} embedding model(s) do not declare `dimensions`:",
@@ -305,14 +303,13 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                     });
                 }
             }
-            // W2 #121 extension: the old `embedding = true` field
-            // on `[provider.*]` was REMOVED. The capability now
-            // lives on the model (`[models.*].embeddings = true`).
-            // No migration needed; users who had `embedding = true`
-            // on the provider will need to manually move it to the
-            // embedding-capable models. The models loader (Commit
-            // 1) silently ignores the `embedding` field on the
-            // provider, so no parse error.
+            // The old `embedding = true` field on `[provider.*]`
+            // was removed. The capability now lives on the model
+            // (`[models.*].embeddings = true`). No migration needed;
+            // users who had `embedding = true` on the provider will
+            // need to manually move it to the embedding-capable
+            // models. The models loader silently ignores the
+            // `embedding` field on the provider, so no parse error.
         }
     }
 
@@ -346,11 +343,11 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                 });
             }
 
-            // W2 #121 extension: warn if the model has
-            // `embeddings = true` but no `dimensions`. The startup
-            // probe will fail-fast with a clear error if this
-            // alias is referenced from `[indexing]`. This warning
-            // is informational only; we never auto-add dimensions.
+            // Warn if the model has `embeddings = true` but no
+            // `dimensions`. The startup probe will fail-fast with a
+            // clear error if this alias is referenced from `[indexing]`.
+            // This warning is informational only; we never auto-add
+            // dimensions.
             let has_embeddings = model_table
                 .get("embeddings")
                 .and_then(|v| v.as_bool())
@@ -431,13 +428,12 @@ fn apply_migrations(
                 }
             }
             ModelsMigration::MissingDimensions { .. } => {
-                // W2 #121 extension: warning-only. We do NOT
-                // auto-add `dimensions` (the user must know what
-                // dim count the model actually produces). The
-                // startup probe will fail-fast with a clear
-                // error if this alias is referenced from
-                // [indexing] and the dimensions don't match.
-                // This arm is a no-op.
+                // Warning-only. We do NOT auto-add `dimensions`
+                // (the user must know what dim count the model
+                // actually produces). The startup probe will
+                // fail-fast with a clear error if this alias is
+                // referenced from [indexing] and the dimensions
+                // don't match. This arm is a no-op.
             }
         }
     }
@@ -611,9 +607,8 @@ provider = "my-ollama"
 
     #[test]
     fn test_detect_missing_dimensions() {
-        // W2 #121 extension: a model with `embeddings = true` but
-        // no `dimensions` is detected as MissingDimensions
-        // (warning-only).
+        // A model with `embeddings = true` but no `dimensions` is
+        // detected as MissingDimensions (warning-only).
         let content = r#"
 [provider."my-llama-swap"]
 kind = "openai"
@@ -636,8 +631,7 @@ embeddings = true
 
     #[test]
     fn test_no_missing_dimensions_when_present() {
-        // W2 #121 extension: model WITH `embeddings = true` and
-        // `dimensions = N` is fine.
+        // A model WITH `embeddings = true` and `dimensions = N` is fine.
         let content = r#"
 [provider."my-llama-swap"]
 kind = "openai"
@@ -661,8 +655,7 @@ dimensions = 768
 
     #[test]
     fn test_no_missing_dimensions_for_chat_models() {
-        // W2 #121 extension: chat models (embeddings = false or
-        // absent) don't need dimensions.
+        // Chat models (embeddings = false or absent) don't need dimensions.
         let content = r#"
 [provider."my-llama-swap"]
 kind = "openai"

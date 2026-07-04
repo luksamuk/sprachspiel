@@ -109,8 +109,8 @@ pub enum LlmEvent {
 
     /// A tool execution has started.
     ///
-    /// W2 #122 skeleton: in this PR we only mark start/end. Future work
-    /// will add `ToolExecutionOutput` for long-running tools.
+    /// Currently only start/end are emitted. Future work will add
+    /// `ToolExecutionOutput` for long-running tools.
     ToolExecutionStarted {
         /// Tool-call id this execution belongs to.
         tool_call_id: String,

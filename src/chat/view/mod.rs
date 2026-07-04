@@ -179,8 +179,8 @@ impl ViewEventReceiver {
         while let Ok(event) = self.receiver.try_recv() {
             match event {
                 ViewEvent::PreToolContent { content, thinking } => {
-                    // W2 #122: all ReAct turns stream, so `already_streamed` is
-                    // gone. PreToolContent now only arrives from the non-streaming
+                    // All ReAct turns stream, so `already_streamed` is gone.
+                    // PreToolContent now only arrives from the non-streaming
                     // terminal/CLI path. Emit it as view actions so it appears
                     // before tool-call previews.
                     if let Some(thinking_text) = thinking {

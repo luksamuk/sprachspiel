@@ -965,7 +965,7 @@ impl App {
 
     /// Set a transient status-bar message (right-aligned, red).
     ///
-    /// Used for provider retry warnings (W2 #122). Pass `None` to clear.
+    /// Used for provider retry warnings. Pass `None` to clear.
     pub fn set_status_overlay(&mut self, overlay: Option<String>) {
         self.status_bar.overlay = overlay;
     }

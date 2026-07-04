@@ -1,9 +1,8 @@
 //! ChatMessage::tool() wrapper for LLM error recovery.
 //!
-//! W2 #121: This wrapper exists to localize the migration point.
-//! Currently delegates to `ChatMessage::tool()` from the shim. In #121's
-//! final phase (P6.0e.4), this will be replaced with
-//! `LlmMessage::tool()` from #119 (Agnostic Provider Types).
+//! Delegates to `ChatMessage::tool()` from the shim. In #123 (Remove
+//! ollama-rs), this will be replaced with `LlmMessage::tool()` from
+//! #119 (Agnostic Provider Types).
 //!
 //! The recovery pattern (push a tool message after an error so the LLM can
 //! self-correct) is the central pattern of #116. By centralizing the
@@ -16,9 +15,9 @@ use crate::provider::ollama_shim::ChatMessage;
 
 /// Push a tool result message into the conversation history.
 ///
-/// W2 #121: Wraps the ollama-rs shim's `ChatMessage::tool()` for
-/// the legacy coordinator path. The shim's `ChatMessage` is
-/// re-exported from `ollama_rs::generation::chat::ChatMessage`.
+/// Wraps the ollama-rs shim's `ChatMessage::tool()` for the legacy
+/// coordinator path. The shim's `ChatMessage` is re-exported from
+/// `ollama_rs::generation::chat::ChatMessage`.
 pub fn push_tool_result(messages: &mut Vec<ChatMessage>, content: String) {
     messages.push(ChatMessage::tool(content));
 }

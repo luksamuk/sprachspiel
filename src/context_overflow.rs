@@ -77,15 +77,15 @@ pub const MAX_RECURSION_DEPTH: usize = 3;
 /// Minimum number of ESTIMATED tokens a tool result must have before
 /// pre-pruning will truncate it. Shorter tool results are kept as-is.
 ///
-/// W2 #121 follow-up: this used to be `PRUNE_TOOL_RESULT_THRESHOLD = 500`
-/// (chars), but `chars != tokens`. JSON-structured tool results
-/// (file reads, shell output) have ~2-3x higher token density per char
-/// than prose. The threshold is now expressed in estimated tokens
-/// (using `estimate_tokens`, see src/tokens.rs), so the trigger is
-/// consistent regardless of content type.
+/// This used to be `PRUNE_TOOL_RESULT_THRESHOLD = 500` (chars), but
+/// `chars != tokens`. JSON-structured tool results (file reads, shell
+/// output) have ~2-3x higher token density per char than prose. The
+/// threshold is expressed in estimated tokens (using `estimate_tokens`,
+/// see src/tokens.rs), so the trigger is consistent regardless of
+/// content type.
 ///
 /// Note: `estimate_tokens` is approximate (30-50% undercount vs real
-/// tokenizers — see the W2 #121 TODO in src/tokens.rs). The 200-token
+/// tokenizers — see the TODO in src/tokens.rs). The 200-token
 /// threshold is conservative: at the worst case (50% undercount) this
 /// triggers at ~400 real tokens, still well below any single tool result
 /// that's likely to cause compaction problems.
@@ -94,9 +94,9 @@ pub const PRUNE_TOOL_RESULT_THRESHOLD_TOKENS: usize = 200;
 /// Number of ESTIMATED tokens to keep from the beginning of a truncated
 /// tool result. The rest is replaced with a truncation notice.
 ///
-/// W2 #121 follow-up: was `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars).
-/// Now 40 estimated tokens — enough for the start of a file's content
-/// or the first lines of shell output, which carry the most signal for
+/// This was `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars). Now 40
+/// estimated tokens — enough for the start of a file's content or the
+/// first lines of shell output, which carry the most signal for
 /// summarization.
 pub const PRUNE_TOOL_RESULT_KEEP_TOKENS: usize = 40;
 
@@ -207,12 +207,10 @@ pub fn calculate_available_budget(total_tokens: usize, context_window: usize) ->
         .saturating_sub(RESPONSE_MARGIN)
 }
 
-// NOTE: estimate_chat_messages_tokens was removed in W2 #121 commit 4.
-// It was a parallel estimator that duplicated the logic now provided by
-// `ContextUsage::with_growth` (in src/tokens.rs). All call sites have been
-// migrated to the unified `ContextUsage` struct. The estimator logic
-// lives in `tokens::estimate_tokens` + `tokens::MESSAGE_OVERHEAD`; the
-// `with_growth` method applies both consistently.
+// `estimate_chat_messages_tokens` was removed. It was a parallel
+// estimator that duplicated the logic now provided by
+// `ContextUsage::with_growth` (in src/tokens.rs). All call sites use
+// the unified `ContextUsage` struct.
 
 /// Context overflow status
 #[derive(Debug, Clone)]
@@ -319,10 +317,10 @@ pub fn check_context_overflow(
         // Use real value from Ollama
         real_tokens
     } else {
-        // W2 #121 follow-up: delegate to ContextUsage::from_session_estimate
-        // (defined in src/tokens.rs). This consolidates the fallback math
-        // — no more hardcoded `50 * 34` tool estimate (P9) and the same
-        // heuristic used everywhere else in the codebase.
+        // Delegate to ContextUsage::from_session_estimate (defined in
+        // src/tokens.rs). This consolidates the fallback math — no more
+        // hardcoded `50 * 34` tool estimate (P9) and the same heuristic
+        // used everywhere else in the codebase.
         let usage = crate::tokens::ContextUsage::from_session_estimate(
             session,
             system_prompt,
@@ -498,12 +496,12 @@ pub fn chars_for_tokens(text: &str, target_tokens: usize) -> usize {
 /// `PRUNE_TOOL_RESULT_KEEP_TOKENS` (estimated tokens) plus a notice of how
 /// many characters were removed.
 ///
-/// W2 #121 follow-up: this previously used `PRUNE_TOOL_RESULT_THRESHOLD = 500`
-/// (chars) and `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars). The threshold
-/// and keep values are now expressed in ESTIMATED TOKENS (using
-/// `estimate_tokens` from src/tokens.rs), which is the unit that matters
-/// for the compaction prompt size. The conversion from tokens to chars
-/// is done by `chars_for_tokens()` via binary search.
+/// This previously used `PRUNE_TOOL_RESULT_THRESHOLD = 500` (chars) and
+/// `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` (chars). The threshold and keep
+/// values are now expressed in ESTIMATED TOKENS (using `estimate_tokens`
+/// from src/tokens.rs), which is the unit that matters for the
+/// compaction prompt size. The conversion from tokens to chars is done
+/// by `chars_for_tokens()` via binary search.
 ///
 /// User and Assistant messages are NEVER pruned — only Tool role messages.
 /// This preserved critical context (user instructions, assistant decisions)
@@ -1195,7 +1193,7 @@ mod tests {
 
     #[test]
     fn test_pre_prune_long_tool_result_truncated() {
-        // W2 #121: tool results with > PRUNE_TOOL_RESULT_THRESHOLD_TOKENS
+        // Tool results with > PRUNE_TOOL_RESULT_THRESHOLD_TOKENS
         // estimated tokens should be truncated. We use a string of repeated
         // "x " tokens — ~1000 chars ≈ 250 estimated tokens, just above
         // the 200 threshold.
@@ -1287,8 +1285,8 @@ mod tests {
     #[test]
     fn test_pre_prune_assistant_message_unchanged() {
         // Assistant messages should NEVER be pruned, regardless of length
-        // W2 #121: long content expressed in token budget (500 "x " pairs
-        // ≈ 250 estimated tokens, well above PRUNE_TOOL_RESULT_THRESHOLD_TOKENS).
+        // Long content expressed in token budget (500 "x " pairs ≈
+        // 250 estimated tokens, well above PRUNE_TOOL_RESULT_THRESHOLD_TOKENS).
         let long_content: String = "x ".repeat(500);
         let msg = SavedMessage {
             role: MessageRole::Assistant,

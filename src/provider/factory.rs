@@ -1,6 +1,6 @@
 //! Provider factory — creates `LlmProvider` implementations from configuration.
 //!
-//! W2 #121: The default provider is now `OpenAICompatibleProvider`.
+//! The default provider is `OpenAICompatibleProvider`.
 //! `ProviderKind::Ollama` is mapped to `OllamaLegacy` which returns a
 //! runtime error prompting the user to run `sprach models upgrade`.
 
@@ -38,7 +38,7 @@ pub fn build_provider(
                 .map(|p| Box::new(p) as Box<dyn crate::provider::LlmProvider + Send + Sync>)
         }
         ProviderKind::OllamaLegacy => Err(ProviderError::Config(
-            "ProviderKind 'ollama' is deprecated (W2 #121). \
+            "ProviderKind 'ollama' is deprecated. \
              Run `sprach models upgrade` to migrate to kind = \"openai\". \
              The base_url should include the /v1 suffix (e.g., http://localhost:11434/v1)."
                 .to_string(),

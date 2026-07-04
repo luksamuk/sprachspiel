@@ -29,8 +29,8 @@
 //!
 //! HTTP 429 responses are parsed for the `Retry-After` header and the
 //! delay is populated into `ProviderError::RateLimit::retry_after`.
-//! W2 #121 item B4: this wires up the previously-unused
-//! `retry_after: Option<Duration>` field on `RateLimit`.
+//! HTTP 429 responses carry a `Retry-After` header that is parsed
+//! into the `retry_after: Option<Duration>` field on `RateLimit`.
 
 use std::pin::Pin;
 use std::time::Duration;
@@ -137,7 +137,7 @@ impl OpenAICompatibleProvider {
         }
     }
 
-    /// Probe the embedding endpoint (W2 #121).
+    /// Probe the embedding endpoint.
     ///
     /// Sends a minimal POST to `/v1/embeddings` with a short test
     /// text (`"test"`) and returns the actual response dim count.
@@ -377,7 +377,7 @@ impl OpenAICompatibleProvider {
     /// "missing required field") is almost always terminal —
     /// retrying it just hits the same path again.
     ///
-    /// Heuristic (W2 #121):
+    /// Heuristic:
     ///   1. 408 Request Timeout and 425 Too Early are always
     ///      transient (RFC 7231 / 8470).
     ///   2. 4xx with an empty body is treated as transient (model
@@ -402,7 +402,7 @@ impl OpenAICompatibleProvider {
 
     /// Return a human-readable reason if a 4xx response is transient.
     ///
-    /// W2 #122: this reason is surfaced to the UI via `ProviderRetryStarted`
+    /// This reason is surfaced to the UI via `ProviderRetryStarted`
     /// so the user sees "model warming up" instead of a raw HTTP status.
     fn transient_4xx_reason(status: u16, body: &str) -> Option<String> {
         // (1) Always-transient codes (within 4xx)
@@ -507,7 +507,7 @@ impl OpenAICompatibleProvider {
 
     /// Send a chat completion (non-streaming) with retry.
     ///
-    /// W2 #122: `on_event` is called with `ProviderRetryStarted/Finished`
+    /// `on_event` is called with `ProviderRetryStarted/Finished`
     /// events so the caller can surface retry status to the UI. For
     /// callers that do not need visibility, pass `|_| {}`.
     async fn chat_with_retry(
@@ -579,8 +579,8 @@ impl OpenAICompatibleProvider {
                     } else {
                         let body = resp.text().await.unwrap_or_default();
 
-                        // W2 #121: distinguish transient vs permanent
-                        // 4xx errors. llama-swap returns 400 with an
+                        // Distinguish transient vs permanent 4xx
+                        // errors. llama-swap returns 400 with an
                         // empty body during model swap (the proxy
                         // forwards the request before the upstream
                         // model is loaded); the same request succeeds
@@ -595,7 +595,7 @@ impl OpenAICompatibleProvider {
 
                         if is_transient_4xx && attempt < max_attempts {
                             let delay = self.backoff_delay(attempt);
-                            // W2 #122: emit retry event with human-readable reason.
+                            // Emit retry event with human-readable reason.
                             if let Some(reason) = Self::transient_4xx_reason(status.as_u16(), &body)
                             {
                                 on_event(LlmStreamEvent::ProviderRetryStarted {
@@ -605,7 +605,7 @@ impl OpenAICompatibleProvider {
                                     reason,
                                 });
                             }
-                            // W2 #121: log the 4xx body on transient retry too,
+                            // Log the 4xx body on transient retry too,
                             // not only when surfacing to the user. Without this,
                             // cold-model 400s (llama-swap model swap, Jinja exception
                             // during swap, etc.) leave no diagnostic trace in the
@@ -639,8 +639,8 @@ impl OpenAICompatibleProvider {
                             continue;
                         }
 
-                        // W2 #121 diagnostic: log the raw 4xx body
-                        // when we are about to surface it to the user
+                        // Log the raw 4xx body when we are about to
+                        // surface it to the user
                         // (i.e. either the error is permanent, or
                         // we've exhausted max_retries on a transient
                         // one). Truncated to 500 chars.
@@ -684,7 +684,7 @@ impl OpenAICompatibleProvider {
     /// Send the streaming request, applying retry logic, and collect retry
     /// events so they can be yielded at the head of the event stream.
     ///
-    /// W2 #122: retry visibility for the streaming path. The HTTP retry loop
+    /// Retry visibility for the streaming path. The HTTP retry loop
     /// is identical to `chat_with_retry`, but instead of calling a callback
     /// it appends `ProviderRetryStarted/Finished` events to a vector that is
     /// prepended to the SSE event stream.
@@ -885,10 +885,8 @@ impl LlmProvider for OpenAICompatibleProvider {
             stream_options: None,
         };
 
-        // W2 #122: non-streaming chat retries are surfaced through the
-        // `on_event` callback. Currently no caller needs the events; the
-        // coordinator will pass a real callback once it consumes
-        // `LlmStreamEvent` directly in phase 4.
+        // Non-streaming chat retries are surfaced through the
+        // `on_event` callback.
         self.chat_with_retry(model, request, |_| {}).await
     }
 
@@ -1461,7 +1459,7 @@ mod tests {
         );
     }
 
-    // W2 #121: regression tests for is_transient_4xx_error.
+    // Regression tests for is_transient_4xx_error.
     //
     // llama-swap returns 400 with an empty body during model swap
     // (the proxy forwards the request before the upstream is
@@ -1565,16 +1563,11 @@ mod tests {
         ));
     }
 
-    // W2 #121 follow-up: regression tests for the streaming-retry
-    // bug. Previously, `chat_stream` returned Err immediately on
-    // any non-2xx response — so a llama-swap cold-start 400 (empty
-    // body, model still loading) would fail the user's request
-    // instead of being retried with backoff like the non-streaming
-    // path did.
-    //
-    // These tests verify the fix by exercising `is_transient_4xx_error`
-    // (which is the same function used by both `chat_with_retry` and
-    // the new `chat_stream` retry loop) with the llama-swap signature.
+    // Regression tests for the streaming-retry bug. Previously,
+    // `chat_stream` returned Err immediately on any non-2xx response
+    // — so a llama-swap cold-start 400 (empty body, model still loading)
+    // would fail the user's request instead of being retried with
+    // backoff like the non-streaming path did.
 
     #[test]
     fn test_streaming_retry_classifies_llama_swap_cold_start() {

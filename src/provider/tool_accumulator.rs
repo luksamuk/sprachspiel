@@ -1,6 +1,6 @@
 //! Incremental tool-call accumulator for OpenAI-compatible streaming.
 //!
-//! W2 #122: the provider emits fine-grained tool-call lifecycle events
+//! The provider emits fine-grained tool-call lifecycle events
 //! (`ToolCallStart`, `ToolCallDelta`, `ToolCallEnd`) instead of forcing
 //! the consumer to diff successive `LlmStreamChunk` snapshots. This module
 //! keeps all partial-state bookkeeping inside the provider and exposes

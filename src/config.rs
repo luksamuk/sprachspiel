@@ -4,8 +4,8 @@
 //! temperature, top_p, etc.) for each supported model. These presets serve as defaults
 //! when the user has no `models.toml` override.
 //!
-//! W2 #121: The model schema is now OpenAI-aligned. `top_k`, `repeat_penalty`, and
-//! `think` (Ollama-native fields) are no longer exposed. `num_ctx` may be auto-detected
+//! The model schema is OpenAI-aligned. `top_k`, `repeat_penalty`, and `think`
+//! (Ollama-native fields) are no longer exposed. `num_ctx` may be auto-detected
 //! from the server. `build_provider_options()` produces a `ProviderOptions` for
 //! `LlmProvider` instead of an `ollama_rs::ModelOptions`.
 
@@ -56,7 +56,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
     configs
 });
 
-/// Built-in model configuration (W2 #121 OpenAI-aligned).
+/// Built-in model configuration (OpenAI-aligned).
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub model_id: String,
@@ -106,14 +106,13 @@ impl ModelConfig {
 
     /// Build provider-agnostic `ProviderOptions` from this config.
     ///
-    /// W2 #121: This replaces `build_model_options()` (which returned
-    /// `ollama_rs::models::ModelOptions`). The output `ProviderOptions`
-    /// can be consumed by any `LlmProvider` implementation.
+    /// Build provider-agnostic `ProviderOptions` from this config.
+    /// The output can be consumed by any `LlmProvider` implementation.
     pub fn build_provider_options(&self) -> ProviderOptions {
         ProviderOptions {
             temperature: Some(self.temperature),
             top_p: self.top_p,
-            // W2 #121: top_k, repeat_penalty removed (not OpenAI-portable)
+            // top_k, repeat_penalty removed (not OpenAI-portable)
             repeat_penalty: None,
             num_predict: None,
             stop_sequences: None,
@@ -214,7 +213,7 @@ mod tests {
         assert_eq!(opts.temperature, Some(1.0));
         assert_eq!(opts.top_p, Some(0.95));
         assert_eq!(opts.think, Some(true));
-        // W2 #121: top_k and repeat_penalty fields are removed from
+        // top_k and repeat_penalty fields are removed from
         // ProviderOptions (not OpenAI-portable). Verified by absence.
         assert!(opts.repeat_penalty.is_none());
     }

@@ -311,7 +311,7 @@ fn handle_stream_token(token: String, state: &mut ReplState, view: &mut RatatuiV
     // Append token to the current live turn
     view.app_mut().append_stream_token(&token);
 
-    // W2 #121: throttle status bar updates during streaming.
+    // Throttle status bar updates during streaming.
     let bucket = state.status_bar_bucket();
     if bucket != state.last_status_token_bucket {
         state.last_status_token_bucket = bucket;
@@ -520,7 +520,7 @@ fn handle_provider_retry_started(
     reason: String,
     view: &mut RatatuiView,
 ) {
-    // W2 #122 Fase 6c: render transient retry warning in the status bar.
+    // Render transient retry warning in the status bar.
     let overlay = format!("⚠ Retry {attempt}/{max_attempts} in {delay_ms}ms: {reason}");
     view.set_status_overlay(Some(overlay));
 }
@@ -657,8 +657,8 @@ pub fn handle_llm_event(
         LlmEvent::Cancelled => {
             handle_cancelled(view, cancel_token, llm_tx, llm_rx);
         }
-        // LlmEvent::InterToolText removed in W2 #122 — all ReAct turns stream
-        // and post-tool text arrives via StreamToken/StreamThinking.
+        // LlmEvent::InterToolText was removed — all ReAct turns stream and
+        // post-tool text arrives via StreamToken/StreamThinking.
         LlmEvent::ToolCallStarted => {
             handle_tool_call_started(view);
         }

@@ -19,7 +19,7 @@ pub mod types;
 
 /// Re-export of `crate::provider::Ollama`-compatible shim. Production code
 /// that needs a HTTP provider uses `Ollama` (the shim) or `LlmProvider`
-/// (the trait) diretamente. W2 #121: prefer `LlmProvider` for new code.
+/// (the trait). Prefer `LlmProvider` for new code.
 pub use ollama_shim::CompatOllama as Ollama;
 
 #[allow(unused_imports)]
@@ -52,7 +52,7 @@ pub trait LlmProvider: Send + Sync {
 
     /// Streaming chat completion — returns a stream of semantic events.
     ///
-    /// W2 #122: the stream carries `LlmStreamEvent` (text/thinking/tool-call
+    /// The stream carries `LlmStreamEvent` (text/thinking/tool-call
     /// deltas, retry lifecycle, completion) instead of aggregated chunks.
     ///
     /// Default implementation returns `Err(ProviderError::Unsupported)`.

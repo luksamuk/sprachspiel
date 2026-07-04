@@ -59,10 +59,9 @@ use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// W2 #121: Convert `ProviderOptions` (agnostic) to legacy
-/// `ModelOptions` (ollama-rs). The CustomCoordinator still uses
-/// `ModelOptions` for now; this is removed in the P6.0e.4 commit
-/// that migrates `custom_coordinator.rs` to LlmProvider.
+/// Convert `ProviderOptions` (agnostic) to legacy `ModelOptions` (ollama-rs).
+/// The CustomCoordinator still uses `ModelOptions` for now; this is removed
+/// in the P6.0e.4 commit that migrates `custom_coordinator.rs` to LlmProvider.
 pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
     let mut out = ModelOptions::default();
     if let Some(t) = opts.temperature {
@@ -428,7 +427,7 @@ pub async fn send_message(
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+    // Bridge to legacy ModelOptions for CustomCoordinator.
     let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
@@ -715,7 +714,7 @@ pub async fn send_message_stream(
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+    // Bridge to legacy ModelOptions for CustomCoordinator.
     let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
@@ -815,8 +814,8 @@ pub async fn send_message_stream(
     };
 
     // Create streaming callbacks that send tokens through the LlmEvent channel.
-    // W2 #122: these closures are moved into the coordinator and stored as
-    // boxed callbacks so they can be reused across ReAct rounds.
+    // These closures are moved into the coordinator and stored as boxed
+    // callbacks so they can be reused across ReAct rounds.
     let llm_tx_token = llm_tx.clone();
     let on_token = move |token: String| {
         let _ = llm_tx_token.try_send(LlmEvent::StreamToken(token));
@@ -1046,7 +1045,7 @@ pub async fn send_message_stream(
 /// truncation notice. This often reduces the prompt enough to fit the
 /// model's window.
 ///
-/// W2 #121 follow-up: was `PRUNE_TOOL_RESULT_THRESHOLD = 500` chars and
+/// The threshold was previously `PRUNE_TOOL_RESULT_THRESHOLD = 500` chars and
 /// `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` chars. The threshold/keep are now
 /// expressed in tokens (via `estimate_tokens` + `chars_for_tokens`) so the
 /// compaction budget is honored regardless of content density.

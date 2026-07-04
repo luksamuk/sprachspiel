@@ -1,4 +1,4 @@
-//! Hardcoded list of well-known embedding model names (W2 #121).
+//! Hardcoded list of well-known embedding model names.
 //!
 //! Used by `sprach models upgrade` to warn users when a provider's
 //! `/v1/models` advertises a known embedding model but the
@@ -15,7 +15,7 @@
 //!   models by setting `embedding = true` on the relevant provider
 //!   in `models.toml`.
 //!
-//! See [W2 #121](../development/roadmap.md) for context.
+//! See [the W2 migration notes](../development/roadmap.md) for context.
 
 /// Well-known embedding model name fragments (case-insensitive substring match).
 ///

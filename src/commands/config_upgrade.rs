@@ -948,9 +948,8 @@ blacklist = []
 
     #[test]
     fn test_detect_missing_indexing_section() {
-        // W2 #121 extension: A config without [indexing] should
-        // report all indexing.* fields, since the section is
-        // required.
+        // A config without [indexing] should report all indexing.*
+        // fields, since the section is required.
         let path = write_tmp_config("no_indexing.toml", minimal_config());
         let upgrader = ConfigUpgrader::new(path).unwrap();
         let missing = upgrader.detect_missing();
@@ -965,8 +964,8 @@ blacklist = []
 
     #[test]
     fn test_detect_no_missing_when_indexing_present() {
-        // W2 #121 extension: A config WITH [indexing] section is
-        // considered up-to-date for the indexing fields.
+        // A config WITH [indexing] section is considered up-to-date
+        // for the indexing fields.
         let cfg = r#"
 [indexing]
 model = "nomic"

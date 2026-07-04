@@ -41,15 +41,15 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 ///
-/// W2 #121 extension: the chat subcommand's embedding setup is
-/// fully wired to the new alias-based indexing config. The flow is:
+/// The chat subcommand's embedding setup is wired to the alias-based
+/// indexing config. The flow is:
 ///   1. Resolve the alias from `[indexing].model` via
 ///      `Settings::resolve_indexing_model()` — this returns
 ///      `(model_cfg, provider_cfg, model_id, dimensions)`.
-///   2. Build a separate `Ollama` (shim) for the resolved
-///      embedding provider (may differ from the chat provider).
-///   3. Probe the embedding endpoint with strict dim verify
-///      (response dim must match the alias's declared dimensions).
+///   2. Build a separate `Ollama` (shim) for the resolved embedding
+///      provider (may differ from the chat provider).
+///   3. Probe the embedding endpoint with strict dim verify (response dim
+///      must match the alias's declared dimensions).
 ///   4. Initialize the database and the `EmbeddingClient`.
 async fn init_chat_database(
     settings: &Settings,
@@ -63,18 +63,18 @@ async fn init_chat_database(
     crate::provider::Ollama,
     Option<String>,
 ) {
-    // W2 #121: ollama client is built by the caller so that it can
-    // target the model the user actually asked for. The DB init needs
-    // a client for embeddings + health, so we keep a clone here.
+    // ollama client is built by the caller so that it can target the
+    // model the user actually asked for. The DB init needs a client
+    // for embeddings + health, so we keep a clone here.
     let ollama = ollama.clone();
 
     if anonymous {
         return (None, None, ollama, None);
     }
 
-    // W2 #121 extension: resolve the indexing alias to (model_cfg,
-    // provider_cfg, model_id, dimensions). Bail fast with a clear
-    // error if the alias is missing/misconfigured.
+    // Resolve the indexing alias to (model_cfg, provider_cfg,
+    // model_id, dimensions). Bail fast with a clear error if the
+    // alias is missing/misconfigured.
     let (_model_cfg, provider_cfg, model_id, dimensions) = match settings.resolve_indexing_model() {
         Ok(t) => t,
         Err(e) => {
@@ -87,8 +87,8 @@ async fn init_chat_database(
     // Build a separate Ollama (shim) for the embedding provider.
     let embedding_ollama = crate::provider::Ollama::from_provider_config(provider_cfg);
 
-    // W2 #121 extension: probe the embedding endpoint with
-    // strict dim verify (response dim == alias's declared dimensions).
+    // Probe the embedding endpoint with strict dim verify
+    // (response dim == alias's declared dimensions).
     if let Err(msg) = crate::db::run_indexing_probe(
         &embedding_ollama,
         model_id,
@@ -276,8 +276,8 @@ pub async fn handle_user_message_stream(
                     break;
                 }
 
-                // W2 #121 fix: send LlmEvent::Error DIRECTLY to the event
-                // loop's main channel. The ChannelView::show_error path
+                // Send LlmEvent::Error DIRECTLY to the event loop's
+                // main channel. The ChannelView::show_error path
                 // goes through a forwarding task that competes with
                 // LlmEvent::Complete for the same channel — under load
                 // (e.g. concurrent tool result draining + completion)
@@ -708,8 +708,8 @@ pub async fn run_chat_repl(
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
-    // W2 #121: For llama-swap (OpenAI-compat), we hit /v1/models instead
-    // of /api/tags. The Ollama shim's `list_local_models` handles both
+    // For llama-swap (OpenAI-compat), we hit /v1/models instead of
+    // /api/tags. The Ollama shim's `list_local_models` handles both
     // endpoints (it knows the base URL of the configured provider).
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let pre_init_ollama = settings.ollama_client_for_model(&settings.model.default);
@@ -722,11 +722,11 @@ pub async fn run_chat_repl(
         return Ok(());
     }
 
-    // W2 #121: build the LLM client for the model the user actually
-    // asked for (CLI override > subcommand override > config default).
-    // This must be done before init_chat_database because that path
-    // needs an Ollama client. We pass it to init_chat_database so the
-    // client survives the session reload (which might change model).
+    // Build the LLM client for the model the user actually asked for
+    // (CLI override > subcommand override > config default). This must
+    // be done before init_chat_database because that path needs an
+    // Ollama client. We pass it to init_chat_database so the client
+    // survives the session reload (which might change model).
     let active_chat_model = model_override.unwrap_or(default_model);
     let initial_ollama = settings.ollama_client_for_model(active_chat_model);
 
@@ -773,8 +773,8 @@ pub async fn run_chat_repl(
         }
     }
 
-    // W2 #121: rebuild the LLM client for the FINAL resolved model
-    // (after session model has been applied). This ensures the streaming
+    // Rebuild the LLM client for the FINAL resolved model (after
+    // session model has been applied). This ensures the streaming
     // coordinator and the banner both use the same provider.
     let ollama = match Some(session.model.as_str()) {
         Some(model) => settings.ollama_client_for_model(model),

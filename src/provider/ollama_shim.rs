@@ -1,15 +1,9 @@
-//! Compatibility shim for `ollama_rs` types (W2 #121).
+//! Compatibility shim for `ollama_rs` types.
 //!
-//! The codebase used to depend on the third-party `ollama_rs` crate
-//! directly. W2 #121 replaces the native `/api/chat` HTTP transport
-//! with the OpenAI-compat `/v1/chat/completions` endpoint (via
-//! `OpenAICompatibleProvider`).
-//!
-//! To minimize the migration surface in this PR, this module re-exports
-//! the ollama_rs types and provides a `CompatOllama` struct that
-//! delegates to `OpenAICompatibleProvider`. The `Ollama` type alias
-//! (re-exported as `crate::provider::Ollama`) is what the rest of the
-//! codebase uses.
+//! This module re-exports the ollama_rs types and provides a
+//! `CompatOllama` struct that delegates to `OpenAICompatibleProvider`.
+//! The `Ollama` type alias (re-exported as `crate::provider::Ollama`)
+//! is what the rest of the codebase uses.
 //!
 //! This shim is REMOVED in #123 (Remove ollama-rs).
 
@@ -52,7 +46,7 @@ fn fallback_config() -> OpenAICompatibleConfig {
 pub type Ollama = CompatOllama;
 
 /// A shim that mimics the `crate::provider::Ollama` API surface but talks to
-/// Ollama via the OpenAI-compat endpoint (W2 #121).
+/// Ollama via the OpenAI-compat endpoint.
 #[derive(Clone)]
 pub struct CompatOllama {
     base_url: String,
@@ -61,7 +55,7 @@ pub struct CompatOllama {
 
 impl CompatOllama {
     /// Create a new shim pointing to the default Ollama URL.
-    /// W2 #121: base_url is normalized to include `/v1` suffix.
+    /// base_url is normalized to include `/v1` suffix.
     pub fn new(host: impl Into<String>, _port: u16) -> Self {
         let base_url = format!("{}/v1", host.into().trim_end_matches('/'));
         let cfg = OpenAICompatibleConfig {
@@ -132,14 +126,12 @@ impl CompatOllama {
         &self.inner
     }
 
-    /// Probe the embedding endpoint (W2 #121).
+    /// Probe the embedding endpoint.
     ///
     /// Delegates to [`OpenAICompatibleProvider::probe_embedding`].
-    /// See that method for details.
-    ///
-    /// W2 #121 extension: returns the actual response dim count
-    /// (not just `Ok(())`), so the caller can compare against the
-    /// alias's declared `dimensions` for strict-verify.
+    /// See that method for details. Returns the actual response dim
+    /// count so the caller can compare against the alias's declared
+    /// `dimensions` for strict verification.
     pub async fn probe_embedding(
         &self,
         model: &str,
@@ -152,7 +144,7 @@ impl CompatOllama {
         &self.base_url
     }
 
-    /// List local models. W2 #121: hits `/v1/models` instead of `/api/tags`.
+    /// List local models. Hits `/v1/models` instead of `/api/tags`.
     pub async fn list_local_models(
         &self,
     ) -> Result<Vec<LocalModel>, ollama_rs::error::OllamaError> {
@@ -183,7 +175,7 @@ impl CompatOllama {
 
     /// Show model info.
     ///
-    /// W2 #121: capabilities cannot be reliably inferred from OpenAI-compat
+    /// Capabilities cannot be reliably inferred from OpenAI-compat
     /// `/v1/models` responses — the OpenAI spec does not expose
     /// `thinking` / `vision` / `tools` flags, and ad-hoc metadata fields
     /// (e.g. llama-swap's `meta.llamaswap.features`) are deployment-specific.
@@ -196,14 +188,12 @@ impl CompatOllama {
     /// tool-call failure, missing embedding endpoint) are surfaced
     /// to the caller as usual.
     ///
-    /// W2 #121 extension (capability universality): the previous
-    /// default omitted `vision`, which caused `NoVisionCapability`
+    /// The default omitted `vision`, which caused `NoVisionCapability`
     /// errors for vision-capable models (e.g. kimi-k2.6:cloud
     /// which supports vision in the Ollama cloud fleet). The user
-    /// is now responsible for declaring `vision = false` if the
-    /// model does NOT support vision; otherwise vision capability
-    /// is assumed. This mirrors the `tools` and `thinking`
-    /// behavior.
+    /// is responsible for declaring `vision = false` if the model
+    /// does NOT support vision; otherwise vision capability is
+    /// assumed. This mirrors the `tools` and `thinking` behavior.
     pub async fn show_model_info(
         &self,
         _name: String,
@@ -230,7 +220,7 @@ impl CompatOllama {
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         let model = request.model_name.clone();
         let messages = convert_ollama_messages_to_llm(request.messages.clone());
-        // Extract tools from the request (W2 #121: same fix as
+        // Extract tools from the request (same fix as
         // send_chat_messages_stream — previously hardcoded `vec![]`).
         let tools = convert_ollama_tools_to_tool_info(request.tools.clone());
         let options = ProviderOptions::default();
@@ -246,7 +236,7 @@ impl CompatOllama {
 
     /// Send a streaming chat completion request.
     ///
-    /// W2 #122: consumes `LlmStreamEvent` from `OpenAICompatibleProvider` and
+    /// Consumes `LlmStreamEvent` from `OpenAICompatibleProvider` and
     /// adapts it to the legacy `ollama_rs::ChatMessage` per-event API.
     /// Text/thinking/tool-call deltas are accumulated; a final `ChatMessage`
     /// is yielded on `Done`. This preserves compatibility with callers that
@@ -259,7 +249,7 @@ impl CompatOllama {
     > {
         let model = request.model_name.clone();
         let messages = convert_ollama_messages_to_llm(request.messages.clone());
-        // Extract tools from the request (W2 #121 bug fix: was hardcoded `vec![]`,
+        // Extract tools from the request (was hardcoded `vec![]`,
         // causing the OpenAI-compatible backend to never receive tool definitions
         // and thus never emit `delta.tool_calls`).
         let tools = convert_ollama_tools_to_tool_info(request.tools.clone());
@@ -322,7 +312,7 @@ impl CompatOllama {
     /// Send a streaming chat completion request and return the raw
     /// `LlmStreamEvent` stream.
     ///
-    /// W2 #122: the coordinator uses this to observe lifecycle events
+    /// The coordinator uses this to observe lifecycle events
     /// (tool-call previews, retry status) that do not map to legacy
     /// `ChatMessage` chunks.
     pub async fn send_chat_messages_stream_events(
@@ -430,10 +420,9 @@ pub struct LocalModel {
 
 /// Convert a `ProviderError` into an `ollama_rs::error::OllamaError`.
 ///
-/// W2 #121/122: this is public so that callers that consume the raw
-/// `LlmStreamEvent` stream (e.g., `custom_coordinator`) can still map
-/// terminal provider errors back to the legacy error type expected by
-/// the retry layer.
+/// Public so that callers that consume the raw `LlmStreamEvent` stream
+/// (e.g., `custom_coordinator`) can still map terminal provider errors
+/// back to the legacy error type expected by the retry layer.
 pub fn convert_provider_error(
     err: crate::provider::types::ProviderError,
 ) -> ollama_rs::error::OllamaError {
@@ -441,10 +430,9 @@ pub fn convert_provider_error(
     use ollama_rs::error::{InternalOllamaError, OllamaError};
 
     match err {
-        // W2 #121 extension: 5xx server errors are retryable
-        // (ServerRetry → 5s/10s/15s linear backoff). Map them
-        // to OllamaError::InternalError so the legacy
-        // classify_for_retry recognizes them.
+        // 5xx server errors are retryable (ServerRetry → 5s/10s/15s
+        // linear backoff). Map them to OllamaError::InternalError so
+        // the legacy classify_for_retry recognizes them.
         ProviderError::Api { status, body } if status >= 500 => {
             OllamaError::InternalError(InternalOllamaError {
                 message: format!("HTTP {status}: {body}"),
@@ -502,9 +490,8 @@ pub fn convert_provider_error(
 /// agnostic `LlmToolInfo` so the OpenAI-compatible backend receives the
 /// tool definitions on every chat call.
 ///
-/// W2 #121: previously this conversion was missing, so the shim dropped
-/// all tools on the floor — the LLM never knew what tools were available
-/// and never emitted `delta.tool_calls` in streaming responses.
+/// Convert ollama-rs tool definitions so the OpenAI-compatible backend
+/// receives them on every chat call.
 fn convert_ollama_tools_to_tool_info(
     tools: Vec<ollama_rs::generation::tools::ToolInfo>,
 ) -> Vec<crate::provider::ToolInfo> {
@@ -650,7 +637,7 @@ mod tests {
         assert_eq!(llm[0].content, "Hello");
     }
 
-    // --- W2 #121: convert_provider_error must preserve status semantics
+    // --- convert_provider_error must preserve status semantics
     // for the legacy retry layer to work correctly ---
 
     #[test]

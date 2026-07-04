@@ -1,20 +1,12 @@
 //! Embedding client for the LLM server API
 //!
-//! Generates embeddings via `LlmProvider::embed()` (W2 #121).
+//! Generates embeddings via `LlmProvider::embed()`.
 //! Compatible with any provider that implements the OpenAI-spec
 //! `/v1/embeddings` endpoint.
 //!
-//! # W2 #121 changes
-//!
-//! - `EmbeddingClient` no longer carries a hardcoded model name. The
-//!   model is supplied explicitly via [`EmbeddingClient::with_model`]
-//!   and resolved from `[embedding].model` in `config.toml` (see
-//!   [`crate::settings::EmbeddingSettings`]).
-//! - The legacy `EmbeddingClient::new` constructor is **removed** —
-//!   all callers must supply the model name. This is a hard
-//!   requirement: there is no sensible default for the embedding
-//!   model, and silently picking one would mask user configuration
-//!   errors.
+//! `EmbeddingClient` does not carry a hardcoded model name. The model
+//! is supplied explicitly via [`EmbeddingClient::with_model`] and
+//! resolved from `[indexing].model` in `config.toml`.
 
 use std::time::Duration;
 
@@ -38,11 +30,11 @@ const EMBEDDING_PREFIX_TOKENS: usize = 30;
 /// Safety margin as fraction of context length (20%).
 const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 
-/// Client for generating embeddings via LlmProvider (W2 #121).
+/// Client for generating embeddings via LlmProvider.
 ///
-/// W2 #121: Now holds an `Ollama` (the shim) which implements both
-/// `crate::provider::Ollama` API (for backward compat) and `LlmProvider` (via
-/// internal delegation to `OpenAICompatibleProvider`).
+/// Holds an `Ollama` (the shim) which implements both the
+/// `crate::provider::Ollama` API (for backward compat) and `LlmProvider`
+/// (via internal delegation to `OpenAICompatibleProvider`).
 pub struct EmbeddingClient {
     ollama: crate::provider::Ollama,
     model: String,
@@ -59,11 +51,11 @@ impl EmbeddingClient {
     /// Create a new embedding client with the given provider, model
     /// name, and output dimensions.
     ///
-    /// W2 #121 extension: `dimensions` is mandatory. The caller must
-    /// resolve the alias via `Settings::resolve_indexing_model()`
-    /// and pass the resulting `dimensions` value. There is no
-    /// sensible default — silent assumptions about dimensions would
-    /// mask user configuration errors.
+    /// `dimensions` is mandatory. The caller must resolve the alias
+    /// via `Settings::resolve_indexing_model()` and pass the resulting
+    /// `dimensions` value. There is no sensible default — silent
+    /// assumptions about dimensions would mask user configuration
+    /// errors.
     pub fn with_model(ollama: crate::provider::Ollama, model: String, dimensions: u32) -> Self {
         Self {
             ollama,
@@ -86,15 +78,15 @@ impl EmbeddingClient {
 
     /// Get the context length for the embedding model.
     ///
-    /// W2 #121: Uses `LlmProvider::embed()` semantics to derive context
-    /// length. We use a known reasonable default (512) for now; future
-    /// work can read this from `/v1/models` metadata.
+    /// Uses `LlmProvider::embed()` semantics to derive context length.
+    /// We use a known reasonable default (512) for now; future work can
+    /// read this from `/v1/models` metadata.
     pub async fn get_context_length(&self) -> Result<usize, EmbeddingError> {
         if let Some(&ctx) = self.cached_context_length.get() {
             return Ok(ctx);
         }
-        // W2 #121: derive from capability detection. For now, use
-        // the conservative default; can be enhanced to read from
+        // Derive from capability detection. For now, use the
+        // conservative default; can be enhanced to read from
         // /v1/models response metadata.
         let context_length = DEFAULT_CONTEXT_LENGTH;
         let _ = self.cached_context_length.set(context_length);
@@ -141,10 +133,9 @@ impl EmbeddingClient {
 
         let prefixed_text = format!("search_document: {}", text);
 
-        // W2 #121 extension: pass the alias's declared
-        // `dimensions` (not the hardcoded TRUNCATED_DIMENSIONS
-        // constant). The startup probe already verified the
-        // server returns this exact dim count.
+        // Pass the alias's declared `dimensions` (not the hardcoded
+        // TRUNCATED_DIMENSIONS constant). The startup probe already
+        // verified the server returns this exact dim count.
         let result = tokio::time::timeout(
             Duration::from_secs(EMBEDDING_TIMEOUT_SECS),
             self.ollama.generate_embeddings(
@@ -175,10 +166,9 @@ impl EmbeddingClient {
             }
         };
 
-        // W2 #121 extension: validate against the alias's
-        // declared dimensions (not the hardcoded FULL_DIMENSIONS
-        // constant). The startup probe already verified the
-        // server returns this exact dim count.
+        // Validate against the alias's declared dimensions (not the
+        // hardcoded FULL_DIMENSIONS constant). The startup probe
+        // already verified the server returns this exact dim count.
         if embedding.len() as u32 != self.dimensions {
             return Err(EmbeddingError::InvalidDimensions {
                 expected: self.dimensions as usize,
@@ -350,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_with_model_constructor() {
-        // W2 #121 extension: with_model now also takes `dimensions`.
+        // with_model also takes `dimensions`.
         let _client = EmbeddingClient::with_model(
             make_dummy_ollama(),
             "nomic-embed-text-v2-moe".to_string(),

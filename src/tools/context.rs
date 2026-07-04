@@ -3,9 +3,9 @@
 //! Provides async-safe access to Database, EmbeddingClient, LLM provider,
 //! and Settings for tools that need them.
 //!
-//! W2 #121: stores `crate::provider::Ollama` (the shim) for backward
-//! compatibility with the existing tool implementations. The shim
-//! delegates to `OpenAICompatibleProvider` internally.
+//! Stores `crate::provider::Ollama` (the shim) for backward compatibility
+//! with the existing tool implementations. The shim delegates to
+//! `OpenAICompatibleProvider` internally.
 
 use std::future::Future;
 use std::sync::Arc;

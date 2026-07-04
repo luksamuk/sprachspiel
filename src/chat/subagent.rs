@@ -459,11 +459,11 @@ mod tests {
         // Create a SubagentConfig with config key "glm-ocr" — should
         // resolve model_id and apply the temperature from the
         // resolved ModelConfig.
-        // W2 #121 extension: the resolution can hit either the
-        // builtin (`glm-ocr:bf16`) or the user's models.toml
-        // override. The key thing to verify is that the
-        // model_options are populated with the resolved
-        // temperature (NOT the fallback 0.0).
+        // The resolution can hit either the builtin
+        // (`glm-ocr:bf16`) or the user's models.toml override. The
+        // key thing to verify is that the model_options are
+        // populated with the resolved temperature (NOT the fallback
+        // 0.0).
         let config = SubagentConfig::new("glm-ocr", "test");
         // Verify the model_id contains "glm-ocr" (either builtin
         // or user override).
@@ -505,10 +505,9 @@ mod tests {
     }
 
     /// Test that config key "glm-ocr" resolves to the user config
-    /// alias (model_id comes from the user's models.toml).
-    /// W2 #121 extension: with the OpenAI-compat fleet, the
-    /// builtin glm-ocr (`glm-ocr:bf16`) is one option; user
-    /// overrides via models.toml are preferred.
+    /// alias (model_id comes from the user's models.toml). With the
+    /// OpenAI-compat fleet, the builtin glm-ocr (`glm-ocr:bf16`) is
+    /// one option; user overrides via models.toml are preferred.
     #[test]
     fn test_subagent_config_resolves_glm_ocr_config_key() {
         let config = SubagentConfig::new("glm-ocr", "Extract text");

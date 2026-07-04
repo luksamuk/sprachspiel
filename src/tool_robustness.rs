@@ -96,7 +96,7 @@ fn try_format_ollama_error(error: &str) -> Option<String> {
         }
     }
 
-    // W2 #121 extension: parse OpenAI-style error envelope used by
+    // Parse OpenAI-style error envelope used by
     // llama-swap / vLLM:
     //   {"error": {"code": 400, "message": "request (N tokens) exceeds
     //    the available context size (M tokens)"}}
@@ -160,7 +160,7 @@ fn format_error_with_status(msg: &str) -> String {
     format_error_with_ansi(msg)
 }
 
-/// W2 #121: format an OpenAI-style error envelope with the HTTP status
+/// Format an OpenAI-style error envelope with the HTTP status
 /// code, if present. This is the format llama-swap and vLLM use for
 /// context-overflow and similar errors:
 ///
@@ -354,7 +354,7 @@ mod tests {
         crate::logging::set_tui_mode(original_tui);
     }
 
-    // W2 #121: regression tests for the OpenAI-style error envelope
+    // Regression tests for the OpenAI-style error envelope
     // produced by llama-swap / vLLM. Before this fix, the parser
     // extracted only the first quoted fragment ("code") and dropped
     // the human-readable message nested under `error.message`.

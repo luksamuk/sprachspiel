@@ -36,9 +36,9 @@ use crate::utils::truncate_to_budget;
 /// Result type for tool execution
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private
-/// W2 #121: bound relaxed from `Send + Sync` to `Send` because
-/// tool futures await `LlmProvider::embed`/`chat` which are Send only.
+/// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private.
+/// Bound is `Send` (not `Send + Sync`) because tool futures await
+/// `LlmProvider::embed`/`chat` which are Send only.
 pub trait ToolHolder: Send {
     fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>>;
 }
@@ -240,7 +240,7 @@ pub enum ChatEvent {
         context_window: usize,
         tools_executed: Vec<String>,
     },
-    /// Tool execution lifecycle events (W2 #122 skeleton).
+    /// Tool execution lifecycle events.
     ///
     /// Emitted when a tool starts and finishes execution. Full
     /// partial-output streaming is deferred to a follow-up PR.
@@ -573,10 +573,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
     /// Store streaming callbacks so they can be reused across ReAct rounds.
     ///
-    /// W2 #122: `process_response` executes tools and then needs to continue
-    /// streaming the next assistant turn. The callbacks are owned by the
-    /// original caller (`core.rs`), so we box them here rather than threading
-    /// them through every recursive call.
+    /// `process_response` executes tools and then needs to continue streaming
+    /// the next assistant turn. The callbacks are owned by the original caller
+    /// (`core.rs`), so we box them here rather than threading them through
+    /// every recursive call.
     fn set_streaming_callbacks(
         &mut self,
         on_token: impl Fn(String) + Send + Sync + 'static,
@@ -597,12 +597,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         result: &str,
         prompt: &str,
     ) -> (ContextUsage, usize, usize, usize) {
-        // W2 #121 follow-up: use ContextUsage as the single source of truth.
-        // Build a ContextUsage from the API-reported prompt_tokens (or 0 if
-        // we don't have one yet) and then `with_growth` for the new messages
-        // added in this request. The final `total_tokens` is what was
-        // previously called `total_after_add` — same value, just produced
-        // by the unified path.
+        // Use ContextUsage as the single source of truth. Build a ContextUsage
+        // from the API-reported prompt_tokens (or 0 if we don't have one yet)
+        // and then `with_growth` for the new messages added in this request.
+        // The final `total_tokens` is what was previously called
+        // `total_after_add` — same value, just produced by the unified path.
         let pre_growth_base = self.real_history_tokens.unwrap_or(0);
         let base_usage = match self.real_history_tokens {
             Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
@@ -757,7 +756,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         total_after_add: usize,
         ctx_window: usize,
     ) -> Option<ContextCheckResult> {
-        // W2 #121: Defensive pre-truncation for tool results.
+        // Defensive pre-truncation for tool results.
         //
         // `estimate_tokens` (in src/tokens.rs) uses a word-based heuristic
         // (~0.75 words/token, GPT-style) which UNDERCOUNTS by 30-50% vs
@@ -770,7 +769,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Preemptively truncate at 75% of the ESTIMATE so there's headroom
         // for the real tokenizer to be ~33% higher and still fit.
         //
-        // TODO(W2 #121 follow-up): A real tokenizer would give 100%
+        // TODO: A real tokenizer would give 100%
         // accuracy and let us size to the actual budget. Two options:
         //   1. tiktoken-rs (GPT-style BPE) — ~5MB binary, ~100ms load.
         //      Doesn't match Llama/Mistral/Qwen tokenizers 100%.
@@ -1305,9 +1304,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     ///
     /// `already_streamed` should be `true` when the content was already
     /// streamed via `chat_stream()` — this prevents emitting an extra
-    /// `PreToolContent` event that would duplicate the text. With W2 #122,
-    /// all ReAct turns stream, so the only remaining non-streaming call site
-    /// is `chat()` (terminal/CLI query path).
+    /// `PreToolContent` event that would duplicate the text. All ReAct turns
+    /// stream, so the only remaining non-streaming call site is `chat()`
+    /// (terminal/CLI query path).
     async fn process_response(
         &mut self,
         resp: ChatMessageResponse,
@@ -1320,10 +1319,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let has_thinking = resp.message.thinking.is_some();
 
             if has_content || has_thinking {
-                // W2 #122: pre-tool content is accumulated only when it was
-                // already streamed via chat_stream(). send_message_stream()
-                // uses take_pre_tool_content() to compute post_tool_content
-                // (final response minus pre-tool prefix) and emit StreamBlockDone.
+                // Pre-tool content is accumulated only when it was already
+                // streamed via chat_stream(). send_message_stream() uses
+                // take_pre_tool_content() to compute post_tool_content (final
+                // response minus pre-tool prefix) and emit StreamBlockDone.
                 if already_streamed {
                     if !resp.message.content.trim().is_empty() {
                         if !self.pre_tool_content.is_empty() {

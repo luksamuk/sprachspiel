@@ -361,13 +361,10 @@ mod tests {
 
     #[test]
     fn test_query_uses_indexing_weights() {
-        // W2 #121 extension: the query subcommand must use
-        // settings.indexing.keyword_weight and
-        // settings.indexing.semantic_weight for the RRF
-        // retrieval config. These fields were moved from the
-        // (now-removed) settings.retrieval section into
-        // [indexing] in Commit 2. This test guards against
-        // accidental regressions to the old [retrieval] access.
+        // The query subcommand must use settings.indexing.keyword_weight
+        // and settings.indexing.semantic_weight for the RRF retrieval
+        // config. This test guards against accidental regressions to
+        // the old [retrieval] access.
         let sample = r#"
 [indexing]
 model = "nomic"

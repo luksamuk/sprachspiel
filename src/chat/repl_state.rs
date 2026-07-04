@@ -70,12 +70,12 @@ pub struct ReplState {
 
     /// Throttle bucket for status bar updates during streaming.
     ///
-    /// W2 #121: the real `prompt_eval_count` only arrives in the final
-    /// streaming chunk (with `usage`), so we estimate the prompt size
-    /// during streaming via `ContextUsage::from_session_estimate`. To
-    /// avoid re-rendering the status bar on every character, we only
-    /// re-render when the estimated total crosses a 50-token boundary.
-    /// This field tracks the last bucket we rendered.
+    /// The real `prompt_eval_count` only arrives in the final streaming
+    /// chunk (with `usage`), so we estimate the prompt size during streaming
+    /// via `ContextUsage::from_session_estimate`. To avoid re-rendering the
+    /// status bar on every character, we only re-render when the estimated
+    /// total crosses a 50-token boundary. This field tracks the last bucket
+    /// we rendered.
     pub last_status_token_bucket: u64,
 }
 
@@ -229,14 +229,14 @@ impl ReplState {
 
     /// Estimate current context usage for status bar display during streaming.
     ///
-    /// W2 #121: the real `prompt_eval_count` only arrives in the FINAL
-    /// streaming chunk (with `usage`). To keep the status bar from going
-    /// stale during streaming, we use `ContextUsage::from_session_estimate`
-    /// to get an approximate prompt size based on session state.
+    /// The real `prompt_eval_count` only arrives in the FINAL streaming
+    /// chunk (with `usage`). To keep the status bar from going stale during
+    /// streaming, we use `ContextUsage::from_session_estimate` to get an
+    /// approximate prompt size based on session state.
     ///
     /// The estimate has a 30-50% undercount bias vs real tokenizers (see
-    /// the W2 #121 TODO in src/tokens.rs), but that's acceptable for a
-    /// status bar — the user wants to see the TREND, not the exact number.
+    /// the TODO in src/tokens.rs), but that's acceptable for a status bar
+    /// — the user wants to see the TREND, not the exact number.
     ///
     /// **Bug fix:** Previously this used `String::new()` as the system prompt,
     /// which meant system prompt tokens (~3.5K) and tool definition tokens

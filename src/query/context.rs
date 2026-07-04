@@ -160,7 +160,7 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
-        // W2 #121 extension: the query subcommand's wiring uses
+        // The query subcommand's wiring uses
         // Settings::resolve_indexing_model to get the upstream
         // model_id and dimensions. If the alias is missing or
         // misconfigured, the resolver returns an error and we

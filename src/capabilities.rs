@@ -102,21 +102,20 @@ impl ModelCapabilities {
     /// # Returns
     /// Detected capabilities for the model
     ///
-    /// W2 #121 extension: capabilities for **user-defined models**
-    /// in `models.toml` are taken from the alias's explicit
-    /// `tools`/`thinking`/`vision` fields (with `None` = probe
-    /// fallback). Built-in models and models not declared in
-    /// `models.toml` fall back to the server probe (which uses
-    /// `/v1/models` for OpenAI-compat — see
+    /// Capabilities for **user-defined models** in `models.toml`
+    /// are taken from the alias's explicit `tools`/`thinking`/`vision`
+    /// fields (with `None` = probe fallback). Built-in models and
+    /// models not declared in `models.toml` fall back to the server
+    /// probe (which uses `/v1/models` for OpenAI-compat — see
     /// `CompatOllama::show_model_info`).
     pub async fn detect(
         ollama: &crate::provider::Ollama,
         model_name: &str,
     ) -> crate::AppResult<Self> {
-        // W2 #121 extension: if the model is declared in
-        // models.toml as a user-defined alias, use the
-        // explicit capability flags (vision/tools/thinking)
-        // and fall back to the probe for unspecified fields.
+        // If the model is declared in models.toml as a user-defined
+        // alias, use the explicit capability flags
+        // (vision/tools/thinking) and fall back to the probe for
+        // unspecified fields.
         if let Some(cfg) = crate::user_models::get_user_models().get(model_name) {
             // Start with the server probe (provides completion).
             let probed = Self::detect_from_server(ollama, model_name).await?;

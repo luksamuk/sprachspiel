@@ -3,7 +3,7 @@
 //! Allows users to define custom models or override built-in model parameters
 //! via a TOML file at ~/.config/sprachspiel/models.toml
 //!
-//! Schema (W2 #121 — OpenAI-First):
+//! Schema (OpenAI-first):
 //! ```toml
 //! [provider."my-llama-swap"]
 //! kind = "openai"             # default; "ollama" is deprecated alias
@@ -55,7 +55,7 @@ use crate::config::ModelConfig;
 
 /// Provider kind enumeration.
 ///
-/// W2 #121: `OpenAI` is the default (and only fully implemented kind).
+/// `OpenAI` is the default (and only fully implemented kind).
 /// `Ollama` is kept as a deprecated alias for backward compatibility with
 /// `models.toml` files from before #121. It is auto-migrated to `OpenAI`
 /// by `sprach models upgrade`. Anthropic is reserved for future use.
@@ -141,7 +141,7 @@ fn default_retry_jitter_percent() -> u8 {
 impl ProviderConfig {
     /// Normalize base_url to ensure it has a scheme (http:// or https://) AND a /v1 suffix.
     ///
-    /// W2 #121: All backends now speak OpenAI-compat. The `/v1` suffix is part of
+    /// All backends now speak OpenAI-compat. The `/v1` suffix is part of
     /// the OpenAI API spec. For Ollama at `http://localhost:11434`, the normalized
     /// URL becomes `http://localhost:11434/v1`.
     pub fn normalize_base_url(&mut self) {
@@ -164,13 +164,13 @@ impl ProviderConfig {
 
 /// User model configuration.
 ///
-/// W2 #121 (BREAKING CHANGES):
+/// Breaking changes:
 /// - Removed: `top_k`, `repeat_penalty`, `think`
 ///   (not supported by OpenAI API; ollama/ollama#11325 closed as "not planned")
 /// - Added: `seed` (cross-provider, optional)
 /// - `num_ctx` is now optional (auto-detected via `/v1/models` and `/api/show`)
 ///
-/// W2 #121 (extension): Embedding model opt-in:
+/// Embedding model opt-in:
 /// - Added: `embeddings: bool` (default false) — declares this model
 ///   as embedding-capable. When true, `dimensions` MUST also be set.
 /// - Added: `dimensions: Option<u32>` — required when `embeddings = true`.
@@ -274,7 +274,7 @@ fn load_user_models_internal() -> Result<UserModelsFile, String> {
 /// `source_label` is used in error messages (the file path, or a
 /// test label like `"<inline>"`).
 ///
-/// W2 #121: extracted from `load_user_models_internal` so tests can
+/// Extracted from `load_user_models_internal` so tests can
 /// exercise the validation logic without writing to disk.
 fn parse_and_validate_user_models(
     contents: &str,
@@ -332,7 +332,7 @@ fn parse_and_validate_user_models(
         }
     }
 
-    // Validate: embedding models must declare `dimensions` (W2 #121).
+    // Validate: embedding models must declare `dimensions`.
     // A model with `embeddings = true` and no `dimensions` cannot be
     // used: the indexing pipeline needs a known dim count to size
     // the vector store and to verify the probe response.
@@ -430,7 +430,6 @@ pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> 
             num_ctx: user.num_ctx.unwrap_or(bi.num_ctx),
             temperature: user.temperature.unwrap_or(bi.temperature),
             top_p: user.top_p.or(bi.top_p),
-            // W2 #121: top_k, repeat_penalty, think removed from UserModelConfig
             // Default fallbacks to "no overrides" (None)
             thinking: user.thinking.unwrap_or(bi.thinking),
         },
@@ -557,7 +556,7 @@ pub fn list_chat_model_names() -> Vec<String> {
 /// inner model_id) is declared as embedding-only in
 /// `models.toml`. Built-in models are never embedding-only.
 ///
-/// W2 #121 extension: this is the canonical check used by
+/// This is the canonical check used by
 /// `model_switch::switch_model` and the `--model` CLI flag to
 /// reject embedding-only models from being selected as chat
 /// models.
@@ -832,7 +831,7 @@ provider = "my-ollama"
 
     #[test]
     fn test_user_model_embeddings_default_false() {
-        // W2 #121: `embeddings = true` is opt-in. Without the flag
+        // `embeddings = true` is opt-in. Without the flag
         // in TOML, the model parses as embeddings=false.
         let toml_content = r#"
 [provider."my-llama-swap"]
@@ -851,7 +850,7 @@ provider = "my-llama-swap"
 
     #[test]
     fn test_user_model_embeddings_opt_in_with_dimensions() {
-        // W2 #121: explicit `embeddings = true` requires
+        // Explicit `embeddings = true` requires
         // `dimensions = N`.
         let toml_content = r#"
 [provider."my-llama-swap"]
@@ -872,7 +871,7 @@ dimensions = 768
 
     #[test]
     fn test_user_model_dimensions_required_when_embeddings() {
-        // W2 #121: if `embeddings = true` but `dimensions` is
+        // If `embeddings = true` but `dimensions` is
         // absent, parse_and_validate_user_models returns an error.
         let toml_content = r#"
 [provider."my-llama-swap"]
@@ -892,7 +891,7 @@ embeddings = true
 
     #[test]
     fn test_user_model_dimensions_optional_when_chat() {
-        // W2 #121: chat models (embeddings = false) don't need
+        // Chat models (embeddings = false) don't need
         // dimensions.
         let toml_content = r#"
 [provider."my-llama-swap"]
@@ -909,7 +908,7 @@ provider = "my-llama-swap"
 
     #[test]
     fn test_is_model_embedding_only() {
-        // W2 #121: is_model_embedding_only returns true only for
+        // is_model_embedding_only returns true only for
         // models declared with `embeddings = true`.
         if get_user_models().is_empty() {
             eprintln!("SKIP: test requires models.toml with at least one entry.");
@@ -956,7 +955,7 @@ provider = "my-llama-swap"
         assert!(config.is_some());
         assert_eq!(config.unwrap().model_id, "translategemma:4b");
 
-        // W2 #121 extension: glm-ocr can be either the builtin
+        // glm-ocr can be either the builtin
         // (glm-ocr:bf16) or a user override in models.toml.
         // Just verify it resolves to a non-empty string
         // containing "glm-ocr".

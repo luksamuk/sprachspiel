@@ -45,7 +45,7 @@ impl SummarizeProcessor {
         let ollama = settings.ollama_client_for_model(model_id);
 
         let provider_options = model_config.build_provider_options();
-        // W2 #121: bridge to legacy ModelOptions for CustomCoordinator.
+        // Bridge to legacy ModelOptions for CustomCoordinator.
         let model_options = crate::chat::core::convert_provider_to_model(&provider_options);
 
         // Build coordinator WITHOUT tools (security requirement)

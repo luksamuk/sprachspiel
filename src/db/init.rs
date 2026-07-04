@@ -21,7 +21,7 @@ pub struct DatabaseInitResult {
     pub error_detail: Option<String>,
 }
 
-/// Configuration for indexing initialization (W2 #121 extension).
+/// Configuration for indexing initialization.
 ///
 /// Bundles the data the indexing pipeline needs at startup:
 /// - the `Ollama` (shim) for the resolved embedding provider
@@ -75,11 +75,11 @@ pub fn init_database_core(
         };
     }
 
-    // W2 #121 extension: model id must not be empty. The [indexing]
-    // section in config.toml is required, and the alias must resolve
-    // to a model in models.toml. The actual alias validation is
-    // done by Settings::resolve_indexing_model; this defensive
-    // check catches any bypass.
+    // model id must not be empty. The [indexing] section in
+    // config.toml is required, and the alias must resolve to a model
+    // in models.toml. The actual alias validation is done by
+    // Settings::resolve_indexing_model; this defensive check catches
+    // any bypass.
     if indexing_init.model_id.trim().is_empty() {
         let error_detail = String::from(
             "Error: indexing model_id is empty. \
@@ -157,7 +157,7 @@ pub fn init_database_core(
     }
 }
 
-/// Run the indexing probe (W2 #121 extension).
+/// Run the indexing probe.
 ///
 /// Sends 1 POST `/v1/embeddings` call to verify the provider
 /// actually serves the model. The probe does NOT pass

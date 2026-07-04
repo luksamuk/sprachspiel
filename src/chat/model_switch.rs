@@ -63,11 +63,10 @@ pub async fn switch_model(
         ));
     }
 
-    // W2 #121 extension: reject embedding-only models. Models
-    // declared with `embeddings = true` in models.toml are
-    // reserved for the indexing pipeline and cannot be used
-    // for chat. The user must use `[indexing].model` to
-    // reference them.
+    // Reject embedding-only models. Models declared with
+    // `embeddings = true` in models.toml are reserved for the
+    // indexing pipeline and cannot be used for chat. The user must
+    // use `[indexing].model` to reference them.
     if user_models::is_model_embedding_only(model_name) {
         return Err(format!(
             "'{model_name}' is an embedding-only model and cannot be used \

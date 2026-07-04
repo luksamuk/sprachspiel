@@ -247,12 +247,11 @@ mod tests {
 
     #[test]
     fn test_usage_serde_missing_completion_tokens() {
-        // W2 #121 extension: llama-swap (and other OpenAI-spec
-        // embeddings servers) omit the `completion_tokens` field
-        // from the usage block. The strict-verify probe must
-        // parse these responses without failing. Also covers
-        // `prompt_tokens` and `total_tokens` being omitted by
-        // non-canonical servers.
+        // llama-swap (and other OpenAI-spec embeddings servers)
+        // omit the `completion_tokens` field from the usage block.
+        // The strict-verify probe must parse these responses without
+        // failing. Also covers `prompt_tokens` and `total_tokens`
+        // being omitted by non-canonical servers.
         let body = r#"{"prompt_tokens":3,"total_tokens":3}"#;
         let usage: Usage = serde_json::from_str(body).unwrap();
         assert_eq!(usage.prompt_tokens, 3);
@@ -262,9 +261,9 @@ mod tests {
 
     #[test]
     fn test_embedding_object_optional_fields() {
-        // W2 #121 extension: llama-swap may omit `object` and
-        // `index` per-item. The strict-verify probe must parse
-        // these responses without failing.
+        // llama-swap may omit `object` and `index` per-item.
+        // The strict-verify probe must parse these responses without
+        // failing.
         let body = r#"{"embedding":[0.1, 0.2, 0.3]}"#;
         let emb: EmbeddingObject = serde_json::from_str(body).unwrap();
         assert_eq!(emb.embedding, vec![0.1, 0.2, 0.3]);
@@ -274,8 +273,8 @@ mod tests {
 
     #[test]
     fn test_embeddings_response_full_openai() {
-        // W2 #121 extension: full OpenAI-spec embeddings response
-        // (with `object`, `index`, `completion_tokens`).
+        // Full OpenAI-spec embeddings response (with `object`,
+        // `index`, `completion_tokens`).
         let body = r#"{
             "object": "list",
             "data": [
@@ -292,10 +291,9 @@ mod tests {
 
     #[test]
     fn test_embeddings_response_minimal_llama_swap() {
-        // W2 #121 extension: minimal llama-swap response (no
-        // `completion_tokens`, no per-item `object`/`index`).
-        // This is the format returned by llama.cpp's OpenAI
-        // embeddings endpoint.
+        // Minimal llama-swap response (no `completion_tokens`, no
+        // per-item `object`/`index`). This is the format returned by
+        // llama.cpp's OpenAI embeddings endpoint.
         let body = r#"{
             "model": "nomic-embed-text-v2-moe",
             "object": "list",

@@ -291,8 +291,8 @@ pub async fn build_context(
     let mut retrieval_performed = false;
     let mut retrieved_count = 0;
 
-    // W2 #121: The OpenAI chat-completions spec allows multiple
-    // system messages, but several backends (llama-swap proxying
+    // The OpenAI chat-completions spec allows multiple system
+    // messages, but several backends (llama-swap proxying
     // Qwen3.5, Gemma, some Ollama builds) enforce the "system
     // message must be at the beginning" Jinja rule strictly and
     // reject any request with two consecutive system messages
@@ -989,12 +989,12 @@ mod tests {
         );
     }
 
-    // W2 #121: regression tests for the consolidated system
-    // prompt. Several backends (Qwen3.5, Gemma with strict
-    // Jinja templates, llama-swap on some models) raise a
-    // template-level error like "System message must be at the
-    // beginning" when a request contains two or more
-    // consecutive system messages before the first user turn.
+    // Regression tests for the consolidated system prompt. Several
+    // backends (Qwen3.5, Gemma with strict Jinja templates,
+    // llama-swap on some models) raise a template-level error like
+    // "System message must be at the beginning" when a request
+    // contains two or more consecutive system messages before the
+    // first user turn.
     //
     // build_context() now consolidates the system prompt, the
     // RAG retrieved_context, and the compacted summary into a

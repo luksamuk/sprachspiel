@@ -414,10 +414,9 @@ mod tests {
 
     #[test]
     fn test_ocr_config_uses_glm_ocr() {
-        // W2 #121 extension: the resolution can hit either the
-        // builtin (`glm-ocr:bf16`) or the user's models.toml
-        // override. We just verify the alias is non-empty and
-        // contains "glm-ocr".
+        // The resolution can hit either the builtin
+        // (`glm-ocr:bf16`) or the user's models.toml override. We
+        // just verify the alias is non-empty and contains "glm-ocr".
         let settings = Settings::default();
         let (model, _, _) = settings.get_subcommand_config("ocr");
         assert!(

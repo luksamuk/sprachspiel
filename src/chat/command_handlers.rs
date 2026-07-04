@@ -871,10 +871,10 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
-    // W2 #121 extension: resolve the indexing alias to get the
-    // upstream model_id and dimensions. The search function takes
-    // both — the model_id is the name passed to /v1/embeddings
-    // and the dimensions size the vector store.
+    // Resolve the indexing alias to get the upstream model_id and
+    // dimensions. The search function takes both — the model_id is the
+    // name passed to /v1/embeddings and the dimensions size the vector
+    // store.
     let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
         Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
         Err(e) => {
@@ -982,8 +982,8 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
-    // W2 #121 extension: resolve the indexing alias to get the
-    // upstream model_id and dimensions.
+    // Resolve the indexing alias to get the upstream model_id and
+    // dimensions.
     let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
         Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
         Err(e) => {
