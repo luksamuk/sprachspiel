@@ -326,14 +326,10 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// accepts connection but doesn't emit chunks within the idle timeout).
     /// Prevents infinite loops when the provider persistently fails.
     react_retry_count: u32,
-    /// BUG-1 fix (ii): ids emitted by the provider in the SSE stream
-    /// (`LlmStreamEvent::ToolCallStart`/`ToolCallEnd`), preserved in the
-    /// same order as `tool_calls` so the ReAct execution loop can reuse
-    /// the stream's id instead of synthesizing a divergent one. This keeps
-    /// the preview's `tool_call_id` (set during streaming) and the
-    /// `ToolExecutionStarted`'s `tool_call_id` in sync, allowing
-    /// `freeze_tool_preview_by_name` to match by id and update empty args
-    /// from the execution args. Reset at the start of each `stream_turn`.
+    /// Stream ids emitted by the provider, kept in the same order as
+    /// `tool_calls` so the ReAct execution loop can reuse them instead of
+    /// synthesizing divergent ids. Keeps preview and execution ids in sync
+    /// for `freeze_tool_preview_by_name`. Reset at the start of each `stream_turn`.
     stream_tool_call_ids: Vec<String>,
 }
 
@@ -900,14 +896,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             u32,
             (String, String, serde_json::Value),
         > = std::collections::HashMap::new();
-        // BUG-1 fix (i): emit `LlmEvent::ToolCallStarted` exactly once per
-        // turn, on the first `ToolCallStart`. Without this, the event_loop
-        // never transitions `LlmState::ToolCall` and `freeze_all_tool_previews`
-        // is never called in the streaming path, leaving previews orphaned
-        // and causing the empty-args rendering with local models.
+        // Emit `ToolCallStarted` exactly once per turn so the event loop
+        // transitions to `ToolCall` state and freezes previews at the right
+        // time.
         let mut tool_call_started_emitted = false;
-        // BUG-1 fix (ii): reset the stream id buffer so it lines up with
-        // `tool_calls` for the upcoming ReAct execution loop.
+        // Reset the stream id buffer so it lines up with `tool_calls` for the
+        // upcoming ReAct execution loop.
         self.stream_tool_call_ids.clear();
         let model = self.model.clone();
         let created_at = String::new();
@@ -939,10 +933,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             .push_str(&delta);
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallStart { index, id, name } => {
-                        // BUG-1 fix (i): emit `ToolCallStarted` exactly once
-                        // per turn so the event_loop transitions
-                        // `LlmState::ToolCall` and the user gets immediate
-                        // visual feedback that tool calls are coming.
+                        // Emit `ToolCallStarted` once per turn so the event
+                        // loop transitions to `ToolCall` state immediately.
                         if !tool_call_started_emitted {
                             tool_call_started_emitted = true;
                             if let Some(ref cb) = self.tool_call_callback {
@@ -978,12 +970,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                             if let Some(name) = name_delta {
                                 *existing_name = name;
                             }
-                            // BUG-1 fix: accumulate argument_delta from the
-                            // start. The initial args from ToolCallStart is
-                            // an empty Object, but the first argument_delta
-                            // (e.g. "{") is a partial JSON string. We need to
-                            // treat the empty Object as an empty string base
-                            // and concatenate the delta, then try to parse.
+                            // Accumulate argument_delta from the start:
+                            // the initial args from ToolCallStart are an
+                            // empty object, while the first delta is partial
+                            // JSON that must be concatenated before parsing.
                             let raw = match existing_args {
                                 serde_json::Value::String(s) => {
                                     let mut s = s.clone();
@@ -1009,20 +999,13 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         }
                     }
                     crate::provider::types::LlmStreamEvent::ToolCallEnd { call, .. } => {
-                        // BUG-1 fix (ii): preserve the stream's tool_call id so
-                        // the ReAct execution loop can reuse it in
-                        // `ToolExecutionStarted`, keeping the preview's id and
-                        // the execution's id in sync. `ollama_rs::ToolCall`
-                        // has no `id` field, so we carry it in a parallel vec.
+                        // Preserve the stream's tool_call id for the ReAct
+                        // execution loop, since `ollama_rs::ToolCall` has no
+                        // id field. We carry it in a parallel vec.
                         self.stream_tool_call_ids.push(call.id.clone());
-                        // BUG-1 fix: update the preview with the FINAL parsed
-                        // arguments from ToolCallEnd. During streaming, the
-                        // preview's args may be a partial JSON string (each
-                        // argument_delta is a fragment that can't parse alone).
-                        // ToolCallEnd carries the complete, parsed arguments.
-                        // Find the preview by matching the stream_tool_call_ids
-                        // position with the tool_calls length (they grow in
-                        // parallel).
+                        // Update the preview with the final parsed arguments.
+                        // During streaming, deltas are partial JSON fragments;
+                        // ToolCallEnd carries the complete, parsed object.
                         let preview_index = tool_calls.len() as u32;
                         if let Some((existing_id, existing_name, existing_args)) =
                             tool_call_previews.get_mut(&preview_index)
@@ -1266,14 +1249,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
-                // BUG-1 fix (ii): prefer the tool_call_id emitted by the
-                // provider in the SSE stream so it matches the id used when
-                // the preview was created during streaming. This lets
-                // `freeze_tool_preview_by_name` match by id and update empty
-                // args from the execution args. When the stream id is empty
-                // (local models via BeeLama/DFlash that don't send an id),
-                // fall back to the Bug D synthetic id so tool calls remain
-                // unique across ReAct rounds.
+                // Prefer the tool_call_id emitted by the provider so it
+                // matches the streaming preview. When the stream id is empty,
+                // fall back to a synthetic id so tool calls stay unique
+                // across ReAct rounds.
                 self.tool_call_counter += 1;
                 let tool_call_id = match self.stream_tool_call_ids.get(call_idx) {
                     Some(stream_id) if !stream_id.is_empty() => stream_id.clone(),
