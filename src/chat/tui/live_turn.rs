@@ -36,61 +36,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::utils::truncate_chars;
-
 use super::components::chat_area::ChatMessage;
-
-/// Maximum characters of a tool result shown in the TUI chat area.
-///
-/// Tool outputs (e.g., `list_directory` recursive listings, `read_file`
-/// of large files) can be tens of thousands of lines. Rendering the full
-/// text blocks the main thread, word-wraps an unbounded number of lines, and
-/// can corrupt the TUI. The full output is still kept in `ToolResult.content`
-/// so it is sent back to the LLM; this limit applies only to on-screen
-/// display.
-///
-/// Currently unused in the TUI display path because tool results are completely
-/// suppressed from the chat area (only the compact `🔧 name(args) (id)` line is
-/// shown). Kept for milestone 2, which will reintroduce optional result
-/// display.
-#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
-const TUI_TOOL_RESULT_MAX_CHARS: usize = 2_000;
-
-/// Maximum number of lines from a tool result shown in the TUI.
-///
-/// Used together with `TUI_TOOL_RESULT_MAX_CHARS` so that even a short but
-/// very tall output does not flood the chat area.
-///
-/// Currently unused in the TUI display path because tool results are completely
-/// suppressed from the chat area. Kept for milestone 2.
-#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
-const TUI_TOOL_RESULT_MAX_LINES: usize = 40;
-
-/// Truncate a tool result for on-screen display.
-///
-/// Preserves the start of the output and appends a summary of how much
-/// was elided. The original `content` in `ToolResult` is untouched.
-///
-/// Currently unused in the TUI display path because tool results are completely
-/// suppressed from the chat area. Kept for milestone 2.
-#[allow(dead_code)] // Will be used in milestone 2 for optional tool-result display
-fn truncate_tool_result_for_display(content: &str) -> String {
-    let line_count = content.lines().count();
-    let mut truncated = truncate_chars(content, TUI_TOOL_RESULT_MAX_CHARS);
-    if line_count > TUI_TOOL_RESULT_MAX_LINES {
-        let keep: Vec<&str> = truncated.lines().take(TUI_TOOL_RESULT_MAX_LINES).collect();
-        truncated = keep.join("\n");
-    }
-    let original_chars = content.chars().count();
-    if original_chars > TUI_TOOL_RESULT_MAX_CHARS || line_count > TUI_TOOL_RESULT_MAX_LINES {
-        truncated.push_str(&format!(
-            "\n\n... [+{} chars, +{} lines hidden — output truncated for display]",
-            original_chars.saturating_sub(truncated.chars().count()),
-            line_count.saturating_sub(TUI_TOOL_RESULT_MAX_LINES.max(1)),
-        ));
-    }
-    truncated
-}
 
 /// The lifecycle state of a live turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,10 +81,6 @@ pub struct ToolResult {
     pub content: String,
     /// Whether the tool returned an error.
     pub is_error: bool,
-    /// Whether the result is still being streamed.
-    ///
-    /// Reserved for future partial-output streaming. Always `false` today.
-    pub is_streaming: bool,
 }
 
 /// A transient preview of a tool call whose arguments are still streaming in.
@@ -300,14 +242,9 @@ impl LiveTurn {
         name: &str,
         args: &serde_json::Value,
     ) {
-        // Bug E fix + BUG-1 fix: if a block with this tool_call_id already
-        // exists (frozen earlier by freeze_all_tool_previews), don't create
-        // a duplicate — but DO update its args if they're empty and we now
-        // have real args from ToolExecutionStarted. This handles the case
-        // where the provider didn't stream argument_delta (common with
-        // local models via llama-swap/DFlash), so the preview was frozen
-        // with empty args but the ToolExecutionStarted has the real parsed
-        // args.
+        // If a block with this tool_call_id already exists (frozen earlier by
+        // freeze_all_tool_previews), update its empty args/name from the
+        // ToolExecutionStarted payload instead of creating a duplicate.
         for block in self.blocks.iter_mut() {
             if let TurnBlock::ToolCall {
                 tool_call_id: id,
@@ -343,9 +280,8 @@ impl LiveTurn {
             if preview.name.is_empty() && !name.is_empty() {
                 preview.name = name.to_string();
             }
-            // BUG-1 fix: broaden the empty-args check to also catch Null
-            // (some providers send null instead of empty Object for args
-            // when the tool call arguments are not streamed via deltas).
+            // Treat null the same as an empty object: some providers send null
+            // when arguments are not streamed via deltas.
             let is_preview_args_empty = match &preview.args {
                 serde_json::Value::Object(o) if o.is_empty() => true,
                 serde_json::Value::Null => true,
@@ -407,18 +343,10 @@ impl LiveTurn {
             return;
         }
 
-        // BUG-1 fix (iii): defense in depth — if we still haven't matched,
-        // look for the LAST frozen `TurnBlock::ToolCall` in `self.blocks`
-        // that (a) has no result yet, (b) has an empty name OR a matching
-        // name, and (c) has empty args. This catches the edge case where
-        // the preview was frozen by `freeze_all_tool_previews` (in the
-        // `ToolExecutionStarted` handler) with a stream id that diverges
-        // from the execution id AND the name was empty (provider didn't
-        // stream the name). Without this fallback, the block would keep
-        // empty args and a second block would be created by the
-        // "No match" branch below, leaving an empty-args block visible
-        // to the user. We update args, name, AND tool_call_id so the
-        // later `set_tool_result` can find the block by execution id.
+        // Fallback: claim the most recent result-less frozen block that has
+        // empty args and either no name or a matching name. This repairs
+        // blocks frozen with a divergent stream id and an empty name so
+        // `set_tool_result` can locate them by execution id.
         if !name.is_empty() {
             for block in self.blocks.iter_mut().rev() {
                 if let TurnBlock::ToolCall {
@@ -448,8 +376,7 @@ impl LiveTurn {
                         }
                         *bid = tool_call_id.to_string();
                         log::debug!(
-                            "BUG-1 fallback: updated frozen block by name \
-                             match (name={}) with execution id={}",
+                            "Fallback: updated frozen block by name match (name={}) with execution id={}",
                             name,
                             tool_call_id
                         );
@@ -483,13 +410,7 @@ impl LiveTurn {
     /// Previously this would overwrite an earlier round's result if the same
     /// `tool_call_id` appeared in multiple rounds. With Bug D fix (unique
     /// ids), collisions are rare, but this is defense in depth.
-    pub fn set_tool_result(
-        &mut self,
-        tool_call_id: &str,
-        content: String,
-        is_error: bool,
-        is_streaming: bool,
-    ) {
+    pub fn set_tool_result(&mut self, tool_call_id: &str, content: String, is_error: bool) {
         // If the preview is still in the preview map, freeze it first.
         if self.tool_previews.contains_key(tool_call_id) {
             self.freeze_tool_preview(tool_call_id);
@@ -506,11 +427,7 @@ impl LiveTurn {
                 && id == tool_call_id
                 && result.is_none()
             {
-                *result = Some(ToolResult {
-                    content,
-                    is_error,
-                    is_streaming,
-                });
+                *result = Some(ToolResult { content, is_error });
                 return;
             }
         }
@@ -526,11 +443,7 @@ impl LiveTurn {
             } = block
                 && id == tool_call_id
             {
-                *result = Some(ToolResult {
-                    content,
-                    is_error,
-                    is_streaming,
-                });
+                *result = Some(ToolResult { content, is_error });
                 return;
             }
         }
@@ -544,11 +457,7 @@ impl LiveTurn {
             tool_call_id: tool_call_id.to_string(),
             name: String::new(),
             args: serde_json::Value::Object(serde_json::Map::new()),
-            result: Some(ToolResult {
-                content,
-                is_error,
-                is_streaming,
-            }),
+            result: Some(ToolResult { content, is_error }),
         });
     }
 
@@ -648,7 +557,6 @@ impl LiveTurn {
                     let content = format_tool_message(tool_call_id, name, args, result.as_ref());
                     let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id.clone());
-                    msg.is_streaming = result.as_ref().is_some_and(|r| r.is_streaming);
                     messages.push(msg);
                 }
             }
@@ -758,7 +666,6 @@ const PRIORITY_ARG_KEYS: &[&str] = &[
     "status",
     "action",
     "overwrite",
-    "recursive",
     "recursive",
 ];
 
@@ -1083,7 +990,7 @@ mod tests {
             _ => panic!("expected tool call block"),
         }
         // Step 4: set_tool_result must find the block by the updated id
-        turn.set_tool_result("read_file_1", "file contents".to_string(), false, false);
+        turn.set_tool_result("read_file_1", "file contents".to_string(), false);
         match &turn.blocks[0] {
             TurnBlock::ToolCall { result, .. } => {
                 assert_eq!(result.as_ref().unwrap().content, "file contents");
@@ -1146,7 +1053,7 @@ mod tests {
             "read_file",
             &serde_json::json!({"path": "/tmp/a"}),
         );
-        turn.set_tool_result("read_file_1", "contents A".to_string(), false, false);
+        turn.set_tool_result("read_file_1", "contents A".to_string(), false);
         // Round 2: read_file with /tmp/b — different synthesized id
         turn.upsert_tool_preview(String::new(), String::new(), serde_json::json!({}));
         turn.freeze_all_tool_previews();
@@ -1155,7 +1062,7 @@ mod tests {
             "read_file",
             &serde_json::json!({"path": "/tmp/b"}),
         );
-        turn.set_tool_result("read_file_2", "contents B".to_string(), false, false);
+        turn.set_tool_result("read_file_2", "contents B".to_string(), false);
         assert_eq!(turn.blocks.len(), 2);
         // First block keeps its result
         match &turn.blocks[0] {
@@ -1223,7 +1130,7 @@ mod tests {
     fn set_tool_result_finds_matching_block() {
         let mut turn = LiveTurn::new(1);
         turn.freeze_tool_preview("call_1");
-        turn.set_tool_result("call_1", "sunny".to_string(), false, false);
+        turn.set_tool_result("call_1", "sunny".to_string(), false);
         assert_eq!(turn.blocks.len(), 1);
         let result = match &turn.blocks[0] {
             TurnBlock::ToolCall { result, .. } => result.as_ref().unwrap(),
@@ -1236,7 +1143,7 @@ mod tests {
     #[test]
     fn set_tool_result_creates_block_if_missing() {
         let mut turn = LiveTurn::new(0);
-        turn.set_tool_result("missing", "result".to_string(), true, false);
+        turn.set_tool_result("missing", "result".to_string(), true);
         assert_eq!(turn.blocks.len(), 1);
         let result = match &turn.blocks[0] {
             TurnBlock::ToolCall { result, .. } => result.as_ref().unwrap(),
@@ -1254,7 +1161,7 @@ mod tests {
         turn.finalize_last_block();
         turn.upsert_tool_preview("c".to_string(), "calc".to_string(), serde_json::json!({}));
         turn.freeze_tool_preview("c");
-        turn.set_tool_result("c", "42".to_string(), false, false);
+        turn.set_tool_result("c", "42".to_string(), false);
 
         let messages = turn.finalize();
         assert_eq!(messages.len(), 3);
@@ -1281,7 +1188,6 @@ mod tests {
             result: Some(ToolResult {
                 content: long_result.clone(),
                 is_error: false,
-                is_streaming: false,
             }),
         };
         let rendered = format_tool_message(
@@ -1291,7 +1197,6 @@ mod tests {
             Some(&ToolResult {
                 content: long_result,
                 is_error: false,
-                is_streaming: false,
             }),
         );
         assert!(rendered.contains("list_directory"));
@@ -1322,7 +1227,6 @@ mod tests {
         let result = ToolResult {
             content: "Error: file not found".to_string(),
             is_error: true,
-            is_streaming: false,
         };
         let rendered = format_tool_message("call_1", "read_file", &args, Some(&result));
         assert!(
@@ -1341,7 +1245,6 @@ mod tests {
         let result = ToolResult {
             content: "file1.txt\nfile2.txt".to_string(),
             is_error: false,
-            is_streaming: false,
         };
         let rendered = format_tool_message("call_1", "list_directory", &args, Some(&result));
         assert!(
@@ -1363,7 +1266,7 @@ mod tests {
         );
         turn.freeze_tool_preview("call_1");
 
-        turn.set_tool_result("call_1", "Error: file not found".to_string(), true, false);
+        turn.set_tool_result("call_1", "Error: file not found".to_string(), true);
 
         // Verify the block has is_error=true
         for block in &turn.blocks {

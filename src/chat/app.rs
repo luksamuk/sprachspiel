@@ -540,15 +540,9 @@ impl App {
     /// Test-only: production code calls `LiveTurn::set_tool_result` directly
     /// via `view.app_mut().live_turn_mut()`.
     #[cfg(test)]
-    pub fn set_tool_result(
-        &mut self,
-        tool_call_id: &str,
-        content: String,
-        is_error: bool,
-        is_streaming: bool,
-    ) {
+    pub fn set_tool_result(&mut self, tool_call_id: &str, content: String, is_error: bool) {
         if let Some(turn) = self.live_turn.as_mut() {
-            turn.set_tool_result(tool_call_id, content, is_error, is_streaming);
+            turn.set_tool_result(tool_call_id, content, is_error);
         } else {
             log::warn!(
                 "set_tool_result called with no active live turn for id {}",
@@ -2237,7 +2231,7 @@ mod tests {
             "🔧 weather(`call_1`)\n```json\n{\"city\": \"São Paulo\"}\n```".to_string(),
         );
         app.freeze_all_tool_previews();
-        app.set_tool_result("call_1", "sunny".to_string(), false, false);
+        app.set_tool_result("call_1", "sunny".to_string(), false);
 
         // The result is stored in the live-turn block for the LLM.
         let turn = app.live_turn.as_ref().expect("live turn should exist");
@@ -2272,7 +2266,7 @@ mod tests {
         app.upsert_tool_preview("a".to_string(), "🔧 search(`a`)".to_string());
         app.freeze_all_tool_previews();
         app.increment_round();
-        app.set_tool_result("a", "result-a".to_string(), false, false);
+        app.set_tool_result("a", "result-a".to_string(), false);
 
         // Result-a is stored in the live-turn block for the LLM before it is
         // suppressed from the TUI display.
@@ -2295,7 +2289,7 @@ mod tests {
         app.upsert_tool_preview("b".to_string(), "🔧 calc(`b`)".to_string());
         app.freeze_all_tool_previews();
         app.increment_round();
-        app.set_tool_result("b", "result-b".to_string(), false, false);
+        app.set_tool_result("b", "result-b".to_string(), false);
 
         {
             let turn = app
