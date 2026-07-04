@@ -11,7 +11,7 @@ use sprachspiel::user_models::{ProviderConfig, ProviderKind};
 
 fn make_ollama_config(base_url: &str) -> ProviderConfig {
     ProviderConfig {
-        kind: ProviderKind::Ollama,
+        kind: ProviderKind::OllamaLegacy,
         base_url: base_url.to_string(),
         connect_timeout_secs: 5,
         read_timeout_secs: 300,
@@ -25,16 +25,27 @@ fn make_ollama_config(base_url: &str) -> ProviderConfig {
 }
 
 #[test]
-fn test_build_provider_ollama_returns_provider() {
+fn test_build_provider_ollama_legacy_returns_deprecation_error() {
     let mut providers = HashMap::new();
     providers.insert(
         "my-ollama".to_string(),
         make_ollama_config("http://localhost:11434"),
     );
 
-    let provider = build_provider("my-ollama", &providers).expect("factory should succeed");
+    let result = build_provider("my-ollama", &providers);
 
-    assert_eq!(provider.provider_name(), "ollama");
+    // OllamaLegacy is deprecated in W2 #121 — the factory returns a
+    // config error prompting the user to migrate to kind = "openai".
+    match result {
+        Ok(_) => panic!("OllamaLegacy should return a deprecation error, not a provider"),
+        Err(e) => {
+            let err = e.to_string();
+            assert!(
+                err.contains("deprecated") || err.contains("upgrade"),
+                "Error should mention deprecation/upgrade; got: {err}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -56,12 +67,12 @@ fn test_build_provider_unknown_name_errors() {
 }
 
 #[test]
-fn test_build_provider_openai_compatible_returns_unsupported() {
+fn test_build_provider_openai_returns_provider() {
     let mut providers = HashMap::new();
     providers.insert(
         "openai-cloud".to_string(),
         ProviderConfig {
-            kind: ProviderKind::OpenAICompatible,
+            kind: ProviderKind::OpenAI,
             base_url: "https://api.openai.com/v1".to_string(),
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
@@ -74,15 +85,26 @@ fn test_build_provider_openai_compatible_returns_unsupported() {
         },
     );
 
+    // W2 #121: OpenAI-compatible providers are now the default and are
+    // fully supported (no API key in this test env means the provider
+    // struct is still built — the key is only read at request time).
     let result = build_provider("openai-cloud", &providers);
 
     match result {
-        Ok(_) => panic!("OpenAI-compatible should be unimplemented"),
+        Ok(provider) => {
+            assert_eq!(
+                provider.provider_name(),
+                "openai-compatible",
+                "OpenAI provider should return its name"
+            );
+        }
         Err(e) => {
+            // The factory may reject the config if the base_url is
+            // invalid, but it should NOT return an "unsupported" error.
             let err = e.to_string();
             assert!(
-                err.contains("OpenAICompatible") || err.contains("OpenAI"),
-                "Error should mention OpenAI; got: {err}"
+                !err.contains("Unsupported"),
+                "OpenAI should be supported, not unsupported; got: {err}"
             );
         }
     }
