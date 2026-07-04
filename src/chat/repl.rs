@@ -78,6 +78,7 @@ async fn init_chat_database(
     let (_model_cfg, provider_cfg, model_id, dimensions) = match settings.resolve_indexing_model() {
         Ok(t) => t,
         Err(e) => {
+            log::error!("{e}");
             eprintln!("\x1B[31m{e}\x1B[0m");
             return (None, None, ollama, Some(e));
         }
@@ -96,6 +97,7 @@ async fn init_chat_database(
     )
     .await
     {
+        log::error!("{msg}");
         eprintln!("\x1B[31m{msg}\x1B[0m");
         return (None, None, ollama, Some(msg));
     }
@@ -115,6 +117,7 @@ async fn init_chat_database(
     let error_detail = if result.db.is_none() {
         // Error already logged and formatted in init_database_core
         if let Some(ref detail) = result.error_detail {
+            log::error!("{detail}");
             eprintln!("\x1B[31m{detail}\x1B[0m");
             Some(detail.clone())
         } else {
