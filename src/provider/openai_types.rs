@@ -17,8 +17,6 @@
 //! extensions (`top_k`, `repeat_penalty`, `num_ctx` etc.) are NOT sent
 //! — they are not portable across providers (see ollama/ollama#11325).
 
-#![allow(dead_code)] // Some fields are reserved for future use
-
 use serde::{Deserialize, Serialize};
 
 /// OpenAI chat message (request/response).
@@ -177,6 +175,7 @@ pub struct ChatChunk {
     pub usage: Option<Usage>,
 }
 
+#[allow(dead_code)] // Used indirectly: deserialized via ChatChunk.choices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkChoice {
     pub index: u32,
@@ -205,6 +204,7 @@ pub struct EmbeddingsResponse {
     pub usage: Usage,
 }
 
+#[allow(dead_code)] // Used indirectly: deserialized via EmbeddingsResponse.data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingObject {
     /// OpenAI sends `"object": "embedding"` per-item. llama-swap
@@ -227,6 +227,7 @@ pub struct ModelsResponse {
     pub data: Vec<ModelInfo>,
 }
 
+#[allow(dead_code)] // Used indirectly: deserialized via ModelsResponse.data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
@@ -238,21 +239,6 @@ pub struct ModelInfo {
     /// context length information.
     #[serde(default)]
     pub max_model_len: Option<u32>,
-}
-
-/// Error response body.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    pub error: ErrorBody,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorBody {
-    pub message: String,
-    #[serde(default)]
-    pub r#type: Option<String>,
-    #[serde(default)]
-    pub code: Option<String>,
 }
 
 #[cfg(test)]

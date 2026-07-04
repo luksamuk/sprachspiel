@@ -32,8 +32,6 @@
 //! W2 #121 item B4: this wires up the previously-unused
 //! `retry_after: Option<Duration>` field on `RateLimit`.
 
-#![allow(dead_code)] // Many methods used by shim that will be wired in P6.0e.4
-
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -290,7 +288,6 @@ impl OpenAICompatibleProvider {
     }
 
     /// Convert `ProviderOptions` to OpenAI request fields.
-    #[allow(clippy::type_complexity)]
     fn convert_options(options: &ProviderOptions) -> ConvertedOptions {
         (
             options.temperature,
@@ -362,31 +359,6 @@ impl OpenAICompatibleProvider {
             done_reason,
             eval_count: response.usage.as_ref().map(|u| u.completion_tokens),
             prompt_eval_count: response.usage.as_ref().map(|u| u.prompt_tokens),
-        }
-    }
-
-    /// Classify an HTTP response into a `ProviderError`.
-    #[allow(dead_code)]
-    fn classify_response(&self, response: reqwest::Response) -> ProviderError {
-        let status = response.status();
-        let headers = response.headers().clone();
-        // We can't easily get the body without consuming the response,
-        // so this helper is for status-only classification.
-        if status.as_u16() == 429 {
-            // Parse Retry-After header
-            let retry_after = headers
-                .get(RETRY_AFTER)
-                .and_then(|v| v.to_str().ok())
-                .and_then(parse_retry_after);
-            ProviderError::RateLimit {
-                message: "HTTP 429 Too Many Requests".to_string(),
-                retry_after,
-            }
-        } else {
-            ProviderError::Api {
-                status: status.as_u16(),
-                body: format!("HTTP {}", status.as_u16()),
-            }
         }
     }
 
@@ -1052,6 +1024,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             .ok_or_else(|| ProviderError::Other("Empty embeddings response".to_string()))
     }
 
+    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
     async fn detect_capabilities(
         &self,
         model: &str,
@@ -1069,6 +1042,10 @@ impl LlmProvider for OpenAICompatibleProvider {
         if !status.is_success() {
             // Fallback: try /api/show (Ollama native, served at same base
             // without /v1 prefix). This is best-effort.
+            log::warn!(
+                "detect_capabilities: /v1/models returned {status} for model '{model}', \
+                 returning default capabilities"
+            );
             return Ok(ProviderCapabilities {
                 completion: true,
                 provider: "openai-compatible".to_string(),
@@ -1091,7 +1068,7 @@ impl LlmProvider for OpenAICompatibleProvider {
 
         Ok(ProviderCapabilities {
             completion: true,
-            tools: true,     // OpenAI-spec always supports tools via the API
+            tools: false,    // Default to false; merged with user models.toml flags
             thinking: false, // OpenAI doesn't expose "thinking" capability separately
             vision: true,    // Most OpenAI-compat servers support vision via image_url
             embedding: true, // /v1/embeddings is standard
@@ -1105,10 +1082,12 @@ impl LlmProvider for OpenAICompatibleProvider {
         })
     }
 
+    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
     fn provider_name(&self) -> &str {
         "openai-compatible"
     }
 
+    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
     async fn is_available(&self) -> bool {
         let url = self.url("/models");
         match self
@@ -1199,8 +1178,9 @@ fn parse_sse_stream(
                                 if data.is_empty() {
                                     continue;
                                 }
-                                match serde_json::from_str::<ChatChunk>(data) {
+                                    match serde_json::from_str::<ChatChunk>(data) {
                                     Ok(chunk) => {
+                                        let mut finish_reason: Option<String> = None;
                                         for choice in chunk.choices {
                                             // Content delta
                                             if let Some(delta) = choice.delta.content
@@ -1241,6 +1221,7 @@ fn parse_sse_stream(
                                             // Finish reason on this choice means the turn
                                             // is ending; finalize any in-flight tool calls.
                                             if choice.finish_reason.is_some() {
+                                                finish_reason = choice.finish_reason.clone();
                                                 for event in tool_call_accumulators.finalize_all() {
                                                     yield Ok(event);
                                                 }
@@ -1250,16 +1231,16 @@ fn parse_sse_stream(
                                         }
 
                                         // Usage reported in the final chunk.
-                                        if let Some(usage) = chunk.usage {
-                                            yield Ok(LlmStreamEvent::Done {
-                                                reason: Some("stop".to_string()),
-                                                usage: Some(LlmUsage {
-                                                    prompt_tokens: usage.prompt_tokens,
-                                                    completion_tokens: usage.completion_tokens,
-                                                    total_tokens: usage.total_tokens,
-                                                }),
-                                            });
-                                        }
+                                        let usage_data = chunk.usage.map(|u| LlmUsage {
+                                            prompt_tokens: u.prompt_tokens,
+                                            completion_tokens: u.completion_tokens,
+                                            total_tokens: u.total_tokens,
+                                        });
+                                        let reason = finish_reason.unwrap_or_else(|| "stop".to_string());
+                                        yield Ok(LlmStreamEvent::Done {
+                                            reason: Some(reason),
+                                            usage: usage_data,
+                                        });
                                     }
                                     Err(e) => {
                                         log::warn!("Failed to parse SSE chunk: {e} (data: {data})");
