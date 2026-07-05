@@ -332,6 +332,7 @@ async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings
     if let Some(model) = cli.model.as_deref()
         && user_models::is_model_embedding_only(model)
     {
+        log::error!("'{model}' is an embedding-only model and cannot be used for chat");
         eprintln!(
             "Error: '{model}' is an embedding-only model and cannot be used for chat.\n\
              Use `[indexing].model = \"{model}\"` in config.toml to reference it for \
@@ -372,6 +373,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     if let Some(model) = cli.model.as_deref()
         && user_models::is_model_embedding_only(model)
     {
+        log::error!("'{model}' is an embedding-only model and cannot be used for chat");
         eprintln!("Error: '{model}' is an embedding-only model and cannot be used for chat.");
         std::process::exit(1);
     }
