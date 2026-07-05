@@ -101,6 +101,29 @@ pub struct OpenAICompatibleProvider {
     api_key: Option<String>,
 }
 
+/// What to do with an HTTP response that is not a success (2xx).
+///
+/// Extracted from `chat_with_retry` and `send_stream_request` to
+/// eliminate the duplicated retry-classification logic (429/5xx/
+/// transient-4xx/permanent-4xx) between the two functions.
+enum RetryAction {
+    /// Retry the request after `delay`. `event` is the
+    /// `ProviderRetryStarted` event to emit; `error` is the
+    /// error to record as `last_error`.
+    Retry {
+        delay: Duration,
+        event: LlmStreamEvent,
+        error: ProviderError,
+    },
+    /// Don't retry — surface the error. `event` is an optional
+    /// `ProviderRetryFinished { success: false }` event to emit
+    /// (only if retries were attempted).
+    Fail {
+        error: ProviderError,
+        event: Option<LlmStreamEvent>,
+    },
+}
+
 impl OpenAICompatibleProvider {
     /// Access the underlying reqwest client (used by the ollama_rs shim).
     pub fn as_client(&self) -> &reqwest::Client {
@@ -505,6 +528,149 @@ impl OpenAICompatibleProvider {
         Duration::from_millis(capped_ms.saturating_add(jitter))
     }
 
+    /// Classify a non-success HTTP response and decide whether to retry.
+    ///
+    /// Shared by `chat_with_retry` (non-streaming) and
+    /// `send_stream_request` (streaming) to eliminate the duplicated
+    /// retry-classification logic for 429/5xx/transient-4xx/permanent-4xx.
+    async fn classify_retry_response(
+        &self,
+        status: reqwest::StatusCode,
+        resp: reqwest::Response,
+        attempt: u32,
+        max_attempts: u32,
+        tag: &str,
+    ) -> RetryAction {
+        let retry_after = resp
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
+
+        if status.as_u16() == 429 {
+            if attempt < max_attempts {
+                let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
+                log::info!(
+                    "[{tag}] HTTP 429, retrying in {}ms (attempt {}/{})",
+                    delay.as_millis(),
+                    attempt,
+                    max_attempts
+                );
+                return RetryAction::Retry {
+                    delay,
+                    event: LlmStreamEvent::ProviderRetryStarted {
+                        attempt,
+                        max_attempts,
+                        delay_ms: delay.as_millis() as u64,
+                        reason: "rate limited (HTTP 429)".to_string(),
+                    },
+                    error: ProviderError::RateLimit {
+                        message: format!("HTTP 429 (attempt {attempt})"),
+                        retry_after,
+                    },
+                };
+            }
+            let body = resp.text().await.unwrap_or_default();
+            return RetryAction::Fail {
+                error: ProviderError::RateLimit {
+                    message: body,
+                    retry_after,
+                },
+                event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+                    success: false,
+                    attempt,
+                }),
+            };
+        }
+
+        if status.is_server_error() {
+            if attempt < max_attempts {
+                let delay = self.backoff_delay(attempt);
+                log::info!(
+                    "[{tag}] {} (server error), retrying in {}ms (attempt {}/{})",
+                    status.as_u16(),
+                    delay.as_millis(),
+                    attempt,
+                    max_attempts
+                );
+                return RetryAction::Retry {
+                    delay,
+                    event: LlmStreamEvent::ProviderRetryStarted {
+                        attempt,
+                        max_attempts,
+                        delay_ms: delay.as_millis() as u64,
+                        reason: format!("server error (HTTP {})", status.as_u16()),
+                    },
+                    error: ProviderError::Api {
+                        status: status.as_u16(),
+                        body: format!("HTTP {} (attempt {})", status.as_u16(), attempt),
+                    },
+                };
+            }
+            return RetryAction::Fail {
+                error: ProviderError::Api {
+                    status: status.as_u16(),
+                    body: format!("HTTP {} (server error)", status.as_u16()),
+                },
+                event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+                    success: false,
+                    attempt,
+                }),
+            };
+        }
+
+        // 4xx — distinguish transient vs permanent
+        let body = resp.text().await.unwrap_or_default();
+        let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
+
+        if is_transient_4xx && attempt < max_attempts {
+            let delay = self.backoff_delay(attempt);
+            let reason = Self::transient_4xx_reason(status.as_u16(), &body);
+            log::info!(
+                "[{tag}] transient 4xx (HTTP {}), retrying in {}ms (attempt {}/{})",
+                status.as_u16(),
+                delay.as_millis(),
+                attempt,
+                max_attempts
+            );
+            let preview: String = body.chars().take(500).collect();
+            log::debug!(
+                "[{tag}] transient 4xx body (HTTP {}, attempt {}/{}): {}",
+                status.as_u16(),
+                attempt,
+                max_attempts,
+                preview
+            );
+            return RetryAction::Retry {
+                delay,
+                event: LlmStreamEvent::ProviderRetryStarted {
+                    attempt,
+                    max_attempts,
+                    delay_ms: delay.as_millis() as u64,
+                    reason: reason.unwrap_or_else(|| format!("transient HTTP {status}")),
+                },
+                error: ProviderError::Api {
+                    status: status.as_u16(),
+                    body: format!("HTTP {} (transient, retrying): {}", status.as_u16(), body),
+                },
+            };
+        }
+
+        // Permanent 4xx or exhausted retries on transient 4xx
+        let preview: String = body.chars().take(500).collect();
+        log::debug!("[{tag}] 4xx body (surfacing): {}", preview);
+        RetryAction::Fail {
+            error: ProviderError::Api {
+                status: status.as_u16(),
+                body,
+            },
+            event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+                success: false,
+                attempt,
+            }),
+        }
+    }
+
     /// Send a chat completion (non-streaming) with retry.
     ///
     /// `on_event` is called with `ProviderRetryStarted/Finished`
@@ -541,120 +707,33 @@ impl OpenAICompatibleProvider {
                             ProviderError::Other(format!("Failed to parse response: {e}"))
                         })?;
                         return Ok(Self::convert_response(chat_resp));
-                    } else if status.as_u16() == 429 {
-                        let retry_after = resp
-                            .headers()
-                            .get(RETRY_AFTER)
-                            .and_then(|v| v.to_str().ok())
-                            .and_then(parse_retry_after);
-                        last_error = Some(ProviderError::RateLimit {
-                            message: format!("HTTP 429 (attempt {attempt})"),
-                            retry_after,
-                        });
-                        if attempt < max_attempts {
-                            let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
-                            on_event(LlmStreamEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms: delay.as_millis() as u64,
-                                reason: "rate limited (HTTP 429)".to_string(),
-                            });
-                            tokio::time::sleep(delay).await;
-                        }
-                    } else if status.is_server_error() {
-                        last_error = Some(ProviderError::Api {
-                            status: status.as_u16(),
-                            body: format!("HTTP {} (attempt {})", status.as_u16(), attempt),
-                        });
-                        if attempt < max_attempts {
-                            let delay = self.backoff_delay(attempt);
-                            on_event(LlmStreamEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms: delay.as_millis() as u64,
-                                reason: format!("server error (HTTP {})", status.as_u16()),
-                            });
-                            tokio::time::sleep(delay).await;
-                        }
-                    } else {
-                        let body = resp.text().await.unwrap_or_default();
+                    }
 
-                        // Distinguish transient vs permanent 4xx
-                        // errors. llama-swap returns 400 with an
-                        // empty body during model swap (the proxy
-                        // forwards the request before the upstream
-                        // model is loaded); the same request succeeds
-                        // a few seconds later. These are transient —
-                        // retrying is the right move.
-                        //
-                        // Permanent 4xx errors (context overflow,
-                        // invalid request, missing field) come with
-                        // a JSON body that explains the failure.
-                        // Retrying them just wastes time.
-                        let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
-
-                        if is_transient_4xx && attempt < max_attempts {
-                            let delay = self.backoff_delay(attempt);
-                            // Emit retry event with human-readable reason.
-                            if let Some(reason) = Self::transient_4xx_reason(status.as_u16(), &body)
-                            {
-                                on_event(LlmStreamEvent::ProviderRetryStarted {
-                                    attempt,
-                                    max_attempts,
-                                    delay_ms: delay.as_millis() as u64,
-                                    reason,
-                                });
-                            }
-                            // Log the 4xx body on transient retry too,
-                            // not only when surfacing to the user. Without this,
-                            // cold-model 400s (llama-swap model swap, Jinja exception
-                            // during swap, etc.) leave no diagnostic trace in the
-                            // log even though the retry is firing. Truncated to
-                            // 500 chars to match the surfacing path.
-                            let preview: String = body.chars().take(500).collect();
-                            log::debug!(
-                                "[chat_with_retry] transient 4xx body (HTTP {}, attempt {}/{}): {}",
-                                status.as_u16(),
-                                attempt,
-                                max_attempts,
-                                preview
-                            );
-                            log::info!(
-                                "[chat_with_retry] transient 4xx (HTTP {}), \
-                                 retrying in {}ms (attempt {}/{})",
-                                status.as_u16(),
-                                delay.as_millis(),
-                                attempt,
-                                max_attempts
-                            );
-                            last_error = Some(ProviderError::Api {
-                                status: status.as_u16(),
-                                body: format!(
-                                    "HTTP {} (transient, retrying): {}",
-                                    status.as_u16(),
-                                    body
-                                ),
-                            });
-                            tokio::time::sleep(delay).await;
-                            continue;
-                        }
-
-                        // Log the raw 4xx body when we are about to
-                        // surface it to the user
-                        // (i.e. either the error is permanent, or
-                        // we've exhausted max_retries on a transient
-                        // one). Truncated to 500 chars.
-                        let preview: String = body.chars().take(500).collect();
-                        log::debug!("[chat_with_retry] 4xx body: {}", preview);
-
-                        on_event(LlmStreamEvent::ProviderRetryFinished {
-                            success: false,
+                    let action = self
+                        .classify_retry_response(
+                            status,
+                            resp,
                             attempt,
-                        });
-                        return Err(ProviderError::Api {
-                            status: status.as_u16(),
-                            body,
-                        });
+                            max_attempts,
+                            "chat_with_retry",
+                        )
+                        .await;
+                    match action {
+                        RetryAction::Retry {
+                            delay,
+                            event,
+                            error,
+                        } => {
+                            on_event(event);
+                            last_error = Some(error);
+                            tokio::time::sleep(delay).await;
+                        }
+                        RetryAction::Fail { error, event } => {
+                            if let Some(ev) = event {
+                                on_event(ev);
+                            }
+                            return Err(error);
+                        }
                     }
                 }
                 Err(e) => {
@@ -684,10 +763,11 @@ impl OpenAICompatibleProvider {
     /// Send the streaming request, applying retry logic, and collect retry
     /// events so they can be yielded at the head of the event stream.
     ///
-    /// Retry visibility for the streaming path. The HTTP retry loop
-    /// is identical to `chat_with_retry`, but instead of calling a callback
-    /// it appends `ProviderRetryStarted/Finished` events to a vector that is
-    /// prepended to the SSE event stream.
+    /// Retry visibility for the streaming path. Uses the shared
+    /// `classify_retry_response` to decide retry vs fail (same logic
+    /// as `chat_with_retry`), but instead of calling a callback it
+    /// appends `ProviderRetryStarted/Finished` events to a vector that
+    /// is prepended to the SSE event stream.
     async fn send_stream_request(
         &self,
         request: &ChatRequest,
@@ -719,108 +799,27 @@ impl OpenAICompatibleProvider {
                         break r;
                     }
 
-                    let retry_after = r
-                        .headers()
-                        .get(RETRY_AFTER)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(parse_retry_after);
-                    let body = r.text().await.unwrap_or_default();
-
-                    if status.as_u16() == 429 {
-                        if attempt < max_attempts {
-                            let delay = retry_after.unwrap_or(self.backoff_delay(attempt));
-                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms: delay.as_millis() as u64,
-                                reason: "rate limited (HTTP 429)".to_string(),
-                            });
-                            log::info!(
-                                "[chat_stream] HTTP 429, retrying in {}ms (attempt {}/{})",
-                                delay.as_millis(),
-                                attempt,
-                                max_attempts
-                            );
+                    let action = self
+                        .classify_retry_response(status, r, attempt, max_attempts, "chat_stream")
+                        .await;
+                    match action {
+                        RetryAction::Retry {
+                            delay,
+                            event,
+                            error: _,
+                        } => {
+                            retry_events.push(event);
                             tokio::time::sleep(delay).await;
                             attempt += 1;
                             continue;
                         }
-                        return Err(ProviderError::RateLimit {
-                            message: body,
-                            retry_after,
-                        });
-                    }
-
-                    if status.is_server_error() {
-                        if attempt < max_attempts {
-                            let delay = self.backoff_delay(attempt);
-                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms: delay.as_millis() as u64,
-                                reason: format!("server error (HTTP {})", status.as_u16()),
-                            });
-                            log::info!(
-                                "[chat_stream] {} (server error), retrying in {}ms (attempt {}/{})",
-                                status.as_u16(),
-                                delay.as_millis(),
-                                attempt,
-                                max_attempts
-                            );
-                            tokio::time::sleep(delay).await;
-                            attempt += 1;
-                            continue;
+                        RetryAction::Fail { error, event } => {
+                            if let Some(ev) = event {
+                                retry_events.push(ev);
+                            }
+                            return Err(error);
                         }
-                        return Err(ProviderError::Api {
-                            status: status.as_u16(),
-                            body: format!("HTTP {} (server error)", status.as_u16()),
-                        });
                     }
-
-                    let is_transient_4xx = Self::is_transient_4xx_error(status.as_u16(), &body);
-                    if is_transient_4xx && attempt < max_attempts {
-                        let delay = self.backoff_delay(attempt);
-                        if let Some(reason) = Self::transient_4xx_reason(status.as_u16(), &body) {
-                            retry_events.push(LlmStreamEvent::ProviderRetryStarted {
-                                attempt,
-                                max_attempts,
-                                delay_ms: delay.as_millis() as u64,
-                                reason,
-                            });
-                        }
-                        let preview: String = body.chars().take(500).collect();
-                        log::debug!(
-                            "[chat_stream] transient 4xx body (HTTP {}, attempt {}/{}): {}",
-                            status.as_u16(),
-                            attempt,
-                            max_attempts,
-                            preview
-                        );
-                        log::info!(
-                            "[chat_stream] transient 4xx (HTTP {}), \
-                             retrying in {}ms (attempt {}/{})",
-                            status.as_u16(),
-                            delay.as_millis(),
-                            attempt,
-                            max_attempts
-                        );
-                        tokio::time::sleep(delay).await;
-                        attempt += 1;
-                        continue;
-                    }
-
-                    let preview: String = body.chars().take(500).collect();
-                    log::debug!("[chat_stream] 4xx body (surfacing): {}", preview);
-                    if attempt > 1 {
-                        retry_events.push(LlmStreamEvent::ProviderRetryFinished {
-                            success: false,
-                            attempt,
-                        });
-                    }
-                    return Err(ProviderError::Api {
-                        status: status.as_u16(),
-                        body,
-                    });
                 }
                 Err(e) => {
                     let err = classify_reqwest_error(e);
