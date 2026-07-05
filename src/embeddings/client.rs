@@ -22,7 +22,7 @@ pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
 const EMBEDDING_TIMEOUT_SECS: u64 = 30;
 
 /// Characters per token ratio for estimating context overflow.
-const CHARS_PER_TOKEN: f32 = 3.0;
+const CHARS_PER_TOKEN: f32 = 2.0;
 
 /// Prefix used for nomic-embed-text models.
 const EMBEDDING_PREFIX_TOKENS: usize = 30;
@@ -74,6 +74,9 @@ impl EmbeddingClient {
             || error_lower.contains("maximum context")
             || error_lower.contains("token limit")
             || error_lower.contains("sequence length")
+            || error_lower.contains("batch size")
+            || error_lower.contains("too large to process")
+            || error_lower.contains("too long")
     }
 
     /// Get the context length for the embedding model.
@@ -307,16 +310,25 @@ mod tests {
         assert!(EmbeddingClient::is_context_exceeded(
             "sequence length exceeded"
         ));
+        // BeeLama/llama.cpp batch size error
+        assert!(EmbeddingClient::is_context_exceeded(
+            "input (544 tokens) is too large to process. increase the physical batch size (current batch size: 512)"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded(
+            "input is too large to process"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded("sequence is too long"));
         assert!(!EmbeddingClient::is_context_exceeded("connection refused"));
         assert!(!EmbeddingClient::is_context_exceeded("network error"));
     }
 
     #[test]
     fn test_estimate_tokens() {
+        // CHARS_PER_TOKEN = 2.0
         assert_eq!(EmbeddingClient::estimate_tokens(""), 0);
-        assert_eq!(EmbeddingClient::estimate_tokens("abc"), 1);
-        assert_eq!(EmbeddingClient::estimate_tokens("abcdefgh"), 3);
-        assert_eq!(EmbeddingClient::estimate_tokens("a"), 1);
+        assert_eq!(EmbeddingClient::estimate_tokens("ab"), 1); // 2/2 = 1
+        assert_eq!(EmbeddingClient::estimate_tokens("abcdefgh"), 4); // 8/2 = 4
+        assert_eq!(EmbeddingClient::estimate_tokens("a"), 1); // 1/2 = 0.5 → ceil = 1
     }
 
     #[test]
@@ -335,7 +347,7 @@ mod tests {
     fn test_context_safety_margin_values() {
         assert_eq!(EMBEDDING_PREFIX_TOKENS, 30);
         assert!((CONTEXT_SAFETY_MARGIN - 0.20).abs() < f32::EPSILON);
-        assert!((CHARS_PER_TOKEN - 3.0).abs() < f32::EPSILON);
+        assert!((CHARS_PER_TOKEN - 2.0).abs() < f32::EPSILON);
     }
 
     #[test]
