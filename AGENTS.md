@@ -263,10 +263,11 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 **For the complete review workflow including review response format and project-specific review patterns, load the `pr-workflow` and `code-review` skills.**
 
 Critical rules for reviews:
-- Always use `last: 50` (not `first: 30`) to get ALL review threads
-- Respond to EACH thread individually (never a single summary comment)
-- **NEVER create a single large comment addressing all review points.** Reply to each review thread inline. If inline replies are not possible, create ONE comment per review point with a blockquote of the original.
-- Use response prefixes: ✅ Resolvido, ✅ Verificado, 📋, ❌, ❓
+ - Always use `last: 50` (not `first: 30`) to get ALL review threads
+ - Respond to EACH thread individually (never a single summary comment)
+ - **NEVER create a single large comment addressing all review points.** Reply to each review thread inline. If inline replies are not possible, create ONE comment per review point with a blockquote of the original.
+ - Use response prefixes: ✅ Resolvido, ✅ Verificado, 📋, ❌, ❓
+ - **Reply + Resolve are inseparable.** After replying to a review thread inline, you MUST resolve the thread in the same session via `resolveReviewThread`. A reply without a resolve leaves the thread OPEN, which reviewers interpret as "the issue still exists." Before considering a review-response session complete, verify that ALL threads are resolved via the GraphQL check in the `code-review` skill. A session is NOT complete until every thread is resolved.
 
 ## Never Leave Things for Later
 

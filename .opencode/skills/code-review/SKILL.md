@@ -236,6 +236,49 @@ curl -s -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/j
 
 Do NOT leave threads unresolved after addressing them. Resolved threads signal review progress.
 
+## ⛔ CRITICAL: Reply + Resolve = Inseparable
+
+Replying to a review thread inline with `in_reply_to` is ONLY the first half of the work. The second half — resolving the thread — is **mandatory and non-negotiable**. A reply without a resolve leaves the thread OPEN, which reviewers interpret as "the issue still exists."
+
+**The rule: after you reply to a thread, you MUST resolve it in the same session.** No exceptions. Do not wait for the reviewer to resolve it. Do not leave it for later. Do not post a PR-level summary comment and consider the work done.
+
+### Mandatory Final Check
+
+Before considering a review-response session complete, run this verification:
+
+```bash
+TOKEN=$(gh auth token)
+curl -s -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+  "https://api.github.com/graphql" \
+  -d '{"query": "{ repository(owner: \"luksamuk\", name: \"sprachspiel\") { pullRequest(number: PR_NUMBER) { reviewThreads(first: 50) { nodes { id isResolved path } } } } }"}' | \
+  python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+threads = d['data']['repository']['pullRequest']['reviewThreads']['nodes']
+open_threads = [t for t in threads if not t['isResolved']]
+if open_threads:
+    print(f'⚠️  {len(open_threads)} UNRESOLVED threads remain:')
+    for t in open_threads:
+        print(f'  {t[\"id\"]} {t[\"path\"]}')
+    sys.exit(1)
+else:
+    print(f'✅ All {len(threads)} threads resolved.')
+"
+```
+
+If this shows ANY unresolved threads, resolve them before finishing. A review-response session is NOT complete until this script prints "✅ All N threads resolved."
+
+### Common Failure Pattern (DO NOT DO THIS)
+
+1. Read review comments
+2. Make code fixes
+3. Reply to each thread inline with `in_reply_to` ✅
+4. Post a PR-level summary comment with a table of all fixes ❌ (unnecessary — the inline replies ARE the response)
+5. Consider the work done ❌ (threads are still OPEN — reviewers see "unresolved")
+6. Reviewer runs a new review, sees OPEN threads, concludes nothing was addressed
+
+The correct flow is: **fix → reply inline → resolve thread → verify all resolved.**
+
 ---
 
 # Part 4: Project-Specific Review Patterns
