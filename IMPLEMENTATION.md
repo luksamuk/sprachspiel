@@ -4648,6 +4648,28 @@ Re-testing of PR #207 (round 3, commit `e24a146`) confirmed BUG-2 (thinking bloc
 
 ---
 
+#### Embedding Fallback + Chunk Sizing Fix (R5 follow-up)
+
+**Status:** ✅ COMPLETED
+**Commits:** `fe7c267` (is_context_exceeded + chunk sizing), `7dfd0d4` (find_sentence_boundary min limit)
+
+When switching the embedding model to `lfm2.5-embed-350m` (512-token batch size), 38 chunks failed with `input (544 tokens) is too large to process. increase the physical batch size`. The root cause was in the sprachspiel embedding pipeline, not the backend:
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| Fallback never triggered | `is_context_exceeded()` only recognized `context_length`, `context length`, `maximum context`, `token limit`, `sequence length` — NOT the BeeLama/llama.cpp error format (`batch size`, `too large to process`) | Added `batch size`, `too large to process`, `too long` to the pattern list (`client.rs:70-77`) |
+| Chunks oversized | `DEFAULT_CHARS_PER_TOKEN=3.0` and `DEFAULT_CHUNK_PERCENT=0.80` generated chunks of 1132 chars (~377 estimated tokens) that the real tokenizer counted as 544+ | Reduced to `2.0` and `0.65` — new max_chars = 613 (~307 estimated tokens, headroom for 50% tokenizer imprecision) |
+| Chunk explosion | `find_sentence_boundary()` could shrink chunks to ~185 chars (one sentence) when the nearest boundary was found early, generating 79 chunks for a 10KB text (exceeding `MAX_CHUNKS_PER_ITEM=64`) | Added `min_chunk_size` parameter (60% of `max_chars`) — the function refuses to return a boundary that would shrink the chunk below this minimum |
+
+**SOTA evolution mapping** (deferred to future PRs):
+- **Token-aware chunking** (replace chars/token estimate with real tokenizer): encaixa em W4.4 (#107) ou follow-up de #123
+- **Recursive character splitting** (`\n\n` → `\n` → `. ` → ` `): já mapeado no M4 SemanticChunker
+- **Document-aware chunking**: já mapeado no M4 SemanticChunker, after milestone 2
+
+**Verification:** 1555 lib tests pass (+2 new: `test_sentence_boundary_respects_min_chunk_size`, `test_repetitive_text_no_chunk_explosion`).
+
+---
+
 #### Remove ollama-rs — #123 [M1]
 
 **Status:** 📋 PLANNED  
@@ -7505,13 +7527,19 @@ timeout_ms = 2000
 ### Context-Aware Chunking (SemanticChunker) [M4]
 
 **Status:** 📋 DRAFT
-**Depends on:** None (replaces current TokenChunker)
+**Depends on:** None (replaces current TokenChunker). Token-aware chunking (Prioridade 3) can be encaixado em W4.4 (#107) ou como follow-up de #123.
 **Estimated effort:** 3-5 days
 **Priority within M4:** After Attention Priming
 
 **Goal:** Replace fixed-size chunking with semantic chunking that respects paragraph/sentence boundaries. Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed (Shaukat et al. 2026). Config: `[embedding] chunking = "semantic" | "fixed"`.
 
-**Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading).
+**Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading). This covers SOTA Prioridade 4 (recursive character splitting with separator hierarchy) and document-aware chunking (headers/code blocks).
+
+**SOTA evolution mapping (2025-2026 research):**
+- **Prioridade 3 (token-aware chunking):** Replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs. Encaixa em W4.4 (#107 — Embedding provider abstraction) ou como follow-up de #123 (Remove ollama-rs).
+- **Prioridade 4 (recursive character splitting):** Already covered by this M4 draft — the `\n\n` → `\n` → sentence → token hierarchy IS recursive character splitting.
+- **Document-aware chunking:** Already covered by this M4 draft ("Preserve section metadata (nearest heading)"). After milestone 2 (TUI).
+- **Semantic chunking (embedding similarity):** NOT recommended for sprachspiel — 4-5x indexing cost, not justified for a local chat app.
 
 **Source:** RAG improvement research (internal analysis, Section 1)
 
