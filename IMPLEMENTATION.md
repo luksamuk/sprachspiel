@@ -179,7 +179,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
   - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision ✅ COMPLETED
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
-  - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support
+  - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support. **Includes token-aware chunking** (Prioridade 3 SOTA): replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs (chars/token imprecision). See "Embedding Fallback + Chunk Sizing Fix" section for context.
   - **W4.5** (#151): T3-Phase0 (Preserve Thinking Content) — standalone PR, no dependency on #107 or #136. Re-embedding uses existing `/reindex --yes` recovery pipeline. Includes continuation thinking fix.
   - **W4.6** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
   - **W4.7** (#136): Geometry-Aware Embedding Configuration and Model Registry — depends on #106 (configurable model) and #135 (d_eff measurements). Rewritten scope: `embedding_models` table, diagnostics integration, `recommended_dimensions()`, dynamic vec0 dimensions. See Decision Record D-10 and D-11.
@@ -4662,7 +4662,7 @@ When switching the embedding model to `lfm2.5-embed-350m` (512-token batch size)
 | Chunk explosion | `find_sentence_boundary()` could shrink chunks to ~185 chars (one sentence) when the nearest boundary was found early, generating 79 chunks for a 10KB text (exceeding `MAX_CHUNKS_PER_ITEM=64`) | Added `min_chunk_size` parameter (60% of `max_chars`) — the function refuses to return a boundary that would shrink the chunk below this minimum |
 
 **SOTA evolution mapping** (deferred to future PRs):
-- **Token-aware chunking** (replace chars/token estimate with real tokenizer): encaixa em W4.4 (#107) ou follow-up de #123
+- **Token-aware chunking** (replace chars/token estimate with real tokenizer): confirmed in W4.4 (#107)
 - **Recursive character splitting** (`\n\n` → `\n` → `. ` → ` `): já mapeado no M4 SemanticChunker
 - **Document-aware chunking**: já mapeado no M4 SemanticChunker, after milestone 2
 
@@ -7527,7 +7527,7 @@ timeout_ms = 2000
 ### Context-Aware Chunking (SemanticChunker) [M4]
 
 **Status:** 📋 DRAFT
-**Depends on:** None (replaces current TokenChunker). Token-aware chunking (Prioridade 3) can be encaixado em W4.4 (#107) ou como follow-up de #123.
+**Depends on:** None (replaces current TokenChunker). Token-aware chunking (Prioridade 3) confirmed in W4.4 (#107).
 **Estimated effort:** 3-5 days
 **Priority within M4:** After Attention Priming
 
@@ -7536,7 +7536,7 @@ timeout_ms = 2000
 **Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading). This covers SOTA Prioridade 4 (recursive character splitting with separator hierarchy) and document-aware chunking (headers/code blocks).
 
 **SOTA evolution mapping (2025-2026 research):**
-- **Prioridade 3 (token-aware chunking):** Replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs. Encaixa em W4.4 (#107 — Embedding provider abstraction) ou como follow-up de #123 (Remove ollama-rs).
+- **Prioridade 3 (token-aware chunking):** Replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs. **Confirmed in W4.4 (#107 — Embedding provider abstraction)** as part of the provider abstraction work.
 - **Prioridade 4 (recursive character splitting):** Already covered by this M4 draft — the `\n\n` → `\n` → sentence → token hierarchy IS recursive character splitting.
 - **Document-aware chunking:** Already covered by this M4 draft ("Preserve section metadata (nearest heading)"). After milestone 2 (TUI).
 - **Semantic chunking (embedding similarity):** NOT recommended for sprachspiel — 4-5x indexing cost, not justified for a local chat app.
