@@ -157,7 +157,13 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
 
         // Adjust end to sentence boundary if possible (don't break in middle of sentence)
         if end < text_len {
-            end = find_sentence_boundary(text, end);
+            // Minimum chunk size: 60% of max_chars. Prevents sentence-boundary
+            // adjustment from creating too many small chunks (which would exceed
+            // MAX_CHUNKS_PER_ITEM). If no boundary is found within this limit,
+            // use the full max_chars position (may break mid-sentence, but
+            // that's preferable to a chunk explosion).
+            let min_chunk_size = (config.max_chars as f32 * 0.60) as usize;
+            end = find_sentence_boundary(text, end, pos, min_chunk_size);
             // Ensure it's still a valid boundary after sentence adjustment
             end = find_char_boundary(text, end);
         }
@@ -224,10 +230,27 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
 /// - Question mark or exclamation mark
 /// - Newline
 ///
+/// `chunk_start` is the byte offset where the current chunk begins, and
+/// `min_chunk_size` is the minimum acceptable chunk size in bytes. The
+/// function will NOT return a boundary that would shrink the chunk below
+/// `chunk_start + min_chunk_size`. This prevents the sentence-boundary
+/// adjustment from creating too many small chunks (which would exceed
+/// `MAX_CHUNKS_PER_ITEM`). If no boundary is found within the valid
+/// range, returns `target_pos` (no adjustment — may break mid-sentence,
+/// but that's preferable to a chunk explosion).
+///
 /// Returns position after boundary, or original position if no boundary found.
-fn find_sentence_boundary(text: &str, target_pos: usize) -> usize {
-    // Search backwards from target_pos for sentence boundary
-    let search_start = target_pos.saturating_sub(100); // Look back up to 100 chars
+fn find_sentence_boundary(
+    text: &str,
+    target_pos: usize,
+    chunk_start: usize,
+    min_chunk_size: usize,
+) -> usize {
+    // Minimum position the boundary can be at (don't shrink chunk below min_chunk_size)
+    let min_pos = chunk_start.saturating_add(min_chunk_size);
+    // Search backwards from target_pos for sentence boundary,
+    // but never below min_pos
+    let search_start = min_pos.max(target_pos.saturating_sub(100));
 
     // Search from target_pos backwards to find good boundary
     for pos in (search_start..target_pos).rev() {
@@ -357,11 +380,42 @@ mod tests {
     fn test_sentence_boundary() {
         let text = "Hello world. This is a test. Another sentence here.";
 
-        // Find boundary near position 15
-        let boundary = find_sentence_boundary(text, 15);
+        // Find boundary near position 15, chunk starts at 0, no min size
+        let boundary = find_sentence_boundary(text, 15, 0, 0);
 
         // Should find the period after "world"
         assert!(boundary > 0);
+    }
+
+    #[test]
+    fn test_sentence_boundary_respects_min_chunk_size() {
+        // When min_chunk_size is set, the boundary should not shrink
+        // the chunk below that minimum.
+        let text = "Short. This is a longer sentence that continues for a while here. And another.";
+        // target_pos=70, chunk_start=0, min_chunk_size=50
+        // The boundary after "Short." is at ~7, which is < min_pos=50
+        // So it should NOT use that boundary — should find a later one
+        // or return target_pos.
+        let boundary = find_sentence_boundary(text, 70, 0, 50);
+        assert!(
+            boundary >= 50,
+            "boundary should not shrink chunk below min_chunk_size, got {boundary}"
+        );
+    }
+
+    #[test]
+    fn test_repetitive_text_no_chunk_explosion() {
+        // Regression test for the smoke test bug: with the reduced
+        // max_chars (613 for a 512-token model), a repetitive ~10KB
+        // text should NOT exceed MAX_CHUNKS_PER_ITEM (64).
+        let text = "This is a repetitive sentence. ".repeat(350); // ~10.5KB
+        let config = DynamicChunkConfig::new(512);
+        let chunks = chunk_text_with_config(&text, &ChunkConfig::from(&config));
+        assert!(
+            chunks.len() <= 64,
+            "should not exceed MAX_CHUNKS_PER_ITEM (64), got {}",
+            chunks.len()
+        );
     }
 
     #[test]
