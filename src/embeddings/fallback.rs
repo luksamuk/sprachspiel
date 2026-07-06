@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use super::chunk_config::DynamicChunkConfig;
 use super::chunker::{ChunkConfig, chunk_text_with_config};
-use super::client::{EmbeddingClient, EmbeddingError};
+use super::client::{CHARS_PER_TOKEN, EmbeddingClient, EmbeddingError};
 use crate::db::Database;
 
 /// Maximum recursive divisions (512→256→128→64→32 tokens).
@@ -607,11 +607,10 @@ fn create_item_chunks_atomically(
 
 /// Estimate tokens from content length.
 ///
-/// Uses conservative estimate of 2 chars/token (Portuguese/code average).
-/// Keep in sync with CHARS_PER_TOKEN in client.rs and
-/// DEFAULT_CHARS_PER_TOKEN in chunk_config.rs.
+/// Uses `CHARS_PER_TOKEN` from `client.rs` (the single source of truth
+/// for the chars/token ratio).
 fn estimate_tokens(content_len: usize) -> usize {
-    (content_len as f32 / 2.0).ceil() as usize
+    (content_len as f32 / CHARS_PER_TOKEN).ceil() as usize
 }
 
 #[cfg(test)]

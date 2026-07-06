@@ -22,7 +22,7 @@ pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
 const EMBEDDING_TIMEOUT_SECS: u64 = 30;
 
 /// Characters per token ratio for estimating context overflow.
-const CHARS_PER_TOKEN: f32 = 2.0;
+pub(crate) const CHARS_PER_TOKEN: f32 = 2.0;
 
 /// Prefix used for nomic-embed-text models.
 const EMBEDDING_PREFIX_TOKENS: usize = 30;

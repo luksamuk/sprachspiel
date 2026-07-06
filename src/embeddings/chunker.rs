@@ -157,7 +157,7 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
 
         // Adjust end to sentence boundary if possible (don't break in middle of sentence)
         if end < text_len {
-            // Minimum chunk size: 60% of max_chars. Prevents sentence-boundary
+            // Minimum chunk size: 70% of max_chars. Prevents sentence-boundary
             // adjustment from creating too many small chunks (which would exceed
             // MAX_CHUNKS_PER_ITEM). If no boundary is found within this limit,
             // use the full max_chars position (may break mid-sentence, but
