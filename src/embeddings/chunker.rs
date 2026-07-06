@@ -162,7 +162,7 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
             // MAX_CHUNKS_PER_ITEM). If no boundary is found within this limit,
             // use the full max_chars position (may break mid-sentence, but
             // that's preferable to a chunk explosion).
-            let min_chunk_size = (config.max_chars as f32 * 0.60) as usize;
+            let min_chunk_size = (config.max_chars as f32 * 0.70) as usize;
             end = find_sentence_boundary(text, end, pos, min_chunk_size);
             // Ensure it's still a valid boundary after sentence adjustment
             end = find_char_boundary(text, end);
@@ -414,6 +414,23 @@ mod tests {
         assert!(
             chunks.len() <= 64,
             "should not exceed MAX_CHUNKS_PER_ITEM (64), got {}",
+            chunks.len()
+        );
+    }
+
+    #[test]
+    fn test_repetitive_text_no_chunk_explosion_halved() {
+        // Regression test for the fallback recursive path: when the
+        // embedding model rejects a chunk and the fallback halves the
+        // context length to 256, the reduced max_chars (280) combined
+        // with overlap can cause a chunk explosion if min_chunk_size
+        // is too low. With 70% min, this should stay within 64 chunks.
+        let text = "This is a repetitive sentence. ".repeat(350); // ~10.5KB
+        let config = DynamicChunkConfig::new(256);
+        let chunks = chunk_text_with_config(&text, &ChunkConfig::from(&config));
+        assert!(
+            chunks.len() <= 64,
+            "should not exceed MAX_CHUNKS_PER_ITEM (64) with halved context, got {}",
             chunks.len()
         );
     }
