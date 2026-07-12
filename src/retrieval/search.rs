@@ -10,7 +10,6 @@
 //! for rendering via `ChatView`. This separation keeps search logic independent of rendering.
 
 use chrono::{DateTime, Utc};
-use ollama_rs::Ollama;
 
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
@@ -160,7 +159,9 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
 pub async fn run_search(
     db: &Database,
-    ollama: &Ollama,
+    ollama: &crate::provider::Ollama,
+    embedding_model_id: &str,
+    embedding_dimensions: u32,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,
@@ -174,7 +175,11 @@ pub async fn run_search(
     );
 
     // Generate embedding for query
-    let embedding_client = EmbeddingClient::new(ollama.clone());
+    let embedding_client = EmbeddingClient::with_model(
+        ollama.clone(),
+        embedding_model_id.to_string(),
+        embedding_dimensions,
+    );
 
     log::debug!("Generating embedding for query...");
     let query_result = match embedding_client.embed(query).await {
@@ -192,8 +197,8 @@ pub async fn run_search(
     // Perform hybrid search using content_items (V7)
     log::debug!("Running hybrid search on content_items...");
     let settings = crate::settings::Settings::load();
-    let keyword_weight = settings.retrieval.keyword_weight;
-    let semantic_weight = settings.retrieval.semantic_weight;
+    let keyword_weight = settings.indexing.keyword_weight;
+    let semantic_weight = settings.indexing.semantic_weight;
     let results = match db.search_messages_hybrid(
         query,
         &embedding,

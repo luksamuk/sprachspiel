@@ -31,7 +31,6 @@ use crate::chat::command_output::{
 use crate::chat::session::ChatSession;
 use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;
-use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
 
 use super::super::tui::markdown::collapse_tables;
@@ -46,15 +45,10 @@ use crate::chat::tui::{TuiTerminal, enter_tui, exit_tui, restore_terminal_on_pan
 /// Owns the `App` state and the terminal. All `ChatView` method calls
 /// add messages to the App's message list and trigger a re-render.
 /// The `App` handles all state (messages, input, status bar, theme).
-///
-/// Tool call display is routed through a global callback so that
-/// `debug_tools::log_tool_call` output appears in the chat area
-/// instead of corrupting the alternate screen with raw stderr.
 pub struct RatatuiView {
     app: App,
     terminal: TuiTerminal,
     welcome_shown: bool,
-    tool_call_rx: std::sync::mpsc::Receiver<String>,
     restored: bool,
     /// Sender for embedding progress updates (cloned by background tasks)
     embedding_tx: crate::chat::app::EmbeddingProgressTx,
@@ -67,9 +61,7 @@ impl RatatuiView {
     ///
     /// Initializes the terminal for TUI mode (raw mode, alternate screen),
     /// installs a panic hook that restores the terminal on panic, then creates
-    /// the App state. Also sets up a global callback so that tool call output
-    /// (`debug_tools::log_tool_call`) is routed through the chat area instead
-    /// of corrupting the alternate screen with raw stderr.
+    /// the App state.
     /// Call `restore()` when done to clean up the terminal.
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
         // Cannot proceed without terminal — fatal error is appropriate here
@@ -85,14 +77,6 @@ impl RatatuiView {
 
         let (app, embedding_tx, async_message_tx) = App::with_embedding_channel(theme, model_names);
 
-        // Set up tool call callback: route debug_tools output to the chat area
-        // instead of raw stderr (which would corrupt the TUI alternate screen).
-        let (tool_call_tx, tool_call_rx) = std::sync::mpsc::channel::<String>();
-        let callback = std::sync::Arc::new(move |line: &str| {
-            let _ = tool_call_tx.send(line.to_string());
-        }) as std::sync::Arc<dyn Fn(&str) + Sync + Send>;
-        debug_tools::set_tui_callback(Some(callback));
-
         // Suppress stderr logging in TUI mode — all log output goes to the file.
         // This prevents ANSI escape codes from corrupting the alternate screen.
         crate::logging::set_tui_mode(true);
@@ -101,7 +85,6 @@ impl RatatuiView {
             app,
             terminal,
             welcome_shown: false,
-            tool_call_rx,
             restored: false,
             embedding_tx,
             async_message_tx,
@@ -147,13 +130,11 @@ impl RatatuiView {
     ///
     /// Must be called before exiting to prevent broken terminal state.
     /// Sets the `restored` flag so that `Drop` does not double-restore.
-    /// Also clears the global TUI callback and restores stderr logging.
+    /// Also restores stderr logging.
     pub fn restore(mut self) {
         self.restored = true;
         // Restore stderr logging — TUI mode is ending
         crate::logging::set_tui_mode(false);
-        // Clear the TUI callback so tool calls go back to stderr
-        debug_tools::set_tui_callback(None);
         let _ = exit_tui(&mut self.terminal);
         let _ = self.app.save_history();
     }
@@ -164,26 +145,8 @@ impl RatatuiView {
     /// This is crucial for spinner visibility during LLM processing: even
     /// though the main event loop is blocked on `handle_user_message_tui`,
     /// each `show_*` method calls `render()`, which ticks the spinner.
-    ///
-    /// Note: tool call messages from `tool_call_rx` are NOT drained here.
-    /// They are drained in the event loop via `drain_tool_messages()` so
-    /// that ordering relative to LLM events can be controlled.
     pub fn render(&mut self) {
         let _ = self.app.render(&mut self.terminal);
-    }
-
-    /// Drain pending tool call messages from the global callback channel.
-    ///
-    /// Returns a Vec of tool call log lines that should be inserted into
-    /// the chat area. Called from the event loop (not from render) so that
-    /// tool messages can be inserted in the correct position relative to
-    /// LLM events (before the streaming zone when LLM is active).
-    pub fn drain_tool_messages(&mut self) -> Vec<String> {
-        let mut messages = Vec::new();
-        while let Ok(line) = self.tool_call_rx.try_recv() {
-            messages.push(line);
-        }
-        messages
     }
 }
 
@@ -204,7 +167,10 @@ impl ChatView for RatatuiView {
         // Error messages may contain ANSI from format_tool_error or other sources
         // that assume a terminal, not a TUI widget.
         let clean = strip_ansi_codes(error);
-        self.app.add_message(ChatMessage::error(clean));
+        // Inline error — no separator banner. The ⛔ emoji is enough to
+        // distinguish it from normal messages in the scrollback.
+        self.app
+            .add_message(ChatMessage::error(format!("⛔ {clean}")));
         self.render();
     }
 
@@ -319,10 +285,10 @@ impl ChatView for RatatuiView {
                 self.add_system_message(&format!("⚠️ {}", msg));
             }
             CommandOutput::Error(msg) => {
-                // Strip ANSI codes — the TUI renderer applies its own styling.
-                // Error messages may contain ANSI from format_tool_error or other sources.
-                let clean = strip_ansi_codes(msg);
-                self.app.add_message(ChatMessage::error(clean));
+                // Inline error — no separator banner. The ⛔ emoji is
+                // enough to distinguish it in the scrollback.
+                self.app
+                    .add_message(ChatMessage::error(format!("⛔ {}", strip_ansi_codes(msg))));
             }
             CommandOutput::Progress(msg) => {
                 self.add_system_message(&format!("⏳ {}", msg));
@@ -533,10 +499,15 @@ impl RatatuiView {
         self.render();
     }
 
-    /// Append a streaming token to the chat area.
+    /// Set or clear the transient status-bar overlay (retry warning).
+    pub fn set_status_overlay(&mut self, overlay: Option<String>) {
+        self.app.set_status_overlay(overlay);
+        self.render();
+    }
+
+    /// Append a streaming token to the current live turn.
     ///
-    /// Creates or appends to an `AssistantStreaming` message.
-    /// Called for each token chunk from the LLM during streaming.
+    /// Delegates to `App::append_stream_token` and transitions state.
     pub fn stream_token(&mut self, token: &str) {
         // If we're in Thinking or ToolCall state, transition to Streaming
         if self.app.llm_state() == LlmState::Thinking || self.app.llm_state() == LlmState::ToolCall
@@ -547,10 +518,9 @@ impl RatatuiView {
         self.render();
     }
 
-    /// Append a streaming thinking token to the chat area.
+    /// Append a streaming thinking token to the current live turn.
     ///
-    /// Creates or appends to a `Thinking` message.
-    /// Called for each thinking chunk from the LLM during streaming.
+    /// Delegates to `App::append_stream_thinking` and transitions state.
     pub fn stream_thinking(&mut self, token: &str) {
         // If we're in Idle or ToolCall state, transition to Thinking
         if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall {
@@ -562,9 +532,7 @@ impl RatatuiView {
 
     /// Finalize the streaming response.
     ///
-    /// Replaces the `AssistantStreaming` message with the final
-    /// markdown-rendered `Assistant` message. Shows token metrics
-    /// if available. Transitions LLM state to Idle.
+    /// Delegates to `App::finalize_stream`. Shows token metrics if available.
     pub fn stream_done(
         &mut self,
         content: &str,

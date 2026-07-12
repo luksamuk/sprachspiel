@@ -7,7 +7,7 @@
 //! - Recent messages before current query
 //! - Current query at the END
 
-use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::generation::chat::{ChatMessage, MessageRole as OllamaMessageRole};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -146,8 +146,8 @@ impl Default for RetrievalConfig {
             relevant_count: RELEVANT_MESSAGES_COUNT,
             recent_count: RECENT_MESSAGES_COUNT,
             min_query_interval_secs: MIN_RETRIEVAL_INTERVAL_SECS,
-            keyword_weight: settings.retrieval.keyword_weight,
-            semantic_weight: settings.retrieval.semantic_weight,
+            keyword_weight: settings.indexing.keyword_weight,
+            semantic_weight: settings.indexing.semantic_weight,
             include_thinking: settings.thinking_trace.enabled,
         }
     }
@@ -291,11 +291,22 @@ pub async fn build_context(
     let mut retrieval_performed = false;
     let mut retrieved_count = 0;
 
-    // 1. System prompt (always first - research shows up to 30% better performance)
-    messages.push(ChatMessage::system(system_prompt.to_string()));
+    // The OpenAI chat-completions spec allows multiple system
+    // messages, but several backends (llama-swap proxying
+    // Qwen3.5, Gemma, some Ollama builds) enforce the "system
+    // message must be at the beginning" Jinja rule strictly and
+    // reject any request with two consecutive system messages
+    // before user/assistant turns.
+    //
+    // Build a single consolidated system prompt up front: the
+    // user's system prompt, plus the RAG retrieved_context and
+    // the compacted summary when present. All system-derived
+    // content lives in *one* system message at index 0.
+    let mut consolidated_system = system_prompt.to_string();
 
-    // 2. Retrieved messages (placed after system to avoid being lost)
-    // Normal retrieval: enabled and meets threshold
+    // 2. Retrieved messages (concatenated into the system
+    //    prompt so the final request has exactly one system
+    //    message).
     let should_retrieve = config.enabled && config.should_retrieve(session, db);
     // Forced retrieval: after /clear, session empty but DB has messages
     let force_retrieve = should_force_retrieve(session, db);
@@ -332,7 +343,15 @@ pub async fn build_context(
             )
             .await
             {
-                messages.push(result.message);
+                // Append the retrieved context to the single
+                // system prompt instead of pushing a separate
+                // system message.
+                let retrieved_text = match result.message.role {
+                    OllamaMessageRole::System => result.message.content,
+                    _ => unreachable!("RetrievalResult.message is always system"),
+                };
+                consolidated_system.push_str("\n\n");
+                consolidated_system.push_str(&retrieved_text);
                 retrieved_count = result.count;
                 retrieval_performed = true;
             }
@@ -342,6 +361,18 @@ pub async fn build_context(
     } else {
         log::debug!("Skipping retrieval: conditions not met");
     }
+
+    // Compacted summary is also system content — fold it
+    // into the consolidated system prompt.
+    if let Some(ref summary) = session.compacted_summary {
+        consolidated_system.push_str(&format!(
+            "\n\n<summary_context>\n{}\n</summary_context>",
+            summary
+        ));
+    }
+
+    // Final single system message at index 0.
+    messages.push(ChatMessage::system(consolidated_system));
 
     // 3. First preserved messages (if middle compaction)
     // According to "lost in the middle" research, important content should be
@@ -358,15 +389,7 @@ pub async fn build_context(
         }
     }
 
-    // 4. Compacted summary (if present)
-    if let Some(ref summary) = session.compacted_summary {
-        messages.push(ChatMessage::system(format!(
-            "<summary_context>\n{}\n</summary_context>",
-            summary
-        )));
-    }
-
-    // 5. Recent messages (before query - avoid "lost in middle")
+    // 4. Recent messages (before query - avoid "lost in middle")
     // Use compacted_range for middle compaction, or messages_sent_to_llm for legacy
     let start_idx = match session.compacted_range {
         Some((_, last_preserved_start)) => {
@@ -964,5 +987,112 @@ mod tests {
             messages[0].thinking, None,
             "thinking should NOT be injected when include_thinking=false"
         );
+    }
+
+    // Regression tests for the consolidated system prompt. Several
+    // backends (Qwen3.5, Gemma with strict Jinja templates,
+    // llama-swap on some models) raise a template-level error like
+    // "System message must be at the beginning" when a request
+    // contains two or more consecutive system messages before the
+    // first user turn.
+    //
+    // build_context() now consolidates the system prompt, the
+    // RAG retrieved_context, and the compacted summary into a
+    // single system message at index 0. Subsequent turns must
+    // never start with a system role.
+
+    #[tokio::test]
+    async fn test_build_context_single_system_message_no_retrieval() {
+        // No DB / no embedding client — retrieval is skipped, so
+        // the only system content is the user's system prompt.
+        let mut session = create_test_session(10);
+        let config = RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        };
+
+        let result = build_context(
+            &session,
+            None,
+            None,
+            "user query",
+            "You are a helpful assistant.",
+            &config,
+        )
+        .await;
+
+        // Exactly one system message.
+        let system_count = result
+            .messages
+            .iter()
+            .filter(|m| m.role == OllamaMessageRole::System)
+            .count();
+        assert_eq!(
+            system_count, 1,
+            "build_context must emit exactly one system message; got {}",
+            system_count
+        );
+        // And that single system message is at index 0.
+        assert_eq!(result.messages[0].role, OllamaMessageRole::System);
+    }
+
+    #[tokio::test]
+    async fn test_build_context_system_message_first() {
+        // With retrieval disabled and no compacted summary, the
+        // first message must be system and the rest must be
+        // user/assistant/tool — never system.
+        let mut session = create_test_session(5);
+        let config = RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        };
+
+        let result =
+            build_context(&session, None, None, "query", "You are helpful.", &config).await;
+
+        // The system message is the user's prompt verbatim.
+        assert_eq!(result.messages[0].role, OllamaMessageRole::System);
+        assert!(result.messages[0].content.contains("You are helpful."));
+        // No other system messages anywhere.
+        for (i, m) in result.messages.iter().enumerate().skip(1) {
+            assert_ne!(
+                m.role,
+                OllamaMessageRole::System,
+                "message at index {i} is system — should not happen",
+                i = i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_context_consolidates_compacted_summary() {
+        // With a compacted summary, the summary content must be
+        // folded into the system message at index 0 — not pushed
+        // as a second system message.
+        let mut session = create_test_session(0);
+        session.set_compacted_summary_with_range(
+            "compacted summary of old messages".into(),
+            Some((0, 5)),
+        );
+        let config = RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        };
+
+        let result = build_context(&session, None, None, "q", "System prompt.", &config).await;
+
+        let system_count = result
+            .messages
+            .iter()
+            .filter(|m| m.role == OllamaMessageRole::System)
+            .count();
+        assert_eq!(
+            system_count, 1,
+            "summary must be folded into the single system message; got {}",
+            system_count
+        );
+        assert!(result.messages[0].content.contains("System prompt."));
+        assert!(result.messages[0].content.contains("compacted summary"));
+        assert!(result.messages[0].content.contains("<summary_context>"));
     }
 }

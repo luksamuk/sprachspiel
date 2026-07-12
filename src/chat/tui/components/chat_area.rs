@@ -87,6 +87,19 @@ pub struct ChatMessage {
     /// Default is 0 for backward compatibility with messages created by helpers
     /// that don't specify a round.
     pub round_index: usize,
+    /// Optional tool-call id associated with this message.
+    ///
+    /// Used by the live-turn model to match tool-call previews, executions,
+    /// and results. `None` for messages that are not tied to a specific tool
+    /// call. This field is ephemeral and not persisted to SQLite.
+    pub tool_call_id: Option<String>,
+    /// Whether this message is still being streamed or is a volatile preview.
+    ///
+    /// Used by the live-turn renderer to distinguish volatile blocks from
+    /// committed history. In the two-buffer model, previews and streaming
+    /// content carry `is_streaming = true`. Visual styling for streaming
+    /// content is reserved for future work; the field is structural groundwork.
+    pub is_streaming: bool,
 }
 
 impl ChatMessage {
@@ -96,6 +109,8 @@ impl ChatMessage {
             msg_type: MessageType::User,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -105,6 +120,8 @@ impl ChatMessage {
             msg_type: MessageType::AssistantStreaming,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -114,6 +131,8 @@ impl ChatMessage {
             msg_type: MessageType::Assistant,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -123,6 +142,8 @@ impl ChatMessage {
             msg_type: MessageType::Thinking,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -132,6 +153,8 @@ impl ChatMessage {
             msg_type: MessageType::Tool,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -141,6 +164,8 @@ impl ChatMessage {
             msg_type: MessageType::System,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -150,6 +175,8 @@ impl ChatMessage {
             msg_type: MessageType::Error,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -162,6 +189,8 @@ impl ChatMessage {
             msg_type: MessageType::Separator,
             content: String::new(),
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 
@@ -174,6 +203,8 @@ impl ChatMessage {
             msg_type: MessageType::Banner,
             content,
             round_index: 0,
+            tool_call_id: None,
+            is_streaming: false,
         }
     }
 

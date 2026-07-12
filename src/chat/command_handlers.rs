@@ -34,13 +34,11 @@ use super::commands::{ChatCommand, FactListScope, SessionForgetTarget};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
-/// Approximate token overhead per tool definition in the system prompt.
-const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
-use crate::tokens::{calculate_context_metrics, estimate_tokens};
+use crate::tokens::{TOKENS_PER_TOOL, calculate_context_metrics, estimate_tokens};
 
 pub use super::session::ChatSession;
 
@@ -873,8 +871,29 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
-    match crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit)
-        .await
+    // Resolve the indexing alias to get the upstream model_id and
+    // dimensions. The search function takes both — the model_id is the
+    // name passed to /v1/embeddings and the dimensions size the vector
+    // store.
+    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
+        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Cannot run /search without a valid [indexing] config: {e}"
+            ))];
+        }
+    };
+
+    match crate::retrieval::run_search(
+        &db,
+        &state.ollama,
+        &embedding_model_id,
+        embedding_dimensions,
+        &query,
+        Some(&conversation_id),
+        limit,
+    )
+    .await
     {
         SearchOutcome::Results(results) => {
             if results.is_empty() {
@@ -963,7 +982,22 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
-    let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
+    // Resolve the indexing alias to get the upstream model_id and
+    // dimensions.
+    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
+        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Cannot run /reindex without a valid [indexing] config: {e}"
+            ))];
+        }
+    };
+
+    let embedding_client = crate::embeddings::EmbeddingClient::with_model(
+        state.ollama.clone(),
+        embedding_model_id,
+        embedding_dimensions,
+    );
     let embedding_client = Arc::new(embedding_client);
     let progress_tx = state.session.embedding_tx.clone();
 
@@ -2120,7 +2154,7 @@ pub async fn handle_model_switch(
 
     let result = match switch_model(
         model_name,
-        &state.ollama,
+        &state.settings,
         current_capabilities,
         state.session.think,
         state.tools_active,
@@ -2133,6 +2167,12 @@ pub async fn handle_model_switch(
         }
     };
 
+    // Rebuild the LLM client with the new model's provider (resolved from
+    // models.toml inside switch_model). Without this, state.ollama would
+    // stay bound to the initial model's provider and the next prompt would
+    // hit the wrong provider — causing `no router for requested model`
+    // when switching across providers (e.g., llama-swap → ollama).
+    state.ollama = result.ollama;
     state.current_model_name = result.model_name.clone();
     state.session.set_model(result.model_name.clone());
     state.model_config = result.model_config;
@@ -3222,8 +3262,8 @@ mod tests {
     use super::*;
     use crate::capabilities::ModelCapabilities;
     use crate::config::ModelConfig;
+    use crate::provider::Ollama;
     use crate::settings::Settings;
-    use ollama_rs::Ollama;
 
     fn create_test_state() -> ReplState {
         let session = ChatSession::new("test-model".to_string(), None, false);
@@ -3246,6 +3286,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            last_status_token_bucket: 0,
         }
     }
 
@@ -3372,6 +3413,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            last_status_token_bucket: 0,
         }
     }
 

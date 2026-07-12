@@ -326,6 +326,124 @@ Or use environment variables:
 export OLLAMA_HOST="192.168.1.100:11434"
 ```
 
+## Indexing Configuration
+
+Sprachspiel uses vector embeddings for the SQLite-vec store (`/search` and the hybrid RRF retrieval pipeline). The `[indexing]` section in `config.toml` configures the embedding model AND the hybrid RRF weights, since indexing (storing vectors) and retrieval (looking them up) are two sides of the same concern.
+
+The embedding capability is declared **per-model** in `models.toml` (not per-provider). A model with `embeddings = true` is reserved for the indexing pipeline and **cannot be selected for chat** (the `-m <alias>` and `/model <alias>` commands will reject it with a clear error).
+
+The `[indexing]` section in `config.toml` is **required**. Sprachspiel refuses to start (chat, query) if `model` is empty or if the alias doesn't resolve.
+
+### Schema
+
+```toml
+[indexing]
+# Required. The ALIAS of an embedding-capable model from models.toml
+# [models.*]. The alias must be declared with `embeddings = true`
+# and `dimensions = N` in models.toml. The provider is inferred from
+# the alias's `provider` field — there is NO `provider` field here.
+model = "nomic"
+
+# Optional. Whether to make 1 POST /v1/embeddings call at startup to
+# verify the provider actually serves the model. Default: true.
+# The probe does NOT pass `dimensions` in the request body (adaptive
+# — some providers reject it); the response's vector dim count is
+# compared against the alias's declared `dimensions` for strict
+# verify. Mismatch is a fatal error.
+# Set to false for cold-start scenarios where the model takes 30-60s
+# to load.
+# probe = true
+
+# RRF weights (moved from the old [retrieval] section).
+# keyword_weight = 0.4  # BM25; default 0.4
+# semantic_weight = 0.6  # vector similarity; default 0.6
+```
+
+### Required `models.toml` Schema
+
+```toml
+# The provider is just a transport — it does NOT need any
+# "embedding" flag. The capability is per-model.
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+# Chat model (no embeddings flag → safe for -m and /model)
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "llama-swap"
+
+# Embedding model (embeddings = true → reserved for [indexing]).
+# dimensions is REQUIRED when embeddings = true.
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true
+dimensions = 768
+```
+
+### Resolution Rules
+
+When sprach starts, it resolves the indexing alias with these rules:
+
+1. `[indexing].model` is **empty** → fatal error: `[indexing].model is empty in config.toml. Add: [indexing]\nmodel = "nomic"`.
+2. The alias doesn't exist in `models.toml` → fatal error: `Indexing alias '<name>' not found in models.toml.`
+3. The alias exists but doesn't have `embeddings = true` → fatal error: `Model '<name>' is not declared as an embedding model. Add 'embeddings = true' and 'dimensions = N' to [models."<name>"] in models.toml.`
+4. The alias has `embeddings = true` but no `dimensions` → fatal error (caught at models.toml load time).
+5. The alias's `provider` doesn't exist in `models.toml` → fatal error: `Provider '<name>' referenced by embedding model '<alias>' not found in models.toml.`
+
+### Probe Behavior (Adaptive + Strict Verify)
+
+When `probe = true` (default), sprach makes 1 POST `/v1/embeddings` call at startup:
+
+- **Adaptive**: the probe does NOT pass `dimensions` in the request body (some providers reject it with 400). The response's vector dim count is the ground truth.
+- **Strict verify**: the response dim count is compared against the alias's declared `dimensions`. Mismatch is a fatal error:
+  ```
+  Error: Probe indexing dim mismatch: alias declares dimensions=768,
+  but provider returned 256 dimensions for model 'nomic'.
+  The model may not support Matryoshka truncation, or the alias is
+  misconfigured.
+
+  To fix:
+  - If the model naturally returns 256 dimensions, update the
+    alias's `dimensions = 256` in models.toml.
+  - If the alias should use Matryoshka truncation to 768 dims,
+    verify the model server is configured for it.
+  - Set [indexing].probe = false to skip the probe and trust the config.
+  ```
+
+Set `probe = false` for cold-start scenarios where the embedding model takes 30-60s to load.
+
+### Chat Model Rejection
+
+Embedding-only models cannot be used for chat. Both the CLI flag and the slash command reject them:
+
+```bash
+$ sprach -m nomic
+Error: 'nomic' is an embedding-only model and cannot be used for chat.
+Use `[indexing].model = "nomic"` in config.toml to reference it for
+embedding generation, or pick a chat model from --list.
+
+$ sprach chat
+> /model nomic
+Error: 'nomic' is an embedding-only model and cannot be used for chat.
+```
+
+The TUI tab completer in the `/model` command filters out embedding-only models automatically. `sprach --list` still shows all models (including embedding ones) with a `[embeddings-only]` tag appended.
+
+### `sprach models upgrade` Warning
+
+`sprach models upgrade` emits a warning (not an auto-add) when a `[models.*]` block has `embeddings = true` but no `dimensions`:
+
+```
+WARN: 1 embedding model(s) do not declare `dimensions`:
+  - [models."nomic"]: no `dimensions = N` field. Add `dimensions = <N>`
+    (e.g. 768 for nomic-embed-text-v2-moe, 256 for Matryoshka-truncated)
+    so [indexing] can use this model.
+```
+
+The upgrade never auto-adds `dimensions` (the user must know the actual dim count the model produces). The startup probe will fail-fast with a clear error if the alias is referenced from `[indexing]` and the dimensions don't match the provider's response.
+
 ## Per-Subcommand Configuration
 
 You can configure different models for different subcommands. This allows you to use lightweight models for simple tasks and powerful models for complex ones.

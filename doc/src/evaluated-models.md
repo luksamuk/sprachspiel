@@ -25,7 +25,7 @@ based on their strengths. Current role taxonomy:
 | **Coder** | Code generation, tool calling, agentic loops | qwopus-coder-9b, gpt-oss-20b, qwen3.6-35b-moe |
 | **Translator** | Translation quality, multi-language | hy-mt2-1.8b, translategemma-4b |
 | **Vision** | Image understanding, OCR | lfm2.5-vl-450m, minicpm-v-4.6 |
-| **Reasoner** | Deep thinking, math, logic | gemma4-26b-moe, gemma4-e4b, qwen3.5-9b:think |
+| **Reasoner** | Deep thinking, math, logic | gemma4-e4b, qwen3.5-9b:think |
 | **Lightweight** | Fast, low VRAM, simple tasks | lfm2.5-1.2b, littlelamb-0.3b-tc |
 | **World Model** | Web interaction prediction | webworld-8b |
 
@@ -36,35 +36,6 @@ based on their strengths. Current role taxonomy:
 ---
 
 ## Models
-
-### gemma4-26b-moe — Gemma 4 26B A4B MoE
-
-| Field | Value |
-|-------|-------|
-| Status | ✅ Running |
-| Source | [mudler/gemma-4-26B-A4B-it-APEX-GGUF](https://huggingface.co/mudler/gemma-4-26B-A4B-it-APEX-GGUF) |
-| License | Gemma Terms of Use |
-| Architecture | Gemma4ForCausalLM (gemma4) — MoE 26B, 128 experts, top-8 routing, 4B active/token |
-| Params | 26B total / 4B active per token |
-| Quant | APEX I-Compact (~15.5 GB) — edges Q4_K, middle Q3_K, shared Q6_K, attn Q4_K |
-| Context | 16K–128K (dynamic) |
-| Backend | llama.cpp upstream (v674) |
-| KV cache | q4_0 + attn_rot (iSWA fix) |
-| Thinking | ✅ Yes (dual mode: base + :think) |
-| Tool Calling | ✅ Yes |
-| Vision | ❌ Disabled (mmproj crash on CUDA #21402) |
-| attn_rot | ✅ head_dim=256 (256%64==0) |
-
-**Sprachspiel Sub-Agent Fit:**
-- **Reasoner** ✅ — 4B active params with deep MoE reasoning, best for complex logic/math
-- ⚠️ Heavy offload to RAM (~10GB) — high latency, use only when quality > speed
-- ❌ Vision not available
-
-**Recommended params:** temp=1.0/top-p=0.95 (think), temp=0.7/top-p=0.95 (chat)
-
-**Issues:** mmproj crash on CUDA, APEX without MTP is hardware ceiling (6GB VRAM soldered)
-
----
 
 ### gemma4-e4b — Gemma 4 E4B Dense
 
@@ -202,35 +173,37 @@ based on their strengths. Current role taxonomy:
 
 ---
 
-### qwen3.5-4b — Qwen3.5 4B Dense (TurboQuant)
+### qwen3.5-4b — Qwen3.5 4B Dense (DFlash)
 
 | Field | Value |
 |-------|-------|
 | Status | ✅ Running |
-| Source | [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) |
+| Source | [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) (abliterated i1-Q4_K_M) |
 | License | Apache 2.0 |
 | Architecture | Qwen3.5ForCausalLM (qwen3.5) — dense 4B |
 | Params | 4B |
-| Quant | UD-Q3_K_XL (~2.27 GB) |
-| Context | 131072 (fixed, --n-gpu-layers 99) |
-| Backend | BeeLlama.cpp (v9459/v0.2.0) — TurboQuant KV cache |
-| KV cache | turbo3_tcq K + V (~5× compression, PPL ≈ fp16) |
-| Thinking | ✅ Yes (dual mode: base + :think) |
-| Tool Calling | ✅ Yes |
-| Vision | ❌ No (--no-mmproj) |
+| Quant | i1-Q4_K_M (~2.6 GB) + DFlash drafter Q4_K_M (~313 MB) |
+| Context | 98304 (DFlash speculative decoding, BeeLlama backend) |
+| Backend | BeeLlama.cpp (v0.3.2) — DFlash speculative decoding |
+| KV cache | q4_0 K + V |
+| Thinking | ✅ Yes (dual mode: base + :think, reasoning_content field) |
+| Tool Calling | ✅ Yes (parallel tool calls via Jinja template) |
+| Vision | ❌ No |
 | attn_rot | ✅ head_dim=256 |
+| DFlash | flat DFlash (branch-budget=0), adaptive draft-max (profit), ~71% acceptance, GPU cross ring 5 layers x 512 slots |
 
 **Sprachspiel Sub-Agent Fit:**
-- **Coordinator** ✅ — Good tool calling, fits entirely in VRAM with TurboQuant for long context
-- **Lightweight** ✅ — Fast at short context, TurboQuant excels at 8K+ context
-- ⚠️ Bee only — no --fit, must use --n-gpu-layers 99
-- ✅ turbo3_tcq enables 64K-128K context with near-fp16 quality
+- **Coordinator** ✅ — Good tool calling, DFlash gives 1.64x speedup (86 tok/s)
+- **Lightweight** ✅ — Fast decode with block diffusion drafting
+- ⚠️ Bee only — no --fit, uses -ngl all. MoQ-3.75 incompatible (missing tokenizer merges)
+- ⚠️ --parallel 1 only (DFlash requires single slot)
 
 **Recommended params:** default_temp/top_p/top_k/min_p
 
 **Benchmarks:**
-- Bee turbo4: +29-35% speedup at 8-16K context vs upstream q4_0
-- Bee turbo4: ~2× speedup at 32K+ context vs upstream q4_0 (long-context king)
+- DFlash: 86 tok/s avg (vs 53 tok/s on ik_llama+MoQ-3.75) — 1.64x speedup
+- Acceptance rate: ~71% (37/52 tokens accepted)
+- GPU cross ring: 5 layers x 512 slots x 2560 embd
 
 ---
 

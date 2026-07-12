@@ -4,8 +4,8 @@
 
 use ollama_rs::generation::chat::ChatMessage;
 use sprachspiel::tokens::{
-    ContextMetrics, MESSAGE_OVERHEAD, calculate_context_metrics, count_messages_tokens,
-    estimate_tokens, estimate_tokens_code,
+    ContextMetrics, MESSAGE_OVERHEAD, calculate_context_metrics, estimate_tokens,
+    estimate_tokens_code,
 };
 
 #[test]
@@ -51,19 +51,6 @@ fn test_estimate_tokens_code() {
 #[test]
 fn test_message_overhead() {
     assert_eq!(MESSAGE_OVERHEAD, 4);
-}
-
-#[test]
-fn test_count_messages_tokens() {
-    let messages = vec![
-        ChatMessage::user("Hello".to_string()),
-        ChatMessage::assistant("Hi there".to_string()),
-    ];
-    let total = count_messages_tokens(&messages);
-    let expected_per_msg = MESSAGE_OVERHEAD;
-    let user_tokens = estimate_tokens("Hello") + expected_per_msg;
-    let assistant_tokens = estimate_tokens("Hi there") + expected_per_msg;
-    assert_eq!(total, user_tokens + assistant_tokens);
 }
 
 #[test]
@@ -160,19 +147,6 @@ fn calculate(x: i32) -> i32 {
 "#;
     let tokens = estimate_tokens_code(code);
     assert!(tokens > 0, "Complex code should have positive token count");
-}
-
-#[test]
-fn test_count_messages_tokens_empty() {
-    let messages: Vec<ChatMessage> = Vec::new();
-    assert_eq!(count_messages_tokens(&messages), 0);
-}
-
-#[test]
-fn test_count_messages_tokens_single() {
-    let messages = vec![ChatMessage::user("hello world".to_string())];
-    let tokens = count_messages_tokens(&messages);
-    assert!(tokens >= MESSAGE_OVERHEAD);
 }
 
 #[test]

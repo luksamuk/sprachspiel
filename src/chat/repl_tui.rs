@@ -65,7 +65,11 @@ pub async fn run_chat_repl_tui(
     resume_message: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let capabilities = state.capabilities.clone();
-    let model_names = crate::user_models::list_all_model_names();
+    // The completer shows chat-safe models only (filter out
+    // embedding-only models). For the `sprach --list` output, see
+    // `list_all_model_names` (used by main.rs), which lists everything
+    // and marks embedding models with a tag.
+    let model_names = crate::user_models::list_chat_model_names();
     let model_name = state.model_config.model_id.clone();
     let think_enabled = state.session.think;
     let tools_enabled = state.session.tools && capabilities.tools;
@@ -489,13 +493,6 @@ pub async fn run_chat_repl_tui(
                 view.app_mut().tick_spinner();
             }
         }
-
-        // Drain tool messages from the global callback and insert them
-        // at the end of the message list. Use the current round index
-        // since this is a catch-all drain on every event loop tick —
-        // late-arriving messages should be grouped with the active round.
-        let current_round = view.app().current_round();
-        event_loop::drain_and_add_tool_messages(&mut view, current_round);
 
         // Re-render after each event or tick — but skip during streaming
         // when no real event was processed, since stream_token() and

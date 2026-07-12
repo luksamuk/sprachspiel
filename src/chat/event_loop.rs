@@ -31,8 +31,8 @@ use super::tui::components::chat_area::ChatMessage;
 use super::tui::components::chat_selection::mouse_to_visual_pos;
 use super::view::ChatView;
 use super::view::RatatuiView;
+use super::view::TokenMetrics;
 use crate::capabilities::ModelCapabilities;
-use crate::utils::strip_ansi_codes;
 
 /// Channel capacity for LLM view actions.
 ///
@@ -307,177 +307,251 @@ pub async fn handle_eof(state: &mut ReplState, view: &mut RatatuiView) {
 /// Updates the view and state based on the event type.
 /// Clears LLM task state (cancel_token, llm_tx, llm_rx) on terminal events
 /// (Complete, Error, Cancelled, CompactStreamDone).
-pub fn handle_llm_event(
-    llm_event: LlmEvent,
+fn handle_stream_token(token: String, state: &mut ReplState, view: &mut RatatuiView) {
+    // Append token to the current live turn
+    view.app_mut().append_stream_token(&token);
+
+    // Throttle status bar updates during streaming.
+    let bucket = state.status_bar_bucket();
+    if bucket != state.last_status_token_bucket {
+        state.last_status_token_bucket = bucket;
+        if let Some((used, max, pct)) = state.estimate_status_bar() {
+            view.update_status_tokens(used, max, pct);
+        }
+    }
+}
+
+fn handle_stream_thinking(thinking_token: String, view: &mut RatatuiView) {
+    // Append thinking token to the current live turn
+    view.app_mut().append_stream_thinking(&thinking_token);
+}
+
+fn handle_stream_done(
+    content: String,
+    thinking: Option<String>,
+    metrics: Option<TokenMetrics>,
+    view: &mut RatatuiView,
+) {
+    // Finalize the live turn and commit it to the message history.
+    let thinking_desc = thinking.as_ref().map_or_else(
+        || "None".to_string(),
+        |t| format!("Some({} chars)", t.len()),
+    );
+    log::debug!(
+        "StreamDone: content_len={}, thinking={}, messages_before={}",
+        content.len(),
+        thinking_desc,
+        view.app().message_count(),
+    );
+    view.app_mut()
+        .finalize_stream(&content, thinking.as_deref());
+    if let Some(m) = metrics
+        && m.total_tokens > 0
+    {
+        view.show_token_metrics(&m);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_complete(
+    session: Box<crate::chat::session::ChatSession>,
+    used_tokens: usize,
+    max_tokens: usize,
+    percent: u8,
     state: &mut ReplState,
     view: &mut RatatuiView,
     cancel_token: &mut Option<CancellationToken>,
     llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
 ) {
-    match llm_event {
-        LlmEvent::ViewAction(action) => {
-            apply_view_action(view, action);
-        }
-        LlmEvent::StreamToken(token) => {
-            // Append token to the current streaming message (or create one)
-            view.stream_token(&token);
-        }
-        LlmEvent::StreamThinking(thinking_token) => {
-            // Append thinking token to the current streaming thinking block
-            view.stream_thinking(&thinking_token);
-        }
-        LlmEvent::StreamBlockDone => {
-            // Pre-tool block complete — the streaming zone was
-            // already finalized by ToolCallStarted (which calls
-            // finalize_streaming_zone_as_is()). Do NOT call
-            // stream_done() here: that calls finalize_stream(),
-            // which would add a DUPLICATE Assistant message when
-            // no AssistantStreaming exists (already converted).
-            view.app_mut().block_finalized = true;
-            view.set_llm_state(LlmState::ToolCall);
-            // Drain any tool messages that arrived while we were
-            // transitioning state, inserting after all stable content.
-            // These are tool messages from round 1 (the first round's
-            // tools, which execute after StreamBlockDone). Assign
-            // current round (which was set to 1 by ToolCallStarted).
-            drain_and_add_tool_messages(view, view.app().current_round());
-        }
-        LlmEvent::StreamDone {
-            content,
-            thinking,
-            metrics,
-        } => {
-            // Drain any pending tool messages from the last round BEFORE
-            // creating the final response message. This ensures tool
-            // messages appear before the final answer, not after it.
-            drain_and_add_tool_messages(view, view.app().current_round());
-            let thinking_desc = thinking.as_ref().map_or_else(
-                || "None".to_string(),
-                |t| format!("Some({} chars)", t.len()),
-            );
-            log::debug!(
-                "StreamDone: content_len={}, thinking={}, messages_before={}",
-                content.len(),
-                thinking_desc,
-                view.app().message_count(),
-            );
-            // Replace the streaming message with the final markdown version
-            view.stream_done(&content, thinking.as_deref(), metrics.as_ref());
-        }
-        LlmEvent::Complete {
-            session,
-            used_tokens,
-            max_tokens,
-            percent,
-        } => {
-            // Update the session with the one from the LLM task
-            state.session = *session;
-            view.update_status_tokens(used_tokens, max_tokens, percent);
-            view.set_llm_state(LlmState::Idle);
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last round of the cycle.
-            drain_and_add_tool_messages(view, view.app().current_round());
-            log::debug!(
-                "Complete: messages_count={}, current_round={}",
-                view.app().message_count(),
-                view.app().current_round(),
-            );
-            view.app_mut().reset_round();
-            *cancel_token = None;
-            *llm_tx = None;
-            *llm_rx = None;
-        }
-        LlmEvent::Error(error) => {
-            // Strip ANSI codes — the TUI renderer applies its own styling.
-            let clean = strip_ansi_codes(&error);
-            view.app_mut().add_message(ChatMessage::error(clean));
-            view.set_llm_state(LlmState::Idle);
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last active round.
-            drain_and_add_tool_messages(view, view.app().current_round());
-            view.app_mut().reset_round();
-            *cancel_token = None;
-            *llm_tx = None;
-            *llm_rx = None;
-        }
-        LlmEvent::Cancelled => {
-            // LLM was cancelled — already handled by Ctrl+C branch
-            // Drain tool messages BEFORE resetting round so they get
-            // the correct round_index for the last active round.
-            drain_and_add_tool_messages(view, view.app().current_round());
-            view.app_mut().reset_round();
-            *cancel_token = None;
-            *llm_tx = None;
-            *llm_rx = None;
-        }
-        LlmEvent::InterToolText {
-            content, thinking, ..
-        } => {
-            // Inter-tool block arrived from process_next().
-            // This is round N+1 content (after previous tool results).
-            //
-            // CRITICAL ORDERING: Drain tool messages from the PREVIOUS round
-            // FIRST, before incrementing the round counter. Tool messages
-            // generated by the previous round's tool calls should carry that
-            // round's index, not the new round's. Draining before the increment
-            // ensures they appear after the previous round's content and
-            // before the new round's content (which insert_at_round_boundary
-            // will position correctly).
-            let prev_round = view.app().current_round();
-            drain_and_add_tool_messages(view, prev_round);
+    // Update the session with the one from the LLM task
+    state.session = *session;
+    view.update_status_tokens(used_tokens, max_tokens, percent);
+    view.set_llm_state(LlmState::Idle);
+    log::debug!(
+        "Complete: messages_count={}, current_round={}",
+        view.app().message_count(),
+        view.app().current_round(),
+    );
+    view.app_mut().reset_round();
+    *cancel_token = None;
+    *llm_tx = None;
+    *llm_rx = None;
+}
 
-            // NOW increment round counter for the new inter-tool content.
-            view.app_mut().increment_round();
-            let round = view.app().current_round();
+fn handle_error(
+    error: String,
+    view: &mut RatatuiView,
+    cancel_token: &mut Option<CancellationToken>,
+    llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
+    llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+) {
+    // Finalize any pending live_turn blocks (tool calls, streaming
+    // text) BEFORE adding the error message. Without this,
+    // render_messages puts self.messages (with the error) before
+    // live_turn (with tool calls), causing the error to appear
+    // out of order — before the tool calls instead of after.
+    //
+    // This is safe because LlmEvent::Error is only sent for fatal
+    // system errors (timeout, connection lost, etc.) where the
+    // ReAct loop has already been interrupted. Tool call errors
+    // (invalid args, tool failure) are handled inside the coordinator
+    // and never reach this handler — they use ToolExecutionFinished
+    // with is_error=true instead.
+    //
+    // Only finalize if there's an active live_turn with content;
+    // calling finalize_stream("", None) when there's no live_turn
+    // would add an empty assistant message to the chat.
+    if view.app().has_streaming_zone() {
+        view.app_mut().finalize_stream("", None);
+    }
+    view.show_error(&error);
+    log::debug!(
+        "Complete (after error): messages_count={}, current_round={}",
+        view.app().message_count(),
+        view.app().current_round(),
+    );
+    view.app_mut().reset_round();
+    view.set_llm_state(LlmState::Idle);
+    *cancel_token = None;
+    *llm_tx = None;
+    *llm_rx = None;
+}
 
-            log::debug!(
-                "InterToolText: prev_round={}, new_round={}, has_thinking={}, content_len={}",
-                prev_round,
-                round,
-                thinking.is_some(),
-                content.len()
-            );
+fn handle_cancelled(
+    view: &mut RatatuiView,
+    cancel_token: &mut Option<CancellationToken>,
+    llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
+    llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+) {
+    // LLM was cancelled — already handled by Ctrl+C branch
+    view.app_mut().reset_round();
+    *cancel_token = None;
+    *llm_tx = None;
+    *llm_rx = None;
+}
 
-            // Insert thinking and content at the round boundary.
-            // Insert thinking BEFORE content so pre-tool
-            // reasoning appears above tool call indicators.
-            if let Some(thinking_content) = thinking {
-                view.app_mut().insert_at_round_boundary(
-                    ChatMessage::thinking(thinking_content).with_round_index(round),
-                );
-            }
-            if !content.trim().is_empty() {
-                view.app_mut().insert_at_round_boundary(
-                    ChatMessage::assistant_markdown(content).with_round_index(round),
-                );
-            }
-            view.app_mut().set_llm_state(LlmState::ToolCall);
-        }
-        LlmEvent::ToolCallStarted => {
-            // Tool calls detected — finalize streaming and transition.
-            // Increment round counter: we're entering the next tool call round.
-            view.app_mut().increment_round();
-            view.app_mut().finalize_streaming_zone_as_is();
-            view.set_llm_state(LlmState::ToolCall);
-            // Drain any tool messages that arrived before this event
-            // was fully processed (e.g., after a timer tick).
-            // At this point, no tool calls have been executed yet for
-            // this round — the drain is a safety net for any late-arriving
-            // messages from the previous cycle. Assign round 0 since
-            // ToolCallStarted happens before any round's tool execution.
-            drain_and_add_tool_messages(view, 0);
-        }
-        LlmEvent::CompactStreamToken(token) => {
+fn handle_tool_call_started(view: &mut RatatuiView) {
+    // Tool calls detected — finalize the current content block and
+    // transition to the next round. The visual transition
+    // (`LlmState::ToolCall`) happens here so the user gets immediate
+    // feedback that tool calls are coming.
+    //
+    // Don't freeze previews yet: at the first `ToolCallStart` the
+    // provider may not have sent `argument_delta`, so freezing now
+    // would commit empty args. Freezing happens later in
+    // `ToolExecutionStarted`, after the stream ends and all previews
+    // are fully populated.
+    view.app_mut().finalize_streaming_zone_as_is();
+    view.app_mut().increment_round();
+    view.set_llm_state(LlmState::ToolCall);
+}
+
+fn handle_tool_call_preview(
+    tool_call_id: String,
+    name: String,
+    args: serde_json::Value,
+    view: &mut RatatuiView,
+) {
+    view.app_mut()
+        .upsert_tool_preview_direct(tool_call_id, name, args);
+}
+
+fn handle_tool_execution_started(
+    tool_call_id: String,
+    name: String,
+    args: serde_json::Value,
+    view: &mut RatatuiView,
+) {
+    log::debug!(
+        "ToolExecutionStarted: id={} name={} args={}",
+        tool_call_id,
+        name,
+        args
+    );
+    // Freeze all previews now that the stream has ended and every
+    // preview is fully populated. This promotes previews to
+    // `TurnBlock::ToolCall` blocks keyed by the stream id, so
+    // `freeze_tool_preview_by_name` can match by id and backfill
+    // empty args from the execution args.
+    view.app_mut().freeze_all_tool_previews();
+    let has_live_turn = view.app().has_streaming_zone();
+    if let Some(turn) = view.app_mut().live_turn_mut() {
+        log::debug!(
+            "freeze_tool_preview_by_name: live_turn exists={}, \
+             blocks={}, previews={}, tool_call_id={}",
+            has_live_turn,
+            turn.blocks.len(),
+            turn.tool_previews.len(),
+            tool_call_id
+        );
+        turn.freeze_tool_preview_by_name(&tool_call_id, &name, &args);
+    } else {
+        log::warn!(
+            "ToolExecutionStarted: no live_turn when trying to freeze \
+             tool_call_id={} — block will be created by set_tool_result \
+             with empty args (BUG-1)",
+            tool_call_id
+        );
+    }
+}
+
+fn handle_tool_execution_finished(
+    tool_call_id: String,
+    result: String,
+    is_error: bool,
+    view: &mut RatatuiView,
+) {
+    log::debug!(
+        "ToolExecutionFinished: id={} is_error={} result_len={}",
+        tool_call_id,
+        is_error,
+        result.len()
+    );
+    if let Some(turn) = view.app_mut().live_turn_mut() {
+        turn.set_tool_result(&tool_call_id, result, is_error);
+    }
+}
+
+fn handle_provider_retry_started(
+    attempt: u32,
+    max_attempts: u32,
+    delay_ms: u64,
+    reason: String,
+    view: &mut RatatuiView,
+) {
+    // Render transient retry warning in the status bar.
+    let overlay = format!("⚠ Retry {attempt}/{max_attempts} in {delay_ms}ms: {reason}");
+    view.set_status_overlay(Some(overlay));
+}
+
+fn handle_turn_metrics(prompt_tokens: u32, _completion_tokens: u32, view: &mut RatatuiView) {
+    // Intermediate context update from a completed ReAct round.
+    // The provider reports the real prompt_tokens for this round's
+    // prompt (system + tools + all accumulated history). This keeps
+    // the status bar current during multi-round tool loops instead
+    // of freezing until the final Complete event.
+    let max_tokens = view.app().status_bar().max_tokens;
+    let percent = if max_tokens > 0 {
+        ((prompt_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+    } else {
+        0
+    };
+    view.update_status_tokens(prompt_tokens as usize, max_tokens, percent);
+}
+
+fn handle_compact_event(event: CompactEvent, view: &mut RatatuiView, state: &mut ReplState) {
+    match event {
+        CompactEvent::StreamToken(token) => {
             // Compaction is streaming — display as assistant streaming
             view.stream_token(&token);
         }
-        LlmEvent::CompactInfo { message } => {
+        CompactEvent::Info { message } => {
             // System-level info during compaction (chunk count, truncation warnings)
             // Display as a dim system message, separate from the streaming summary
             view.app_mut().add_message(ChatMessage::system(message));
         }
-        LlmEvent::CompactStreamDone { summary, range } => {
+        CompactEvent::StreamDone { summary, range } => {
             // Compaction finished — apply the summary to the session
             let first_preserved = range.map(|(f, _)| f).unwrap_or(0);
             let last_preserved_start = range
@@ -490,12 +564,11 @@ pub fn handle_llm_event(
                 .session
                 .set_compacted_summary_with_range(summary.clone(), range);
 
-            // Add a horizontal-rule separator before the summary for visual clarity.
-            // This must go BEFORE the streaming zone so the separator appears
-            // between progress messages and the summary, not after the summary.
-            // Separator fills the full terminal width responsively.
-            view.app_mut()
-                .insert_before_streaming_zone(ChatMessage::separator());
+            // In the two-buffer model, the compaction summary was streamed into
+            // the live turn via CompactStreamToken. Add the separator to committed
+            // history BEFORE finalizing so the separator appears between progress
+            // messages and the summary, not after it.
+            view.app_mut().add_message(ChatMessage::separator());
 
             // Finalize the streaming content — just the summary, no artificial header/footer
             view.stream_done(&summary, None, None);
@@ -518,14 +591,126 @@ pub fn handle_llm_event(
                 0
             };
             view.update_status_tokens(used_tokens, max_tokens, percent);
+        }
+    }
+}
 
-            if !state.session.anonymous {
-                let _ = state.session.save_sqlite();
-                if let Some(db) = state.session.db.as_ref() {
-                    let _ = db.clear_conversation_prompt_tokens(&state.session.id);
-                }
+/// Internal variants of the compact events, used by `handle_llm_event` after
+/// extracting the payload from `LlmEvent`.
+enum CompactEvent {
+    StreamToken(String),
+    Info {
+        message: String,
+    },
+    StreamDone {
+        summary: String,
+        range: Option<(usize, usize)>,
+    },
+}
+
+pub fn handle_llm_event(
+    llm_event: LlmEvent,
+    state: &mut ReplState,
+    view: &mut RatatuiView,
+    cancel_token: &mut Option<CancellationToken>,
+    llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
+    llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+) {
+    match llm_event {
+        LlmEvent::ViewAction(action) => {
+            apply_view_action(view, action);
+        }
+        LlmEvent::StreamToken(token) => {
+            handle_stream_token(token, state, view);
+        }
+        LlmEvent::StreamThinking(thinking_token) => {
+            handle_stream_thinking(thinking_token, view);
+        }
+        LlmEvent::StreamDone {
+            content,
+            thinking,
+            metrics,
+        } => {
+            handle_stream_done(content, thinking, metrics, view);
+        }
+        LlmEvent::Complete {
+            session,
+            used_tokens,
+            max_tokens,
+            percent,
+        } => {
+            handle_complete(
+                session,
+                used_tokens,
+                max_tokens,
+                percent,
+                state,
+                view,
+                cancel_token,
+                llm_tx,
+                llm_rx,
+            );
+        }
+        LlmEvent::Error(error) => {
+            handle_error(error, view, cancel_token, llm_tx, llm_rx);
+        }
+        LlmEvent::Cancelled => {
+            handle_cancelled(view, cancel_token, llm_tx, llm_rx);
+        }
+        // LlmEvent::InterToolText was removed — all ReAct turns stream and
+        // post-tool text arrives via StreamToken/StreamThinking.
+        LlmEvent::ToolCallStarted => {
+            handle_tool_call_started(view);
+        }
+        LlmEvent::ToolCallPreview {
+            tool_call_id,
+            name,
+            args,
+        } => {
+            handle_tool_call_preview(tool_call_id, name, args, view);
+        }
+        LlmEvent::ToolExecutionStarted {
+            tool_call_id,
+            name,
+            args,
+        } => {
+            handle_tool_execution_started(tool_call_id, name, args, view);
+        }
+        LlmEvent::ToolExecutionFinished {
+            tool_call_id,
+            result,
+            is_error,
+        } => {
+            handle_tool_execution_finished(tool_call_id, result, is_error, view);
+        }
+        LlmEvent::ProviderRetryStarted {
+            attempt,
+            max_attempts,
+            delay_ms,
+            reason,
+        } => {
+            handle_provider_retry_started(attempt, max_attempts, delay_ms, reason, view);
+        }
+        LlmEvent::ProviderRetryFinished { success, .. } => {
+            // Clear the retry overlay once the retry finishes.
+            if success {
+                view.set_status_overlay(None);
             }
-
+        }
+        LlmEvent::TurnMetrics {
+            prompt_tokens,
+            completion_tokens,
+        } => {
+            handle_turn_metrics(prompt_tokens, completion_tokens, view);
+        }
+        LlmEvent::CompactStreamToken(token) => {
+            handle_compact_event(CompactEvent::StreamToken(token), view, state);
+        }
+        LlmEvent::CompactInfo { message } => {
+            handle_compact_event(CompactEvent::Info { message }, view, state);
+        }
+        LlmEvent::CompactStreamDone { summary, range } => {
+            handle_compact_event(CompactEvent::StreamDone { summary, range }, view, state);
             view.set_llm_state(LlmState::Idle);
             *cancel_token = None;
             *llm_tx = None;
@@ -535,32 +720,6 @@ pub fn handle_llm_event(
 }
 
 // ── View action and tool message helpers ─────────────────────────────────
-
-/// Drain any pending tool messages and append them at the end.
-///
-/// Tool messages receive the specified `round_index` so they are grouped
-/// with the correct round in multi-round tool call cycles. Callers must
-/// pass the round that corresponds to the tool calls that produced these
-/// messages — typically the round BEFORE any increment for inter-tool content.
-///
-/// When in doubt about the correct round, pass `0` to assign messages to
-/// the initial streaming round. The caller is responsible for determining
-/// the correct round based on the event type and its position in the
-/// round lifecycle.
-pub fn drain_and_add_tool_messages(view: &mut RatatuiView, round: usize) {
-    let drained: Vec<String> = view.drain_tool_messages();
-    if !drained.is_empty() {
-        log::debug!(
-            "drain_and_add_tool_messages: {} tool messages with round_index={}",
-            drained.len(),
-            round
-        );
-    }
-    for msg in drained {
-        view.app_mut()
-            .add_message(ChatMessage::tool(msg).with_round_index(round));
-    }
-}
 
 /// Apply a `ViewAction` to the real `RatatuiView`.
 ///
@@ -575,16 +734,17 @@ pub fn drain_and_add_tool_messages(view: &mut RatatuiView, round: usize) {
 ///
 /// # Deduplication
 ///
-/// After `StreamBlockDone` finalizes the pre-tool block and before
-/// `StreamDone` adds the post-tool content, ViewActions that carry the
-/// ALREADY-SHOWN pre-tool text (via `PreToolContent` in the coordinator)
-/// will be drained by `drain_into_llm_channel()` and arrive as
-/// `ShowThinking` + `ShowMarkdown` on the event loop. Because the
-/// pre-tool content was already displayed by the `StreamToken`/
-/// `StreamThinking` sequence that preceded `StreamBlockDone`,
-/// `apply_view_action` skips those content messages to prevent
-/// duplicating text on the screen.
+/// Pre-tool content from the non-streaming fallback path arrives as
+/// `ShowThinking` + `ShowMarkdown` view actions while the LLM is active.
+/// When a streaming zone exists, the pre-tool text is already being
+/// displayed via `StreamToken`/`StreamThinking`, so `apply_view_action`
+/// skips those content messages to prevent duplication.
 fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
+    // In the two-buffer model, all streaming content goes through
+    // StreamToken/StreamThinking events into LiveTurn. View actions that
+    // carry content are only relevant for the terminal/CLI fallback path
+    // or when the LLM is idle. When a live turn exists, skip content
+    // view actions to avoid duplicating what is already being streamed.
     let llm_state = view.app().llm_state();
     let has_streaming_zone = view.app().has_streaming_zone();
 
@@ -596,35 +756,21 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
             view.show_error(&msg);
         }
         ViewAction::ShowAssistantResponse { content, thinking } => {
-            // When LLM is active and content was already displayed via
-            // StreamToken events (streaming zone exists), don't duplicate.
-            // The streaming zone will be finalized by StreamDone.
             if has_streaming_zone {
-                // Only show thinking if it's present — it may be from a
-                // pre-tool round and should be preserved before the zone.
-                if let Some(thinking_content) = thinking {
-                    if llm_state != LlmState::Idle {
-                        view.app_mut()
-                            .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
-                    } else {
-                        view.app_mut()
-                            .add_message(ChatMessage::thinking(thinking_content));
-                    }
-                    view.render();
-                }
-                // Skip adding the assistant message — it's already streaming.
+                // Already streaming — content will be finalized by StreamDone.
+                // Ignore to prevent duplication.
+                let _ = (content, thinking);
             } else if llm_state != LlmState::Idle {
-                // No streaming zone but LLM is active (tool call before
-                // streaming starts) — insert before future streaming zone.
+                // No live turn yet but LLM active — show as stable message
+                // before any future streaming zone.
                 if let Some(thinking_content) = thinking {
                     view.app_mut()
-                        .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
+                        .add_message(ChatMessage::thinking(thinking_content));
                 }
                 view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                    .add_message(ChatMessage::assistant_markdown(content));
                 view.render();
             } else {
-                // LLM is idle — no streaming, safe to add normally.
                 view.show_assistant_response(&content, thinking.as_deref());
             }
         }
@@ -645,27 +791,23 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
             view.show_compact_complete(count, preserved_first, preserved_last);
         }
         ViewAction::ShowMarkdown(content) => {
-            // Pre-tool content shown as markdown during tool calls.
-            // When streaming zone exists, the content is already being
-            // displayed via StreamToken events — don't duplicate.
             if has_streaming_zone {
                 // Already streaming — skip duplicate markdown content.
+                let _ = content;
             } else if llm_state != LlmState::Idle {
-                // No streaming yet but LLM is active — insert before zone.
                 view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                    .add_message(ChatMessage::assistant_markdown(content));
                 view.render();
             } else {
                 view.show_markdown(&content);
             }
         }
         ViewAction::ShowThinking(thinking) => {
-            // Thinking content during tool calls should be inserted
-            // before the streaming zone so it appears above streaming.
-            // This is NOT a duplicate — it's from a previous round.
-            if llm_state != LlmState::Idle {
-                view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::thinking(thinking));
+            if has_streaming_zone {
+                // Already streaming — thinking will be finalized by StreamDone.
+                let _ = thinking;
+            } else if llm_state != LlmState::Idle {
+                view.app_mut().add_message(ChatMessage::thinking(thinking));
                 view.render();
             } else {
                 view.show_thinking(&thinking);
@@ -754,8 +896,23 @@ fn spawn_llm_task(
             return;
         }
 
-        // Send the updated session and token counts back
-        let used_tokens = task_state.session.history_real_tokens();
+        // Send the updated session and token counts back.
+        // Bug B fix: when the server didn't return valid prompt_tokens (0 or
+        // None — common in the streaming path), history_real_tokens falls
+        // back to an estimate that excludes system prompt + tool definitions.
+        // We add the overhead so the status bar shows a realistic total.
+        let system_prompt = super::continuation::build_pre_tool_prompt(&task_state);
+        let system_tokens =
+            crate::tokens::estimate_tokens(&system_prompt) + crate::tokens::MESSAGE_OVERHEAD;
+        let tools_tokens = if task_state.tools_active {
+            let tool_count = crate::tools::get_available_tool_names(&task_state.settings).len();
+            tool_count * crate::tokens::TOKENS_PER_TOOL
+        } else {
+            0
+        };
+        let used_tokens = task_state
+            .session
+            .history_real_tokens_with_overhead(system_tokens + tools_tokens);
         let max_tokens = task_state.model_config.num_ctx as usize;
         let percent = if max_tokens > 0 {
             ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8

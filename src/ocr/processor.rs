@@ -6,7 +6,6 @@
 #![expect(clippy::print_stdout)] // CLI subcommand output
 #![expect(clippy::print_stderr)] // CLI subcommand output
 use base64::Engine;
-use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
@@ -37,7 +36,7 @@ impl OcrProcessor {
         prompt_override: Option<&str>,
         model: &str,
         model_options: ModelOptions,
-        ollama: &Ollama,
+        ollama: &crate::provider::Ollama,
         show_spinner: bool,
     ) -> OcrResult<OcrOutput> {
         validate_image_file(path).map_err(OcrError::FileNotFound)?;
@@ -71,7 +70,7 @@ impl OcrProcessor {
 
         // Send request to /api/generate
         let response = ollama
-            .generate(request)
+            .generate(&request)
             .await
             .map_err(|e| OcrError::OllamaError {
                 message: format!("Failed to process image: {}", e),
@@ -98,7 +97,7 @@ impl OcrProcessor {
         prompt_override: Option<&str>,
         model: &str,
         model_options: ModelOptions,
-        ollama: &Ollama,
+        ollama: &crate::provider::Ollama,
         show_spinner: bool,
     ) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();

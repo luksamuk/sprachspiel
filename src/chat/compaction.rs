@@ -5,7 +5,7 @@
 //! function with a self-documenting struct, making call sites cleaner and
 //! easier to extend.
 
-use ollama_rs::Ollama;
+use crate::provider::Ollama;
 
 use crate::config::ModelConfig;
 use crate::context_overflow::needs_buffered_compaction;

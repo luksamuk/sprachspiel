@@ -72,11 +72,57 @@ pub fn format_tool_error(error: &str) -> String {
 }
 
 fn try_format_ollama_error(error: &str) -> Option<String> {
+    // The error string is usually prefixed with status info from
+    // convert_provider_error, e.g. "HTTP 400: {<body>}". Try the
+    // whole string first; if that fails, try just the JSON portion
+    // after the first colon+space.
+    let candidates: &[&str] = &[
+        error,
+        // Strip leading "HTTP NNN: " / "HTTP NNN " prefix.
+        if let Some(idx) = error.find("{") {
+            &error[idx..]
+        } else {
+            ""
+        },
+    ];
+
     // Try to parse as Ollama error JSON
-    if let Ok(mut ollama_err) = serde_json::from_str::<OllamaError>(error) {
-        // Some errors have the message nested
-        if let Some(msg) = ollama_err.error.take().or(ollama_err.message.take()) {
-            return Some(format_error_with_status(&msg));
+    for candidate in candidates {
+        if let Ok(mut ollama_err) = serde_json::from_str::<OllamaError>(candidate) {
+            // Some errors have the message nested
+            if let Some(msg) = ollama_err.error.take().or(ollama_err.message.take()) {
+                return Some(format_error_with_status(&msg));
+            }
+        }
+    }
+
+    // Parse OpenAI-style error envelope used by
+    // llama-swap / vLLM:
+    //   {"error": {"code": 400, "message": "request (N tokens) exceeds
+    //    the available context size (M tokens)"}}
+    //
+    // Older Ollama format is just {"error": "message"} or
+    // {"message": "message"}; both forms use a string value, not an
+    // object. The OllamaError struct above catches the simple
+    // string forms. For the OpenAI object form, walk the JSON
+    // manually so we can extract the nested "message" field.
+    for candidate in candidates {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) {
+            if let Some(err_obj) = value.get("error") {
+                if let Some(msg) = err_obj.get("message").and_then(|v| v.as_str()) {
+                    let code = err_obj
+                        .get("code")
+                        .and_then(|v| v.as_u64())
+                        .map(|c| c as u16);
+                    return Some(format_openai_error(code, msg));
+                }
+                if let Some(msg) = err_obj.as_str() {
+                    return Some(format_error_with_status(msg));
+                }
+            }
+            if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+                return Some(format_error_with_status(msg));
+            }
         }
     }
 
@@ -112,6 +158,45 @@ fn format_error_with_status(msg: &str) -> String {
     }
 
     format_error_with_ansi(msg)
+}
+
+/// Format an OpenAI-style error envelope with the HTTP status
+/// code, if present. This is the format llama-swap and vLLM use for
+/// context-overflow and similar errors:
+///
+/// ```json
+/// {"error": {"code": 400, "message": "request (...) exceeds ..."}}
+/// ```
+///
+/// The plain formatter annotates the message with the standard HTTP
+/// status name (e.g. "400 Bad Request") so the TUI ⛔ ERROR banner
+/// tells the user what kind of error they hit, not just a status
+/// number.
+fn format_openai_error(code: Option<u16>, msg: &str) -> String {
+    if let Some(c) = code {
+        let status_name = match c {
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            408 => "Request Timeout",
+            413 => "Payload Too Large",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            502 => "Bad Gateway",
+            503 => "Service Unavailable",
+            504 => "Gateway Timeout",
+            _ => "HTTP Error",
+        };
+        let header = format!("HTTP {c} {status_name}");
+        if crate::debug_tools::is_plain_mode() || crate::logging::is_tui_mode() {
+            format!("{header}: {msg}")
+        } else {
+            format!("\x1B[31m{header}\x1B[0m: {msg}")
+        }
+    } else {
+        format_error_with_status(msg)
+    }
 }
 
 /// Format error without any ANSI codes (for plain mode / pipe-safe output).
@@ -264,6 +349,74 @@ mod tests {
         assert!(
             !result.contains("\x1B["),
             "format_tool_error in TUI mode should not contain ANSI, got: {result}"
+        );
+        crate::debug_tools::set_plain_mode(original_plain);
+        crate::logging::set_tui_mode(original_tui);
+    }
+
+    // Regression tests for the OpenAI-style error envelope
+    // produced by llama-swap / vLLM. Before this fix, the parser
+    // extracted only the first quoted fragment ("code") and dropped
+    // the human-readable message nested under `error.message`.
+
+    #[serial_test::serial]
+    #[test]
+    fn test_format_tool_error_openai_envelope_extracts_message() {
+        let original_plain = crate::debug_tools::is_plain_mode();
+        let original_tui = crate::logging::is_tui_mode();
+        crate::debug_tools::set_plain_mode(true);
+        crate::logging::set_tui_mode(false);
+        let body = r#"HTTP 400: {"error":{"code":400,"message":"request (38449 tokens) exceeds the available context size (32768 tokens)","type":"exceed_context_size_error","n_prompt_tokens":38449,"n_ctx":32768}}"#;
+        let result = format_tool_error(body);
+        assert!(
+            result.contains("38449 tokens"),
+            "OpenAI error parser should extract the message field, got: {result}"
+        );
+        assert!(
+            result.contains("32768 tokens"),
+            "OpenAI error parser should preserve context size, got: {result}"
+        );
+        assert!(
+            !result.contains(r#""error""#) || result.contains("exceeds"),
+            "OpenAI error parser should not just dump raw JSON keys, got: {result}"
+        );
+        crate::debug_tools::set_plain_mode(original_plain);
+        crate::logging::set_tui_mode(original_tui);
+    }
+
+    #[serial_test::serial]
+    #[test]
+    fn test_format_tool_error_openai_envelope_with_status() {
+        // The status code in the envelope should be reflected in the
+        // formatted output (e.g. "400 Bad Request").
+        let original_plain = crate::debug_tools::is_plain_mode();
+        let original_tui = crate::logging::is_tui_mode();
+        crate::debug_tools::set_plain_mode(true);
+        crate::logging::set_tui_mode(false);
+        let body = r#"HTTP 400: {"error":{"code":503,"message":"Service unavailable"}}"#;
+        let result = format_tool_error(body);
+        assert!(
+            result.contains("503") && result.contains("Service Unavailable"),
+            "OpenAI error parser should annotate 503 as Service Unavailable, got: {result}"
+        );
+        crate::debug_tools::set_plain_mode(original_plain);
+        crate::logging::set_tui_mode(original_tui);
+    }
+
+    #[serial_test::serial]
+    #[test]
+    fn test_format_tool_error_legacy_ollama_string_error() {
+        // The legacy Ollama format uses "error" as a string, not an
+        // object. The original parser must still work.
+        let original_plain = crate::debug_tools::is_plain_mode();
+        let original_tui = crate::logging::is_tui_mode();
+        crate::debug_tools::set_plain_mode(true);
+        crate::logging::set_tui_mode(false);
+        let body = r#"HTTP 500: {"error":"status 500 Internal Server Error"}"#;
+        let result = format_tool_error(body);
+        assert!(
+            result.contains("500 Internal Server Error"),
+            "Legacy Ollama string error must still parse, got: {result}"
         );
         crate::debug_tools::set_plain_mode(original_plain);
         crate::logging::set_tui_mode(original_tui);

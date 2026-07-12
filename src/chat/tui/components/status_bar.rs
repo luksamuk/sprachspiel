@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use unicode_width::UnicodeWidthStr;
 
 use crate::chat::app::{EmbeddingPhase, EmbeddingProgress};
 
@@ -40,6 +41,10 @@ pub struct StatusBarState {
     pub status_label: Option<String>,
     /// Embedding progress: current phase and counts when embeddings are being generated
     pub embedding_progress: Option<EmbeddingProgress>,
+    /// Optional transient right-aligned overlay (e.g., provider retry warning).
+    ///
+    /// Rendered in red on the right side of the status bar.
+    pub overlay: Option<String>,
 }
 
 impl StatusBarState {
@@ -63,6 +68,7 @@ impl StatusBarState {
             spinner: None,
             status_label: None,
             embedding_progress: None,
+            overlay: None,
         }
     }
 
@@ -197,6 +203,25 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
             ),
             Style::default()
                 .fg(styles::CYAN)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    // Right-aligned overlay (retry warning, etc.)
+    if let Some(ref overlay) = state.overlay {
+        let overlay_text = format!("  {}  ", overlay);
+        let used_width: usize = spans.iter().map(|s| s.content.width()).sum();
+        let overlay_width = overlay_text.width();
+        let padding = area
+            .width
+            .saturating_sub((used_width + overlay_width) as u16) as usize;
+        if padding > 0 {
+            spans.push(Span::raw(" ".repeat(padding)));
+        }
+        spans.push(Span::styled(
+            overlay_text,
+            Style::default()
+                .fg(styles::RED)
                 .add_modifier(Modifier::BOLD),
         ));
     }

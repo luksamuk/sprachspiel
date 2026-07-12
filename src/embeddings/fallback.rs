@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use super::chunk_config::DynamicChunkConfig;
 use super::chunker::{ChunkConfig, chunk_text_with_config};
-use super::client::{EmbeddingClient, EmbeddingError};
+use super::client::{CHARS_PER_TOKEN, EmbeddingClient, EmbeddingError};
 use crate::db::Database;
 
 /// Maximum recursive divisions (512→256→128→64→32 tokens).
@@ -607,12 +607,10 @@ fn create_item_chunks_atomically(
 
 /// Estimate tokens from content length.
 ///
-/// Uses conservative estimate of 3 chars/token (Portuguese/code average).
-/// This is the same ratio as `CHARS_PER_TOKEN` in client.rs.
-/// See client.rs for why we estimate instead of using exact token counts.
+/// Uses `CHARS_PER_TOKEN` from `client.rs` (the single source of truth
+/// for the chars/token ratio).
 fn estimate_tokens(content_len: usize) -> usize {
-    // Keep in sync with CHARS_PER_TOKEN in client.rs
-    (content_len as f32 / 3.0).ceil() as usize
+    (content_len as f32 / CHARS_PER_TOKEN).ceil() as usize
 }
 
 #[cfg(test)]
@@ -621,10 +619,10 @@ mod tests {
 
     #[test]
     fn test_estimate_tokens() {
-        // Conservative estimate: 3 chars/token
-        assert_eq!(estimate_tokens(100), 34); // 100/3 = 33.3 → 34
-        assert_eq!(estimate_tokens(300), 100); // 300/3 = 100
-        assert_eq!(estimate_tokens(1000), 334); // 1000/3 = 333.3 → 334
+        // Conservative estimate: 2 chars/token
+        assert_eq!(estimate_tokens(100), 50); // 100/2 = 50
+        assert_eq!(estimate_tokens(300), 150); // 300/2 = 150
+        assert_eq!(estimate_tokens(1000), 500); // 1000/2 = 500
     }
 
     #[test]

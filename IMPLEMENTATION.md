@@ -179,7 +179,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
   - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision ✅ COMPLETED
   - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
   - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
-  - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support
+  - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support. **Includes token-aware chunking** (Prioridade 3 SOTA): replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs (chars/token imprecision). See "Embedding Fallback + Chunk Sizing Fix" section for context.
   - **W4.5** (#151): T3-Phase0 (Preserve Thinking Content) — standalone PR, no dependency on #107 or #136. Re-embedding uses existing `/reindex --yes` recovery pipeline. Includes continuation thinking fix.
   - **W4.6** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
   - **W4.7** (#136): Geometry-Aware Embedding Configuration and Model Registry — depends on #106 (configurable model) and #135 (d_eff measurements). Rewritten scope: `embedding_models` table, diagnostics integration, `recommended_dimensions()`, dynamic vec0 dimensions. See Decision Record D-10 and D-11.
@@ -4246,19 +4246,32 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 
 #### Consumer Migration — #121 [M1]
 
-**Status:** 📋 PLANNED  
-**Depends on:** #118 (Tool trait) + #119 (agnostic types) + #120 (OllamaProvider)  
-**Estimated effort:** 2–3 weeks  
-**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`) AND no `#[allow(dead_code)]` annotations on `src/provider/{ollama,factory}.rs` chain (P6.0e.10).
+**Status:** ✅ COMPLETED (branch `feat/121-consumer-migration-openai`, PR #207 — implementation complete, 47 commits, awaiting final review/merge)  
+**Depends on:** #118 (Tool trait) ✅ + #119 (agnostic types) ✅ + #120 (OllamaProvider) ✅  
+**Estimated effort:** 2–3 weeks (revised: ~5 weeks for OpenAI-first strategy)  
+**Issue:** #121  
+**Branch:** `feat/121-consumer-migration-openai`  
+**Merge criterion:** No `use ollama_rs` in business modules AND `OpenAICompatibleProvider` is the default for all backends (Ollama, llama.cpp, vLLM) AND `models upgrade` migrates old `kind="ollama"` configs automatically.
 
-**Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types.
+**Strategic Shift (vs. original plan):** This PR implements the **OpenAI-First strategy** (R2 from planning session). The default provider is now `OpenAICompatibleProvider` (OpenAI-spec HTTP), not Ollama's native `/api/chat`. Ollama is reached through `http://localhost:11434/v1`, llama.cpp through llama-swap, etc. The `OllamaProvider` introduced in #120 is **removed**; `ProviderKind::Ollama` is kept as a deprecated alias in `factory.rs` for backward compat (returns a runtime error if used, prompting user to run `sprach models upgrade`).
+
+**Why OpenAI-First:** Maintaining two HTTP transports (Ollama native + OpenAI compat) creates permanent maintenance debt. The OpenAI-spec API is the de facto standard for local LLM serving (Ollama, llama.cpp, vLLM, llama-swap, LM Studio all expose it). Issue [ollama/ollama#11325](https://github.com/ollama/ollama/issues/11325) was closed as "not planned" — Ollama's OpenAI-compat does NOT support `top_k`, `min_p`, etc. — so a unified path requires the strict OpenAI-subset of parameters.
+
+**Breaking changes in `models.toml`:**
+
+1. **`kind` default changes from `"ollama"` to `"openai"`** — existing configs with `kind = "ollama"` are auto-migrated by `sprach models upgrade`.
+2. **`base_url` requires `/v1` suffix** — e.g., `http://localhost:11434/v1` for Ollama; the migration adds it automatically.
+3. **Fields removed from `UserModelConfig`:** `top_k`, `repeat_penalty`, `think` — not supported by OpenAI API nor by Ollama's OpenAI-compat endpoint. They were Ollama-native only and cannot be tunneled through the OpenAI-spec body.
+4. **New field added:** `seed` (cross-provider, optional) — supported by both OpenAI spec and Ollama's `/v1/chat/completions`.
+
+**Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types, with OpenAI-compatible HTTP as the single transport.
 
 **Sub-deliverables (each mergable independently):**
 
 | Sub | Component | Files | Effort | Prerequisite |
 |-----|-----------|-------|--------|-------------|
-| P6.0e.1 | `capabilities.rs` → `LlmProvider::detect_capabilities()` | 1 | 0.5 day | P6.0d |
-| P6.0e.2 | `embeddings/client.rs` → `LlmProvider::embed()` | 1 | 1 day | P6.0d |
+| P6.0e.1 | `capabilities.rs` → `LlmProvider::detect_capabilities()` + auto-detect `num_ctx` via `/v1/models` and `/api/show` fallback | 1 | 0.5-1 day | P6.0d |
+| P6.0e.2 | `embeddings/client.rs` → `LlmProvider::embed()` (uses `/v1/embeddings`) | 1 | 1 day | P6.0d |
 | P6.0e.3 | `subagent.rs` → `LlmProvider::chat()/generate()` | 1 | 1-2 days | P6.0d |
 | P6.0e.4 | `custom_coordinator.rs` → uses `LlmProvider` + agnostic types | 1 | 1 week | P6.0b+c+d |
 | P6.0e.5 | `core.rs` → receives `Box<dyn LlmProvider>` | 1 | 0.5 day | P6.0e.4 |
@@ -4267,50 +4280,393 @@ PR #206 received a comprehensive code review (REQUEST_CHANGES). The findings are
 | P6.0e.8 | `vision/processor.rs`, `ocr/processor.rs`, `summarize/processor.rs` | 3 | 1 day | P6.0e.3 |
 | P6.0e.9 | `main.rs` — provider construction | 1 | 0.5 day | P6.0e.6 |
 | P6.0e.10 | Remove `#[allow(dead_code)]` from `factory::build_provider`, `OllamaProvider::new`, `provider_name` (chain reachable via P6.0e.9 + P6.0e.5) | 1 | 0.1 day | P6.0e.9 |
+| **P6.0e.new1** | `OpenAICompatibleProvider` with SSE streaming, tool calling, embeddings, `/v1/models`, **Retry-After header parsing** | 4 | 1.5-2 weeks | P6.0d |
+| **P6.0e.11** | `models upgrade` migration: `kind="ollama"` → `openai`, add `/v1` suffix to `base_url` | 1 | 0.3 day | P6.0e.9 |
+| **P6.0e.12** | Remove `OllamaProvider` source; keep `ProviderKind::Ollama` as deprecated alias | 1 | 0.1 day | P6.0e.11 |
 
----
+**B items from #120 review (resolved in #121):**
+- **B1**: `Settings::ollama_client()` deprecated regression — **REMOVED in #121**; all 5 call sites migrated to `factory::build_provider()`.
+- **B2**: `#[allow(dead_code)]` chain on `factory::build_provider` → `OllamaProvider::new` → `provider_name` — **RESOLVED** when `OpenAICompatibleProvider::new` becomes the new factory target.
+- **B3**: `LlmProvider` trait `#[allow(dead_code)]` — **REMOVED**; trait is now consumed by `OpenAICompatibleProvider` directly.
+- **B4**: `Retry-After` header parsing — **IMPLEMENTED in #121** via `OpenAICompatibleProvider::classify_error()` reading `Retry-After` from HTTP headers on 429 responses. Wires up the previously-unused `retry_after: Option<Duration>` field on `ProviderError::RateLimit`.
 
-#### OpenAI-Compatible Provider — #122 [M1]
+**Acceptance criteria:**
+- 35 files in `src/` no longer contain `use ollama_rs` (verified by `rg 'use ollama_rs' src/`)
+- `cargo clippy --all-features -- -D warnings` clean
+- `cargo test --all-features` passing
+- Manual test against llama-swap (Ollama + llama.cpp + vLLM) passes
+- `models upgrade` migrates existing configs correctly
 
-**Status:** 📋 PLANNED  
-**Depends on:** #121 (all consumers using LlmProvider)  
-**Estimated effort:** 2 weeks  
-**Merge criterion:** `--provider openai` works with OpenAI / llama.cpp / LM Studio
+**Indexing Configuration Redesign (W2 #121 extension — user feedback):**
 
-**Goal:** Implement `OpenAICompatibleProvider` supporting `/v1/chat/completions`, function calling, and `/v1/embeddings`.
+The first version of the W2 #121 extension added a provider-level `embedding = true` flag on `[provider.*]` and a `[embedding]` section in `config.toml`. After user review, this design was replaced with a model-level approach where the embedding capability is declared on the **model** (not the provider), and the section is renamed from `[embedding]` to `[indexing]` (merged with the old `[retrieval]`).
 
-**Files to create:**
+**New schema (W2 #121 extension, final):**
 
-| File | Content |
-|------|---------|
-| `src/provider/openai_compat.rs` | `OpenAICompatibleProvider` struct, `LlmProvider` impl |
-| `src/provider/openai_types.rs` | OpenAI API request/response structs (serde) |
-
-**Sub-deliverables:**
-
-| Sub | Description | Effort |
-|-----|-------------|--------|
-| P6.0f.1 | Chat completions (with streaming) | 1 week |
-| P6.0f.2 | Function calling (Ollama ↔ OpenAI tool format conversion) | 3 days |
-| P6.0f.3 | Embeddings (`/v1/embeddings`) | 2 days |
-| P6.0f.4 | Configuration (`[providers.openai]` in models.toml, `api_key_env`) | 1 day |
-
-**Configuration:**
+```toml
+# config.toml
+[indexing]
+model = "nomic"               # ALIAS from models.toml [models.*]
+probe = true                  # opt-out; default true
+keyword_weight = 0.4          # moved from [retrieval]
+semantic_weight = 0.6         # moved from [retrieval]
+```
 
 ```toml
 # models.toml
-[providers.ollama]
-base_url = "http://localhost:11434"
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+# NO `embedding = true` here — provider is just a transport
 
-[providers.openai]
-base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY"
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "llama-swap"
+# Chat model (no embeddings flag → safe for -m and /model)
 
-[models."gpt-4o"]
-provider = "openai"
-tools = true
-vision = true
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true   # opt-in: reserved for /v1/embeddings
+dimensions = 768    # REQUIRED when embeddings = true
 ```
+
+**Resolution rules (in `Settings::resolve_indexing_model`):**
+
+1. `[indexing].model` is empty → fatal error: `[indexing].model is empty`.
+2. The alias doesn't exist in `models.toml` → fatal error: `Indexing alias '<name>' not found in models.toml`.
+3. The alias exists but doesn't have `embeddings = true` → fatal error: `Model '<name>' is not declared as an embedding model`.
+4. The alias has `embeddings = true` but no `dimensions` → fatal error (caught at models.toml load time).
+5. The alias's `provider` doesn't exist → fatal error.
+
+**Probe (adaptive + strict verify, opt-out, default on):** the probe does NOT pass `dimensions` in the request body (some providers reject it). The response's vector dim count is compared against the alias's declared `dimensions`. Mismatch is a fatal error:
+```
+Error: Probe indexing dim mismatch: alias declares dimensions=768,
+but provider returned 256 dimensions for model 'nomic'.
+...
+```
+
+**Embedding-only model rejection:** `-m <alias>` and `/model <alias>` reject aliases with `embeddings = true`. The TUI completer filters them out automatically. `sprach --list` shows them with a `[embeddings-only]` tag.
+
+**Files added/modified:**
+
+| File | Change |
+|------|--------|
+| `src/provider/embedding_models.rs` (new) | Hardcoded list of 11 well-known embedding model fragments; `is_potential_embedding_model(name)`. Kept as `#[cfg(test)]` (no production call sites in this PR; reserved for future tooling). |
+| `src/user_models.rs` | `ProviderConfig.embedding: bool` REMOVED. `UserModelConfig.embeddings: bool` (default `false`) + `dimensions: Option<u32>` ADDED. Validation: if `embeddings = true` and `dimensions` is None, fail at load time. |
+| `src/settings.rs` | `Settings.embedding: EmbeddingSettings` → `Settings.indexing: IndexingSettings`. Removed `IndexingSettings.provider` field. Merged `keyword_weight` and `semantic_weight` from the (now-removed) `RetrievalSettings`. Added 4 helper methods: `indexing_model_alias()`, `indexing_probe_enabled()`, `indexing_keyword_weight()`, `indexing_semantic_weight()`. Added `resolve_indexing_model()` returning `(UserModelConfig, ProviderConfig, model_id, dimensions)`. Removed `resolve_embedding_provider()`. |
+| `src/embeddings/client.rs` | `with_model(ollama, model_id, dimensions)` now takes 3 args. `DEFAULT_EMBEDDING_MODEL` constant REMOVED. |
+| `src/provider/openai_compat.rs` | `probe_embedding(model)` now returns `Result<usize, ProviderError>` (the response dim count). ADAPTIVE: no `dimensions` in request body. |
+| `src/provider/ollama_shim.rs` | `probe_embedding(model)` shim delegation returns `Result<usize, ...>`. |
+| `src/db/init.rs` | `EmbeddingInit` → `IndexingInit { provider, model_id, dimensions, probe }`. `run_embedding_probe` → `run_indexing_probe(provider, model_id, dimensions, probe_enabled)` with strict dim verify. |
+| `src/chat/repl.rs` | `init_chat_database` uses `Settings::resolve_indexing_model()`. Builds separate `Ollama` (shim) for embedding provider. Probe with strict dim verify before DB init. |
+| `src/chat/model_switch.rs` | Rejects embedding-only models in `/model` command. |
+| `src/main.rs` | `--model` flag rejects embedding-only models (both `handle_query_subcommand` and `handle_legacy_query`). `sprach --list` adds `[embeddings-only]` tag. |
+| `src/retrieval/search.rs` | `run_search(db, ollama, embedding_model_id, embedding_dimensions, query, ...)` — was just `embedding_model_name`. |
+| `src/chat/command_handlers.rs` | `handle_search` and reindex command use `Settings::resolve_indexing_model()` to get the model_id and dimensions. |
+| `src/user_models.rs` | New helpers: `list_chat_model_names()` (filters out embedding-only), `is_model_embedding_only(name)`. |
+| `src/chat/repl_tui.rs` | TUI completer uses `list_chat_model_names()` (filters out embedding-only). |
+| `src/query/mod.rs` | `settings.indexing.keyword_weight` and `.semantic_weight` (moved from `settings.retrieval.*`). |
+| `src/query/context.rs` | Resolves indexing alias for query subcommand (skips the probe). |
+| `src/commands/config_upgrade.rs` | Auto-detects missing `[indexing]` section (renamed from `[embedding]`). |
+| `src/commands/models_upgrade.rs` | `MissingEmbeddingFlag { name }` REMOVED. `MissingDimensions { alias }` ADDED (warning when model has `embeddings = true` but no `dimensions`). |
+| `src/lib.rs` | `pub mod commands;` to expose the upgrade tests. |
+| `src/settings.rs::SAMPLE_CONFIG` | `[embedding]` section replaced with `[indexing]`; `[retrieval]` section removed. |
+| `~/.config/sprachspiel/models.toml` | `embedding = true` removed from `[provider."llama-swap"]`. `[models."nomic"]` block added with `embeddings = true`, `dimensions = 768`. |
+| `~/.config/sprachspiel/config.toml` | `[embedding]` → `[indexing]`, `model = "nomic"` (alias), `provider = "llama-swap"` removed (inferred from alias), `keyword_weight` and `semantic_weight` added. `[retrieval]` section removed. |
+
+**Tests:** 1530 lib tests pass. New tests:
+- `user_models` `UserModelConfig.embeddings` + `dimensions` (4 tests: default false, opt-in, dimensions required when embeddings, dimensions optional for chat models)
+- `user_models::is_model_embedding_only` (1 test)
+- `user_models::list_chat_model_names` (helper, no dedicated test)
+- `settings` `IndexingSettings` parsing (4 tests: default, minimal, full, omitted) + `resolve_indexing_model` (4 tests: empty alias, alias not found, alias not embedding-capable, alias success)
+- `db::init` `IndexingInit` (4 tests: struct construction, skip_persistence, empty model_id rejected, whitespace model_id rejected)
+- `embeddings::client::with_model` (2 tests: constructor, stores model name and dimensions)
+- `query::tests::test_query_uses_indexing_weights` (regression test)
+- `commands::config_upgrade` (2 tests: missing indexing section, present indexing section; renamed from `embedding`)
+- `commands::models_upgrade` (3 tests: missing dimensions detected, present dimensions OK, chat models don't need dimensions; renamed from `embedding flag`)
+- `main` smoke test: `sprach --list` shows `nomic` with `[embeddings-only]` tag
+
+**12 commits** in this PR (in order):
+1. `c8891cc` refactor(user_models): move embedding flag to UserModelConfig
+2. `a806a7d` refactor(settings): rename [embedding] to [indexing] and merge [retrieval]
+3. `f1fcf1b` feat(settings): add resolve_indexing_model alias resolver
+4. `e56ddab` refactor(db): rename EmbeddingInit to IndexingInit with dimensions
+5. `74c5663` refactor(embeddings): pass dimensions to EmbeddingClient
+6. `23046d0` refactor(chat,db,provider): wire indexing pipeline with strict dim probe
+7. `978139f` refactor(callsites): resolve indexing alias for search and reindex
+8. `7064a84` test(query): add regression test for [indexing] weights
+9. `4de9a04` feat(rules): reject embedding-only models in -m and /model
+10. `227363e` refactor(migrations): model-level MissingDimensions warning
+
+(Commits 11 (chore: user config) and 12 (docs) are in this same PR but not listed above — see CHANGELOG.md and configuration.md for the user-facing documentation.)
+
+**ReAct Regression Bugs Investigation (W2 #121 follow-up):**
+
+During smoke testing of #121, three apparent ReAct regression bugs were investigated:
+
+1. **TUI message ordering** (real bug, fixed): Tool messages appeared in reverse order (`tool → tool → ... → assistant`) because `drain_and_add_tool_messages()` (in `event_loop.rs`) called `add_message()` (= `messages.push` at the end) AFTER the Assistant of that round had already been finalized via `finalize_streaming_zone_as_is()`. **Fix:** use `insert_before_streaming_zone()` (in `app.rs`) which has three-way logic: insert before streaming zone if present, insert before trailing tool messages, fall back to push. Resolves the bug at all 7 call sites, not just `ToolCallStarted`.
+
+2. **Cold-model 400 (transient 4xx) without diagnostic trace** (real bug, fixed): When `is_transient_4xx_error()` classified an error as transient (e.g., llama-swap model swap, empty body) and the retry path executed, the 4xx body was NOT logged — only the surfacing path logged it. This made it impossible to diagnose cold-model failures from logs alone. **Fix:** added a `log::debug!` of the truncated 4xx body in the transient retry path of `chat_with_retry()` (in `openai_compat.rs`), mirroring the surfacing-path diagnostic.
+
+3. **Silent context reset (32K→994 tokens)** (FALSE ALARM): Initially appeared that `session.messages` was being silently truncated between requests. Investigation revealed:
+   - `Session: messages=N` (logged by `context_builder.rs:321`) reports `session.messages.len()` — the canonical session state.
+   - `Complete: messages_count=M` (logged by `event_loop.rs`) reports `app.message_count()` — the TUI chat area, which includes `Thinking` and `AssistantStreaming` placeholders that exist transiently during multi-round tool cycles.
+   - The two counters measure different things: `Session: messages` grows by 2 per user turn (user message + assistant response), while `Complete: messages_count` is the total UI rendering, which can be 5-10× the session count during multi-round tool cycles.
+   - The `base_tokens=880` after a `base_tokens=32179` is just `prompt_eval_count` from the Ollama response — the size of THAT SPECIFIC REQUEST's prompt, which legitimately varies with how much context was sent.
+   - **No silent truncation occurs.** The session grows monotonically. This was a measurement-comparison confusion, not a real bug.
+
+**Files:** `src/chat/event_loop.rs` (Bug 1), `src/provider/openai_compat.rs` (Bug 2).
+
+---
+
+#### OpenAI-Compatible Provider Resilience — #122 [M1]
+
+**Status:** ✅ COMPLETED (merged into branch `feat/121-consumer-migration-openai`, awaiting PR #207 review)  
+**Depends on:** #121 (OpenAI-compatible provider already implemented and merged into this branch)  
+**Estimated effort:** 2–3 weeks  
+**Issue:** #122  
+**Merge criterion:** Provider consumer layer treats the LLM call as a first-class event stream: tool-call preview, post-tool streaming, visible retry, and tool-execution lifecycle events.
+
+**Strategic context:** The OpenAI-compatible HTTP transport and agnostic provider types were built in #121. Smoke testing revealed that the **consumer layer** (`custom_coordinator.rs` and the TUI event loop) still sees streaming as "accumulate chunks, then run the non-streaming tool loop". This made the provider feel fragile: tool arguments were collected silently, post-tool turns were not streamed, retry was invisible, and long tool executions gave no progress feedback. A comparison with the Pi Coding Agent (`~/git/thirdparty/pi`) showed that Pi's robustness comes from treating the LLM call as a **rich, push-based event stream** consumed uniformly by the loop and the UI. This issue refactored Sprachspiel's consumer layer to match that model.
+
+**Reference analysis:** `~/papers/sprachspiel-openai-provider-lessons-from-pi.md` maps Pi's event-stream design onto Sprachspiel's types and derives the implementation plan below.
+
+**Design decisions (approved and implemented):**
+
+| Topic | Decision | Rationale |
+|---|---|---|
+| Tool-call accumulator | `ToolCallAccumulator` lives in the provider | Single source of truth for `LlmToolCall`; no duplicated JSON parsing in coordinator |
+| Stream API | `chat_stream` returns `Stream<Item = Result<LlmStreamEvent, ProviderError>>` | Replaces pull-based `LlmStreamChunk`; enables lifecycle events |
+| `LlmStreamChunk` | Remove completely | Superseded by `LlmStreamEvent` |
+| `ollama_shim.rs` | Can be broken/simplified/removed | Ollama is reachable via OpenAI-compatible endpoints; shim no longer needs to preserve `ollama_rs` API |
+| Retry events | Variants inside `LlmStreamEvent` | Keeps the stream unified; rendered in the **status bar** (red, right-aligned), not the message buffer |
+| Tool-call preview | Rendered inside a volatile `LiveTurn` keyed by `tool_call_id`; previews carry `is_streaming = true` until frozen | Replaces fragile single-buffer preview matching (`is_tool_preview`/`find_tool_preview_index`) with exact key-based identity |
+| Post-tool streaming | All ReAct turns stream, including after tool results | Removed `InterToolText` event and the non-streaming `process_next()` path |
+| Streaming buffer | Two-Buffer model: `App::messages` (committed history) + `App::live_turn` (volatile turn) | Eliminates duplicated thinking, fragile insertion heuristics, and multi-round ordering bugs |
+| Tool execution output | Skeleton only (`Started` / `Finished`) | Full partial-output callbacks deferred to a follow-up |
+
+**New event vocabulary (`src/provider/types.rs`):**
+
+```rust
+pub enum LlmStreamEvent {
+    // Lifecycle
+    Start,
+    Done { reason: Option<String>, usage: Option<LlmUsage> },
+    Error { error: ProviderError },
+
+    // Content blocks
+    TextStart,
+    TextDelta { delta: String },
+    TextEnd { content: String },
+
+    ThinkingStart { signature: Option<String> },
+    ThinkingDelta { delta: String },
+    ThinkingEnd { content: String },
+
+    // Tool-call lifecycle
+    ToolCallStart { index: u32, id: Option<String>, name: Option<String> },
+    ToolCallDelta { index: u32, id: Option<String>, name_delta: Option<String>, argument_delta: String },
+    ToolCallEnd { index: u32, call: LlmToolCall },
+
+    // Retry lifecycle (rendered in status bar)
+    ProviderRetryStarted { attempt: u32, max_attempts: u32, delay_ms: u64, reason: String },
+    ProviderRetryFinished { success: bool, attempt: u32 },
+}
+```
+
+**New `LlmEvent` variants (`src/chat/llm_event.rs`):**
+
+```rust
+ToolCallPreview { tool_call_id: String, name: String, args: serde_json::Value }
+ToolExecutionStarted { tool_call_id: String, name: String, args: serde_json::Value }
+ToolExecutionFinished { tool_call_id: String, result: String, is_error: bool }
+ProviderRetryStarted { attempt: u32, max_attempts: u32, delay_ms: u64, reason: String }
+ProviderRetryFinished { success: bool, attempt: u32 }
+```
+
+**Implementation phases (each a granular commit):**
+
+| Phase | Commit focus | Files | Status |
+|---|---|---|---|
+| 0 | Add `LlmStreamEvent`, `LlmUsage`, lifecycle `LlmEvent` variants, `ChatMessage::is_tool_preview` flag | `src/provider/types.rs`, `src/chat/llm_event.rs`, `src/chat/app.rs` | ✅ `6c2138e` |
+| 1 | Extract `ToolCallAccumulator` from SSE parser | `src/provider/openai_compat.rs` (+ new `src/provider/tool_accumulator.rs`) | ✅ `6a1863c` |
+| 2 | Emit retry lifecycle events from `chat_with_retry` and `chat_stream` | `src/provider/openai_compat.rs` | ✅ `0d98b1e` |
+| 3 | Replace `LlmStreamChunk` with `LlmStreamEvent`; simplify/remove `ollama_shim.rs` | `src/provider/openai_compat.rs`, `src/provider/ollama_shim.rs`, `src/provider/types.rs` | ✅ `cc17d58` |
+| 4a | `chat_stream` consumes `LlmStreamEvent`; emits `ToolCallPreview` | `src/chat/custom_coordinator.rs` | ✅ `70c58df` |
+| 4b | Make post-tool turns streaming (`process_next_stream`) | `src/chat/custom_coordinator.rs` | ✅ `4ff21bf` |
+| 5 | Tool execution lifecycle events | `src/chat/custom_coordinator.rs`, `src/chat/llm_event.rs` | ✅ `d3b3181` |
+| 6a | Render tool-call preview in message buffer | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | ✅ `4a16cf6` |
+| 6b | Render tool execution finished state | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | ✅ `4a16cf6` |
+| 6c | Render retry status in status bar | `src/chat/event_loop.rs`, `src/chat/app.rs`, `src/chat/view/*.rs` | ✅ `4a16cf6` |
+| 7 | Remove `InterToolText`, dead code, docs, clippy, tests | All above | ✅ `1fdc309` |
+| 8 | Two-Buffer live turn: introduce `LiveTurn`, `App::live_turn`, drive events through live turn | `src/chat/tui/live_turn.rs`, `src/chat/app.rs`, `src/chat/event_loop.rs`, `src/chat/view/ratatui_view.rs` | ✅ `33566f4` |
+| 9 | Drive live turn from event loop; remove `StreamBlockDone`, `block_finalized` | `src/chat/event_loop.rs`, `src/chat/core.rs`, `src/chat/llm_event.rs`, `src/chat/app.rs` | ✅ `ae5d217` |
+| 10 | Remove legacy insertion methods (`insert_before_streaming_zone`, `insert_after_round_0`, `insert_at_round_boundary`, `streaming_zone_start`, `find_tool_preview_index`) and legacy preview flag (`is_tool_preview`/`freeze_preview`) | `src/chat/app.rs`, `src/chat/tui/components/chat_area.rs`, `src/chat/tui/live_turn.rs` | ✅ uncommitted |
+| 11 | Remove legacy tool-message channel (`tool_call_rx`/`drain_tool_messages`/`drain_and_add_tool_messages`/TUI_CALLBACK wiring); tool results enter only via `ToolExecutionFinished`; suppress `PreToolContent` in streaming TUI path | `src/chat/view/ratatui_view.rs`, `src/chat/event_loop.rs`, `src/chat/repl_tui.rs`, `src/chat/core.rs`, `src/chat/llm_event.rs` | ✅ uncommitted |
+
+**Testing plan (executed):**
+
+- 1543 lib tests passing (`cargo test --features all-tools --lib`) after Two-Buffer cleanup + TUI bug fixes.
+- SSE parser events with incremental tool-call arguments (unit tests in `tool_accumulator.rs`).
+- Post-tool streaming validated by code path; mock-provider test deferred to follow-up.
+- Retry events emitted from `OpenAICompatibleProvider::chat_with_retry` (integration scenario deferred to manual test).
+- Tool lifecycle event sequence (`Started` → `Finished`) logged and forwarded to TUI.
+- TUI preview insertion order enforced by `freeze_all_tool_previews()` on `ToolCallStarted`.
+- TUI retry overlay rendered in status bar (red, right-aligned) via `StatusBarState::overlay`.
+
+**Known limitations / follow-up:**
+
+- `ToolExecutionStarted`/`Finished` currently only mark start/end. Full partial-output streaming for long-running tools is deferred to a follow-up issue.
+- The Two-Buffer redesign is structurally complete; visual styling of streaming/preview states is reserved for future work.
+- `cargo clippy` (default features) passes; `--all-features` and individual feature flags still expose pre-existing dead-code/feature-gating warnings that are out of scope for #122 (documented in AGENTS.md and to be addressed in W2 close-out).
+
+**Related:** Issue #122, #121 (predecessor), #123 (final ollama-rs removal). Reference: `~/papers/sprachspiel-openai-provider-lessons-from-pi.md`.
+
+---
+
+#### TUI Streaming Bug Fixes — #121/#122 follow-up (commit `baab7be`)
+
+**Status:** ✅ COMPLETED  
+**Commits:** `02e2a9f` (tool result truncation) + `baab7be` (7 interconnected bug fixes)
+
+Smoke testing of PR #207 with `glm-5.2:cloud` and `gemma4-e2b:think` revealed seven interconnected bugs in the TUI streaming path. The symptoms were:
+
+1. **Context count drops** from ~16K (during reasoning) to ~766/1.0K (after completion).
+2. **Tool calls disappear** — N tool calls accumulate during the ReAct loop, then "all disappear" and only 3 remain.
+3. **Text is replaced** — pre-tool text streamed before tool calls vanishes when the final response is committed.
+4. **Tool call arguments not shown** — `🔧 list_directory() (id)` with no args displayed.
+5. **Empty tool name** — `🔧 () (list_directory)` with the name field empty and the id in its place.
+6. **Status bar corruption** — `eprintln!` leaking into the ratatui alternate screen, producing artifacts like `cursive=` from tool result content appearing in the modeline.
+
+**Root causes and fixes:**
+
+| Bug | Root cause | Fix | Files |
+|-----|-----------|-----|-------|
+| A: Context drops to ~1K | `stream_turn` ignores `LlmStreamEvent::Done` usage → `final_data` always `None` → `TokenMetrics::default()` (zeros) | Capture `usage` from `Done` event and populate `final_data` with `prompt_eval_count`/`eval_count` | `custom_coordinator.rs` |
+| B: Fallback excludes system+tools | `history_real_tokens()` fallback estimates only message content, not system prompt (~3.5K) + tools (~2.9K) | Add `history_real_tokens_with_overhead(overhead)`; `spawn_llm_task` passes `system_tokens + tools_tokens` | `session.rs`, `event_loop.rs` |
+| C: Text replaced | `finalize_stream()` uses `retain()` to remove ALL `Text` blocks, replacing with single `post_tool_content` block | Remove only the LAST `Text` block (via `rposition`+`remove`), preserving earlier rounds' pre-tool text | `app.rs` |
+| D: Tool calls collide | `tool_call_id = call.function.name.replace(' ', '_')` — same tool in multiple rounds shares the same id → `set_tool_result` overwrites earlier results, `ToolExecutionStarted` skips freezing later previews | Generate unique id via monotonic counter: `{tool_name}_{counter}` | `custom_coordinator.rs` |
+| E: Previews orphaned | `ToolExecutionStarted` handler skips `freeze_tool_preview_by_name` when a block with the same id already exists | Always call `freeze_tool_preview_by_name`; add guard against duplicate blocks | `event_loop.rs`, `live_turn.rs` |
+| F: Results overwritten | `set_tool_result` finds the last block with `id == tool_call_id` without checking if it already has a result | Prefer blocks with `result.is_none()` before overwriting | `live_turn.rs` |
+| Args: Arguments not displayed | `freeze_tool_preview_by_name` uses preview args (empty `Object({})`) when the provider didn't stream `argument_delta` — common with Ollama/cloud providers that only send args in `ToolCallEnd` | Fall back to `ToolExecutionStarted` args when preview args are empty | `live_turn.rs` |
+
+**Additional fix (earlier in session, commit `baab7be`):**
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| eprintln leak | After commit `5c4df48` removed `set_tui_callback()` from `RatatuiView::new()`, `tui_aware_print`/`display_tool_call`/`log_tool_result` fell through to `eprintln!`, corrupting the alternate screen | Add `if crate::logging::is_tui_mode() { return; }` early return to all three functions |
+
+**Token count fix (earlier in session, commit `baab7be`):**
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| estimate_status_bar ignores system+tools | `estimate_status_bar()` passed `String::new()` as system prompt, so system (~3.5K) + tools (~2.9K) were not counted during streaming | Use `build_pre_tool_prompt(self)` for the real system prompt and add `tool_count * TOKENS_PER_TOOL` |
+
+**Verification (terminal-use / tu with `glm-5.2:cloud`):**
+
+- Tool calls show name and args: `🔧  list_directory(path=.) (list_directory_1)`, `🔧  read_file(path=Cargo.toml) (read_file_2)` ✅
+- 80+ tool calls accumulate across ReAct rounds without disappearing ✅
+- Pre-tool text preserved between rounds (not replaced) ✅
+- Status bar shows 23K–94K (realistic), not 1K–766 ✅
+- No status bar corruption from `eprintln!` leaks ✅
+- IDs unique: `list_directory_1`, `list_directory_2`, ..., `read_file_67`, etc. ✅
+
+**Test count:** 1543 lib tests passing (`cargo test --features all-tools --lib`), up from 1538.
+
+---
+
+#### BUG-1 Root Cause Re-test (Round 3) — Revised Diagnosis & Fix
+
+**Status:** ✅ COMPLETED (commit pending — awaiting Hermes Agent re-test)
+**Previous rounds:** `PR207-TEST-RESULTS.md` (R1), `PR207-RETEST2-RESULTS.md` (R2), `PR207-RETEST3-RESULTS.md` (R3)
+**Previous fix attempts:** `9162fd7` (broaden empty-args check), `e24a146` (BUG-2 ordering + BUG-1 debug logging)
+
+Re-testing of PR #207 (round 3, commit `e24a146`) confirmed BUG-2 (thinking block ordering) is **FIXED** but BUG-1 (empty tool call args with local models) **still fails** with BeeLama/DFlash. The debug logs added in `e24a146` revealed the previous diagnosis was incomplete: the `freeze_tool_preview_by_name` correction (lines 303-338) presumed the streaming preview and the `ToolExecutionStarted` used the **same** `tool_call_id`, which is only true for cloud models. A deeper code review found **two interlinked bugs**:
+
+| Bug | Root cause (revised) | Fix |
+|-----|---------------------|-----|
+| (i) `tool_call_callback` dead | `custom_coordinator.rs:377` registers the callback that emits `LlmEvent::ToolCallStarted` (which drives `freeze_all_tool_previews` + `LlmState::ToolCall` transition), but the callback was **never invoked** in `stream_turn` after the migration to `LlmStreamEvent` granular events. Consequence: the event_loop never froze previews in the streaming path, leaving them orphaned and causing `freeze_tool_preview_by_name` to miss the match. | Invoke `tool_call_callback` on the **first** `LlmStreamEvent::ToolCallStart` of each turn (flag `tool_call_started_emitted` reset per `stream_turn`). Preserves single-fire semantics for multi-tool turns. |
+| (ii) `tool_call_id` divergence | `LlmStreamEvent::ToolCallStart` creates the preview with the provider's id (empty for BeeLama, `"call_123"` for cloud). `ToolExecutionStarted` (coordinator:1203) synthesizes `format!("{name}_{counter}")` — a different id. `freeze_tool_preview_by_name` can't match by id, and name-match fails when the name is also empty (BeeLama). | Preserve the stream id in a new `stream_tool_call_ids: Vec<String>` field, populated in `ToolCallEnd` (preserving `LlmToolCall.id` which `ollama_rs::ToolCall` lacks). The ReAct execution loop reuses this id when non-empty, falling back to the `{name}_{counter}` synthetic id only when the stream id is empty. |
+| (iii) `freeze_all_tool_previews` timing | Calling `freeze_all_tool_previews` in the `ToolCallStarted` handler (event_loop:426) froze previews **before** `argument_delta` populated args (for cloud models), replicating BUG-1 for cloud too once (i) was fixed. | Move `freeze_all_tool_previews` from the `ToolCallStarted` handler to the start of the `ToolExecutionStarted` handler (after the stream ended and all previews are fully populated). `ToolCallStarted` still does `finalize_streaming_zone_as_is` + `increment_round` + `set_llm_state(ToolCall)` for immediate visual feedback. |
+| (iv) name-match defense | Even with (i)+(ii)+(iii), an edge case remains: a frozen block with a divergent stream id AND an empty name (provider streamed neither) leaves no match path in `freeze_tool_preview_by_name`. | Add a defense-in-depth fallback in `freeze_tool_preview_by_name`: after id-match in `blocks` and `tool_previews` fail, scan `blocks` in reverse for the last `TurnBlock::ToolCall` with `result.is_none()`, empty/matching name, and empty args; update its name, args, and `tool_call_id` so `set_tool_result` can find it. |
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `src/chat/custom_coordinator.rs` | Add `stream_tool_call_ids: Vec<String>` field; reset at start of `stream_turn`; populate in `ToolCallEnd`; reuse in ReAct loop (prefer stream id, fallback to `{name}_{counter}`); invoke `tool_call_callback` on first `ToolCallStart` per turn via `tool_call_started_emitted` flag |
+| `src/chat/event_loop.rs` | Move `freeze_all_tool_previews()` from `ToolCallStarted` handler to `ToolExecutionStarted` handler (before `freeze_tool_preview_by_name`); keep `finalize_streaming_zone_as_is` + `increment_round` + `set_llm_state` in `ToolCallStarted` |
+| `src/chat/tui/live_turn.rs` | Add BUG-1 fallback (iii) in `freeze_tool_preview_by_name`: name-match over frozen `blocks` (last block with no result + empty/matching name + empty args) updates name/args/tool_call_id |
+
+**Unit tests added (4):**
+
+| Test | Scenario |
+|------|----------|
+| `freeze_tool_preview_by_name_local_model_empty_stream_id` | BeeLama flow: preview id="" name="" args={} → freeze_all → `freeze_tool_preview_by_name("read_file_1", "read_file", {path})` → block has args (via fallback) + `set_tool_result` finds it |
+| `freeze_tool_preview_by_name_cloud_model_streamed_id_and_args` | Cloud flow: preview id="call_123" name="read_file" args={path} → freeze_all → `freeze_tool_preview_by_name("call_123", ...)` → match by id, args preserved |
+| `freeze_tool_preview_by_name_multi_round_no_collision` | Same tool in R1 and R2 — unique ids via counter, `set_tool_result` finds correct block each round |
+| `freeze_tool_preview_by_name_fallback_updates_frozen_block_by_name` | Divergent non-empty stream id + matching name + empty args → fallback updates block without duplicate |
+
+**Verification:**
+
+- `cargo build --features all-tools` ✅
+- `cargo test --lib --features all-tools` → **1552 passed, 0 failed** (up from 1548) ✅
+- `cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity` → **0 errors** ✅
+- `cargo fmt --check` → clean ✅
+- Manual re-test with BeeLama/DFlash (local) and glm-5.2:cloud: **pending Hermes Agent re-test** (skill `pr-testing`)
+
+**Why the previous fix `e24a146` didn't work:** The correction in `freeze_tool_preview_by_name` (lines 303-338) assumed the block frozen by `freeze_all_tool_previews` had the **same** `tool_call_id` as the `ToolExecutionStarted`. This was only true for cloud models (which stream `call_123` and the coordinator reused that id). For BeeLama, (i) prevented `freeze_all_tool_previews` from running at all, so no block existed to match; and (ii) made the synthesized id diverge from the (empty) stream id, so even after (i) was hypothetically fixed, the id-match would still fail. The combination of (i) + (ii) + (iii) + (iv) is required to close BUG-1 for both local and cloud models.
+
+**R4 completion:** Commit `294133c` (applied by Hermes Agent during R4 testing) added the final BUG-1 layer: the `ToolCallEnd` handler now updates the preview with the final parsed `call.arguments` (during streaming, each `argument_delta` is a partial JSON fragment that cannot parse alone, so the preview stayed as a partial `Value::String`), and the `ToolCallDelta` handler now treats `Value::Object({})` (from `ToolCallStart`) as an empty string base for concatenation. See R4 results: `~/PR207-BUG1-R4-TEST-RESULTS.md`.
+
+---
+
+#### Provider Switching Bug — /model does not rebuild LLM client (R4 finding)
+
+**Status:** ✅ COMPLETED
+**Found in:** R4 re-test (`~/PR207-BUG1-R4-TEST-RESULTS.md` section "Bug Adicional Encontrado")
+
+**Bug:** Switching models via `/model <novo>` mid-session updated `state.model_config` (carrying the new model's `model_id`) but did NOT rebuild `state.ollama` — the HTTP client/shim that actually sends requests. The `ollama` client stayed bound to the initial model's provider (e.g., `llama-swap`), even when the new model declared `provider = "ollama"` in `models.toml`. Result: the next prompt went to the wrong provider → `⛔ no router for requested model` (from llama-swap, which doesn't know `glm-5.2:cloud`).
+
+**Root cause:** `model_switch::switch_model()` received `ollama: &Ollama` (immutable) only for `ModelCapabilities::detect()` — it could not rebuild the client and return it. `ModelSwitchResult` did not carry the new client. The caller `handle_model_switch` updated 5 state fields but omitted `state.ollama`.
+
+**Fix (Opção B1 — refactor `switch_model` to build and return the new client):** `switch_model` now receives `settings: &Settings` instead of `ollama: &Ollama`. It builds the new client internally via `settings.ollama_client_for_model(model_name)` (which resolves the provider from `models.toml` — each model declares `provider = "<name>"`), uses it for capability detection (so detection hits the right provider from the start — previously it used the old provider and could fall back to the old model's capabilities), and returns the new client in `ModelSwitchResult.ollama`. The caller assigns `state.ollama = result.ollama;`.
+
+| Layer | File | Change |
+|-------|------|--------|
+| Signature | `model_switch.rs` | `ollama: &Ollama` → `settings: &Settings`; build client internally via `settings.ollama_client_for_model()` |
+| Struct | `model_switch.rs` | Add `pub ollama: crate::provider::Ollama` field to `ModelSwitchResult` |
+| Caller | `command_handlers.rs` | Pass `&state.settings` instead of `&state.ollama`; add `state.ollama = result.ollama;` |
+| Test | `model_switch.rs` | `switch_model_rebuilds_ollama_for_new_provider` — verifies `result.ollama` points to the new model's provider `base_url` (via `CompatOllama` Debug impl), using the environment's `models.toml` (skips if models missing) |
+
+**Note on #123:** The `ollama` field carries the `CompatOllama` shim type because `CustomCoordinator` still uses the shim's API (`send_chat_messages_stream_events`), not the `LlmProvider` trait. When #123 (Remove ollama-rs) migrates the coordinator to `Box<dyn LlmProvider>`, this field's type changes alongside — a localized change. This fix does NOT invade #123's scope.
+
+**Verification:** 
+- Unit test: `switch_model_rebuilds_ollama_for_new_provider` ✅ (1553 lib tests pass, up from 1552)
+- Manual R5 re-test (Hermes Agent, pending): reproduce R4 scenario — start with local model (llama-swap), `/model glm-5.2:cloud` (ollama provider), send prompt → must work without `no router for requested model`; switch back to local, send prompt → must work.
+
+---
+
+#### Embedding Fallback + Chunk Sizing Fix (R5 follow-up)
+
+**Status:** ✅ COMPLETED
+**Commits:** `fe7c267` (is_context_exceeded + chunk sizing), `7dfd0d4` (find_sentence_boundary min limit)
+
+When switching the embedding model to `lfm2.5-embed-350m` (512-token batch size), 38 chunks failed with `input (544 tokens) is too large to process. increase the physical batch size`. The root cause was in the sprachspiel embedding pipeline, not the backend:
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| Fallback never triggered | `is_context_exceeded()` only recognized `context_length`, `context length`, `maximum context`, `token limit`, `sequence length` — NOT the BeeLama/llama.cpp error format (`batch size`, `too large to process`) | Added `batch size`, `too large to process`, `too long` to the pattern list (`client.rs:70-77`) |
+| Chunks oversized | `DEFAULT_CHARS_PER_TOKEN=3.0` and `DEFAULT_CHUNK_PERCENT=0.80` generated chunks of 1132 chars (~377 estimated tokens) that the real tokenizer counted as 544+ | Reduced to `2.0` and `0.65` — new max_chars = 613 (~307 estimated tokens, headroom for 50% tokenizer imprecision) |
+| Chunk explosion | `find_sentence_boundary()` could shrink chunks to ~185 chars (one sentence) when the nearest boundary was found early, generating 79 chunks for a 10KB text (exceeding `MAX_CHUNKS_PER_ITEM=64`) | Added `min_chunk_size` parameter (60% of `max_chars`) — the function refuses to return a boundary that would shrink the chunk below this minimum |
+
+**SOTA evolution mapping** (deferred to future PRs):
+- **Token-aware chunking** (replace chars/token estimate with real tokenizer): confirmed in W4.4 (#107)
+- **Recursive character splitting** (`\n\n` → `\n` → `. ` → ` `): já mapeado no M4 SemanticChunker
+- **Document-aware chunking**: já mapeado no M4 SemanticChunker, after milestone 2
+
+**Verification:** 1555 lib tests pass (+2 new: `test_sentence_boundary_respects_min_chunk_size`, `test_repetitive_text_no_chunk_explosion`).
 
 ---
 
@@ -4357,6 +4713,8 @@ Before #123 is merged, the following acceptance criteria MUST be satisfied. Thes
 | Rate limiting per provider | Config in `config.toml` | P15 or earlier |
 | Provider health check | `is_available()` on trait | P6.0f |
 | Streaming integration in TUI | Requires TUI first | M3 |
+| **Timeout/Connection retry** | **Migrate retry loop in `core.rs` from `classify_for_retry(&OllamaError)` to `ProviderError::retry_category()`. Currently `ProviderError::Timeout` and `Connection` are converted to `OllamaError::Other` (which `classify_for_retry` maps to `NoRetry`), breaking the ReAct loop instead of retrying. `ProviderError::retry_category()` already correctly maps Timeout → NetworkRetry and Connection → NetworkRetry. The migration eliminates the `convert_provider_error` layer and the string-sniffing workaround. See comments in `ollama_shim.rs:480` and `retry.rs:107`.** | **#123** |
+| **TTFB watchdog** | **Implement a "time-to-first-byte" watchdog in `parse_sse_stream` (openai_compat.rs). If no SSE chunk arrives within ~120s of stream start, reconnect instead of waiting the full idle_timeout (300s). Inspired by Hermes Agent's `HERMES_CODEX_TTFB_TIMEOUT_SECONDS=120`. The Hermes Agent also injects TCP keepalive (`SO_KEEPALIVE`, `TCP_KEEPIDLE=30`, `TCP_KEEPINTVL=10`, `TCP_KEEPCNT=3`) to detect dead peer connections in ~60s — reqwest already has `tcp_keepalive=15s` by default, but explicit socket options could be added. See `agent_runtime_helpers.py:1402` and `chat_completion_helpers.py:308` in the Hermes Agent codebase.** | **#123** |
 
 **Related:** Issue #72
 
@@ -7169,13 +7527,19 @@ timeout_ms = 2000
 ### Context-Aware Chunking (SemanticChunker) [M4]
 
 **Status:** 📋 DRAFT
-**Depends on:** None (replaces current TokenChunker)
+**Depends on:** None (replaces current TokenChunker). Token-aware chunking (Prioridade 3) confirmed in W4.4 (#107).
 **Estimated effort:** 3-5 days
 **Priority within M4:** After Attention Priming
 
 **Goal:** Replace fixed-size chunking with semantic chunking that respects paragraph/sentence boundaries. Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed (Shaukat et al. 2026). Config: `[embedding] chunking = "semantic" | "fixed"`.
 
-**Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading).
+**Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading). This covers SOTA Prioridade 4 (recursive character splitting with separator hierarchy) and document-aware chunking (headers/code blocks).
+
+**SOTA evolution mapping (2025-2026 research):**
+- **Prioridade 3 (token-aware chunking):** Replace chars/token estimate with real tokenizer counts via `/tokenize` endpoint or tokenizer crate. Eliminates the root cause of chunk sizing bugs. **Confirmed in W4.4 (#107 — Embedding provider abstraction)** as part of the provider abstraction work.
+- **Prioridade 4 (recursive character splitting):** Already covered by this M4 draft — the `\n\n` → `\n` → sentence → token hierarchy IS recursive character splitting.
+- **Document-aware chunking:** Already covered by this M4 draft ("Preserve section metadata (nearest heading)"). After milestone 2 (TUI).
+- **Semantic chunking (embedding similarity):** NOT recommended for sprachspiel — 4-5x indexing cost, not justified for a local chat app.
 
 **Source:** RAG improvement research (internal analysis, Section 1)
 

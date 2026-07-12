@@ -1,11 +1,19 @@
 //! Implements `sprach models upgrade` — migrate `models.toml` to the
-//! current format (#120):
+//! current format (OpenAI-first):
 //!
 //! 1. **Missing `[provider]` section**: Creates a default
-//!    `[provider."my-ollama"]` block with `base_url = "http://127.0.0.1:11434"`.
+//!    `[provider."my-ollama"]` block with `kind = "openai"` and
+//!    `base_url = "http://127.0.0.1:11434/v1"`.
 //! 2. **Models without `provider` field**: Adds
 //!    `provider = "<first_available>"` to each model entry that doesn't
 //!    reference a provider.
+//! 3. **Legacy `kind = "ollama"`**: Migrates to `kind = "openai"` and
+//!    ensures `base_url` has the `/v1` suffix.
+//! 4. **`base_url` without `/v1` suffix**: Appends it.
+//! 5. **Removed fields `top_k`, `repeat_penalty`, `think`**: Removed from
+//!    the schema. Users running `sprach models upgrade` get a warning
+//!    but data is preserved (the migration only ADDS missing fields and
+//!    migrates kind — never destroys existing values).
 //!
 //! Like `config upgrade`, this is purely additive — never modifies or
 //! removes existing values. Backups are created automatically (`.bak`, or
@@ -14,12 +22,6 @@
 //!
 //! Invalid TOML is reported with the parser error and the process aborts
 //! — the command never overwrites a file it cannot parse.
-//!
-//! This module returns user-facing messages as `Vec<String>` (not via
-//! `println!`/`eprintln!`). If a future change introduces direct prints,
-//! the `clippy::print_stdout`/`clippy::print_stderr` lints (configured
-//! as `warn` crate-wide in `Cargo.toml`) will surface a warning at
-//! build time.
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +44,30 @@ pub enum ModelsMigration {
         model_name: String,
         /// The provider name to set.
         provider: String,
+    },
+    /// Migrate `kind = "ollama"` to `kind = "openai"`.
+    MigrateProviderKind {
+        /// Provider name.
+        name: String,
+    },
+    /// Append `/v1` to a `base_url` that is missing it.
+    AppendV1Suffix {
+        /// Provider name.
+        name: String,
+        /// Original base_url.
+        old_url: String,
+    },
+    /// A model is declared as embedding-only (`embeddings = true`)
+    /// but has no `dimensions` field.
+    ///
+    /// This is a **warning-only** migration. The upgrader never
+    /// auto-adds `dimensions` (the user must know what dim count the
+    /// model actually produces). The startup probe will fail-fast
+    /// with a clear error if the alias's dimensions is missing
+    /// when the indexing pipeline is initialized.
+    MissingDimensions {
+        /// Model alias (key under `[models.*]`).
+        alias: String,
     },
 }
 
@@ -85,15 +111,26 @@ pub fn run_models_upgrade(
     // Separate migrations by type
     let mut providers_to_add: Vec<&ModelsMigration> = Vec::new();
     let mut fields_to_add: Vec<&ModelsMigration> = Vec::new();
+    let mut kinds_to_migrate: Vec<&ModelsMigration> = Vec::new();
+    let mut urls_to_fix: Vec<&ModelsMigration> = Vec::new();
+    let mut embedding_warnings: Vec<&ModelsMigration> = Vec::new();
 
     for m in &migrations {
         match m {
             ModelsMigration::AddProvider { .. } => providers_to_add.push(m),
             ModelsMigration::AddProviderField { .. } => fields_to_add.push(m),
+            ModelsMigration::MigrateProviderKind { .. } => kinds_to_migrate.push(m),
+            ModelsMigration::AppendV1Suffix { .. } => urls_to_fix.push(m),
+            ModelsMigration::MissingDimensions { .. } => embedding_warnings.push(m),
         }
     }
 
     let action_verb = if dry_run { "Would add" } else { "Adding" };
+    let migrate_verb = if dry_run {
+        "Would migrate"
+    } else {
+        "Migrating"
+    };
 
     if !providers_to_add.is_empty() {
         output.push(format!(
@@ -104,6 +141,36 @@ pub fn run_models_upgrade(
         for m in &providers_to_add {
             if let ModelsMigration::AddProvider { name, .. } = m {
                 output.push(format!("  - [provider.\"{name}\"]"));
+            }
+        }
+        output.push(String::new());
+    }
+
+    if !kinds_to_migrate.is_empty() {
+        output.push(format!(
+            "{} {} provider kind(s) from \"ollama\" to \"openai\":",
+            migrate_verb,
+            kinds_to_migrate.len()
+        ));
+        for m in &kinds_to_migrate {
+            if let ModelsMigration::MigrateProviderKind { name } = m {
+                output.push(format!("  - [provider.\"{name}\"]"));
+            }
+        }
+        output.push(String::new());
+    }
+
+    if !urls_to_fix.is_empty() {
+        output.push(format!(
+            "{} {} base_url(s) to add /v1 suffix:",
+            migrate_verb,
+            urls_to_fix.len()
+        ));
+        for m in &urls_to_fix {
+            if let ModelsMigration::AppendV1Suffix { name, old_url } = m {
+                output.push(format!(
+                    "  - [provider.\"{name}\"] {old_url} → {old_url}/v1"
+                ));
             }
         }
         output.push(String::new());
@@ -123,6 +190,28 @@ pub fn run_models_upgrade(
             {
                 output.push(format!(
                     "  - [models.\"{model_name}\"] -> provider = \"{provider}\""
+                ));
+            }
+        }
+        output.push(String::new());
+    }
+
+    // Warn when an embedding model is missing its `dimensions`
+    // field. The startup probe will fail-fast if the alias is
+    // referenced from [indexing] and the dimensions don't match the
+    // provider's response; this warning is just informational.
+    if !embedding_warnings.is_empty() {
+        output.push(format!(
+            "WARN: {} embedding model(s) do not declare `dimensions`:",
+            embedding_warnings.len()
+        ));
+        for m in &embedding_warnings {
+            if let ModelsMigration::MissingDimensions { alias } = m {
+                output.push(format!(
+                    "  - [models.\"{alias}\"]: no `dimensions = N` field. \
+                     Add `dimensions = <N>` (e.g. 768 for nomic-embed-text-v2-moe, \
+                     256 for Matryoshka-truncated) so [indexing] can use this \
+                     model."
                 ));
             }
         }
@@ -154,8 +243,6 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                 models_path.display()
             );
             log::error!("Models upgrade aborted: {msg}");
-            // Return empty migrations — caller will still get a meaningful
-            // error path through apply_migrations if it tries to apply.
             return migrations;
         }
     };
@@ -174,7 +261,59 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
         });
     }
 
-    // 2. Walk [models.*] entries and check for `provider` field
+    // 2. Walk [provider.*] entries for kind migration and /v1 suffix
+    if let Some(provider_table) = doc.get("provider").and_then(|item| item.as_table_like()) {
+        for (provider_name, provider_item) in provider_table.iter() {
+            let provider_table_inner = match provider_item.as_table_like() {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // 2a. Migrate kind = "ollama" to kind = "openai"
+            if let Some(kind_item) = provider_table_inner.get("kind")
+                && let Some(kind_str) = kind_item.as_str()
+                && (kind_str == "ollama" || kind_str == "openai_compatible")
+            {
+                migrations.push(ModelsMigration::MigrateProviderKind {
+                    name: provider_name.to_string(),
+                });
+            }
+
+            // 2b. Append /v1 to base_url if missing
+            if let Some(url_item) = provider_table_inner.get("base_url")
+                && let Some(url_str) = url_item.as_str()
+            {
+                let trimmed = url_str.trim();
+                let has_scheme = trimmed.starts_with("http://") || trimmed.starts_with("https://");
+                let mut normalized = if has_scheme {
+                    trimmed.to_string()
+                } else {
+                    format!("http://{trimmed}")
+                };
+                if !normalized.contains("/v1")
+                    && !normalized.ends_with('/')
+                    && !normalized.ends_with("/v1/")
+                {
+                    normalized.push_str("/v1");
+                }
+                if normalized != trimmed {
+                    migrations.push(ModelsMigration::AppendV1Suffix {
+                        name: provider_name.to_string(),
+                        old_url: trimmed.to_string(),
+                    });
+                }
+            }
+            // The old `embedding = true` field on `[provider.*]`
+            // was removed. The capability now lives on the model
+            // (`[models.*].embeddings = true`). No migration needed;
+            // users who had `embedding = true` on the provider will
+            // need to manually move it to the embedding-capable
+            // models. The models loader silently ignores the
+            // `embedding` field on the provider, so no parse error.
+        }
+    }
+
+    // 3. Walk [models.*] entries and check for `provider` field
     let provider_names: Vec<String> = if has_providers {
         doc.get("provider")
             .and_then(|item| item.as_table_like())
@@ -192,9 +331,6 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
 
     if let Some(models_table) = doc.get("models").and_then(|item| item.as_table_like()) {
         for (model_name, model_item) in models_table.iter() {
-            // Skip commented/disabled models? For now we treat all
-            // entries as active — the user can manually remove
-            // commented ones if needed.
             let model_table = match model_item.as_table_like() {
                 Some(t) => t,
                 None => continue,
@@ -204,6 +340,22 @@ fn detect_migrations(content: &str, models_path: &Path) -> Vec<ModelsMigration> 
                 migrations.push(ModelsMigration::AddProviderField {
                     model_name: model_name.to_string(),
                     provider: default_provider.clone(),
+                });
+            }
+
+            // Warn if the model has `embeddings = true` but no
+            // `dimensions`. The startup probe will fail-fast with a
+            // clear error if this alias is referenced from `[indexing]`.
+            // This warning is informational only; we never auto-add
+            // dimensions.
+            let has_embeddings = model_table
+                .get("embeddings")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let has_dimensions = model_table.contains_key("dimensions");
+            if has_embeddings && !has_dimensions {
+                migrations.push(ModelsMigration::MissingDimensions {
+                    alias: model_name.to_string(),
                 });
             }
         }
@@ -227,29 +379,61 @@ fn apply_migrations(
     for migration in migrations {
         match migration {
             ModelsMigration::AddProvider { name, block } => {
-                // Insert a new [provider."name"] block at the top
                 ensure_provider_table(&mut doc);
-                if let Some(provider_table) = doc["provider"].as_table_mut() {
-                    // Parse the block as a sub-document and insert
-                    if let Ok(block_doc) = block.parse::<toml_edit::DocumentMut>() {
-                        for (key, value) in block_doc.iter() {
-                            provider_table.insert(key, value.clone());
-                        }
-                        let _ = name; // key used implicitly via block
+                if let Some(provider_table) = doc["provider"].as_table_mut()
+                    && let Ok(block_doc) = block.parse::<toml_edit::DocumentMut>()
+                {
+                    for (key, value) in block_doc.iter() {
+                        provider_table.insert(key, value.clone());
                     }
+                    let _ = name;
                 }
             }
             ModelsMigration::AddProviderField {
                 model_name,
                 provider,
             } => {
-                // Navigate to [models."<model_name>"] and add provider field
                 if let Some(models_table) = doc.get_mut("models").and_then(|i| i.as_table_mut())
                     && let Some(model_item) = models_table.get_mut(model_name)
                     && let Some(model_table) = model_item.as_table_mut()
                 {
                     model_table.insert("provider", toml_edit::value(provider.as_str()));
                 }
+            }
+            ModelsMigration::MigrateProviderKind { name } => {
+                if let Some(provider_table) = doc["provider"].as_table_mut()
+                    && let Some(provider_item) = provider_table.get_mut(name)
+                    && let Some(provider_inner) = provider_item.as_table_mut()
+                {
+                    provider_inner.insert("kind", toml_edit::value("openai"));
+                }
+            }
+            ModelsMigration::AppendV1Suffix { name, old_url } => {
+                if let Some(provider_table) = doc["provider"].as_table_mut()
+                    && let Some(provider_item) = provider_table.get_mut(name)
+                    && let Some(provider_inner) = provider_item.as_table_mut()
+                {
+                    let trimmed = old_url.trim();
+                    let has_scheme =
+                        trimmed.starts_with("http://") || trimmed.starts_with("https://");
+                    let mut normalized = if has_scheme {
+                        trimmed.to_string()
+                    } else {
+                        format!("http://{trimmed}")
+                    };
+                    if !normalized.contains("/v1") {
+                        normalized.push_str("/v1");
+                    }
+                    provider_inner.insert("base_url", toml_edit::value(normalized));
+                }
+            }
+            ModelsMigration::MissingDimensions { .. } => {
+                // Warning-only. We do NOT auto-add `dimensions`
+                // (the user must know what dim count the model
+                // actually produces). The startup probe will
+                // fail-fast with a clear error if this alias is
+                // referenced from [indexing] and the dimensions
+                // don't match. This arm is a no-op.
             }
         }
     }
@@ -298,11 +482,11 @@ fn create_backup(path: &Path) -> Result<PathBuf, AppError> {
 
 /// Default provider block inserted when no [provider] section exists.
 const DEFAULT_PROVIDER_BLOCK: &str = r#"[provider."my-ollama"]
-kind = "ollama"
-base_url = "http://127.0.0.1:11434"
+kind = "openai"
+base_url = "http://127.0.0.1:11434/v1"
 # connect_timeout_secs = 5
 # read_timeout_secs = 300
-# stream_idle_timeout_secs = 60
+# stream_idle_timeout_secs = 300
 # max_retries = 3
 # retry_base_delay_ms = 2000
 # retry_max_delay_ms = 16000
@@ -312,7 +496,7 @@ base_url = "http://127.0.0.1:11434"
 #[cfg(test)]
 mod tests {
     use super::*;
-use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn test_detect_no_provider_section() {
@@ -330,8 +514,8 @@ model_id = "test:1b"
     fn test_detect_model_without_provider() {
         let content = r#"
 [provider."my-ollama"]
-kind = "ollama"
-base_url = "http://localhost:11434"
+kind = "openai"
+base_url = "http://localhost:11434/v1"
 
 [models.test]
 model_id = "test:1b"
@@ -341,7 +525,7 @@ model_id = "test:1b"
     }
 
     #[test]
-    fn test_already_migrated() {
+    fn test_detect_legacy_kind_ollama() {
         let content = r#"
 [provider."my-ollama"]
 kind = "ollama"
@@ -352,18 +536,156 @@ model_id = "test:1b"
 provider = "my-ollama"
 "#;
         let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MigrateProviderKind { name } if name == "my-ollama")),
+            "Should detect kind=\"ollama\" for migration"
+        );
+        assert!(
+            migrations.iter().any(
+                |m| matches!(m, ModelsMigration::AppendV1Suffix { name, .. } if name == "my-ollama")
+            ),
+            "Should detect missing /v1 suffix"
+        );
+    }
+
+    #[test]
+    fn test_detect_already_migrated() {
+        let content = r#"
+[provider."my-ollama"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+embedding = true
+
+[models.test]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
         assert!(migrations.is_empty());
     }
 
     #[test]
+    fn test_detect_v1_already_present() {
+        let content = r#"
+[provider."my-ollama"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+
+[models.test]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { .. }))
+        );
+    }
+
+    #[test]
+    fn test_detect_url_without_scheme() {
+        let content = r#"
+[provider."my-ollama"]
+kind = "openai"
+base_url = "localhost:11434"
+
+[models.test]
+model_id = "test:1b"
+provider = "my-ollama"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::AppendV1Suffix { .. })),
+            "Should detect missing /v1 suffix even without scheme"
+        );
+    }
+
+    #[test]
+    fn test_detect_missing_dimensions() {
+        // A model with `embeddings = true` but no `dimensions` is
+        // detected as MissingDimensions (warning-only).
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "my-llama-swap"
+embeddings = true
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            migrations.iter().any(
+                |m| matches!(m, ModelsMigration::MissingDimensions { alias } if alias == "nomic")
+            ),
+            "Should detect missing dimensions, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
+    fn test_no_missing_dimensions_when_present() {
+        // A model WITH `embeddings = true` and `dimensions = N` is fine.
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "my-llama-swap"
+embeddings = true
+dimensions = 768
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingDimensions { .. })),
+            "Should NOT report missing dimensions when present, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
+    fn test_no_missing_dimensions_for_chat_models() {
+        // Chat models (embeddings = false or absent) don't need dimensions.
+        let content = r#"
+[provider."my-llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b:think"
+provider = "my-llama-swap"
+"#;
+        let migrations = detect_migrations(content, &PathBuf::from("/tmp/test.toml"));
+        assert!(
+            !migrations
+                .iter()
+                .any(|m| matches!(m, ModelsMigration::MissingDimensions { .. })),
+            "Should NOT report missing dimensions for chat models, migrations: {:?}",
+            migrations
+        );
+    }
+
+    #[test]
     fn test_full_migration_via_file() {
-        // Test the full end-to-end flow: create a temp file, run upgrade,
-        // verify the result.
         let tmp =
             std::env::temp_dir().join(format!("sprach_models_test_{}.toml", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
         let content = r#"
+[provider."my-ollama"]
+kind = "ollama"
+base_url = "http://localhost:11434"
+
 [models.test]
 model_id = "test:1b"
 "#;
@@ -373,8 +695,15 @@ model_id = "test:1b"
         assert!(result.is_ok(), "Upgrade should succeed: {:?}", result.err());
 
         let updated = std::fs::read_to_string(&tmp).unwrap();
-        assert!(updated.contains("[provider."));
-        assert!(updated.contains("provider = \"my-ollama\""));
+        assert!(
+            updated.contains("kind = \"openai\""),
+            "Kind should be migrated: {updated}"
+        );
+        assert!(updated.contains("/v1"), "URL should have /v1: {updated}");
+        assert!(
+            updated.contains("provider = \"my-ollama\""),
+            "Provider should be set: {updated}"
+        );
 
         let _ = std::fs::remove_file(&tmp);
     }

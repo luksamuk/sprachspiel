@@ -947,6 +947,42 @@ blacklist = []
     }
 
     #[test]
+    fn test_detect_missing_indexing_section() {
+        // A config without [indexing] should report all indexing.*
+        // fields, since the section is required.
+        let path = write_tmp_config("no_indexing.toml", minimal_config());
+        let upgrader = ConfigUpgrader::new(path).unwrap();
+        let missing = upgrader.detect_missing();
+        let paths: Vec<&str> = missing.iter().map(|m| m.path.as_str()).collect();
+
+        assert!(
+            paths.contains(&"indexing.model"),
+            "indexing.model should be detected as missing, paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_detect_no_missing_when_indexing_present() {
+        // A config WITH [indexing] section is considered up-to-date
+        // for the indexing fields.
+        let cfg = r#"
+[indexing]
+model = "nomic"
+"#;
+        let path = write_tmp_config("with_indexing.toml", cfg);
+        let upgrader = ConfigUpgrader::new(path).unwrap();
+        let missing = upgrader.detect_missing();
+        let paths: Vec<&str> = missing.iter().map(|m| m.path.as_str()).collect();
+
+        assert!(
+            !paths.contains(&"indexing.model"),
+            "indexing.model should NOT be reported as missing when [indexing] is present, paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
     fn test_detect_missing_field_in_existing_section() {
         // [facts] exists but only auto_extract is set; max_facts,
         // auto_extract_notify, and semantic_threshold should be reported.
@@ -975,7 +1011,8 @@ auto_extract = true
 
     #[test]
     fn test_detect_multiple_missing() {
-        // Config missing both [facts] and [retrieval].
+        // Config missing both [facts] and [indexing] (the merged
+        // replacement for [retrieval]).
         let cfg = r#"
 [model]
 default = "custom-model"
@@ -987,14 +1024,14 @@ default = "custom-model"
 
         // From [facts]
         assert!(paths.contains(&"facts.auto_extract"), "paths: {:?}", paths);
-        // From [retrieval]
+        // From [indexing] (moved from [retrieval])
         assert!(
-            paths.contains(&"retrieval.keyword_weight"),
+            paths.contains(&"indexing.keyword_weight"),
             "paths: {:?}",
             paths
         );
         assert!(
-            paths.contains(&"retrieval.semantic_weight"),
+            paths.contains(&"indexing.semantic_weight"),
             "paths: {:?}",
             paths
         );
@@ -1055,7 +1092,7 @@ default = "custom-model"
         assert_eq!(settings.model.default, "custom-model");
         assert!(settings.facts.auto_extract);
         assert_eq!(settings.facts.max_facts, 3);
-        assert!((settings.retrieval.keyword_weight - 0.4).abs() < f32::EPSILON);
+        assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
     }
 
     #[test]

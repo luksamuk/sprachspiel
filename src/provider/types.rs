@@ -4,6 +4,8 @@
 //! (Ollama, OpenAI-compatible, etc.). They mirror the JSON shapes used
 //! by LLM provider APIs while providing a unified surface for business logic.
 
+#![allow(dead_code)] // W2 #123: retry_category, RetryCategory, LlmMessage methods will be consumed when the retry loop migrates from OllamaError to ProviderError
+
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -86,6 +88,7 @@ pub enum LlmRole {
 /// A message in an LLM conversation.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessage`.
+/// Extended with `name` and `tool_call_id` for OpenAI tool support.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
@@ -98,8 +101,15 @@ pub struct LlmMessage {
     pub audio: Option<Vec<String>>, // base64-encoded (mp3, wav, ogg)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
+    /// Name of the speaker (used for multi-user/tool-name annotations).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// For tool messages: the id of the tool call this is responding to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
+#[cfg(test)]
 impl LlmMessage {
     pub fn user(content: String) -> Self {
         Self {
@@ -109,6 +119,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -120,6 +132,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -131,6 +145,8 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }
     }
 
@@ -142,6 +158,22 @@ impl LlmMessage {
             images: None,
             audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Tool result message with the id of the tool call being responded to.
+    pub fn tool_result(content: String, tool_call_id: String) -> Self {
+        Self {
+            role: LlmRole::Tool,
+            content,
+            tool_calls: None,
+            images: None,
+            audio: None,
+            thinking: None,
+            name: None,
+            tool_call_id: Some(tool_call_id),
         }
     }
 
@@ -174,15 +206,6 @@ pub struct LlmToolCall {
     pub arguments: serde_json::Value,
 }
 
-/// A tool result to send back to the LLM.
-#[allow(dead_code)] // Consumed by #121
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmToolResult {
-    pub tool_call_id: String,
-    pub name: String,
-    pub content: String,
-}
-
 /// Response from an LLM chat completion.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessageResponse`.
@@ -201,22 +224,71 @@ pub struct LlmResponse {
     pub prompt_eval_count: Option<u32>,
 }
 
-/// Streaming chunk from an LLM chat completion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmStreamChunk {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<LlmToolCall>>,
-    pub done: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub done_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eval_count: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt_eval_count: Option<u32>,
+/// Token usage reported in a streaming or non-streaming response.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct LlmUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+/// Provider-agnostic event emitted by a streaming LLM chat completion.
+///
+/// The provider pushes semantic lifecycle events (text/thinking/tool-call
+/// deltas, retry status, completion) instead of forcing the consumer to diff
+/// successive chunks. This matches the event-stream design used by the Pi
+/// Coding Agent.
+#[derive(Debug, Clone)]
+pub enum LlmStreamEvent {
+    /// A new text content block has started.
+    TextStart,
+    /// Incremental text token.
+    TextDelta { delta: String },
+
+    /// A new thinking/reasoning block has started.
+    ThinkingStart {
+        #[allow(dead_code)] // Reasoning signature — used when provider implements signed thinking
+        signature: Option<String>,
+    },
+    /// Incremental thinking token.
+    ThinkingDelta { delta: String },
+
+    /// A new tool call has started (name may still be `None`).
+    ToolCallStart {
+        index: u32,
+        id: Option<String>,
+        name: Option<String>,
+    },
+    /// Partial update to a tool call (name and/or arguments delta).
+    ToolCallDelta {
+        index: u32,
+        id: Option<String>,
+        name_delta: Option<String>,
+        argument_delta: String,
+    },
+    /// Tool call finalized with parsed arguments.
+    ToolCallEnd {
+        #[allow(dead_code)] // Debug correlation — matches ToolCallStart.index
+        index: u32,
+        call: LlmToolCall,
+    },
+
+    /// Provider is about to retry a failed HTTP request.
+    ProviderRetryStarted {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        reason: String,
+    },
+    /// Provider retry finished (success or exhausted).
+    ProviderRetryFinished { success: bool, attempt: u32 },
+
+    /// Stream completed normally.
+    Done {
+        #[allow(dead_code)] // Finish reason — used when provider emits it
+        reason: Option<String>,
+        usage: Option<LlmUsage>,
+    },
 }
 
 /// Capabilities reported by a model/provider.
@@ -240,17 +312,20 @@ pub struct ProviderCapabilities {
 /// Options for provider requests.
 ///
 /// Mirrors `ollama_rs::models::ModelOptions` with additions.
+/// Removed `top_k`, `repeat_penalty`, `think` (not OpenAI-portable).
+/// Added `seed` (cross-provider, optional).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderOptions {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
-    pub top_k: Option<u32>,
     pub repeat_penalty: Option<f32>,
     pub num_predict: Option<i32>,
     pub stop_sequences: Option<Vec<String>>,
     pub think: Option<bool>,
     pub format: Option<String>,
     pub audio_format: Option<String>,
+    /// Optional seed for reproducible outputs (cross-provider).
+    pub seed: Option<u32>,
 }
 
 /// Provider error with retry classification semantics.

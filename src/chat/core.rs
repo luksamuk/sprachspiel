@@ -27,6 +27,7 @@
 use std::sync::Arc;
 
 use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::models::ModelOptions;
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
@@ -39,6 +40,7 @@ use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
     build_system_prompt,
 };
+use crate::provider::types::ProviderOptions;
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::finish_spinner;
@@ -56,6 +58,23 @@ use super::{ContinuationTag, parse_continuation_tag};
 use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Convert `ProviderOptions` (agnostic) to legacy `ModelOptions` (ollama-rs).
+/// The CustomCoordinator still uses `ModelOptions` for now; this is removed
+/// in the P6.0e.4 commit that migrates `custom_coordinator.rs` to LlmProvider.
+pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
+    let mut out = ModelOptions::default();
+    if let Some(t) = opts.temperature {
+        out = out.temperature(t);
+    }
+    if let Some(p) = opts.top_p {
+        out = out.top_p(p);
+    }
+    if let Some(n) = opts.num_predict {
+        out = out.num_predict(n);
+    }
+    out
+}
 
 /// Token usage metrics for a chat response
 #[derive(Debug, Clone, Default)]
@@ -139,7 +158,7 @@ pub fn build_session_system_prompt(
 /// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
-    ollama: ollama_rs::Ollama,
+    ollama: crate::provider::Ollama,
     model_config: &ModelConfig,
     model_options: ollama_rs::models::ModelOptions,
     think_enabled: bool,
@@ -165,49 +184,20 @@ pub fn setup_coordinator(
         // This avoids requiring the callback closure to hold a mutable
         // reference to ChatView, which is not possible with 'static closures.
         //
-        // For streaming TUI mode: PreToolContent from inter-tool rounds
-        // is sent DIRECTLY to the LLM event channel via LlmEvent::InterToolText
-        // so the event loop can process it in real-time. Without this, the
-        // content would be batched via ViewEvents and either (a) dropped due
-        // to streaming deduplication, or (b) appear in the wrong order.
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
-                content,
-                thinking,
-                already_streamed,
-            } => {
-                if let Some(ref tx) = llm_tx {
-                    // Streaming mode: only emit InterToolText when the content
-                    // was NOT already streamed. In the streaming path (chat_stream
-                    // → process_response with already_streamed=true), tokens
-                    // are displayed in real time via StreamToken.
-                    // In the non-streaming path (process_next via send_chat_commands),
-                    // tokens are not shown until here — emit InterToolText
-                    // so the user sees inter-tool text before tool calls.
-                    //
-                    // Include thinking so that pre-tool reasoning appears
-                    // BEFORE the tool call indicators, not after them.
-                    // Without this, thinking from process_next() rounds would
-                    // only arrive via ViewAction (drain_into_llm_channel) AFTER
-                    // chat_stream() returns, causing tool calls to appear
-                    // above thinking blocks.
-                    if !already_streamed {
-                        let _ = tx.try_send(super::llm_event::LlmEvent::InterToolText {
-                            content: content.clone(),
-                            thinking: thinking.clone(),
-                            metrics: None,
-                        });
-                    }
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
+                if llm_tx.is_some() {
+                    // TUI streaming path: pre-tool content is already on screen via
+                    // StreamToken/StreamThinking and will be finalized by ToolCallStarted.
+                    // Forwarding it again would duplicate the text.
+                    let _ = (content, thinking);
                 } else {
-                    // Terminal mode: emit as ViewEvent for batch processing
+                    // Terminal mode: emit as ViewEvent for batch processing.
                     let cleaned = strip_thinking_tags(&content);
                     if thinking.is_some() || !cleaned.trim().is_empty() {
                         view_event_sender.send(super::view::ViewEvent::PreToolContent {
                             content: cleaned,
                             thinking,
-                            // Terminal mode never streams; the content
-                            // was not yet visible to the user.
-                            already_streamed: false,
                         });
                     }
                 }
@@ -225,6 +215,32 @@ pub fn setup_coordinator(
             crate::chat::custom_coordinator::ChatEvent::ContextTruncated { .. } => {
                 // Already logged via log::warn! — no view event needed
                 // (this is informational, not user-facing)
+            }
+            crate::chat::custom_coordinator::ChatEvent::ToolExecutionStarted {
+                tool_call_id,
+                name,
+                args,
+            } => {
+                if let Some(ref tx) = llm_tx {
+                    let _ = tx.try_send(super::llm_event::LlmEvent::ToolExecutionStarted {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                    });
+                }
+            }
+            crate::chat::custom_coordinator::ChatEvent::ToolExecutionFinished {
+                tool_call_id,
+                result,
+                is_error,
+            } => {
+                if let Some(ref tx) = llm_tx {
+                    let _ = tx.try_send(super::llm_event::LlmEvent::ToolExecutionFinished {
+                        tool_call_id: tool_call_id.clone(),
+                        result: result.clone(),
+                        is_error,
+                    });
+                }
             }
             _ => {
                 // Other events (ContextNearLimit) are handled by
@@ -269,8 +285,8 @@ pub async fn prepare_messages(
     let settings = crate::settings::Settings::load();
     let retrieval_config = if session.retrieval_enabled {
         RetrievalConfig {
-            keyword_weight: settings.retrieval.keyword_weight,
-            semantic_weight: settings.retrieval.semantic_weight,
+            keyword_weight: settings.indexing.keyword_weight,
+            semantic_weight: settings.indexing.semantic_weight,
             ..RetrievalConfig::default()
         }
     } else {
@@ -395,7 +411,7 @@ pub fn process_chat_response(
 /// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -410,7 +426,9 @@ pub async fn send_message(
     continuation_tag: Option<&ContinuationTag>,
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
-    let model_options = model_config.build_model_options();
+    let provider_options = model_config.build_provider_options();
+    // Bridge to legacy ModelOptions for CustomCoordinator.
+    let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -678,7 +696,7 @@ pub async fn send_message(
 /// delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message_stream(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -695,7 +713,9 @@ pub async fn send_message_stream(
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
-    let model_options = model_config.build_model_options();
+    let provider_options = model_config.build_provider_options();
+    // Bridge to legacy ModelOptions for CustomCoordinator.
+    let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -793,7 +813,9 @@ pub async fn send_message_stream(
         vec![]
     };
 
-    // Create streaming callbacks that send tokens through the LlmEvent channel
+    // Create streaming callbacks that send tokens through the LlmEvent channel.
+    // These closures are moved into the coordinator and stored as boxed
+    // callbacks so they can be reused across ReAct rounds.
     let llm_tx_token = llm_tx.clone();
     let on_token = move |token: String| {
         let _ = llm_tx_token.try_send(LlmEvent::StreamToken(token));
@@ -809,6 +831,21 @@ pub async fn send_message_stream(
         let _ = llm_tx_tool.try_send(LlmEvent::ToolCallStarted);
     };
 
+    let llm_tx_preview = llm_tx.clone();
+    let on_tool_call_preview =
+        move |tool_call_id: String, name: String, args: serde_json::Value| {
+            let _ = llm_tx_preview.try_send(LlmEvent::ToolCallPreview {
+                tool_call_id,
+                name,
+                args,
+            });
+        };
+
+    let llm_tx_provider_event = llm_tx.clone();
+    let on_provider_event = move |event: LlmEvent| {
+        let _ = llm_tx_provider_event.try_send(event);
+    };
+
     // Execute with retry logic using streaming
     let mut attempts = 0;
     let result = loop {
@@ -820,9 +857,11 @@ pub async fn send_message_stream(
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
-                    &on_token,
-                    &on_thinking,
-                    &on_tool_call,
+                    on_token.clone(),
+                    on_thinking.clone(),
+                    on_tool_call.clone(),
+                    on_tool_call_preview.clone(),
+                    on_provider_event.clone(),
                     cancel_token.clone(),
                 ),
             )
@@ -833,9 +872,11 @@ pub async fn send_message_stream(
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
-                    &on_token,
-                    &on_thinking,
-                    &on_tool_call,
+                    on_token.clone(),
+                    on_thinking.clone(),
+                    on_tool_call.clone(),
+                    on_tool_call_preview.clone(),
+                    on_provider_event.clone(),
                     cancel_token.clone(),
                 ),
             )
@@ -891,6 +932,13 @@ pub async fn send_message_stream(
 
                     continue;
                 } else {
+                    // Non-retryable error — propagate to the caller.
+                    // Note: "invalid tool call arguments" (HTTP 400) is now
+                    // handled inside the coordinator's process_next_stream
+                    // (custom_coordinator.rs), which sanitizes invalid
+                    // tool_calls and retries without breaking the ReAct loop.
+                    // If it reaches here, the coordinator has already exhausted
+                    // its internal retries (3 attempts) — propagate as fatal.
                     let error_str = e.to_string();
                     break Err(error_str);
                 }
@@ -942,12 +990,11 @@ pub async fn send_message_stream(
             // When tools interrupted streaming, pre-tool content is already
             // displayed via StreamToken events and finalized by
             // ToolCallStarted (which calls finalize_streaming_zone_as_is).
-            // Send StreamBlockDone to mark the block as finalized and
-            // transition to ToolCall state.
+            // ToolCallStarted also transitions LlmState to ToolCall, so no
+            // StreamBlockDone event is needed anymore.
             // StreamDone then carries ONLY the post-tool content.
             let post_tool_content = if let Some(ref pre_tool) = pre_tool_content {
                 let pre_tool_display = strip_thinking_tags(pre_tool);
-                let _ = llm_tx.try_send(LlmEvent::StreamBlockDone);
                 // Compute post-tool content: full response minus pre-tool.
                 // The LLM may or may not include the pre-tool text in its
                 // final response. If it does, remove the prefix to avoid
@@ -993,9 +1040,15 @@ pub async fn send_message_stream(
 ///
 /// **Layer 1: Pre-pruning** — Strips long tool outputs from the middle
 /// section before constructing the compaction prompt. Tool results exceeding
-/// `PRUNE_TOOL_RESULT_THRESHOLD` characters are truncated to their first
-/// `PRUNE_TOOL_RESULT_KEEP_CHARS` characters plus a truncation notice.
-/// This often reduces the prompt enough to fit the model's window.
+/// `PRUNE_TOOL_RESULT_THRESHOLD_TOKENS` estimated tokens are truncated to
+/// their first `PRUNE_TOOL_RESULT_KEEP_TOKENS` estimated tokens plus a
+/// truncation notice. This often reduces the prompt enough to fit the
+/// model's window.
+///
+/// The threshold was previously `PRUNE_TOOL_RESULT_THRESHOLD = 500` chars and
+/// `PRUNE_TOOL_RESULT_KEEP_CHARS = 100` chars. The threshold/keep are now
+/// expressed in tokens (via `estimate_tokens` + `chars_for_tokens`) so the
+/// compaction budget is honored regardless of content density.
 ///
 /// **Layer 2: Chunked recursive summarization** — If the pre-pruned prompt
 /// still exceeds the model's context window, splits the middle section into
@@ -1015,7 +1068,7 @@ pub async fn send_message_stream(
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     session: &ChatSession,
     _settings: &Settings,
@@ -1210,7 +1263,7 @@ pub async fn compact_conversation(
 /// indirection for recursive async functions (the future size would
 /// otherwise be infinite).
 fn compact_recursive<'a>(
-    ollama: &'a ollama_rs::Ollama,
+    ollama: &'a crate::provider::Ollama,
     model_config: &'a ModelConfig,
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1353,7 +1406,7 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// and the summary is returned, but the TUI shows no intermediate content
 /// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
-    ollama: &ollama_rs::Ollama,
+    ollama: &crate::provider::Ollama,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1362,7 +1415,8 @@ async fn compact_with_llm(
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
-    let model_options = model_cfg.build_model_options();
+    let provider_options = model_cfg.build_provider_options();
+    let model_options = convert_provider_to_model(&provider_options);
 
     let mut coordinator =
         CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
@@ -1391,6 +1445,12 @@ async fn compact_with_llm(
                 // Compaction is an internal operation — the user only sees the summary.
             },
             || {},
+            |_tool_call_id, _name, _args| {
+                // Compaction does not use tools.
+            },
+            |_event| {
+                // Compaction does not surface provider events.
+            },
             None,
         )
         .await;

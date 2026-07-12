@@ -51,6 +51,7 @@ use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
+use crate::chat::core::convert_provider_to_model;
 use crate::ocr::mode::is_glm_ocr_model;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
@@ -291,8 +292,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     };
 
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client();
-    let model_options = model_config.build_model_options();
+    let ollama = settings.ollama_client_for_model(&model_config.model_id);
+    let provider_options = model_config.build_provider_options();
+    let model_options = convert_provider_to_model(&provider_options);
 
     let mut coordinator =
         chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -324,6 +326,21 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     let query = args.get_query()?;
 
+    // Reject embedding-only models at the CLI layer (the `--model` /
+    // `-m` flag). The same check lives in `model_switch::switch_model`
+    // for the `/model` slash command.
+    if let Some(model) = cli.model.as_deref()
+        && user_models::is_model_embedding_only(model)
+    {
+        log::error!("'{model}' is an embedding-only model and cannot be used for chat");
+        eprintln!(
+            "Error: '{model}' is an embedding-only model and cannot be used for chat.\n\
+             Use `[indexing].model = \"{model}\"` in config.toml to reference it for \
+             embedding generation, or pick a chat model from --list."
+        );
+        std::process::exit(1);
+    }
+
     run_query(
         query,
         cli.model.as_deref(),
@@ -349,6 +366,15 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     if query.is_empty() {
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
         eprintln!("Try 'sprach --help' for usage information.");
+        std::process::exit(1);
+    }
+
+    // Reject embedding-only models.
+    if let Some(model) = cli.model.as_deref()
+        && user_models::is_model_embedding_only(model)
+    {
+        log::error!("'{model}' is an embedding-only model and cannot be used for chat");
+        eprintln!("Error: '{model}' is an embedding-only model and cannot be used for chat.");
         std::process::exit(1);
     }
 
@@ -439,13 +465,21 @@ fn print_available_options() {
             } else {
                 ""
             };
+            // Mark embedding-only models so the user can see
+            // they exist but understand they can't be used for chat.
+            let embedding_marker = if user_models::is_model_embedding_only(&name) {
+                " [embeddings-only]"
+            } else {
+                ""
+            };
             println!(
-                "  {:20} - {} ({}K context){}{}",
+                "  {:20} - {} ({}K context){}{}{}",
                 name,
                 config.model_id,
                 config.num_ctx / 1024,
                 default_marker,
-                user_marker
+                user_marker,
+                embedding_marker
             );
         }
     }
@@ -504,7 +538,12 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     let (model_key, _, _) = settings.get_subcommand_config("ocr");
     let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
-        .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
+        .map(|mc| {
+            (
+                mc.model_id.clone(),
+                convert_provider_to_model(&mc.build_provider_options()),
+            )
+        })
         .unwrap_or_else(|| {
             (
                 model_key.clone(),
@@ -515,7 +554,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
     // Check if the model supports vision capabilities (required for OCR).
     // Abort unless the user passes --force to override the capability check.
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client();
+    let ollama = settings.ollama_client_for_model(&model_id);
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
     if !capabilities.vision {
@@ -829,7 +868,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     // Check if the model supports vision capabilities.
     // Abort unless the user passes --force to override the capability check.
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client();
+    let ollama = settings.ollama_client_for_model(&model_id);
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
     if !capabilities.vision {
@@ -857,9 +896,9 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("==========================");
     log::debug!("Executing vision analysis with logging enabled...");
 
-    let model_options = model_config
-        .build_model_options()
-        .num_predict(args.max_tokens as i32);
+    let mut provider_options = model_config.build_provider_options();
+    provider_options.num_predict = Some(args.max_tokens as i32);
+    let model_options = convert_provider_to_model(&provider_options);
     let processor = VisionProcessor::new();
 
     match processor
@@ -883,13 +922,12 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     }
 }
 
-fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()> {
+fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     use crate::db::Database;
     use crate::diagnostics::display::display_diagnostics;
     use crate::diagnostics::embeddings::{
         EmbeddingSource, analyze_embeddings_with_progress, vectors_f32_to_f64,
     };
-    use crate::embeddings::DEFAULT_EMBEDDING_MODEL;
     use crate::embeddings::TRUNCATED_DIMENSIONS;
     use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
 
@@ -971,7 +1009,7 @@ fn handle_diag(args: DiagArgs, cli: &Cli, _settings: &Settings) -> AppResult<()>
     let diagnostics = analyze_embeddings_with_progress(
         &vectors_f64,
         TRUNCATED_DIMENSIONS,
-        DEFAULT_EMBEDDING_MODEL,
+        settings.indexing_model_alias(),
         source_counts,
         &move |phase, frac| {
             progress_clone.set_message(phase.to_string());

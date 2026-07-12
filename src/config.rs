@@ -1,15 +1,18 @@
 //! Configuration module — built-in model presets and defaults.
 //!
 //! Provides [`ModelConfig`] structs with optimized inference parameters (context window,
-//! temperature, top_k, etc.) for each supported model. These presets serve as defaults
+//! temperature, top_p, etc.) for each supported model. These presets serve as defaults
 //! when the user has no `models.toml` override.
 //!
-//! Loaded at startup and merged with user-defined presets in the [`settings`](crate::settings) module.
+//! The model schema is OpenAI-aligned. `top_k`, `repeat_penalty`, and `think`
+//! (Ollama-native fields) are no longer exposed. `num_ctx` may be auto-detected
+//! from the server. `build_provider_options()` produces a `ProviderOptions` for
+//! `LlmProvider` instead of an `ollama_rs::ModelOptions`.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use ollama_rs::models::ModelOptions;
+use crate::provider::types::ProviderOptions;
 
 static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut configs = HashMap::new();
@@ -19,11 +22,9 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         "qwen3.5:4b",
         ModelConfig {
             model_id: "qwen3.5:4b".to_string(),
-            num_ctx: 131072,
+            num_ctx: 98304,
             temperature: 1.0,
-            top_k: Some(20),
             top_p: Some(0.95),
-            repeat_penalty: Some(1.0),
             thinking: true,
         },
     );
@@ -35,9 +36,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
             model_id: "translategemma:4b".to_string(),
             num_ctx: 4096,
             temperature: 0.2,
-            top_k: None,
             top_p: None,
-            repeat_penalty: Some(1.1),
             thinking: false,
         },
     );
@@ -49,9 +48,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
             model_id: "glm-ocr:bf16".to_string(),
             num_ctx: 0,
             temperature: 0.1,
-            top_k: None,
             top_p: None,
-            repeat_penalty: Some(1.0),
             thinking: false,
         },
     );
@@ -59,14 +56,14 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
     configs
 });
 
+/// Built-in model configuration (OpenAI-aligned).
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub model_id: String,
+    /// 0 means "auto-detect" (via /v1/models or /api/show).
     pub num_ctx: u32,
     pub temperature: f32,
-    pub top_k: Option<u32>,
     pub top_p: Option<f32>,
-    pub repeat_penalty: Option<f32>,
     pub thinking: bool,
 }
 
@@ -81,11 +78,6 @@ impl ModelConfig {
     }
 
     /// Look up a built-in model config by its model_id field.
-    ///
-    /// This searches all built-in configs' `model_id` values, unlike `get_builtin()`
-    /// which looks up by the config key name.
-    /// Use this when you have a model ID like "glm-ocr:bf16" instead of
-    /// the config key "glm-ocr".
     pub fn get_builtin_by_model_id(model_id: &str) -> Option<&'static ModelConfig> {
         CONFIGS.values().find(|mc| mc.model_id == model_id)
     }
@@ -111,27 +103,24 @@ impl ModelConfig {
     pub fn is_builtin_valid(name: &str) -> bool {
         CONFIGS.contains_key(name)
     }
-}
 
-impl ModelConfig {
-    pub fn build_model_options(&self) -> ModelOptions {
-        let mut opts = ModelOptions::default()
-            .temperature(self.temperature)
-            .repeat_penalty(self.repeat_penalty.unwrap_or(1.1));
-
-        if self.num_ctx > 0 {
-            opts = opts.num_ctx(self.num_ctx as u64);
+    /// Build provider-agnostic `ProviderOptions` from this config.
+    ///
+    /// Build provider-agnostic `ProviderOptions` from this config.
+    /// The output can be consumed by any `LlmProvider` implementation.
+    pub fn build_provider_options(&self) -> ProviderOptions {
+        ProviderOptions {
+            temperature: Some(self.temperature),
+            top_p: self.top_p,
+            // top_k, repeat_penalty removed (not OpenAI-portable)
+            repeat_penalty: None,
+            num_predict: None,
+            stop_sequences: None,
+            think: Some(self.thinking),
+            format: None,
+            audio_format: None,
+            seed: None,
         }
-
-        if let Some(top_k) = self.top_k {
-            opts = opts.top_k(top_k);
-        }
-
-        if let Some(top_p) = self.top_p {
-            opts = opts.top_p(top_p);
-        }
-
-        opts
     }
 }
 
@@ -153,13 +142,11 @@ mod tests {
         for name in names {
             assert!(
                 ModelConfig::is_builtin_valid(name),
-                "Model {} should exist",
-                name
+                "Model {name} should exist"
             );
             assert!(
                 ModelConfig::get(name).is_some(),
-                "Model {} should be retrievable",
-                name
+                "Model {name} should be retrievable"
             );
         }
     }
@@ -174,11 +161,9 @@ mod tests {
     fn test_qwen35_4b_parameters() {
         let qwen = ModelConfig::get("qwen3.5:4b").unwrap();
         assert_eq!(qwen.model_id, "qwen3.5:4b");
-        assert_eq!(qwen.num_ctx, 131072);
+        assert_eq!(qwen.num_ctx, 98304);
         assert_eq!(qwen.temperature, 1.0);
-        assert_eq!(qwen.top_k, Some(20));
         assert_eq!(qwen.top_p, Some(0.95));
-        assert_eq!(qwen.repeat_penalty, Some(1.0));
         assert!(qwen.thinking);
     }
 
@@ -202,27 +187,43 @@ mod tests {
 
     #[test]
     fn test_get_builtin_by_model_id() {
-        // Lookup by config key should work
         let by_key = ModelConfig::get_builtin("glm-ocr");
         assert!(by_key.is_some());
         assert_eq!(by_key.unwrap().model_id, "glm-ocr:bf16");
 
-        // Lookup by model_id should also work (different string than config key)
         let by_id = ModelConfig::get_builtin_by_model_id("glm-ocr:bf16");
         assert!(by_id.is_some());
         assert_eq!(by_id.unwrap().model_id, "glm-ocr:bf16");
         assert_eq!(by_id.unwrap().temperature, 0.1);
 
-        // Config key lookup won't find model_id
         let by_wrong_key = ModelConfig::get_builtin("glm-ocr:bf16");
         assert!(by_wrong_key.is_none());
 
-        // model_id lookup for default model (same as config key)
         let qwen_by_id = ModelConfig::get_builtin_by_model_id("qwen3.5:4b");
         assert!(qwen_by_id.is_some());
         assert_eq!(qwen_by_id.unwrap().temperature, 1.0);
 
-        // Nonexistent model_id
         assert!(ModelConfig::get_builtin_by_model_id("nonexistent:7b").is_none());
+    }
+
+    #[test]
+    fn test_build_provider_options_qwen() {
+        let qwen = ModelConfig::get("qwen3.5:4b").unwrap();
+        let opts = qwen.build_provider_options();
+        assert_eq!(opts.temperature, Some(1.0));
+        assert_eq!(opts.top_p, Some(0.95));
+        assert_eq!(opts.think, Some(true));
+        // top_k and repeat_penalty fields are removed from
+        // ProviderOptions (not OpenAI-portable). Verified by absence.
+        assert!(opts.repeat_penalty.is_none());
+    }
+
+    #[test]
+    fn test_build_provider_options_ocr() {
+        let ocr = ModelConfig::get("glm-ocr").unwrap();
+        let opts = ocr.build_provider_options();
+        assert_eq!(opts.temperature, Some(0.1));
+        assert_eq!(opts.think, Some(false));
+        assert!(opts.top_p.is_none());
     }
 }

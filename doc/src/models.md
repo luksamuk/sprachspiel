@@ -11,7 +11,7 @@ These models are configured by default and provide core functionality:
 
 | Preset | Model ID | Size | Context | Best For |
 |--------|----------|------|---------|----------|
-| **qwen3.5:4b** | qwen3.5:4b | 3.4 GB | 131K | General queries, code, vision (multimodal) |
+| **qwen3.5:4b** | qwen3.5:4b | 3.4 GB | 96K | General queries, code, vision (multimodal) |
 | translategemma | translategemma:4b | ~3 GB | 4K | Translation |
 | glm-ocr | glm-ocr:bf16 | 2.2 GB | Auto | OCR/image text extraction |
 
@@ -134,7 +134,7 @@ These models are used by the `sprach vision` command for image analysis:
 
 | Model ID | Size | Context | Multi-Image | Best For |
 |----------|------|---------|-------------|----------|
-| qwen3.5:4b | 3.4 GB | 131K | Yes | Default, multimodal |
+| qwen3.5:4b | 3.4 GB | 96K | Yes | Default, multimodal |
 | moondream:1.8b | 1.7 GB | 2K | No | Lightweight alternative |
 | llava:13b | 8.0 GB | 4K | No | Better quality |
 | ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |

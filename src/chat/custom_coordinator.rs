@@ -14,7 +14,6 @@ use std::{collections::HashMap, future::Future, pin::Pin};
 
 use ollama_rs::re_exports::serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ollama_rs::{
-    Ollama,
     generation::{
         chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
         parameters::ThinkType,
@@ -25,29 +24,27 @@ use ollama_rs::{
 };
 use serde_json::Value;
 
+use crate::chat::llm_event::LlmEvent;
 use crate::context_overflow::{
-    calculate_available_budget, calculate_thresholds, estimate_chat_messages_tokens,
-    is_emergency_context, needs_inter_tool_compaction,
+    calculate_available_budget, calculate_thresholds, is_emergency_context,
+    needs_inter_tool_compaction,
 };
-use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
+use crate::provider::types::{LlmStreamEvent, LlmToolCall, LlmUsage};
+use crate::tokens::{ContextUsage, MESSAGE_OVERHEAD, estimate_tokens};
 use crate::utils::truncate_to_budget;
 
 /// Result type for tool execution
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private
-pub trait ToolHolder: Send + Sync {
-    fn call(
-        &mut self,
-        parameters: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>>;
+/// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private.
+/// Bound is `Send` (not `Send + Sync`) because tool futures await
+/// `LlmProvider::embed`/`chat` which are Send only.
+pub trait ToolHolder: Send {
+    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>>;
 }
 
 impl<T: crate::tools::Tool> ToolHolder for T {
-    fn call(
-        &mut self,
-        parameters: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>> {
+    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send>> {
         Box::pin(async move {
             // Handle different JSON formats that models might return
             let param_value =
@@ -217,13 +214,9 @@ pub fn parse_continuation_tag(content: &str) -> (String, Option<ContinuationTag>
 #[derive(Debug, Clone)]
 pub enum ChatEvent {
     /// Content generated before tool calls (often thinking/intro text).
-    /// `already_streamed` is `true` when the content was already emitted
-    /// via streaming tokens (e.g. first tool-call round); `false` when it
-    /// comes from a non-streaming path such as `process_next()`.
     PreToolContent {
         content: String,
         thinking: Option<String>,
-        already_streamed: bool,
     },
     /// Context is near limit after tool execution (inter-tool threshold)
     /// Indicates compaction may be needed before next tool
@@ -247,6 +240,26 @@ pub enum ChatEvent {
         context_window: usize,
         tools_executed: Vec<String>,
     },
+    /// Tool execution lifecycle events.
+    ///
+    /// Emitted when a tool starts and finishes execution. Full
+    /// partial-output streaming is deferred to a follow-up PR.
+    ToolExecutionStarted {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool name.
+        name: String,
+        /// Final parsed arguments.
+        args: serde_json::Value,
+    },
+    ToolExecutionFinished {
+        /// Tool-call id this execution belongs to.
+        tool_call_id: String,
+        /// Tool result string (or error message).
+        result: String,
+        /// Whether the tool returned an error.
+        is_error: bool,
+    },
 }
 
 /// Result of checking context overflow after tool execution
@@ -266,7 +279,7 @@ struct ContextCheckResult {
 /// A coordinator for managing chat interactions with event callbacks.
 pub struct CustomCoordinator<C: ChatHistory> {
     model: String,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     options: ModelOptions,
     history: C,
     tool_infos: Vec<CustomToolInfo>,
@@ -274,6 +287,17 @@ pub struct CustomCoordinator<C: ChatHistory> {
     think: Option<ThinkType>,
     /// Callback for events
     event_callback: Option<Box<dyn Fn(ChatEvent) + Send + Sync>>,
+    /// Streaming token callback (stored for multi-round ReAct loops).
+    token_callback: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// Streaming thinking callback (stored for multi-round ReAct loops).
+    thinking_callback: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// Tool-call detected callback (stored for multi-round ReAct loops).
+    tool_call_callback: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Tool-call preview callback (stored for multi-round ReAct loops).
+    #[allow(clippy::type_complexity)] // signature mirrors `on_tool_call_preview` callback
+    tool_preview_callback: Option<Box<dyn Fn(String, String, serde_json::Value) + Send + Sync>>,
+    /// Provider retry/event callback (stored for multi-round ReAct loops).
+    provider_event_callback: Option<Box<dyn Fn(LlmEvent) + Send + Sync>>,
     /// Context window size for overflow detection during tool execution
     context_window: Option<usize>,
     /// System prompt for token estimation
@@ -295,11 +319,230 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// When cancelled, the tool loop stops after the current tool finishes
     /// and returns an error that the caller interprets as user cancellation.
     cancel_token: Option<tokio_util::sync::CancellationToken>,
+    /// Monotonic counter for generating unique tool_call_ids.
+    tool_call_counter: u64,
+    /// Counter for retries inside the ReAct loop (process_next_stream).
+    /// Covers two cases: "invalid tool call arguments" (provider rejects
+    /// malformed tool call JSON) and "SSE stream idle timeout" (provider
+    /// accepts connection but doesn't emit chunks within the idle timeout).
+    /// Prevents infinite loops when the provider persistently fails.
+    react_retry_count: u32,
+    /// Stream ids emitted by the provider, kept in the same order as
+    /// `tool_calls` so the ReAct execution loop can reuse them instead of
+    /// synthesizing divergent ids. Keeps preview and execution ids in sync
+    /// for `freeze_tool_preview_by_name`. Reset at the start of each `stream_turn`.
+    stream_tool_call_ids: Vec<String>,
+}
+
+/// Mutable state accumulated during a single streaming turn.
+/// Extracted from `stream_turn` to keep each event handler small and testable.
+struct StreamTurnState<C: ChatHistory> {
+    full_content: String,
+    full_thinking: Option<String>,
+    final_data: Option<ollama_rs::generation::chat::ChatMessageFinalResponseData>,
+    tool_calls: Vec<ollama_rs::generation::tools::ToolCall>,
+    tool_call_previews: std::collections::HashMap<u32, (String, String, serde_json::Value)>,
+    tool_call_started_emitted: bool,
+    _phantom: std::marker::PhantomData<C>,
+}
+
+impl<C: ChatHistory> StreamTurnState<C> {
+    fn new() -> Self {
+        Self {
+            full_content: String::new(),
+            full_thinking: None,
+            final_data: None,
+            tool_calls: Vec::new(),
+            tool_call_previews: std::collections::HashMap::new(),
+            tool_call_started_emitted: false,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    fn handle_text_delta(&mut self, delta: String, coordinator: &CustomCoordinator<C>) {
+        if let Some(ref cb) = coordinator.token_callback {
+            cb(delta.clone());
+        }
+        self.full_content.push_str(&delta);
+    }
+
+    fn handle_thinking_delta(&mut self, delta: String, coordinator: &CustomCoordinator<C>) {
+        if let Some(ref cb) = coordinator.thinking_callback {
+            cb(delta.clone());
+        }
+        self.full_thinking
+            .get_or_insert_with(String::new)
+            .push_str(&delta);
+    }
+
+    fn handle_tool_call_start(
+        &mut self,
+        index: u32,
+        id: Option<String>,
+        name: Option<String>,
+        coordinator: &CustomCoordinator<C>,
+    ) {
+        // Emit `ToolCallStarted` once per turn so the event
+        // loop transitions to `ToolCall` state immediately.
+        if !self.tool_call_started_emitted {
+            self.tool_call_started_emitted = true;
+            if let Some(ref cb) = coordinator.tool_call_callback {
+                cb();
+            }
+        }
+        let id = id.unwrap_or_default();
+        let name = name.unwrap_or_default();
+        self.tool_call_previews.insert(
+            index,
+            (
+                id.clone(),
+                name.clone(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
+        );
+        if let Some(ref cb) = coordinator.tool_preview_callback {
+            cb(id, name, serde_json::Value::Object(serde_json::Map::new()));
+        }
+    }
+
+    fn handle_tool_call_delta(
+        &mut self,
+        index: u32,
+        id: Option<String>,
+        name_delta: Option<String>,
+        argument_delta: String,
+        coordinator: &CustomCoordinator<C>,
+    ) {
+        if let Some((existing_id, existing_name, existing_args)) =
+            self.tool_call_previews.get_mut(&index)
+        {
+            if let Some(id) = id {
+                *existing_id = id;
+            }
+            if let Some(name) = name_delta {
+                *existing_name = name;
+            }
+            // Accumulate argument_delta from the start:
+            // the initial args from ToolCallStart are an
+            // empty object, while the first delta is partial
+            // JSON that must be concatenated before parsing.
+            let raw = match existing_args {
+                serde_json::Value::String(s) => {
+                    let mut s = s.clone();
+                    s.push_str(&argument_delta);
+                    s
+                }
+                serde_json::Value::Object(o) if o.is_empty() => argument_delta.clone(),
+                _ => argument_delta.clone(),
+            };
+            let parsed = serde_json::from_str(&raw).unwrap_or_else(|_| {
+                if raw.is_empty() {
+                    serde_json::Value::Object(serde_json::Map::new())
+                } else {
+                    serde_json::Value::String(raw.clone())
+                }
+            });
+            *existing_args = parsed.clone();
+            if let Some(ref cb) = coordinator.tool_preview_callback {
+                cb(existing_id.clone(), existing_name.clone(), parsed);
+            }
+        }
+    }
+
+    fn handle_tool_call_end(&mut self, call: LlmToolCall, coordinator: &mut CustomCoordinator<C>) {
+        // Preserve the stream's tool_call id for the ReAct
+        // execution loop, since `ollama_rs::ToolCall` has no
+        // id field. We carry it in a parallel vec.
+        coordinator.stream_tool_call_ids.push(call.id.clone());
+        // Update the preview with the final parsed arguments.
+        // During streaming, deltas are partial JSON fragments;
+        // ToolCallEnd carries the complete, parsed object.
+        let preview_index = self.tool_calls.len() as u32;
+        if let Some((existing_id, existing_name, existing_args)) =
+            self.tool_call_previews.get_mut(&preview_index)
+        {
+            if !call.id.is_empty() {
+                *existing_id = call.id.clone();
+            }
+            if existing_name.is_empty() && !call.name.is_empty() {
+                *existing_name = call.name.clone();
+            }
+            *existing_args = call.arguments.clone();
+            if let Some(ref cb) = coordinator.tool_preview_callback {
+                cb(
+                    existing_id.clone(),
+                    existing_name.clone(),
+                    call.arguments.clone(),
+                );
+            }
+        }
+        self.tool_calls
+            .push(ollama_rs::generation::tools::ToolCall {
+                function: ollama_rs::generation::tools::ToolCallFunction {
+                    name: call.name,
+                    arguments: call.arguments,
+                },
+            });
+    }
+
+    fn handle_done(&mut self, usage: Option<LlmUsage>, coordinator: &CustomCoordinator<C>) {
+        // Bug A fix: capture usage so final_data is populated.
+        if let Some(u) = usage
+            && (u.prompt_tokens > 0 || u.completion_tokens > 0)
+        {
+            self.final_data = Some(ollama_rs::generation::chat::ChatMessageFinalResponseData {
+                total_duration: 0,
+                load_duration: 0,
+                prompt_eval_count: u.prompt_tokens as u64,
+                prompt_eval_duration: 0,
+                eval_count: u.completion_tokens as u64,
+                eval_duration: 0,
+            });
+            // TurnMetrics: emit intermediate status bar update so
+            // the context count reflects each ReAct round, not
+            // just the final Complete.
+            if let Some(ref cb) = coordinator.provider_event_callback {
+                cb(LlmEvent::TurnMetrics {
+                    prompt_tokens: u.prompt_tokens,
+                    completion_tokens: u.completion_tokens,
+                });
+            }
+        }
+    }
+
+    fn handle_retry_started(
+        &mut self,
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        reason: String,
+        coordinator: &CustomCoordinator<C>,
+    ) {
+        if let Some(ref cb) = coordinator.provider_event_callback {
+            cb(LlmEvent::ProviderRetryStarted {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            });
+        }
+    }
+
+    fn handle_retry_finished(
+        &mut self,
+        success: bool,
+        attempt: u32,
+        coordinator: &CustomCoordinator<C>,
+    ) {
+        if let Some(ref cb) = coordinator.provider_event_callback {
+            cb(LlmEvent::ProviderRetryFinished { success, attempt });
+        }
+    }
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
     /// Creates a new `CustomCoordinator` instance.
-    pub fn new(ollama: Ollama, model: String, history: C) -> Self {
+    pub fn new(ollama: crate::provider::Ollama, model: String, history: C) -> Self {
         Self {
             model,
             ollama,
@@ -309,6 +552,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             tools: HashMap::default(),
             think: None,
             event_callback: None,
+            token_callback: None,
+            thinking_callback: None,
+            tool_call_callback: None,
+            tool_preview_callback: None,
+            provider_event_callback: None,
             context_window: None,
             system_prompt: None,
             real_history_tokens: None,
@@ -317,45 +565,76 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
             cancel_token: None,
+            tool_call_counter: 0,
+            react_retry_count: 0,
+            stream_tool_call_ids: Vec::new(),
         }
     }
 
-    /// Check context overflow and handle truncation if needed
+    /// Store streaming callbacks so they can be reused across ReAct rounds.
     ///
-    /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
-    fn check_and_handle_context_overflow(&self, result: String) -> ContextCheckResult {
-        let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
-            log::debug!("check_and_handle_context_overflow: no context_window or system_prompt");
-            return ContextCheckResult {
-                result,
-                is_near_limit: false,
-                was_truncated: false,
-                tokens_used: 0,
-                needs_compaction: false,
-            };
+    /// `process_response` executes tools and then needs to continue streaming
+    /// the next assistant turn. The callbacks are owned by the original caller
+    /// (`core.rs`), so we box them here rather than threading them through
+    /// every recursive call.
+    fn set_streaming_callbacks(
+        &mut self,
+        on_token: impl Fn(String) + Send + Sync + 'static,
+        on_thinking: impl Fn(String) + Send + Sync + 'static,
+        on_tool_call: impl Fn() + Send + Sync + 'static,
+        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync + 'static,
+        on_provider_event: impl Fn(LlmEvent) + Send + Sync + 'static,
+    ) {
+        self.token_callback = Some(Box::new(on_token));
+        self.thinking_callback = Some(Box::new(on_thinking));
+        self.tool_call_callback = Some(Box::new(on_tool_call));
+        self.tool_preview_callback = Some(Box::new(on_tool_call_preview));
+        self.provider_event_callback = Some(Box::new(on_provider_event));
+    }
+
+    fn compute_context_usage(
+        &self,
+        result: &str,
+        prompt: &str,
+    ) -> (ContextUsage, usize, usize, usize) {
+        // Use ContextUsage as the single source of truth. Build a ContextUsage
+        // from the API-reported prompt_tokens (or 0 if we don't have one yet)
+        // and then `with_growth` for the new messages added in this request.
+        // The final `total_tokens` is what was previously called
+        // `total_after_add` — same value, just produced by the unified path.
+        let pre_growth_base = self.real_history_tokens.unwrap_or(0);
+        let base_usage = match self.real_history_tokens {
+            Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+            None => {
+                log::debug!("[check_and_handle] No real_history_tokens; using local estimate");
+                ContextUsage {
+                    system_tokens: 0, // diagnostic only — `total` is what matters
+                    tools_tokens: 0,
+                    history_tokens: pre_growth_base,
+                    total_tokens: pre_growth_base,
+                    source: crate::tokens::ContextSource::Estimated,
+                }
+            }
         };
+        let usage = base_usage
+            .with_growth(&self.history.messages()[self.initial_message_count..])
+            .with_tool_result(result);
 
-        // Calculate total tokens:
-        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count) - EXACT
-        // 2. growth_tokens: New messages during this request (assistant + tool results) - ESTIMATED
-        // 3. system_tokens: System prompt
-        // 4. tool_tokens: Tool definitions
-        // 5. result_tokens: Current tool result being processed
+        // growth_tokens / result_tokens are kept only for the diagnostic
+        // log lines below (which print them separately).
+        let growth_tokens = usage
+            .history_tokens
+            .saturating_sub(base_usage.history_tokens);
+        let result_tokens = usage.total_tokens - base_usage.total_tokens - growth_tokens;
 
-        // Base: Real tokens from Ollama (includes all session history)
-        let base_tokens = self.real_history_tokens.unwrap_or(0);
+        (usage, base_usage.total_tokens, growth_tokens, result_tokens)
+    }
 
-        // Growth: ONLY messages added during this request (avoid double-counting with base)
-        // Messages from initial_message_count onwards are NEW in this request
-        let all_messages = self.history.messages().len();
-        let growth_messages = &self.history.messages()[self.initial_message_count..];
-        let growth_tokens = estimate_chat_messages_tokens(growth_messages);
-
+    fn compute_diagnostic_tool_tokens(&self) -> usize {
         // Tool definitions (each tool: name + description + parameters + overhead)
         // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
         // We calculate them separately only for diagnostic purposes
-        let tool_tokens: usize = self
-            .tool_infos
+        self.tool_infos
             .iter()
             .map(|info| {
                 let name_tokens = estimate_tokens(&info.function.name);
@@ -373,22 +652,24 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 );
                 name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD
             })
-            .sum();
+            .sum()
+    }
 
-        // System prompt tokens - also included in base_tokens from Ollama
-        let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-
-        // Result tokens - the current tool result being processed
-        let result_tokens = estimate_tokens(&result);
-
-        // IMPORTANT: base_tokens from Ollama's prompt_eval_count ALREADY includes:
-        // - System prompt tokens
-        // - Tool definition tokens
-        // - All history tokens
-        //
-        // So we should NOT add tool_tokens and system_tokens again!
-        // Only add: growth_tokens (new in this request) + result_tokens (current result)
-        let total_after_add = base_tokens + growth_tokens + result_tokens;
+    #[allow(clippy::too_many_arguments)]
+    fn log_inter_tool_check(
+        &self,
+        usage: &ContextUsage,
+        base_tokens: usize,
+        growth_tokens: usize,
+        tool_tokens: usize,
+        system_tokens: usize,
+        result_tokens: usize,
+        total: usize,
+        ctx_window: usize,
+        compaction_buffer: usize,
+    ) {
+        let all_messages = self.history.messages().len();
+        let growth_messages = &self.history.messages()[self.initial_message_count..];
 
         // Format token values: show as raw number if < 1000, otherwise as NK
         fn fmt_tokens(v: usize) -> String {
@@ -398,8 +679,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 format!("{}", v)
             }
         }
-
-        let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
 
         // Debug log (only when debug enabled)
         log::debug!("[INTER-TOOL-CHECK-DETAILS]");
@@ -425,93 +704,254 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         log::debug!("  result_tokens={} (current tool result)", result_tokens);
         log::debug!(
             "[INTER-TOOL-CHECK] total={}/{} remaining={} buffer={}",
-            fmt_tokens(total_after_add),
+            fmt_tokens(total),
             fmt_tokens(ctx_window),
-            fmt_tokens(ctx_window.saturating_sub(total_after_add)),
+            fmt_tokens(ctx_window.saturating_sub(total)),
             fmt_tokens(compaction_buffer)
         );
+        let _ = usage;
+    }
 
-        if is_emergency_context(total_after_add, ctx_window) {
-            let available = calculate_available_budget(base_tokens + growth_tokens, ctx_window);
-            let original_tokens = estimate_tokens(&result);
-            let truncated = truncate_to_budget(&result, available);
-            let truncated_tokens = estimate_tokens(&truncated);
-            let reduction = original_tokens.saturating_sub(truncated_tokens);
-
-            // Only show truncation warning if significant reduction
-            if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10)
-            {
-                log::warn!(
-                    "[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens",
-                    (total_after_add) * 100 / ctx_window,
-                    total_after_add,
-                    original_tokens,
-                    truncated_tokens
-                );
-            }
-
-            return ContextCheckResult {
-                result: truncated,
-                is_near_limit: true,
-                was_truncated: reduction > 0,
-                tokens_used: total_after_add,
-                needs_compaction: false,
-            };
+    fn emergency_truncate(
+        &self,
+        result: String,
+        total_after_add: usize,
+        base_tokens: usize,
+        growth_tokens: usize,
+        ctx_window: usize,
+    ) -> Option<ContextCheckResult> {
+        if !is_emergency_context(total_after_add, ctx_window) {
+            return None;
         }
 
-        let remaining = ctx_window.saturating_sub(total_after_add);
-        if remaining < compaction_buffer {
-            // Only trigger compaction if there's history to compact
-            // base_tokens == 0 means fresh session with no messages to summarize
-            if base_tokens == 0 {
-                // Fresh session - nothing to compact, just proceed
-                // Context will grow as conversation proceeds, future requests will have base > 0
-                log::debug!(
-                    "[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)",
-                    total_after_add / 1000,
-                    ctx_window / 1000
-                );
-                return ContextCheckResult {
-                    result,
-                    is_near_limit: true,
-                    was_truncated: false,
-                    tokens_used: total_after_add,
-                    needs_compaction: false,
-                };
-            }
+        let available = calculate_available_budget(base_tokens + growth_tokens, ctx_window);
+        let original_tokens = estimate_tokens(&result);
+        let truncated = truncate_to_budget(&result, available);
+        let truncated_tokens = estimate_tokens(&truncated);
+        let reduction = original_tokens.saturating_sub(truncated_tokens);
 
+        // Only show truncation warning if significant reduction
+        if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10) {
             log::warn!(
-                "⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.",
-                total_after_add / 1000,
-                ctx_window / 1000,
-                (total_after_add * 100) / ctx_window,
-                remaining / 1000,
-                compaction_buffer / 1000
+                "[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens",
+                (total_after_add) * 100 / ctx_window,
+                total_after_add,
+                original_tokens,
+                truncated_tokens
             );
+        }
 
-            return ContextCheckResult {
+        Some(ContextCheckResult {
+            result: truncated,
+            is_near_limit: true,
+            was_truncated: reduction > 0,
+            tokens_used: total_after_add,
+            needs_compaction: false,
+        })
+    }
+
+    fn preemptive_truncate(
+        &self,
+        result: String,
+        total_after_add: usize,
+        ctx_window: usize,
+    ) -> Option<ContextCheckResult> {
+        // Defensive pre-truncation for tool results.
+        //
+        // `estimate_tokens` (in src/tokens.rs) uses a word-based heuristic
+        // (~0.75 words/token, GPT-style) which UNDERCOUNTS by 30-50% vs
+        // real model tokenizers (Llama, Mistral, Qwen) for mixed content
+        // (code, JSON, non-English text, tool results). Empirically: we
+        // estimated 27K tokens for a request the model counted as 40K.
+        //
+        // By the time `is_emergency_context` triggers (95% of ctx_window)
+        // we are ALREADY overflowing the real tokenizer's count.
+        // Preemptively truncate at 75% of the ESTIMATE so there's headroom
+        // for the real tokenizer to be ~33% higher and still fit.
+        //
+        // TODO: A real tokenizer would give 100%
+        // accuracy and let us size to the actual budget. Two options:
+        //   1. tiktoken-rs (GPT-style BPE) — ~5MB binary, ~100ms load.
+        //      Doesn't match Llama/Mistral/Qwen tokenizers 100%.
+        //   2. Ollama's /api/tokenize endpoint — model-specific, no
+        //      binary bloat, but adds HTTP RTT on the compaction path.
+        // Deferred until we have a clearer accuracy-vs-complexity trade-off
+        // from real-world data.
+        if total_after_add < ctx_window.saturating_mul(3) / 4 {
+            return None;
+        }
+
+        let target = ctx_window.saturating_mul(70) / 100; // 70% of ctx_window
+        let excess = total_after_add.saturating_sub(target);
+        let available = estimate_tokens(&result).saturating_sub(excess);
+        let original_tokens = estimate_tokens(&result);
+        let truncated = truncate_to_budget(&result, available);
+        let truncated_tokens = estimate_tokens(&truncated);
+        let reduction = original_tokens.saturating_sub(truncated_tokens);
+
+        if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10) {
+            log::warn!(
+                "[PREEMPTIVE] Estimated context at {}% ({} tokens), \
+                 truncated tool result to leave headroom for real tokenizer: \
+                 {} → {} tokens",
+                (total_after_add) * 100 / ctx_window,
+                total_after_add,
+                original_tokens,
+                truncated_tokens,
+            );
+        }
+
+        Some(ContextCheckResult {
+            result: truncated,
+            is_near_limit: true,
+            was_truncated: reduction > 0,
+            tokens_used: total_after_add,
+            needs_compaction: false,
+        })
+    }
+
+    fn compaction_check(
+        &self,
+        result: String,
+        total_after_add: usize,
+        base_tokens: usize,
+        ctx_window: usize,
+    ) -> Option<ContextCheckResult> {
+        let remaining = ctx_window.saturating_sub(total_after_add);
+        let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
+
+        if remaining >= compaction_buffer {
+            return None;
+        }
+
+        // Only trigger compaction if there's history to compact
+        // base_tokens == 0 means fresh session with no messages to summarize
+        if base_tokens == 0 {
+            // Fresh session - nothing to compact, just proceed
+            // Context will grow as conversation proceeds, future requests will have base > 0
+            log::debug!(
+                "[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)",
+                total_after_add / 1000,
+                ctx_window / 1000
+            );
+            return Some(ContextCheckResult {
                 result,
                 is_near_limit: true,
                 was_truncated: false,
                 tokens_used: total_after_add,
-                needs_compaction: true,
-            };
+                needs_compaction: false,
+            });
         }
 
-        if needs_inter_tool_compaction(total_after_add, ctx_window) {
-            log::debug!(
-                "[INFO] Context at {}% ({} tokens). Inter-tool warning.",
-                (total_after_add) * 100 / ctx_window,
-                total_after_add
-            );
+        log::warn!(
+            "⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.",
+            total_after_add / 1000,
+            ctx_window / 1000,
+            (total_after_add * 100) / ctx_window,
+            remaining / 1000,
+            compaction_buffer / 1000
+        );
 
+        Some(ContextCheckResult {
+            result,
+            is_near_limit: true,
+            was_truncated: false,
+            tokens_used: total_after_add,
+            needs_compaction: true,
+        })
+    }
+
+    fn inter_tool_warning(
+        &self,
+        result: String,
+        total_after_add: usize,
+        ctx_window: usize,
+    ) -> Option<ContextCheckResult> {
+        if !needs_inter_tool_compaction(total_after_add, ctx_window) {
+            return None;
+        }
+
+        log::debug!(
+            "[INFO] Context at {}% ({} tokens). Inter-tool warning.",
+            (total_after_add) * 100 / ctx_window,
+            total_after_add
+        );
+
+        Some(ContextCheckResult {
+            result,
+            is_near_limit: false,
+            was_truncated: false,
+            tokens_used: total_after_add,
+            needs_compaction: false,
+        })
+    }
+
+    /// Check context overflow and handle truncation if needed
+    ///
+    /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
+    fn check_and_handle_context_overflow(&self, result: String) -> ContextCheckResult {
+        let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
+            log::debug!("check_and_handle_context_overflow: no context_window or system_prompt");
             return ContextCheckResult {
                 result,
                 is_near_limit: false,
                 was_truncated: false,
-                tokens_used: total_after_add,
+                tokens_used: 0,
                 needs_compaction: false,
             };
+        };
+
+        // Calculate total tokens:
+        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count) - EXACT
+        // 2. growth_tokens: New messages during this request (assistant + tool results) - ESTIMATED
+        // 3. system_tokens: System prompt
+        // 4. tool_tokens: Tool definitions
+        // 5. result_tokens: Current tool result being processed
+
+        let (usage, base_tokens, growth_tokens, result_tokens) =
+            self.compute_context_usage(&result, prompt);
+        let total_after_add = usage.total_tokens;
+
+        let tool_tokens = self.compute_diagnostic_tool_tokens();
+        let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+
+        let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
+
+        self.log_inter_tool_check(
+            &usage,
+            base_tokens,
+            growth_tokens,
+            tool_tokens,
+            system_tokens,
+            result_tokens,
+            total_after_add,
+            ctx_window,
+            compaction_buffer,
+        );
+
+        if let Some(result) = self.emergency_truncate(
+            result.clone(),
+            total_after_add,
+            base_tokens,
+            growth_tokens,
+            ctx_window,
+        ) {
+            return result;
+        }
+
+        if let Some(result) = self.preemptive_truncate(result.clone(), total_after_add, ctx_window)
+        {
+            return result;
+        }
+
+        if let Some(result) =
+            self.compaction_check(result.clone(), total_after_add, base_tokens, ctx_window)
+        {
+            return result;
+        }
+
+        if let Some(result) = self.inter_tool_warning(result.clone(), total_after_add, ctx_window) {
+            return result;
         }
 
         ContextCheckResult {
@@ -665,12 +1105,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// If `cancel_token` is provided and becomes cancelled during streaming,
     /// the stream is aborted and the accumulated partial content is returned
     /// as the response.
+    #[expect(clippy::too_many_arguments)] // callback set is intentionally explicit
     pub async fn chat_stream(
         &mut self,
         messages: Vec<ChatMessage>,
-        on_token: impl Fn(String) + Send + Sync,
-        on_thinking: impl Fn(String) + Send + Sync,
-        on_tool_call: impl Fn() + Send + Sync,
+        on_token: impl Fn(String) + Send + Sync + 'static,
+        on_thinking: impl Fn(String) + Send + Sync + 'static,
+        on_tool_call: impl Fn() + Send + Sync + 'static,
+        on_tool_call_preview: impl Fn(String, String, serde_json::Value) + Send + Sync + 'static,
+        on_provider_event: impl Fn(LlmEvent) + Send + Sync + 'static,
         cancel_token: Option<tokio_util::sync::CancellationToken>,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         for m in &messages {
@@ -696,130 +1139,122 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Store how many messages we started with
         self.initial_message_count = self.history.messages().len();
 
+        // Store callbacks for reuse in later ReAct rounds.
+        self.set_streaming_callbacks(
+            on_token,
+            on_thinking,
+            on_tool_call,
+            on_tool_call_preview,
+            on_provider_event,
+        );
+        self.cancel_token = cancel_token;
+
         // Start the streaming request
+        let request = self.build_request();
+        let response = self.stream_turn(request).await?;
+
+        // ReAct loop: while the assistant keeps emitting tool calls, execute
+        // them and stream the next turn.
+        let mut current_response = response;
+        loop {
+            if current_response.message.tool_calls.is_empty() {
+                return Ok(current_response);
+            }
+            current_response = self.process_response(current_response, true).await?;
+        }
+    }
+
+    /// Internal streaming turn handler. Consumes a raw `LlmStreamEvent` stream
+    /// and returns a legacy `ChatMessageResponse` for the rest of the
+    /// coordinator to process.
+    async fn stream_turn(
+        &mut self,
+        request: ChatMessageRequest,
+    ) -> ollama_rs::error::Result<ChatMessageResponse> {
         let mut stream = self
             .ollama
-            .send_chat_messages_stream(self.build_request())
-            .await?;
+            .send_chat_messages_stream_events(request)
+            .await
+            .map_err(crate::provider::ollama_shim::convert_provider_error)?;
 
-        // Accumulate the full response while streaming
-        let mut full_content = String::new();
-        let mut full_thinking: Option<String> = None;
-        let mut final_data = None;
-        let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
-        let mut model = String::new();
-        let mut created_at = String::new();
+        let mut state = StreamTurnState::new();
+        // Reset the stream id buffer so it lines up with `tool_calls` for the
+        // upcoming ReAct execution loop.
+        self.stream_tool_call_ids.clear();
+        let model = self.model.clone();
+        let created_at = String::new();
 
         use futures::StreamExt;
 
-        while let Some(chunk_result) = stream.next().await {
-            // Check for cancellation during streaming
-            if let Some(ref ct) = cancel_token
+        while let Some(event_result) = stream.next().await {
+            if let Some(ref ct) = self.cancel_token
                 && ct.is_cancelled()
             {
                 log::debug!("Stream cancelled by user");
                 break;
             }
 
-            match chunk_result {
-                Ok(chunk) => {
-                    // Stream content tokens
-                    if !chunk.message.content.is_empty() {
-                        on_token(chunk.message.content.clone());
-                        full_content.push_str(&chunk.message.content);
+            match event_result {
+                Ok(event) => match event {
+                    LlmStreamEvent::TextDelta { delta } => {
+                        state.handle_text_delta(delta, self);
                     }
-
-                    // Stream thinking tokens
-                    if let Some(ref thinking) = chunk.message.thinking {
-                        on_thinking(thinking.clone());
-                        if let Some(ref mut accumulated) = full_thinking {
-                            accumulated.push_str(thinking);
-                        } else {
-                            full_thinking = Some(thinking.clone());
-                        }
+                    LlmStreamEvent::ThinkingDelta { delta } => {
+                        state.handle_thinking_delta(delta, self);
                     }
-
-                    // Collect tool calls from the response
-                    if !chunk.message.tool_calls.is_empty() {
-                        tool_calls = chunk.message.tool_calls.clone();
+                    LlmStreamEvent::ToolCallStart { index, id, name } => {
+                        state.handle_tool_call_start(index, id, name, self);
                     }
-
-                    // Capture metadata from any chunk
-                    if !chunk.model.is_empty() {
-                        model = chunk.model.clone();
+                    LlmStreamEvent::ToolCallDelta {
+                        index,
+                        id,
+                        name_delta,
+                        argument_delta,
+                    } => {
+                        state.handle_tool_call_delta(index, id, name_delta, argument_delta, self);
                     }
-                    if !chunk.created_at.is_empty() {
-                        created_at = chunk.created_at.clone();
+                    LlmStreamEvent::ToolCallEnd { call, .. } => {
+                        state.handle_tool_call_end(call, self);
                     }
-
-                    // On final chunk, capture final_data
-                    if chunk.done {
-                        final_data = chunk.final_data.clone();
+                    LlmStreamEvent::Done { reason: _, usage } => {
+                        state.handle_done(usage, self);
                     }
-                }
-                Err(()) => {
-                    // Stream error — break and let the coordinator handle it
-                    break;
+                    LlmStreamEvent::ProviderRetryStarted {
+                        attempt,
+                        max_attempts,
+                        delay_ms,
+                        reason,
+                    } => {
+                        state.handle_retry_started(attempt, max_attempts, delay_ms, reason, self);
+                    }
+                    LlmStreamEvent::ProviderRetryFinished { success, attempt } => {
+                        state.handle_retry_finished(success, attempt, self);
+                    }
+                    _ => {}
+                },
+                Err(err) => {
+                    log::error!("Stream error in custom_coordinator: {err}");
+                    return Err(crate::provider::ollama_shim::convert_provider_error(err));
                 }
             }
         }
 
-        // Build a ChatMessageResponse from the accumulated content
-        if !tool_calls.is_empty() {
-            // Notify the event loop that tool calls were detected
-            // (so it can transition LlmState to ToolCall)
-            on_tool_call();
+        let msg = ollama_rs::generation::chat::ChatMessage {
+            role: ollama_rs::generation::chat::MessageRole::Assistant,
+            content: state.full_content,
+            tool_calls: state.tool_calls.clone(),
+            images: None,
+            thinking: state.full_thinking,
+        };
 
-            // Build response with tool calls for process_response
-            let msg_with_tools = ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content,
-                tool_calls: tool_calls.clone(),
-                images: None,
-                thinking: full_thinking,
-            };
-
-            let response = ChatMessageResponse {
-                model,
-                created_at,
-                message: msg_with_tools,
-                logprobs: None,
-                done: true,
-                final_data,
-            };
-
-            // Content was already streamed via on_token callback —
-            // mark as already_streamed to prevent InterToolText duplication.
-            self.process_response(response, /*already_streamed=*/ true)
-                .await
-        } else {
-            // No tool calls — this is the final response
-            // Push to history
-            self.history.push(ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content.clone(),
-                tool_calls: Vec::new(),
-                images: None,
-                thinking: full_thinking.clone(),
-            });
-
-            let msg = ollama_rs::generation::chat::ChatMessage {
-                role: ollama_rs::generation::chat::MessageRole::Assistant,
-                content: full_content,
-                tool_calls: Vec::new(),
-                images: None,
-                thinking: full_thinking,
-            };
-
-            Ok(ChatMessageResponse {
-                model,
-                created_at,
-                message: msg,
-                logprobs: None,
-                done: true,
-                final_data,
-            })
-        }
+        Ok(ChatMessageResponse {
+            model,
+            created_at,
+            message: msg,
+            logprobs: None,
+            done: true,
+            final_data: state.final_data,
+        })
     }
 
     /// Apply optional settings to request
@@ -869,7 +1304,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     ///
     /// `already_streamed` should be `true` when the content was already
     /// streamed via `chat_stream()` — this prevents emitting an extra
-    /// `PreToolContent` event that would duplicate the text.
+    /// `PreToolContent` event that would duplicate the text. All ReAct turns
+    /// stream, so the only remaining non-streaming call site is `chat()`
+    /// (terminal/CLI query path).
     async fn process_response(
         &mut self,
         resp: ChatMessageResponse,
@@ -882,18 +1319,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let has_thinking = resp.message.thinking.is_some();
 
             if has_content || has_thinking {
-                // Only accumulate content into pre_tool_content when it was
-                // already streamed (first round via chat_stream). In that case,
-                // take_pre_tool_content() is used by send_message_stream()
-                // to compute post_tool_content (final response minus pre-tool
-                // prefix) and to emit StreamBlockDone.
-                //
-                // When already_streamed=false (subsequent rounds via
-                // process_next), the content is displayed in real-time via
-                // LlmEvent::InterToolText — accumulating it here would cause
-                // the content to be included in pre_tool_display, which
-                // send_message_stream() would then subtract from the final
-                // response (or worse, StreamBlockDone would re-display it).
+                // Pre-tool content is accumulated only when it was already
+                // streamed via chat_stream(). send_message_stream() uses
+                // take_pre_tool_content() to compute post_tool_content (final
+                // response minus pre-tool prefix) and emit StreamBlockDone.
                 if already_streamed {
                     if !resp.message.content.trim().is_empty() {
                         if !self.pre_tool_content.is_empty() {
@@ -907,22 +1336,51 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     }
                 }
 
-                // Emit event — mark already_streamed so the TUI event loop
-                // knows whether to skip InterToolText injection.
+                // Emit event so callers can display pre-tool text in the
+                // terminal/CLI path. In streaming TUI mode the content is
+                // already on screen, so the listener skips it via
+                // `already_streamed`.
                 self.emit_event(ChatEvent::PreToolContent {
                     content: resp.message.content.clone(),
                     thinking: resp.message.thinking.clone(),
-                    already_streamed,
                 });
             }
 
-            // Push assistant message to history (with tool calls)
-            self.history.push(resp.message.clone());
+            // Push assistant message to history (with tool calls).
+            // Sanitize invalid tool_call arguments BEFORE persisting: when
+            // the provider sends malformed JSON (e.g., MiniMax M3 concatenates
+            // multiple objects like {"a":1}{"b":2}), the parser falls back to
+            // Value::String(raw). If we persist that, the next request
+            // includes the invalid arguments and the provider rejects with
+            // HTTP 400 "invalid tool call arguments", breaking the ReAct loop.
+            // Replace Value::String with Value::Object({}) so the next
+            // request sends valid (empty) arguments instead.
+            let mut sanitized_message = resp.message.clone();
+            let mut had_invalid_args = false;
+            for tc in &mut sanitized_message.tool_calls {
+                if matches!(tc.function.arguments, serde_json::Value::String(_)) {
+                    log::warn!(
+                        "Sanitizing invalid tool call arguments for '{}': \
+                         replacing Value::String (malformed JSON) with empty Object",
+                        tc.function.name
+                    );
+                    tc.function.arguments = serde_json::Value::Object(serde_json::Map::new());
+                    had_invalid_args = true;
+                }
+            }
+            if had_invalid_args {
+                log::debug!(
+                    "Sanitized {} tool call(s) with invalid arguments \
+                     before persisting to history",
+                    sanitized_message.tool_calls.len()
+                );
+            }
+            self.history.push(sanitized_message);
 
             // Execute each tool call
             let mut tools_executed = Vec::new();
 
-            for call in resp.message.tool_calls.clone() {
+            for (call_idx, call) in resp.message.tool_calls.clone().into_iter().enumerate() {
                 // Check for user cancellation before each tool call.
                 // When Ctrl+C is pressed during multi-tool execution,
                 // the cancel token is set and we stop the loop after
@@ -941,8 +1399,23 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
+                // Prefer the tool_call_id emitted by the provider so it
+                // matches the streaming preview. When the stream id is empty,
+                // fall back to a synthetic id so tool calls stay unique
+                // across ReAct rounds.
+                self.tool_call_counter += 1;
+                let tool_call_id = match self.stream_tool_call_ids.get(call_idx) {
+                    Some(stream_id) if !stream_id.is_empty() => stream_id.clone(),
+                    _ => format!("{tool_name}_{}", self.tool_call_counter),
+                };
 
                 log::debug!("Tool call: {:?}", call.function);
+
+                self.emit_event(ChatEvent::ToolExecutionStarted {
+                    tool_call_id: tool_call_id.clone(),
+                    name: tool_name.clone(),
+                    args: args.clone(),
+                });
 
                 let Some(tool) = self.tools.get_mut(&tool_name) else {
                     log::debug!(
@@ -956,7 +1429,21 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 };
 
                 let result = match tool.call(args.clone()).await {
-                    Ok(result) => result,
+                    Ok(result) => {
+                        // Tools follow the convention "always return Ok(String)"
+                        // (AGENTS.md: "Tools must NEVER crash"). When the string
+                        // indicates an error, it's a soft error — the LLM still
+                        // receives it as a tool message and can self-correct, but
+                        // we flag is_error=true so the TUI can show a visual
+                        // indicator (✗ prefix instead of 🔧).
+                        let is_error = is_tool_error(&result);
+                        self.emit_event(ChatEvent::ToolExecutionFinished {
+                            tool_call_id: tool_call_id.clone(),
+                            result: result.clone(),
+                            is_error,
+                        });
+                        result
+                    }
                     Err(e) => {
                         log::warn!("Tool '{}' execution failed: {e}", tool_name);
                         log::debug!(
@@ -967,19 +1454,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                         // recoverable — push the error as a tool message so the
                         // LLM can self-correct within the same turn instead of
                         // aborting the conversation.
-                        //
-                        // Note: this call site uses `ChatMessage::tool()`
-                        // directly instead of the `recovery::push_tool_result`
-                        // wrapper (see src/chat/recovery.rs) because
-                        // `self.history` is generic over `C: ChatHistory` (an
-                        // ollama-rs trait), while the wrapper is typed for
-                        // `Vec<ChatMessage>`. In #121 (Consumer Migration) this
-                        // call site migrates to the wrapper together with the
-                        // rest of the consumer migration.
                         let error_msg = format!(
                             "Error executing tool '{tool_name}': {e}. \
                              Please try again with different arguments or use a different approach."
                         );
+                        self.emit_event(ChatEvent::ToolExecutionFinished {
+                            tool_call_id: tool_call_id.clone(),
+                            result: error_msg.clone(),
+                            is_error: true,
+                        });
                         self.history.push(ChatMessage::tool(error_msg));
                         tools_executed.push(tool_name.clone());
                         continue;
@@ -1036,8 +1519,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 tools_executed.push(tool_name);
             }
 
-            // Recurse to get next response
-            Box::pin(self.process_next()).await
+            // Recurse to get next response using streaming.
+            Box::pin(self.process_next_stream()).await
         } else {
             // No tool calls - this is the final response
             // Push to history
@@ -1047,44 +1530,168 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
     }
 
-    /// Process next response after tool calls
-    async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
+    /// Process next response after tool calls, using streaming.
+    async fn process_next_stream(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check for user cancellation before making next request
         if let Some(ref ct) = self.cancel_token
             && ct.is_cancelled()
         {
-            log::debug!("process_next cancelled by user");
+            log::debug!("process_next_stream cancelled by user");
             return Err(ollama_rs::error::OllamaError::Other(
                 CANCELLED_BY_USER.to_string(),
             ));
         }
 
-        // Check context overflow before sending to Ollama
+        // Context overflow check (same as the previous non-streaming path).
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
-            let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-            let total_tokens = history_tokens + system_tokens;
+            let usage = match self.real_history_tokens {
+                Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+                None => {
+                    log::debug!(
+                        "[process_next_stream] No real_history_tokens; falling back to estimate"
+                    );
+                    let messages = self.history.messages();
+                    let system = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+                    let history: usize = messages
+                        .iter()
+                        .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+                        .sum();
+                    ContextUsage {
+                        system_tokens: system,
+                        tools_tokens: 0,
+                        history_tokens: history,
+                        total_tokens: system + history,
+                        source: crate::tokens::ContextSource::Estimated,
+                    }
+                }
+            };
 
-            // Use emergency threshold to detect overflow
             let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
             let threshold = ctx_window.saturating_sub(emergency_threshold);
 
-            if total_tokens > threshold {
-                // Return error that will be caught by caller
+            if usage.total_tokens > threshold {
                 let msg = format!(
                     "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
-                    total_tokens, ctx_window
+                    usage.total_tokens, ctx_window
                 );
                 return Err(ollama_rs::error::OllamaError::Other(msg));
             }
         }
 
-        let resp = self.ollama.send_chat_messages(self.build_request()).await?;
+        let request = self.build_request();
+        let response = match self.stream_turn(request).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("invalid tool call arguments") {
+                    // Provider rejected malformed tool call arguments (JSON
+                    // invalid). Push tool error message and retry — the Fix A
+                    // sanitization already replaced Value::String args with
+                    // empty Object, so the next request should be accepted.
+                    self.react_retry_count += 1;
+                    if self.react_retry_count > 3 {
+                        log::warn!(
+                            "Provider rejected tool call arguments {} times — \
+                             giving up to avoid infinite loop",
+                            self.react_retry_count
+                        );
+                        return Err(e);
+                    }
+                    log::debug!(
+                        "Provider rejected tool call arguments (attempt {}/3) — \
+                         pushing error as tool message and retrying",
+                        self.react_retry_count
+                    );
+                    let recovery_msg = format!(
+                        "Error: The provider rejected the tool call arguments \
+                         as invalid. This usually means the arguments were \
+                         malformed JSON or had missing/invalid fields. \
+                         Please try again with valid arguments.\n\n\
+                         Provider error: {error_str}"
+                    );
+                    self.history.push(ChatMessage::tool(recovery_msg));
+                    let request = self.build_request();
+                    self.stream_turn(request).await?
+                } else if error_str.contains("Timeout:") {
+                    // WORKAROUND (TODO #123): string sniffing for timeout errors.
+                    //
+                    // Two timeout sources exist:
+                    //   1. Sprachspiel's idle_timeout: "Timeout: SSE stream idle
+                    //      timeout after 300s" (from parse_sse_stream)
+                    //   2. reqwest's read_timeout: "Timeout: error decoding
+                    //      response body" (from ReadTimeoutBody, when the HTTP
+                    //      read_timeout fires before the idle_timeout)
+                    //
+                    // Both are retryable — the provider accepted the connection
+                    // but didn't produce chunks in time (under load, long
+                    // prefill after large tool results, etc.).
+                    //
+                    // TODO #123: eliminate this string sniffing. The proper fix
+                    // is to migrate stream_turn to return ProviderError directly
+                    // (instead of OllamaError via convert_provider_error), then
+                    // use `err.retry_category()` which type-safely maps
+                    // ProviderError::Timeout → NetworkRetry. This eliminates
+                    // the convert_provider_error layer and all string matching.
+                    // See comments in ollama_shim.rs:479, retry.rs:107, and
+                    // IMPLEMENTATION.md #123 open topics.
+                    self.react_retry_count += 1;
+                    if self.react_retry_count > 3 {
+                        log::warn!(
+                            "Stream timed out {} times in ReAct loop — \
+                             giving up to avoid infinite loop",
+                            self.react_retry_count
+                        );
+                        return Err(e);
+                    }
+                    log::debug!(
+                        "Stream timeout in ReAct loop (attempt {}/3): {error_str} — retrying",
+                        self.react_retry_count
+                    );
+                    let recovery_msg = "Error: The request timed out after the provider accepted \
+                         the connection but did not produce any output. \
+                         The provider may be under load or processing a large \
+                         context. Please continue from where you left off.";
+                    self.history
+                        .push(ChatMessage::tool(recovery_msg.to_string()));
+                    let request = self.build_request();
+                    self.stream_turn(request).await?
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
-        // Non-streaming path — content was not streamed.
-        self.process_response(resp, /*already_streamed=*/ false)
-            .await
+        // Reset retry counter on success
+        self.react_retry_count = 0;
+
+        // Continue the ReAct loop: if more tool calls arrive, execute them.
+        if response.message.tool_calls.is_empty() {
+            Ok(response)
+        } else {
+            self.process_response(response, /*already_streamed=*/ true)
+                .await
+        }
     }
+}
+
+/// Heuristic: detect whether a tool result string represents an error.
+///
+/// Tools follow the convention "always return Ok(String)" (AGENTS.md: "Tools
+/// must NEVER crash"). Error messages use various prefixes depending on the
+/// tool and the error path (validate_path, blocklist, file ops, etc.).
+/// This function checks the common error prefixes so the coordinator can flag
+/// `is_error=true` and the TUI can show a visual indicator (✗ prefix).
+fn is_tool_error(result: &str) -> bool {
+    // Trim leading whitespace — some tools may have leading spaces.
+    let trimmed = result.trim_start();
+    // Common error prefixes used across all tools.
+    trimmed.starts_with("Error:")
+        || trimmed.starts_with("Access denied:")
+        || trimmed.starts_with("FILE NOT FOUND:")
+        || trimmed.starts_with("NOT A FILE:")
+        || trimmed.starts_with("NOT A DIRECTORY:")
+        || trimmed.starts_with("BLOCKED:")
+        || trimmed.starts_with("Error executing tool")
 }
 
 #[cfg(test)]
@@ -1208,5 +1815,82 @@ Next step: Should ignore
         let tag = tag.unwrap();
         assert_eq!(tag.paused_at, "Nested"); // Last "Reasoning paused:" wins
         assert_eq!(tag.next_step, "Should ignore"); // Last "Next step:" wins
+    }
+
+    #[test]
+    fn test_is_tool_error_detects_common_prefixes() {
+        assert!(is_tool_error("Error: File not found"));
+        assert!(is_tool_error("Access denied: path not accessible"));
+        assert!(is_tool_error("FILE NOT FOUND: '/tmp/missing.txt'. ..."));
+        assert!(is_tool_error("NOT A FILE: '/tmp'. ..."));
+        assert!(is_tool_error("NOT A DIRECTORY: '/tmp/file'. ..."));
+        assert!(is_tool_error("BLOCKED: '/tmp/.env'. ..."));
+        assert!(is_tool_error("Error executing tool 'read_file': ..."));
+        // Leading whitespace is trimmed
+        assert!(is_tool_error("  Error: indented"));
+        // Success cases are NOT errors
+        assert!(!is_tool_error("file1.txt\nfile2.txt"));
+        assert!(!is_tool_error("Contents of the file..."));
+        assert!(!is_tool_error("Task 1 marked as in_progress"));
+        assert!(!is_tool_error(""));
+    }
+
+    #[test]
+    fn test_sanitizes_invalid_tool_call_arguments() {
+        // Simulate a model that sends malformed JSON as tool call arguments
+        // (e.g., MiniMax M3 concatenates multiple objects: {"a":1}{"b":2}).
+        // The parser falls back to Value::String(raw). The coordinator should
+        // sanitize this to Value::Object({}) before persisting to history,
+        // so the next request doesn't get rejected with HTTP 400.
+        use ollama_rs::generation::chat::ChatMessage;
+        use ollama_rs::generation::chat::MessageRole;
+        use ollama_rs::generation::tools::{ToolCall, ToolCallFunction};
+
+        let msg = ChatMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            tool_calls: vec![
+                ToolCall {
+                    function: ToolCallFunction {
+                        name: "todo_add".to_string(),
+                        // Malformed: multiple JSON objects concatenated
+                        arguments: serde_json::Value::String(
+                            r#"{"description":"task1","priority":"high"}{"description":"task2"}"#
+                                .to_string(),
+                        ),
+                    },
+                },
+                ToolCall {
+                    function: ToolCallFunction {
+                        name: "read_file".to_string(),
+                        // Valid JSON
+                        arguments: serde_json::json!({"path": "test.txt"}),
+                    },
+                },
+            ],
+            images: None,
+            thinking: None,
+        };
+
+        // Apply the same sanitization logic as process_response
+        let mut sanitized = msg.clone();
+        for tc in &mut sanitized.tool_calls {
+            if matches!(tc.function.arguments, serde_json::Value::String(_)) {
+                tc.function.arguments = serde_json::Value::Object(serde_json::Map::new());
+            }
+        }
+
+        // The invalid one should be sanitized
+        assert_eq!(
+            sanitized.tool_calls[0].function.arguments,
+            serde_json::Value::Object(serde_json::Map::new()),
+            "Invalid Value::String args should be sanitized to empty Object"
+        );
+        // The valid one should be preserved
+        assert_eq!(
+            sanitized.tool_calls[1].function.arguments,
+            serde_json::json!({"path": "test.txt"}),
+            "Valid args should be preserved"
+        );
     }
 }

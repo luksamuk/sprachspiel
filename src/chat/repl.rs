@@ -40,30 +40,85 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Initialize database and embedding client for chat mode.
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
-#[expect(clippy::type_complexity)]
-fn init_chat_database(
-    args: &super::ChatArgs,
+///
+/// The chat subcommand's embedding setup is wired to the alias-based
+/// indexing config. The flow is:
+///   1. Resolve the alias from `[indexing].model` via
+///      `Settings::resolve_indexing_model()` — this returns
+///      `(model_cfg, provider_cfg, model_id, dimensions)`.
+///   2. Build a separate `Ollama` (shim) for the resolved embedding
+///      provider (may differ from the chat provider).
+///   3. Probe the embedding endpoint with strict dim verify (response dim
+///      must match the alias's declared dimensions).
+///   4. Initialize the database and the `EmbeddingClient`.
+async fn init_chat_database(
     settings: &Settings,
+    ollama: &crate::provider::Ollama,
+    _chat_model_name: &str,
+    anonymous: bool,
     db_path: Option<PathBuf>,
 ) -> (
     Option<Arc<crate::db::Database>>,
     Option<Arc<crate::embeddings::EmbeddingClient>>,
-    ollama_rs::Ollama,
+    crate::provider::Ollama,
     Option<String>,
 ) {
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client();
+    // ollama client is built by the caller so that it can target the
+    // model the user actually asked for. The DB init needs a client
+    // for embeddings + health, so we keep a clone here.
+    let ollama = ollama.clone();
 
-    if args.anonymous {
+    if anonymous {
         return (None, None, ollama, None);
     }
 
-    let result = crate::db::init_database_core(ollama.clone(), false, false, db_path);
+    // Resolve the indexing alias to (model_cfg, provider_cfg,
+    // model_id, dimensions). Bail fast with a clear error if the
+    // alias is missing/misconfigured.
+    let (_model_cfg, provider_cfg, model_id, dimensions) = match settings.resolve_indexing_model() {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("{e}");
+            eprintln!("\x1B[31m{e}\x1B[0m");
+            return (None, None, ollama, Some(e));
+        }
+    };
+
+    // Build a separate Ollama (shim) for the embedding provider.
+    let embedding_ollama = crate::provider::Ollama::from_provider_config(provider_cfg);
+
+    // Probe the embedding endpoint with strict dim verify
+    // (response dim == alias's declared dimensions).
+    if let Err(msg) = crate::db::run_indexing_probe(
+        &embedding_ollama,
+        model_id,
+        dimensions,
+        settings.indexing_probe_enabled(),
+    )
+    .await
+    {
+        log::error!("{msg}");
+        eprintln!("\x1B[31m{msg}\x1B[0m");
+        return (None, None, ollama, Some(msg));
+    }
+
+    let result = crate::db::init_database_core(
+        crate::db::IndexingInit {
+            provider: embedding_ollama,
+            model_id: model_id.to_string(),
+            dimensions,
+            probe: false, // already probed above
+        },
+        false,
+        false,
+        db_path,
+    );
 
     let error_detail = if result.db.is_none() {
         // Error already logged and formatted in init_database_core
         if let Some(ref detail) = result.error_detail {
-            eprintln!("\x1B[31m{}\x1B[0m", detail);
+            log::error!("{detail}");
+            eprintln!("\x1B[31m{detail}\x1B[0m");
             Some(detail.clone())
         } else {
             None
@@ -221,9 +276,35 @@ pub async fn handle_user_message_stream(
                     break;
                 }
 
+                // Send LlmEvent::Error DIRECTLY to the event loop's
+                // main channel. The ChannelView::show_error path
+                // goes through a forwarding task that competes with
+                // LlmEvent::Complete for the same channel — under load
+                // (e.g. concurrent tool result draining + completion)
+                // the ShowError message can be silently dropped by
+                // ChannelView's try_send, leaving the user with no
+                // indication that the cycle failed.
+                //
+                // Sending LlmEvent::Error directly bypasses the
+                // forwarding task and the ChannelView, guaranteeing
+                // the error reaches the TUI. The event loop's
+                // LlmEvent::Error handler (event_loop.rs) renders it
+                // with the same ⛔ prefix as ChannelView::show_error.
+                //
+                // IMPORTANT: do NOT call view.show_error() here — it
+                // executes synchronously and inserts the error message
+                // BEFORE pending streaming events (StreamToken,
+                // ToolCallPreview) still queued in the event loop,
+                // causing the error to appear out of order (before
+                // tool calls instead of after). The LlmEvent::Error
+                // above is processed in-order by the event loop.
+                let formatted = format_tool_error(&error_str);
+                let _ = llm_tx
+                    .send(super::llm_event::LlmEvent::Error(formatted))
+                    .await;
+
                 match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
                     OverflowHandleResult::NotOverflow => {
-                        view.show_error(&format_tool_error(&error_str));
                         break;
                     }
                     OverflowHandleResult::HandledContinue => {
@@ -507,9 +588,7 @@ fn resolve_session_model(
     // configuration error.
     if crate::user_models::require_providers().is_err() {
         log::error!("No providers configured in models.toml");
-        eprintln!(
-            "\x1B[31mError: No providers configured in models.toml.\x1B[0m"
-        );
+        eprintln!("\x1B[31mError: No providers configured in models.toml.\x1B[0m");
         eprintln!(
             "\x1B[33mHint: Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.\x1B[0m"
         );
@@ -629,8 +708,11 @@ pub async fn run_chat_repl(
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
+    // For llama-swap (OpenAI-compat), we hit /v1/models instead of
+    // /api/tags. The Ollama shim's `list_local_models` handles both
+    // endpoints (it knows the base URL of the configured provider).
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let pre_init_ollama = settings.ollama_client();
+    let pre_init_ollama = settings.ollama_client_for_model(&settings.model.default);
     if let Err(e) = check_server_health(&pre_init_ollama).await {
         log::error!("Ollama health check failed: {e}");
         eprintln!("\x1B[31mError: {e}\x1B[0m");
@@ -640,7 +722,22 @@ pub async fn run_chat_repl(
         return Ok(());
     }
 
-    let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings, db_path);
+    // Build the LLM client for the model the user actually asked for
+    // (CLI override > subcommand override > config default). This must
+    // be done before init_chat_database because that path needs an
+    // Ollama client. We pass it to init_chat_database so the client
+    // survives the session reload (which might change model).
+    let active_chat_model = model_override.unwrap_or(default_model);
+    let initial_ollama = settings.ollama_client_for_model(active_chat_model);
+
+    let (db, embedding_client, _ollama_for_db, db_error) = init_chat_database(
+        settings,
+        &initial_ollama,
+        active_chat_model,
+        args.anonymous,
+        db_path,
+    )
+    .await;
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
@@ -670,13 +767,19 @@ pub async fn run_chat_repl(
         ResolveModelResult::Ok => {}
         ResolveModelResult::UnknownModel => return Ok(()),
         ResolveModelResult::NoProviders => {
-            return Err(
-                "Cannot start chat: models.toml is missing providers. \
+            return Err("Cannot start chat: models.toml is missing providers. \
                  Add a [provider.\"name\"] section or run `sprach models upgrade`."
-                    .into(),
-            );
+                .into());
         }
     }
+
+    // Rebuild the LLM client for the FINAL resolved model (after
+    // session model has been applied). This ensures the streaming
+    // coordinator and the banner both use the same provider.
+    let ollama = match Some(session.model.as_str()) {
+        Some(model) => settings.ollama_client_for_model(model),
+        None => settings.ollama_client_for_model(default_model),
+    };
 
     let current_model_name = session.model.clone();
     let model_config = crate::user_models::resolve_model_config(&current_model_name);

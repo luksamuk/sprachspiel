@@ -1,11 +1,11 @@
 //! Task-local storage for async tools
 //!
-//! Provides async-safe access to Database, EmbeddingClient, Ollama client,
+//! Provides async-safe access to Database, EmbeddingClient, LLM provider,
 //! and Settings for tools that need them.
 //!
-//! Uses `tokio::task_local!` instead of `thread_local!` because
-//! thread-local storage is unsafe in async contexts where tasks
-//! can move between threads after `await` points.
+//! Stores `crate::provider::Ollama` (the shim) for backward compatibility
+//! with the existing tool implementations. The shim delegates to
+//! `OpenAICompatibleProvider` internally.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -13,82 +13,64 @@ use std::sync::Arc;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::settings::Settings;
-use ollama_rs::Ollama;
 
 tokio::task_local! {
     /// Database for tools that need conversation history access
     pub static REMEMBER_DB: Arc<Database>;
     /// Embedding client for tools that need semantic search
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
-    /// Ollama client for tools that need LLM access (e.g., agent spawning tools)
-    pub static TOOL_OLLAMA: Ollama;
+    /// Ollama-compatible shim for tools that need LLM access
+    pub static TOOL_LLM: crate::provider::Ollama;
     /// Settings for tools that need configuration (e.g., agent spawning tools)
     pub static TOOL_SETTINGS: Arc<Settings>;
 }
 
 /// Helper to get database from task-local context
-///
-/// Returns None if context is not set (e.g., anonymous session)
 pub fn get_db() -> Option<Arc<Database>> {
     REMEMBER_DB.try_with(|db| db.clone()).ok()
 }
 
 /// Helper to get embedding client from task-local context
-///
-/// Returns None if context is not set (e.g., anonymous session)
 pub fn get_embedding() -> Option<Arc<EmbeddingClient>> {
     REMEMBER_EMBEDDING.try_with(|e| e.clone()).ok()
 }
 
-/// Helper to get Ollama client from task-local context
-///
-/// Returns None if context is not set
-pub fn get_ollama() -> Option<Ollama> {
-    TOOL_OLLAMA.try_with(|o| o.clone()).ok()
+/// Helper to get Ollama-compatible shim from task-local context
+pub fn get_ollama() -> Option<crate::provider::Ollama> {
+    TOOL_LLM.try_with(|o| o.clone()).ok()
+}
+
+/// Helper to get LLM provider from task-local context (alias for get_ollama)
+pub fn get_llm() -> Option<crate::provider::Ollama> {
+    get_ollama()
 }
 
 /// Helper to get Settings from task-local context
-///
-/// Returns None if context is not set
 pub fn get_settings() -> Option<Arc<Settings>> {
     TOOL_SETTINGS.try_with(|s| s.clone()).ok()
 }
 
-/**
- * Run an async function with tool context (TOOL_OLLAMA and TOOL_SETTINGS).
- *
- * This allows tools to access the Ollama client and Settings via task-local storage.
- * Use this wrapper when calling coordinator.chat() or similar async operations
- * in contexts that don't need DB/Embedding access (e.g., anonymous sessions).
- *
- * # Example
- * ```ignore
- * let result = with_tool_context(ollama, settings, async {
- *     coordinator.chat(messages).await
- * }).await;
- * ```
- */
 #[expect(clippy::redundant_async_block)]
-pub async fn with_tool_context<F, T>(ollama: Ollama, settings: Arc<Settings>, f: F) -> T
+pub async fn with_tool_context<F, T>(
+    ollama: crate::provider::Ollama,
+    settings: Arc<Settings>,
+    f: F,
+) -> T
 where
     F: Future<Output = T>,
 {
-    TOOL_OLLAMA
+    TOOL_LLM
         .scope(ollama, async move {
             TOOL_SETTINGS.scope(settings, async move { f.await }).await
         })
         .await
 }
 
-/// Run an async function with full tool context including Ollama and Settings
-///
-/// This allows tools like agent spawning tools to access the Ollama client
-/// and Settings while still having DB and Embedding access.
 #[expect(clippy::redundant_async_block)]
 pub async fn with_full_context<F, T>(
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
-    ollama: Ollama,
+    ollama: crate::provider::Ollama,
     settings: Arc<Settings>,
     f: F,
 ) -> T
@@ -113,7 +95,7 @@ mod tests {
 
     #[test]
     async fn with_tool_context_scopes_ollama_and_settings() {
-        let dummy_ollama = Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_settings = Arc::new(Settings::default());
 
         let result = with_tool_context(dummy_ollama, dummy_settings, async {
@@ -139,10 +121,15 @@ mod tests {
 
     #[test]
     async fn with_full_context_scopes_all_four() {
-        let dummy_ollama = Ollama::new("http://localhost".to_string(), 11434);
-        let dummy_embedding = Arc::new(EmbeddingClient::new(dummy_ollama.clone()));
-        let dummy_ollama_for_test = Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_settings = Arc::new(Settings::default());
+        let dummy_embedding = Arc::new(EmbeddingClient::with_model(
+            crate::provider::Ollama::new("http://localhost".to_string(), 11434),
+            dummy_settings.indexing_model_alias().to_string(),
+            768, // TRANSITIONAL: placeholder
+        ));
+        let dummy_ollama_for_test =
+            crate::provider::Ollama::new("http://localhost".to_string(), 11434);
         let dummy_db = Arc::new(Database::in_memory().unwrap());
 
         let result = with_full_context(
@@ -188,7 +175,6 @@ mod tests {
 
     #[test]
     async fn get_ollama_returns_none_outside_scope() {
-        // Clear any existing context by running in a fresh task
         let result = tokio::spawn(async {
             let ollama = get_ollama();
             let settings = get_settings();

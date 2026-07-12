@@ -42,7 +42,7 @@ const RATELIMIT_DEFAULT_BACKOFF_SECS: u64 = 2;
 ///
 /// Each variant carries its own `max_attempts` so per-category limits
 /// are visible in the type signature. The `RateLimitRetry::retry_after`
-/// field is set when the `Retry-After` HTTP header is parsed (W2 #122).
+/// field is set when the `Retry-After` HTTP header is parsed.
 #[allow(clippy::enum_variant_names)] // The "Retry" suffix is intentional and semantic
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryCategory {
@@ -104,6 +104,15 @@ pub fn classify_for_retry(error: &OllamaError) -> RetryCategory {
             max_attempts: MAX_SERVER_RETRIES,
         },
         OllamaError::JsonError(_) => RetryCategory::NoRetry,
+        // TODO #123: ProviderError::Timeout and ProviderError::Connection
+        // are converted to OllamaError::Other by convert_provider_error
+        // (ollama_shim.rs). This means they are classified as NoRetry here,
+        // but they should be NetworkRetry (retryable). The fix is to
+        // migrate the retry loop in core.rs to use
+        // ProviderError::retry_category() directly, eliminating the
+        // OllamaError conversion layer. Until then, timeout/connection
+        // errors break the ReAct loop instead of retrying.
+        // Workaround: stream_idle_timeout_secs default raised to 180s.
         OllamaError::Other(_) => RetryCategory::NoRetry,
     }
 }

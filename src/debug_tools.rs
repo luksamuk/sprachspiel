@@ -22,9 +22,17 @@
 //! # TUI Mode
 //!
 //! When running in TUI mode (ratatui alternate screen), tool call output must
-//! go through the ChatView layer rather than `eprintln!`, which would corrupt
-//! the alternate screen. A global callback can be set via [`set_tui_callback`]
-//! to route tool call display through the TUI view layer.
+//! NOT go to stderr — raw `eprintln!` corrupts the alternate screen and
+//! overwrites the status bar. Tool calls are rendered exclusively through the
+//! `LiveTurn` buffer as compact chat messages.
+//!
+//! The three public functions in this module ([`tui_aware_print`],
+//! [`display_tool_call`], [`log_tool_result`]) check
+//! [`crate::logging::is_tui_mode()`] and return early when TUI mode is active.
+//! In terminal (non-TUI) mode, they print to stderr with ANSI styling.
+//!
+//! The legacy `TUI_CALLBACK` global is retained only for test compatibility
+//! (tests that verify the callback is NOT invoked).
 //!
 //! # Configuration
 //!
@@ -41,6 +49,10 @@ use crate::spinner::suspend_for_print;
 /// Type alias for the TUI callback that routes tool call output into the chat view.
 ///
 /// Avoids clippy `type_complexity` on the raw `Arc<dyn Fn(&str) + Sync + Send>` type.
+///
+/// Retained for test compatibility — verifies that `tui_aware_print` does NOT
+/// invoke the callback.
+#[allow(dead_code)] // Test-only: verifies callback is not invoked by tui_aware_print
 type TuiCallback = std::sync::Arc<dyn Fn(&str) + Sync + Send>;
 
 /// ANSI style: DIM (faint) + light gray text — same as thinking blocks.
@@ -69,21 +81,18 @@ static PLAIN_MODE: AtomicBool = AtomicBool::new(false);
 
 /// Global callback for TUI mode tool call display.
 ///
-/// When set, `display_tool_call` invokes this callback with the formatted
-/// line instead of printing to stderr. This prevents ANSI escape sequences
-/// from corrupting the ratatui alternate screen.
-///
-/// The callback is set when the TUI starts and cleared on exit.
-/// In terminal (non-TUI) mode, this remains `None` and `eprintln!` is used.
+/// **Legacy:** This callback is no longer set in production. The TUI renders
+/// tool calls through the `LiveTurn` buffer, and the three functions below
+/// check `is_tui_mode()` to suppress stderr output. The callback is kept
+/// only so tests can verify it is NOT invoked.
+#[allow(dead_code)] // Test-only: verifies tui_aware_print does not invoke it
 static TUI_CALLBACK: Mutex<Option<TuiCallback>> = Mutex::new(None);
 
 /// Set the TUI callback for tool call display.
 ///
-/// When set, tool call lines are sent through this callback instead of
-/// `eprintln!`. This is used by the ratatui TUI to route tool calls into
-/// the chat area as system messages.
-///
-/// Call with `None` to clear the callback (e.g., when exiting TUI mode).
+/// **Legacy:** Only called from tests to verify the callback is NOT invoked.
+/// In production, the TUI renders tool calls through `LiveTurn::render_blocks()`.
+#[allow(dead_code)] // Test-only: used by test_tui_aware_print_ignores_callback_in_tui_mode
 pub fn set_tui_callback(callback: Option<TuiCallback>) {
     if let Ok(mut guard) = TUI_CALLBACK.lock() {
         *guard = callback;
@@ -143,26 +152,23 @@ impl Drop for PlainModeGuard {
     }
 }
 
-/// Print a tool visual indicator through the TUI callback (TUI mode) or
-/// `suspend_for_print` (terminal mode).
+/// Print a tool visual indicator (terminal mode only).
 ///
 /// Tool indicators like ⚡, 📝, 💾, etc. must use this function instead of
-/// `suspend_for_print(|| { eprintln!(...) })` directly. In TUI mode
-/// (ratatui alternate screen), raw `eprintln!` bypasses the TUI callback
-/// and corrupts the status bar. This function routes through [`TUI_CALLBACK`]
-/// when available, falling back to `suspend_for_print` in terminal mode.
+/// raw `eprintln!` directly. In terminal mode the line is printed with
+/// [`TOOL_DIM`] + [`RESET`] styling (or plain, when `--plain` is active).
 ///
-/// The line is printed with [`TOOL_DIM`] + [`RESET`] styling in terminal mode.
-/// In TUI mode, styling is handled by the chat view layer.
-/// In plain mode, no ANSI styling is applied for pipe-safe output.
+/// In TUI mode, this function returns immediately — tool indicators are
+/// rendered exclusively through the `LiveTurn` buffer as compact chat
+/// messages. Raw `eprintln!` would corrupt the ratatui alternate screen
+/// and overwrite the status bar.
 pub fn tui_aware_print(line: &str) {
-    // Route through TUI callback if set (TUI mode)
-    if let Ok(guard) = TUI_CALLBACK.lock()
-        && let Some(callback) = guard.as_ref()
-    {
-        callback(line);
+    // TUI mode: tool indicators are rendered by LiveTurn::render_blocks().
+    // Raw eprintln! would corrupt the alternate screen.
+    if crate::logging::is_tui_mode() {
         return;
     }
+
     // Terminal mode: print to stderr with ANSI styling (unless plain mode)
     if PLAIN_MODE.load(Ordering::Relaxed) {
         suspend_for_print(|| {
@@ -193,7 +199,7 @@ pub fn toggle_debug() -> crate::logging::Verbosity {
     crate::logging::toggle_verbosity()
 }
 
-/// Display a tool call in compact single-line format.
+/// Display a tool call in compact single-line format (terminal mode only).
 ///
 /// Shows `🔧 name(k=v, k=v)` in DIM gray, fitting within 80 columns.
 /// Empty-string values are omitted from the compact display to reduce
@@ -204,10 +210,15 @@ pub fn toggle_debug() -> crate::logging::Verbosity {
 /// [`should_show_tool_calls()`] which checks both Quiet mode and the
 /// `show_tool_calls` configuration flag.
 ///
-/// In TUI mode, the formatted line is sent through the TUI callback
-/// instead of `eprintln!`, preventing alternate screen corruption.
+/// In TUI mode, this function returns immediately — tool calls are rendered
+/// exclusively through the `LiveTurn` buffer. Terminal mode prints to stderr.
 fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
     if !should_show_tool_calls() {
+        return;
+    }
+
+    // TUI mode: tool calls are rendered by LiveTurn::render_blocks().
+    if crate::logging::is_tui_mode() {
         return;
     }
 
@@ -232,14 +243,6 @@ fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
     let display_args = crate::utils::truncate_chars(&args_line, content_budget);
 
     let line = format!("{prefix}{display_args}{suffix}");
-
-    // Route through TUI callback if set, otherwise print to stderr
-    if let Ok(guard) = TUI_CALLBACK.lock()
-        && let Some(callback) = guard.as_ref()
-    {
-        callback(&line);
-        return;
-    }
 
     // Terminal mode: print to stderr with ANSI styling (unless plain mode)
     if PLAIN_MODE.load(Ordering::Relaxed) {
@@ -285,35 +288,29 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
     }
 }
 
-/// Log tool result.
+/// Log tool result (terminal mode only).
 ///
 /// - **Normal mode**: hidden (tool calls are enough for the user)
 /// - **Verbose mode (-v)**: truncated preview (~100 chars) in DIM gray
 /// - **Trace mode (-vv)**: full result (up to 500 chars) in DIM gray
 /// - **Quiet mode**: hidden
 ///
-/// In TUI mode, results are routed through the TUI callback.
+/// In TUI mode, this function returns immediately — tool results are not
+/// displayed in the TUI (they are kept in `ToolResult.content` for the LLM).
+/// Raw `eprintln!` would corrupt the ratatui alternate screen.
 pub fn log_tool_result(tool_name: &str, result: &str) {
-    let has_tui_callback = TUI_CALLBACK.lock().ok().is_some_and(|g| g.is_some());
+    // TUI mode: tool results are not displayed — they stay in
+    // ToolResult.content for the LLM. eprintln! would corrupt the screen.
+    if crate::logging::is_tui_mode() {
+        return;
+    }
 
     // Trace mode: full result (up to 500 chars)
     if log::max_level() == log::LevelFilter::Trace {
         let display_result = format_result(result, 500);
-        let line = if has_tui_callback {
-            // In TUI mode, indent with two spaces + └ so the result line
-            // sits neatly under the 🔧 tool call indicator (emoji is 2-col).
-            format!("  ↳ 📤 {tool_name} result: {display_result}")
-        } else {
-            format!("📤 {tool_name} result: {display_result}")
-        };
+        let line = format!("📤 {tool_name} result: {display_result}");
 
-        if has_tui_callback {
-            if let Ok(guard) = TUI_CALLBACK.lock()
-                && let Some(callback) = guard.as_ref()
-            {
-                callback(&line);
-            }
-        } else if PLAIN_MODE.load(Ordering::Relaxed) {
+        if PLAIN_MODE.load(Ordering::Relaxed) {
             suspend_for_print(|| {
                 eprintln!("{line}");
             });
@@ -325,21 +322,9 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
     } else if log::log_enabled!(log::Level::Debug) {
         // Verbose mode: truncated preview (~100 chars)
         let preview = crate::utils::truncate_chars(result, 100);
-        let line = if has_tui_callback {
-            // In TUI mode, indent with two spaces + └ so the result line
-            // sits neatly under the 🔧 tool call indicator (emoji is 2-col).
-            format!("  ↳ ✓ Result: {}", preview.replace('\n', " "))
-        } else {
-            format!("✓ Result: {}", preview.replace('\n', " "))
-        };
+        let line = format!("✓ Result: {}", preview.replace('\n', " "));
 
-        if has_tui_callback {
-            if let Ok(guard) = TUI_CALLBACK.lock()
-                && let Some(callback) = guard.as_ref()
-            {
-                callback(&line);
-            }
-        } else if PLAIN_MODE.load(Ordering::Relaxed) {
+        if PLAIN_MODE.load(Ordering::Relaxed) {
             suspend_for_print(|| {
                 eprintln!("{line}");
             });
@@ -452,8 +437,11 @@ mod tests {
     }
 
     #[test]
-    fn test_tui_aware_print_routes_through_callback() {
+    fn test_tui_aware_print_ignores_callback_in_tui_mode() {
         use std::sync::Arc;
+
+        // Ensure we're in terminal mode for this test (TUI_MODE defaults to false).
+        crate::logging::set_tui_mode(false);
 
         // Clear any previous callback (in case of parallel test contamination)
         set_tui_callback(None);
@@ -469,20 +457,49 @@ mod tests {
 
         set_tui_callback(Some(callback));
 
-        // tui_aware_print should route through the callback, not stderr
+        // In terminal mode, tui_aware_print prints to stderr (not callback).
+        // The callback should NOT be invoked.
         tui_aware_print("⚡ test command");
         tui_aware_print("📝 note #42");
         tui_aware_print("💾 fact #5");
 
         let guard = captured.lock().unwrap();
-        assert_eq!(guard.len(), 3);
-        assert_eq!(guard[0], "⚡ test command");
-        assert_eq!(guard[1], "📝 note #42");
-        assert_eq!(guard[2], "💾 fact #5");
+        assert_eq!(
+            guard.len(),
+            0,
+            "tui_aware_print must not invoke TUI_CALLBACK"
+        );
 
         // Clean up
         drop(guard);
         set_tui_callback(None);
+    }
+
+    #[test]
+    fn test_tui_aware_print_returns_early_in_tui_mode() {
+        // In TUI mode, tui_aware_print must return immediately without
+        // writing to stderr (which would corrupt the alternate screen).
+        crate::logging::set_tui_mode(true);
+
+        // This should be a no-op — if it printed to stderr, the test would
+        // still pass (we can't easily capture stderr), but the important
+        // thing is that it doesn't panic and returns quickly.
+        tui_aware_print("⚡ should not appear in TUI");
+
+        // Restore terminal mode for other tests
+        crate::logging::set_tui_mode(false);
+    }
+
+    #[test]
+    fn test_log_tool_result_returns_early_in_tui_mode() {
+        // In TUI mode, log_tool_result must return immediately.
+        crate::logging::set_tui_mode(true);
+
+        // This should be a no-op even in trace mode.
+        log_tool_result("list_directory", "recursive=true\n/tmp\n/home");
+
+        // Restore terminal mode for other tests
+        crate::logging::set_tui_mode(false);
     }
 
     #[test]
@@ -556,6 +573,7 @@ mod tests {
         // In plain mode, display_tool_call should not emit ANSI codes
         let _guard = PlainModeGuard::new();
         set_tui_callback(None); // Ensure terminal mode (no callback)
+        crate::logging::set_tui_mode(false); // Ensure terminal mode (not TUI)
         // This test verifies the function doesn't panic and routes correctly.
         // We can't easily capture stderr in unit tests, but we verify the
         // plain mode path exists and executes.

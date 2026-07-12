@@ -9,7 +9,6 @@ mod executor;
 
 use std::sync::Arc;
 
-use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
@@ -48,7 +47,7 @@ pub struct QueryResult {
 
 /// Context for building a chat coordinator
 pub struct ChatContext {
-    pub ollama: Ollama,
+    pub ollama: crate::provider::Ollama,
     pub model_id: String,
     pub model_options: ModelOptions,
     pub use_think: bool,
@@ -139,6 +138,18 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
                 tools_executed.len()
             );
         }
+        ChatEvent::ToolExecutionStarted { name, args, .. } => {
+            log::debug!("[INFO] Tool execution started: {}({})", name, args);
+        }
+        ChatEvent::ToolExecutionFinished {
+            is_error, result, ..
+        } => {
+            if is_error {
+                log::warn!("[WARN] Tool execution finished with error: {}", result);
+            } else {
+                log::debug!("[INFO] Tool execution finished");
+            }
+        }
     }
 }
 
@@ -160,14 +171,8 @@ pub fn print_debug_info(
         log::debug!("Context Window:    auto");
     }
     log::debug!("Temperature:       {}", model_config.temperature);
-    if let Some(top_k) = model_config.top_k {
-        log::debug!("Top K:             {}", top_k);
-    }
     if let Some(top_p) = model_config.top_p {
         log::debug!("Top P:             {}", top_p);
-    }
-    if let Some(rp) = model_config.repeat_penalty {
-        log::debug!("Repeat Penalty:    {}", rp);
     }
     log::debug!("Detected Capabilities:");
     log::debug!("  Tools:      {}", capabilities.tools);
@@ -288,8 +293,8 @@ pub async fn run_query(
     let coordinator = coordinator::build_query_coordinator(&ctx, settings);
 
     let retrieval_config = crate::retrieval::RetrievalConfig {
-        keyword_weight: settings.retrieval.keyword_weight,
-        semantic_weight: settings.retrieval.semantic_weight,
+        keyword_weight: settings.indexing.keyword_weight,
+        semantic_weight: settings.indexing.semantic_weight,
         ..crate::retrieval::RetrievalConfig::default()
     };
     let context_result = build_query_context(
@@ -348,4 +353,26 @@ pub async fn run_query(
     display_result(&result, ctx.use_think, ctx.output_flags.plain);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_uses_indexing_weights() {
+        // The query subcommand must use settings.indexing.keyword_weight
+        // and settings.indexing.semantic_weight for the RRF retrieval
+        // config. This test guards against accidental regressions to
+        // the old [retrieval] access.
+        let sample = r#"
+[indexing]
+model = "nomic"
+keyword_weight = 0.25
+semantic_weight = 0.75
+"#;
+        let settings: crate::settings::Settings = toml::from_str(sample).unwrap();
+        assert!((settings.indexing.keyword_weight - 0.25).abs() < f32::EPSILON);
+        assert!((settings.indexing.semantic_weight - 0.75).abs() < f32::EPSILON);
+    }
 }

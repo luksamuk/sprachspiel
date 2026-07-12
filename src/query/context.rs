@@ -4,8 +4,6 @@
 
 use std::sync::Arc;
 
-use ollama_rs::Ollama;
-
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::db::Database;
@@ -31,7 +29,7 @@ pub struct QueryContext {
     pub prompt_type: PromptType,
     pub prompt_name: String,
     pub system_prompt: String,
-    pub ollama: Ollama,
+    pub ollama: crate::provider::Ollama,
 }
 
 /// Builder for QueryContext
@@ -118,7 +116,7 @@ impl QueryContextBuilder {
 
         let model_config = user_models::resolve_model_config(&model_name);
         #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-        let ollama = settings.ollama_client();
+        let ollama = settings.ollama_client_for_model(&model_config.model_id);
         let capabilities =
             ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
@@ -162,8 +160,23 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
+        // The query subcommand's wiring uses
+        // Settings::resolve_indexing_model to get the upstream
+        // model_id and dimensions. If the alias is missing or
+        // misconfigured, the resolver returns an error and we
+        // pass an empty model_id to init_database_core which
+        // bails with a clear error message.
+        let (model_id, dimensions) = match settings.resolve_indexing_model() {
+            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
+            Err(_) => (String::new(), 768), // triggers the empty-model_id error
+        };
         let result = crate::db::init_database_core(
-            ollama.clone(),
+            crate::db::IndexingInit {
+                provider: ollama.clone(),
+                model_id,
+                dimensions,
+                probe: false, // query subcommand skips the probe (one-shot)
+            },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
             None, // Use default database path

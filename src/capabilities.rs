@@ -1,22 +1,33 @@
-//! Model capability detection via the LLM server API
+//! Model capability detection
 //!
-//! Capabilities (tools, vision, thinking) are detected at runtime
-//! by querying the server's model info endpoint.
+//! Capabilities (tools, vision, thinking) are sourced from:
+//! 1. **Explicit fields in `models.toml`** (preferred). Each
+//!    `[models.X]` entry can declare `tools = true/false`,
+//!    `thinking = true/false`, `vision = true/false`. Explicit
+//!    fields override the probe; unspecified fields (`None`) fall
+//!    through to the probe.
+//! 2. **Server probe** (fallback). For built-in models and
+//!    aliases that don't specify capability flags, sprach queries
+//!    the server. For OpenAI-compat providers this hits
+//!    `CompatOllama::show_model_info` which returns a permissive
+//!    default set (completion, tools, thinking) but **not** vision
+//!    (the OpenAI spec doesn't expose a vision flag). So vision
+//!    MUST be declared explicitly in `models.toml`.
 //!
 //! # W2 Wave Context (Issue #116)
 //!
 //! `check_server_health()` is the entry point for the startup health check.
-//! It calls `ollama.list_local_models()` (which hits `/api/tags`) with a
-//! 3-second timeout. This is a **pre-check** that catches "Ollama is not
-//! running" before the heavier `show_model_info()` call would hang
-//! indefinitely. When #120 (OllamaProvider reqwest direct) lands, this
-//! will be replaced by a `ProviderError`-aware health check.
+//! It calls `/api/tags` via the Ollama shim with a 3-second timeout.
+//! This is a **pre-check** that catches "Ollama is not running" before
+//! the heavier `show_model_info()` call would hang indefinitely. When
+//! #120 (OllamaProvider reqwest direct) lands, this was replaced by
+//! `ProviderError`-aware health check; #121 consolidates everything
+//! via OpenAICompatibleProvider with /v1/models.
 
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
 
-use ollama_rs::Ollama;
-use ollama_rs::models::ModelInfo;
+use crate::provider::ollama_shim::ModelInfo;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.
 ///
@@ -38,7 +49,7 @@ pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// This health check with explicit timeout is the minimum-viable fix until
 /// #120 replaces `ollama-rs` with direct reqwest.
 #[allow(dead_code)] // Called from repl.rs startup in this same PR (#116)
-pub async fn check_server_health(ollama: &Ollama) -> crate::AppResult<()> {
+pub async fn check_server_health(ollama: &crate::provider::Ollama) -> crate::AppResult<()> {
     let check = async {
         ollama.list_local_models().await.map_err(|e| {
             format!(
@@ -90,7 +101,45 @@ impl ModelCapabilities {
     ///
     /// # Returns
     /// Detected capabilities for the model
-    pub async fn detect(ollama: &Ollama, model_name: &str) -> crate::AppResult<Self> {
+    ///
+    /// Capabilities for **user-defined models** in `models.toml`
+    /// are taken from the alias's explicit `tools`/`thinking`/`vision`
+    /// fields (with `None` = probe fallback). Built-in models and
+    /// models not declared in `models.toml` fall back to the server
+    /// probe (which uses `/v1/models` for OpenAI-compat — see
+    /// `CompatOllama::show_model_info`).
+    pub async fn detect(
+        ollama: &crate::provider::Ollama,
+        model_name: &str,
+    ) -> crate::AppResult<Self> {
+        // If the model is declared in models.toml as a user-defined
+        // alias, use the explicit capability flags
+        // (vision/tools/thinking) and fall back to the probe for
+        // unspecified fields.
+        if let Some(cfg) = crate::user_models::get_user_models().get(model_name) {
+            // Start with the server probe (provides completion).
+            let probed = Self::detect_from_server(ollama, model_name).await?;
+            return Ok(Self {
+                // vision: explicit > probe > false (probe for
+                // OpenAI-compat never reports vision).
+                vision: cfg.vision.unwrap_or(probed.vision),
+                tools: cfg.tools.unwrap_or(probed.tools),
+                thinking: cfg.thinking.unwrap_or(probed.thinking),
+                completion: probed.completion,
+            });
+        }
+
+        // Fallback: probe the server.
+        Self::detect_from_server(ollama, model_name).await
+    }
+
+    /// Server-only probe (no models.toml lookup). Used by `detect()`
+    /// and exposed publicly for callers that need the raw server
+    /// result (e.g., legacy chat subcommand startup).
+    pub async fn detect_from_server(
+        ollama: &crate::provider::Ollama,
+        model_name: &str,
+    ) -> crate::AppResult<Self> {
         let info: ModelInfo = ollama
             .show_model_info(model_name.to_string())
             .await
@@ -108,7 +157,7 @@ impl ModelCapabilities {
     ///
     /// Prints a warning on detection failure and returns default capabilities
     /// with completion enabled (safe fallback for most operations).
-    pub async fn detect_or_default(ollama: &Ollama, model_name: &str) -> Self {
+    pub async fn detect_or_default(ollama: &crate::provider::Ollama, model_name: &str) -> Self {
         match Self::detect(ollama, model_name).await {
             Ok(caps) => caps,
             Err(e) => {
@@ -123,6 +172,7 @@ impl ModelCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::Ollama;
 
     #[test]
     fn test_capabilities_detection() {
