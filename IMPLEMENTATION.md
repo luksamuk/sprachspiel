@@ -4672,9 +4672,10 @@ When switching the embedding model to `lfm2.5-embed-350m` (512-token batch size)
 
 #### Remove ollama-rs — #123 [M1]
 
-**Status:** 📋 PLANNED  
-**Depends on:** #121 (all consumers migrated)  
-**Estimated effort:** 2–3 days  
+**Status:** 🔄 IN PROGRESS  
+**Branch:** `feat/123-remove-ollama-rs`  
+**Depends on:** #121 (all consumers migrated) ✅  
+**Estimated effort:** 1.5–2 weeks (revised — W2 close-out scope: 6 responsibilities + 2 open topics)
 **Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml + **all 5 manual test scenarios from `MANUAL_TEST_116.md` re-executed and passing** + **W2 dead_code audit clean**
 
 **W2 Wave Context — Closure criteria:**
