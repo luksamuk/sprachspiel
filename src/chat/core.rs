@@ -47,8 +47,8 @@ use crate::spinner::finish_spinner;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
 
-use super::coordinator::{classify_provider_error, format_recovery_message};
-use super::custom_coordinator::CustomCoordinator;
+use super::coordinator::Coordinator;
+use super::error_recovery::{classify_provider_error, format_recovery_message};
 use super::llm_event::LlmEvent;
 use super::recovery::push_tool_result;
 use super::session::ChatSession;
@@ -62,8 +62,8 @@ use crate::provider::retry::{
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Convert `ProviderOptions` (agnostic) to legacy `ModelOptions` (ollama-rs).
-/// The CustomCoordinator still uses `ModelOptions` for now; this is removed
-/// in the P6.0e.4 commit that migrates `custom_coordinator.rs` to LlmProvider.
+/// The Coordinator still uses `ModelOptions` for now; this is removed
+/// in the P6.0e.4 commit that migrates `coordinator.rs` to LlmProvider.
 pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
     let mut out = ModelOptions::default();
     if let Some(t) = opts.temperature {
@@ -171,7 +171,7 @@ pub fn setup_coordinator(
     view_event_sender: super::view::ViewEventSender,
     llm_tx: Option<tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
-) -> CustomCoordinator<Vec<ChatMessage>> {
+) -> Coordinator {
     let coordinator = crate::query::ChatContext {
         ollama,
         model_id: model_config.model_id.clone(),
@@ -187,7 +187,7 @@ pub fn setup_coordinator(
         // reference to ChatView, which is not possible with 'static closures.
         //
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
+            crate::chat::coordinator::ChatEvent::PreToolContent { content, thinking } => {
                 if llm_tx.is_some() {
                     // TUI streaming path: pre-tool content is already on screen via
                     // StreamToken/StreamThinking and will be finalized by ToolCallStarted.
@@ -204,7 +204,7 @@ pub fn setup_coordinator(
                     }
                 }
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
+            crate::chat::coordinator::ChatEvent::ContextNeedsCompaction {
                 tokens_used,
                 context_window,
                 ..
@@ -214,11 +214,11 @@ pub fn setup_coordinator(
                     percent: percent as u64,
                 });
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextTruncated { .. } => {
+            crate::chat::coordinator::ChatEvent::ContextTruncated { .. } => {
                 // Already logged via log::warn! — no view event needed
                 // (this is informational, not user-facing)
             }
-            crate::chat::custom_coordinator::ChatEvent::ToolExecutionStarted {
+            crate::chat::coordinator::ChatEvent::ToolExecutionStarted {
                 tool_call_id,
                 name,
                 args,
@@ -231,7 +231,7 @@ pub fn setup_coordinator(
                     });
                 }
             }
-            crate::chat::custom_coordinator::ChatEvent::ToolExecutionFinished {
+            crate::chat::coordinator::ChatEvent::ToolExecutionFinished {
                 tool_call_id,
                 result,
                 is_error,
@@ -281,7 +281,7 @@ pub async fn prepare_messages(
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     user_input: &str,
     system_prompt: &str,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: &mut Coordinator,
     continuation_tag: Option<&ContinuationTag>,
 ) -> Vec<ChatMessage> {
     let settings = crate::settings::Settings::load();
@@ -345,7 +345,7 @@ pub async fn prepare_messages(
 pub fn process_chat_response(
     response: ollama_rs::generation::chat::ChatMessageResponse,
     think_enabled: bool,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: &mut Coordinator,
     context_window: usize,
     system_prompt: String,
     view: &mut dyn ChatView,
@@ -429,7 +429,7 @@ pub async fn send_message(
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for CustomCoordinator.
+    // Bridge to legacy ModelOptions for Coordinator.
     let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
@@ -705,7 +705,7 @@ pub async fn send_message_stream(
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for CustomCoordinator.
+    // Bridge to legacy ModelOptions for Coordinator.
     let model_options = convert_provider_to_model(&provider_options);
     let blacklist_set = settings.blacklist_set();
 
@@ -1391,9 +1391,12 @@ async fn compact_with_llm(
     let provider_options = model_cfg.build_provider_options();
     let model_options = convert_provider_to_model(&provider_options);
 
-    let mut coordinator =
-        CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-            .options(model_options);
+    let mut coordinator = Coordinator::new(
+        ollama.boxed_provider(),
+        model_config.model_id.clone(),
+        vec![],
+    )
+    .options(model_options);
 
     let messages = vec![
         ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),

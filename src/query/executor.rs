@@ -8,8 +8,8 @@ use std::sync::Arc;
 use indicatif::ProgressBar;
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::coordinator::{classify_provider_error, format_recovery_message};
-use crate::chat::custom_coordinator::CustomCoordinator;
+use crate::chat::coordinator::Coordinator;
+use crate::chat::error_recovery::{classify_provider_error, format_recovery_message};
 use crate::chat::recovery::push_tool_result;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
@@ -27,7 +27,7 @@ use crate::tools::context::{with_full_context, with_tool_context};
 /// and agent spawning tools.
 #[expect(clippy::too_many_arguments)]
 pub async fn execute_query_with_retry(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: Coordinator,
     messages: Vec<ChatMessage>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
@@ -56,7 +56,7 @@ pub async fn execute_query_with_retry(
 /// Execute with DB context (for remember tool support).
 #[expect(clippy::too_many_arguments)]
 async fn execute_with_context(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: Coordinator,
     messages: Vec<ChatMessage>,
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
@@ -73,7 +73,7 @@ async fn execute_with_context(
 
 /// Execute without DB context (code mode or anonymous).
 async fn execute_without_context(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: Coordinator,
     messages: Vec<ChatMessage>,
     ollama: crate::provider::Ollama,
     settings: Arc<Settings>,
@@ -88,7 +88,7 @@ async fn execute_without_context(
 
 /// Core retry loop shared by both execution paths.
 async fn execute_retry_loop(
-    mut coordinator: CustomCoordinator<Vec<ChatMessage>>,
+    mut coordinator: Coordinator,
     messages: Vec<ChatMessage>,
     tool_names: &[String],
     spinner: ProgressBar,

@@ -109,7 +109,6 @@ pub struct LlmMessage {
     pub tool_call_id: Option<String>,
 }
 
-#[cfg(test)]
 impl LlmMessage {
     pub fn user(content: String) -> Self {
         Self {
@@ -209,13 +208,15 @@ pub struct LlmToolCall {
 /// Response from an LLM chat completion.
 ///
 /// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessageResponse`.
-#[allow(dead_code)] // Consumed by #120/#121
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {
     pub model: String,
     pub content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<LlmToolCall>>,
+    /// Thinking/reasoning content from the model, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

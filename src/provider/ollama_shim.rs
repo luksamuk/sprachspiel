@@ -126,6 +126,16 @@ impl CompatOllama {
         &self.inner
     }
 
+    /// Return a cloned reference to the inner provider as `Box<dyn LlmProvider>`.
+    ///
+    /// Temporary bridge during Phase 2 of #123: callers that used
+    /// `crate::provider::Ollama` as the coordinator's provider now pass
+    /// `Box<dyn LlmProvider>`. This method extracts the inner
+    /// `OpenAICompatibleProvider` from the `Arc` for that purpose.
+    pub fn boxed_provider(&self) -> Box<dyn crate::provider::LlmProvider> {
+        Box::new((*self.inner).clone())
+    }
+
     /// Probe the embedding endpoint.
     ///
     /// Delegates to [`OpenAICompatibleProvider::probe_embedding`].
@@ -421,7 +431,7 @@ pub struct LocalModel {
 /// Convert a `ProviderError` into an `ollama_rs::error::OllamaError`.
 ///
 /// Public so that callers that consume the raw `LlmStreamEvent` stream
-/// (e.g., `custom_coordinator`) can still map terminal provider errors
+/// (e.g., `coordinator`) can still map terminal provider errors
 /// back to the legacy error type expected by the retry layer.
 pub fn convert_provider_error(
     err: crate::provider::types::ProviderError,

@@ -26,11 +26,11 @@ pub const TOKENS_PER_TOOL: usize = 50;
 ///
 /// Consumers that need 100% accuracy (e.g. critical decisions like
 /// emergency truncation) MUST add a safety margin — see
-/// `custom_coordinator.rs::check_and_handle_context_overflow` (the
+/// `coordinator.rs::check_and_handle_context_overflow` (the
 /// 75% preemptive threshold) for how this is handled in practice.
 ///
 /// A real tokenizer (tiktoken-rs, Ollama's /api/tokenize) would
-/// remove the bias. See the TODO in custom_coordinator.rs.
+/// remove the bias. See the TODO in coordinator.rs.
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;

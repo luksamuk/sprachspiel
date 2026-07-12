@@ -5,7 +5,7 @@
 
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::CustomCoordinator;
+use crate::chat::Coordinator;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -45,12 +45,16 @@ impl SummarizeProcessor {
         let ollama = settings.ollama_client_for_model(model_id);
 
         let provider_options = model_config.build_provider_options();
-        // Bridge to legacy ModelOptions for CustomCoordinator.
+        // Bridge to legacy ModelOptions for Coordinator.
         let model_options = crate::chat::core::convert_provider_to_model(&provider_options);
 
         // Build coordinator WITHOUT tools (security requirement)
-        let mut coordinator = CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
-            .options(model_options);
+        let mut coordinator = Coordinator::new(
+            ollama.boxed_provider(),
+            model_config.model_id.clone(),
+            vec![],
+        )
+        .options(model_options);
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)

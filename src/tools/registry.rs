@@ -63,9 +63,7 @@ pub trait ToolRegistrar: Sized {
     fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self;
 }
 
-impl<C: ollama_rs::history::ChatHistory> ToolRegistrar
-    for crate::chat::custom_coordinator::CustomCoordinator<C>
-{
+impl ToolRegistrar for crate::chat::coordinator::Coordinator {
     fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self {
         self.add_tool(tool)
     }

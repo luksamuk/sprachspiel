@@ -23,7 +23,7 @@ pub fn classify_for_retry(error: &ProviderError) -> RetryCategory {
 /// Temporary bridge: convert `OllamaError` to `ProviderError` for the retry loop.
 ///
 /// This exists only during Phase 1 of #123. It will be removed in Phase 2
-/// (LUC-41) when `CustomCoordinator` returns `ProviderError` directly.
+/// (LUC-41) when `Coordinator` returns `ProviderError` directly.
 pub fn ollama_error_to_provider_error(error: &ollama_rs::error::OllamaError) -> ProviderError {
     use ollama_rs::error::{OllamaError, ToolCallError};
 

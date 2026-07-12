@@ -53,6 +53,7 @@ type ConvertedOptions = (
     Option<u32>,         // max_tokens (from num_predict)
     Option<Vec<String>>, // stop_sequences
     Option<u32>,         // seed
+    Option<String>,      // reasoning_effort (from think)
 );
 use super::types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage, ProviderCapabilities,
@@ -95,6 +96,7 @@ impl From<&ProviderConfig> for OpenAICompatibleConfig {
 }
 
 /// OpenAI-compatible provider implementation.
+#[derive(Clone)]
 pub struct OpenAICompatibleProvider {
     config: OpenAICompatibleConfig,
     client: reqwest::Client,
@@ -312,12 +314,20 @@ impl OpenAICompatibleProvider {
 
     /// Convert `ProviderOptions` to OpenAI request fields.
     fn convert_options(options: &ProviderOptions) -> ConvertedOptions {
+        let reasoning_effort = options.think.map(|enabled| {
+            if enabled {
+                "medium".to_string()
+            } else {
+                "none".to_string()
+            }
+        });
         (
             options.temperature,
             options.top_p,
             options.num_predict.map(|n| n.max(0) as u32),
             options.stop_sequences.clone(),
             options.seed,
+            reasoning_effort,
         )
     }
 
@@ -379,6 +389,7 @@ impl OpenAICompatibleProvider {
             model: response.model,
             content,
             tool_calls,
+            thinking: None, // Non-streaming response doesn't carry thinking
             done_reason,
             eval_count: response.usage.as_ref().map(|u| u.completion_tokens),
             prompt_eval_count: response.usage.as_ref().map(|u| u.prompt_tokens),
@@ -866,7 +877,8 @@ impl LlmProvider for OpenAICompatibleProvider {
         tools: Vec<ToolInfo>,
         options: ProviderOptions,
     ) -> Result<LlmResponse, ProviderError> {
-        let (temperature, top_p, max_tokens, stop, seed) = Self::convert_options(&options);
+        let (temperature, top_p, max_tokens, stop, seed, reasoning_effort) =
+            Self::convert_options(&options);
         let request = ChatRequest {
             model: model.to_string(),
             messages: Self::convert_messages(messages),
@@ -875,6 +887,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             max_tokens,
             stop,
             seed,
+            reasoning_effort,
             tools: if tools.is_empty() {
                 None
             } else {
@@ -899,7 +912,8 @@ impl LlmProvider for OpenAICompatibleProvider {
         Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, ProviderError>> + Send>>,
         ProviderError,
     > {
-        let (temperature, top_p, max_tokens, stop, seed) = Self::convert_options(&options);
+        let (temperature, top_p, max_tokens, stop, seed, reasoning_effort) =
+            Self::convert_options(&options);
         let messages_json = Self::convert_messages(messages);
 
         let request = ChatRequest {
@@ -910,6 +924,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             max_tokens,
             stop,
             seed,
+            reasoning_effort,
             tools: if tools.is_empty() {
                 None
             } else {

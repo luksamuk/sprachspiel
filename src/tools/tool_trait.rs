@@ -8,7 +8,7 @@
 //!
 //! This trait is the foundation of the W2 Provider Chain. In #119 (Agnostic
 //! Provider Types), the `Tool::Params` will continue to use schemars but
-//! `CustomToolInfo` and `CustomCoordinator::ToolHolder` will be unified with
+//! `ToolInfo` and `Coordinator::ToolHolder` will be unified with
 //! agnostic types. In #123 (Remove ollama-rs), this trait becomes the only
 //! `Tool` trait in the codebase.
 
@@ -36,7 +36,7 @@ impl<P: DeserializeOwned + JsonSchema> Parameters for P {}
 ///
 /// `#[sprachspiel::tool]`-generated tools implement this trait. Tool
 /// definitions are serialized to the provider via `serde` (JSON Schema),
-/// not via `ollama-rs` types. The `CustomCoordinator` sends tool
+/// not via `ollama-rs` types. The `Coordinator` sends tool
 /// definitions through the `OpenAICompatibleProvider` shim.
 pub trait Tool: Send + Sync {
     type Params: Parameters;

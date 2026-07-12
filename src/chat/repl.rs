@@ -271,7 +271,7 @@ pub async fn handle_user_message_stream(
                 // Cancellation from tool loop (Ctrl+C during multi-tool execution)
                 // is user-initiated — don't show an error message, just stop.
                 // The Ctrl+C handler in the event loop already showed "Cancelled."
-                if error_str == super::custom_coordinator::CANCELLED_BY_USER {
+                if error_str == super::coordinator::CANCELLED_BY_USER {
                     log::debug!("LLM task cancelled during tool execution");
                     break;
                 }

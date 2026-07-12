@@ -295,9 +295,12 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let provider_options = model_config.build_provider_options();
     let model_options = convert_provider_to_model(&provider_options);
 
-    let mut coordinator =
-        chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
-            .options(model_options);
+    let mut coordinator = chat::Coordinator::new(
+        ollama.boxed_provider(),
+        model_config.model_id.clone(),
+        vec![],
+    )
+    .options(model_options);
 
     let system_message = ChatMessage::system(prompt);
     let user_message = ChatMessage::user("".to_string());

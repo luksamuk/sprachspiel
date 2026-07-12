@@ -2,7 +2,7 @@
 //!
 //! Provides a minimal interface for dispatching sub-tasks (OCR, Vision,
 //! Translate, Summarize) to Ollama models without the overhead
-//! of `CustomCoordinator` (no history, no callbacks, no overflow detection).
+//! of `Coordinator` (no history, no callbacks, no overflow detection).
 //!
 //! Two API paths:
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
@@ -92,7 +92,7 @@ impl SubagentType {
 /// are respected instead of falling back to a hardcoded temperature 0.0.
 ///
 /// Note: Sub-agent results are NOT truncated. The coordinator's emergency
-/// context overflow protection in `custom_coordinator.rs` handles any
+/// context overflow protection in `coordinator.rs` handles any
 /// results that would exceed the context window.
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
@@ -139,7 +139,7 @@ impl SubagentConfig {
 
 /// Lightweight one-shot executor for specialized sub-tasks.
 ///
-/// Unlike `CustomCoordinator` (992 lines with history, callbacks, overflow
+/// Unlike `Coordinator` (992 lines with history, callbacks, overflow
 /// detection, continuation tags), `SubagentRunner` is intentionally minimal:
 /// just an Ollama client, a config, and a `run()` method.
 pub struct SubagentRunner {
@@ -161,7 +161,7 @@ impl SubagentRunner {
     ///
     /// Results are returned in full — truncation is handled by the
     /// coordinator's emergency context overflow protection in
-    /// `custom_coordinator.rs` if needed.
+    /// `coordinator.rs` if needed.
     ///
     /// # Arguments
     /// * `subagent_type` - Which specialization to invoke.

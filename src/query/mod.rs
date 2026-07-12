@@ -13,7 +13,7 @@ use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
 use crate::capabilities::ModelCapabilities;
-use crate::chat::custom_coordinator::{ChatEvent, CustomCoordinator};
+use crate::chat::coordinator::{ChatEvent, Coordinator};
 use crate::config::ModelConfig;
 use crate::markdown;
 use crate::prompts::builder::PromptType;
@@ -56,10 +56,10 @@ pub struct ChatContext {
 }
 
 impl ChatContext {
-    pub fn build_coordinator(self) -> CustomCoordinator<Vec<ChatMessage>> {
+    pub fn build_coordinator(self) -> Coordinator {
         let use_think = self.use_think;
 
-        let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
+        let mut coordinator = Coordinator::new(self.ollama.boxed_provider(), self.model_id, vec![])
             .options(self.model_options)
             .think(use_think);
 
