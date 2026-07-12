@@ -37,7 +37,6 @@ pub mod prompts;
 pub mod provider;
 pub mod query;
 pub mod retrieval;
-pub mod retry;
 pub mod security;
 pub mod settings;
 pub mod skills;

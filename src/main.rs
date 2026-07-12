@@ -32,7 +32,6 @@ mod prompts;
 mod provider;
 mod query;
 mod retrieval;
-mod retry;
 mod security;
 mod settings;
 mod skills;

@@ -47,7 +47,7 @@ use crate::spinner::finish_spinner;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
 
-use super::coordinator::{classify_ollama_error, format_recovery_message};
+use super::coordinator::{classify_provider_error, format_recovery_message};
 use super::custom_coordinator::CustomCoordinator;
 use super::llm_event::LlmEvent;
 use super::recovery::push_tool_result;
@@ -55,7 +55,9 @@ use super::session::ChatSession;
 use super::thinking::{extract_thinking, process_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
-use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
+use crate::provider::retry::{
+    classify_for_retry, ollama_error_to_provider_error, retry_delay, sleep_or_cancel,
+};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -605,23 +607,12 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = ollama_error_to_provider_error(&e);
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, &tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -886,23 +877,12 @@ pub async fn send_message_stream(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = ollama_error_to_provider_error(&e);
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, &tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -932,13 +912,6 @@ pub async fn send_message_stream(
 
                     continue;
                 } else {
-                    // Non-retryable error — propagate to the caller.
-                    // Note: "invalid tool call arguments" (HTTP 400) is now
-                    // handled inside the coordinator's process_next_stream
-                    // (custom_coordinator.rs), which sanitizes invalid
-                    // tool_calls and retries without breaking the ReAct loop.
-                    // If it reaches here, the coordinator has already exhausted
-                    // its internal retries (3 attempts) — propagate as fatal.
                     let error_str = e.to_string();
                     break Err(error_str);
                 }

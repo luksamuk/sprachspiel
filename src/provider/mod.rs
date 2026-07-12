@@ -14,6 +14,7 @@ pub mod factory;
 pub mod ollama_shim;
 pub mod openai_compat;
 pub mod openai_types;
+pub mod retry;
 pub mod tool_accumulator;
 pub mod types;
 

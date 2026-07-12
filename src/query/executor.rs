@@ -1,11 +1,6 @@
 //! Query execution with retry logic
 //!
-//! Provides execute_query_with_retry to handle Ollama errors with retry logic.
-//!
-//! **W2 Wave Context:** This module's retry loop is migrated to the
-//! per-category classification in #116. `MAX_RETRIES` (the pre-#116
-//! constant in `coordinator.rs`) has been replaced by per-category
-//! limits from `crate::retry::classify_for_retry()`.
+//! Provides execute_query_with_retry to handle LLM errors with retry logic.
 
 #![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
@@ -13,12 +8,14 @@ use std::sync::Arc;
 use indicatif::ProgressBar;
 use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};
+use crate::chat::coordinator::{classify_provider_error, format_recovery_message};
 use crate::chat::custom_coordinator::CustomCoordinator;
 use crate::chat::recovery::push_tool_result;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
-use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
+use crate::provider::retry::{
+    classify_for_retry, ollama_error_to_provider_error, retry_delay, sleep_or_cancel,
+};
 use crate::settings::Settings;
 use crate::tools::context::{with_full_context, with_tool_context};
 
@@ -105,23 +102,12 @@ async fn execute_retry_loop(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = ollama_error_to_provider_error(&e);
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -145,7 +131,6 @@ async fn execute_retry_loop(
                         }
                     }
 
-                    // Query mode has no cancel token — unconditional sleep
                     let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
 
                     continue;
