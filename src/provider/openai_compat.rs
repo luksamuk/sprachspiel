@@ -959,7 +959,8 @@ impl LlmProvider for OpenAICompatibleProvider {
         // For OpenAI, /v1/chat/completions supports images as content
         // parts in a user message. We emulate the /v1/generate (legacy)
         // path via chat.
-        let (temperature, top_p, max_tokens, stop, seed) = Self::convert_options(&options);
+        let (temperature, top_p, max_tokens, stop, seed, reasoning_effort) =
+            Self::convert_options(&options);
         let user_msg = LlmMessage {
             role: LlmRole::User,
             content: prompt.to_string(),
@@ -983,6 +984,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             max_tokens,
             stop,
             seed,
+            reasoning_effort,
             tools: None,
             stream: false,
             stream_options: None,

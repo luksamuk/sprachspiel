@@ -27,7 +27,7 @@ use std::time::Instant;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Parse inter-tool compaction error from OllamaError
+/// Parse inter-tool compaction error from a ProviderError string.
 ///
 /// Returns (tokens_used, context_window, tools_executed) if the error is
 /// a context needs compaction error, None otherwise.

@@ -7,7 +7,7 @@
 //! - Recent messages before current query
 //! - Current query at the END
 
-use ollama_rs::generation::chat::{ChatMessage, MessageRole as OllamaMessageRole};
+use crate::provider::types::{LlmMessage, LlmRole};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -157,7 +157,7 @@ impl Default for RetrievalConfig {
 #[derive(Debug, Clone)]
 pub struct ContextResult {
     /// Messages to send to LLM
-    pub messages: Vec<ChatMessage>,
+    pub messages: Vec<LlmMessage>,
     /// Whether retrieval was performed
     pub retrieval_performed: bool,
     /// Number of retrieved messages
@@ -168,7 +168,7 @@ pub struct ContextResult {
 #[derive(Debug, Clone)]
 pub struct RetrievalResult {
     /// Chat message containing retrieved context
-    pub message: ChatMessage,
+    pub message: LlmMessage,
     /// Number of items retrieved
     pub count: usize,
 }
@@ -237,7 +237,7 @@ async fn perform_retrieval(
     );
 
     Some(RetrievalResult {
-        message: ChatMessage::system(retrieved_text),
+        message: LlmMessage::system(retrieved_text),
         count,
     })
 }
@@ -247,7 +247,7 @@ async fn perform_retrieval(
 /// System messages are handled separately in the context building flow,
 /// so they are skipped when converting session messages to ChatMessages.
 fn push_messages_as_chat_messages<'a, I>(
-    messages: &mut Vec<ChatMessage>,
+    messages: &mut Vec<LlmMessage>,
     source: I,
     include_thinking: bool,
 ) where
@@ -255,16 +255,16 @@ fn push_messages_as_chat_messages<'a, I>(
 {
     for msg in source {
         match msg.role {
-            MessageRole::User => messages.push(ChatMessage::user(msg.content.clone())),
+            MessageRole::User => messages.push(LlmMessage::user(msg.content.clone())),
             MessageRole::Assistant => {
-                let mut chat_msg = ChatMessage::assistant(msg.content.clone());
+                let mut chat_msg = LlmMessage::assistant(msg.content.clone());
                 if include_thinking {
                     chat_msg.thinking = msg.thinking.clone();
                 }
                 messages.push(chat_msg);
             }
             MessageRole::System => { /* skip - handled separately */ }
-            MessageRole::Tool => messages.push(ChatMessage::tool(msg.content.clone())),
+            MessageRole::Tool => messages.push(LlmMessage::tool(msg.content.clone())),
         }
     }
 }
@@ -347,7 +347,7 @@ pub async fn build_context(
                 // system prompt instead of pushing a separate
                 // system message.
                 let retrieved_text = match result.message.role {
-                    OllamaMessageRole::System => result.message.content,
+                    LlmRole::System => result.message.content,
                     _ => unreachable!("RetrievalResult.message is always system"),
                 };
                 consolidated_system.push_str("\n\n");
@@ -372,7 +372,7 @@ pub async fn build_context(
     }
 
     // Final single system message at index 0.
-    messages.push(ChatMessage::system(consolidated_system));
+    messages.push(LlmMessage::system(consolidated_system));
 
     // 3. First preserved messages (if middle compaction)
     // According to "lost in the middle" research, important content should be
@@ -461,7 +461,7 @@ pub async fn build_query_context(
     let mut retrieved_count = 0;
 
     // 1. System prompt (always first)
-    messages.push(ChatMessage::system(system_prompt.to_string()));
+    messages.push(LlmMessage::system(system_prompt.to_string()));
 
     // 2. Retrieved messages (search across all project sessions)
     if config.enabled {
@@ -490,7 +490,7 @@ pub async fn build_query_context(
     }
 
     // 3. Current query (always last)
-    messages.push(ChatMessage::user(user_query.to_string()));
+    messages.push(LlmMessage::user(user_query.to_string()));
 
     log::debug!(
         "Query context built: {} messages, retrieval={}, retrieved={}",
@@ -1025,7 +1025,7 @@ mod tests {
         let system_count = result
             .messages
             .iter()
-            .filter(|m| m.role == OllamaMessageRole::System)
+            .filter(|m| m.role == LlmRole::System)
             .count();
         assert_eq!(
             system_count, 1,
@@ -1033,7 +1033,7 @@ mod tests {
             system_count
         );
         // And that single system message is at index 0.
-        assert_eq!(result.messages[0].role, OllamaMessageRole::System);
+        assert_eq!(result.messages[0].role, LlmRole::System);
     }
 
     #[tokio::test]
@@ -1051,13 +1051,13 @@ mod tests {
             build_context(&session, None, None, "query", "You are helpful.", &config).await;
 
         // The system message is the user's prompt verbatim.
-        assert_eq!(result.messages[0].role, OllamaMessageRole::System);
+        assert_eq!(result.messages[0].role, LlmRole::System);
         assert!(result.messages[0].content.contains("You are helpful."));
         // No other system messages anywhere.
         for (i, m) in result.messages.iter().enumerate().skip(1) {
             assert_ne!(
                 m.role,
-                OllamaMessageRole::System,
+                LlmRole::System,
                 "message at index {i} is system — should not happen",
                 i = i
             );
@@ -1084,7 +1084,7 @@ mod tests {
         let system_count = result
             .messages
             .iter()
-            .filter(|m| m.role == OllamaMessageRole::System)
+            .filter(|m| m.role == LlmRole::System)
             .count();
         assert_eq!(
             system_count, 1,

@@ -9,8 +9,7 @@ mod executor;
 
 use std::sync::Arc;
 
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
+use crate::provider::types::ProviderOptions;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::coordinator::{ChatEvent, Coordinator};
@@ -49,7 +48,7 @@ pub struct QueryResult {
 pub struct ChatContext {
     pub ollama: crate::provider::Ollama,
     pub model_id: String,
-    pub model_options: ModelOptions,
+    pub model_options: ProviderOptions,
     pub use_think: bool,
     pub context_window: Option<usize>,
     pub system_prompt: Option<String>,
@@ -346,8 +345,8 @@ pub async fn run_query(
     finish_spinner(spinner);
 
     let result = QueryResult {
-        content: response.message.content.clone(),
-        thinking: response.message.thinking.clone(),
+        content: response.content.clone(),
+        thinking: response.thinking.clone(),
     };
 
     display_result(&result, ctx.use_think, ctx.output_flags.plain);

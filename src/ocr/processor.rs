@@ -6,9 +6,8 @@
 #![expect(clippy::print_stdout)] // CLI subcommand output
 #![expect(clippy::print_stderr)] // CLI subcommand output
 use base64::Engine;
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::generation::images::Image;
-use ollama_rs::models::ModelOptions;
+
+use crate::provider::types::ProviderOptions;
 use std::path::Path;
 
 use crate::spinner::{create_spinner, finish_spinner};
@@ -35,8 +34,8 @@ impl OcrProcessor {
         mode: OcrMode,
         prompt_override: Option<&str>,
         model: &str,
-        model_options: ModelOptions,
-        ollama: &crate::provider::Ollama,
+        model_options: ProviderOptions,
+        provider: &dyn crate::provider::LlmProvider,
         show_spinner: bool,
     ) -> OcrResult<OcrOutput> {
         validate_image_file(path).map_err(OcrError::FileNotFound)?;
@@ -49,13 +48,7 @@ impl OcrProcessor {
             })?;
 
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-        let image = Image::from_base64(base64_image);
         let prompt = prompt_override.unwrap_or_else(|| mode.into_prompt());
-
-        // Create generation request with the image attached
-        let request = GenerationRequest::new(model.to_string(), prompt)
-            .options(model_options)
-            .add_image(image);
 
         // Show spinner (conditional — hidden when called from subagent to avoid overlap)
         let spinner = if show_spinner {
@@ -68,12 +61,12 @@ impl OcrProcessor {
             None
         };
 
-        // Send request to /api/generate
-        let response = ollama
-            .generate(&request)
+        // Send generate request
+        let content = provider
+            .generate(model, prompt, vec![base64_image], vec![], model_options)
             .await
             .map_err(|e| OcrError::OllamaError {
-                message: format!("Failed to process image: {}", e),
+                message: format!("Failed to process image: {e}"),
             })?;
 
         // Clear spinner
@@ -81,7 +74,7 @@ impl OcrProcessor {
             finish_spinner(sp);
         }
 
-        let content = response.response.trim().to_string();
+        let content = content.trim().to_string();
 
         Ok(OcrOutput {
             file: path.to_string_lossy().to_string(),
@@ -96,8 +89,8 @@ impl OcrProcessor {
         args: &OcrArgs,
         prompt_override: Option<&str>,
         model: &str,
-        model_options: ModelOptions,
-        ollama: &crate::provider::Ollama,
+        model_options: ProviderOptions,
+        provider: &dyn crate::provider::LlmProvider,
         show_spinner: bool,
     ) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();
@@ -110,7 +103,7 @@ impl OcrProcessor {
                     prompt_override,
                     model,
                     model_options.clone(),
-                    ollama,
+                    provider,
                     show_spinner,
                 )
                 .await

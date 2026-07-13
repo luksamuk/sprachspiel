@@ -26,8 +26,7 @@
 
 use std::sync::Arc;
 
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
+use crate::provider::types::{LlmMessage, LlmResponse, ProviderOptions};
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
@@ -40,7 +39,6 @@ use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
     build_system_prompt,
 };
-use crate::provider::types::ProviderOptions;
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::finish_spinner;
@@ -55,28 +53,9 @@ use super::session::ChatSession;
 use super::thinking::{extract_thinking, process_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
-use crate::provider::retry::{
-    classify_for_retry, ollama_error_to_provider_error, retry_delay, sleep_or_cancel,
-};
+use crate::provider::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// Convert `ProviderOptions` (agnostic) to legacy `ModelOptions` (ollama-rs).
-/// The Coordinator still uses `ModelOptions` for now; this is removed
-/// in the P6.0e.4 commit that migrates `coordinator.rs` to LlmProvider.
-pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
-    let mut out = ModelOptions::default();
-    if let Some(t) = opts.temperature {
-        out = out.temperature(t);
-    }
-    if let Some(p) = opts.top_p {
-        out = out.top_p(p);
-    }
-    if let Some(n) = opts.num_predict {
-        out = out.num_predict(n);
-    }
-    out
-}
 
 /// Token usage metrics for a chat response
 #[derive(Debug, Clone, Default)]
@@ -162,7 +141,7 @@ pub fn build_session_system_prompt(
 pub fn setup_coordinator(
     ollama: crate::provider::Ollama,
     model_config: &ModelConfig,
-    model_options: ollama_rs::models::ModelOptions,
+    model_options: ProviderOptions,
     think_enabled: bool,
     tools_enabled: bool,
     settings: &Settings,
@@ -283,7 +262,7 @@ pub async fn prepare_messages(
     system_prompt: &str,
     coordinator: &mut Coordinator,
     continuation_tag: Option<&ContinuationTag>,
-) -> Vec<ChatMessage> {
+) -> Vec<LlmMessage> {
     let settings = crate::settings::Settings::load();
     let retrieval_config = if session.retrieval_enabled {
         RetrievalConfig {
@@ -325,12 +304,12 @@ pub async fn prepare_messages(
     // ephemeral user message via coordinator.push_ephemeral() below.
     // Adding an empty user message confuses the LLM and wastes tokens.
     if !user_input.is_empty() {
-        messages.push(ChatMessage::user(user_input.to_string()));
+        messages.push(LlmMessage::user(user_input.to_string()));
     }
 
     if let Some(tag) = continuation_tag {
         let continuation_prompt = build_continuation_prompt(&tag.paused_at, &tag.next_step);
-        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+        coordinator.push_ephemeral(LlmMessage::user(continuation_prompt));
         if log::log_enabled!(log::Level::Debug) {
             log::debug!("Injected continuation prompt as ephemeral message");
         }
@@ -343,20 +322,20 @@ pub async fn prepare_messages(
 ///
 /// Renders thinking content and the main response via the provided view.
 pub fn process_chat_response(
-    response: ollama_rs::generation::chat::ChatMessageResponse,
+    response: LlmResponse,
     think_enabled: bool,
     coordinator: &mut Coordinator,
     context_window: usize,
     system_prompt: String,
     view: &mut dyn ChatView,
 ) -> SendMessageResult {
-    let content = response.message.content.clone();
+    let content = response.content.clone();
 
-    let metrics = if let Some(ref final_data) = response.final_data {
+    let metrics = if let Some(prompt_eval_count) = response.prompt_eval_count {
         TokenMetrics {
-            prompt_tokens: final_data.prompt_eval_count,
-            response_tokens: final_data.eval_count,
-            total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+            prompt_tokens: prompt_eval_count as u64,
+            response_tokens: response.eval_count.unwrap_or(0) as u64,
+            total_tokens: prompt_eval_count as u64 + response.eval_count.unwrap_or(0) as u64,
         }
     } else {
         TokenMetrics::default()
@@ -364,7 +343,7 @@ pub fn process_chat_response(
 
     // Extract and render thinking content via view
     if think_enabled {
-        let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+        let thinking = extract_thinking(&content, response.thinking.as_ref());
         if let Some(ref thinking_content) = thinking {
             view.show_thinking(thinking_content);
         }
@@ -429,8 +408,8 @@ pub async fn send_message(
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for Coordinator.
-    let model_options = convert_provider_to_model(&provider_options);
+    // Bridge to legacy ProviderOptions for Coordinator.
+    let model_options = provider_options.clone();
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -607,7 +586,7 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                let provider_err = ollama_error_to_provider_error(&e);
+                let provider_err = e.clone();
                 let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
@@ -705,8 +684,8 @@ pub async fn send_message_stream(
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for Coordinator.
-    let model_options = convert_provider_to_model(&provider_options);
+    // Bridge to legacy ProviderOptions for Coordinator.
+    let model_options = provider_options.clone();
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -877,7 +856,7 @@ pub async fn send_message_stream(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                let provider_err = ollama_error_to_provider_error(&e);
+                let provider_err = e.clone();
                 let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
@@ -930,13 +909,14 @@ pub async fn send_message_stream(
     // Process response
     let processed_result = match result {
         Ok(response) => {
-            let content = response.message.content.clone();
+            let content = response.content.clone();
 
-            let metrics = if let Some(ref final_data) = response.final_data {
+            let metrics = if let Some(prompt_eval_count) = response.prompt_eval_count {
                 TokenMetrics {
-                    prompt_tokens: final_data.prompt_eval_count,
-                    response_tokens: final_data.eval_count,
-                    total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+                    prompt_tokens: prompt_eval_count as u64,
+                    response_tokens: response.eval_count.unwrap_or(0) as u64,
+                    total_tokens: prompt_eval_count as u64
+                        + response.eval_count.unwrap_or(0) as u64,
                 }
             } else {
                 TokenMetrics::default()
@@ -950,7 +930,7 @@ pub async fn send_message_stream(
             // Content is already displayed via StreamToken events.
             // Don't call view.show_assistant_response() — that would duplicate.
 
-            let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+            let thinking = extract_thinking(&content, response.thinking.as_ref());
             let display_content = process_thinking(&content).content;
             let pre_tool = coordinator.take_pre_tool_content();
             let (pre_tool_content, pre_tool_thinking) = match pre_tool {
@@ -1389,7 +1369,7 @@ async fn compact_with_llm(
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
     let provider_options = model_cfg.build_provider_options();
-    let model_options = convert_provider_to_model(&provider_options);
+    let model_options = provider_options.clone();
 
     let mut coordinator = Coordinator::new(
         ollama.boxed_provider(),
@@ -1399,8 +1379,8 @@ async fn compact_with_llm(
     .options(model_options);
 
     let messages = vec![
-        ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
-        ChatMessage::user(compact_prompt),
+        LlmMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
+        LlmMessage::user(compact_prompt),
     ];
 
     // Only stream tokens to TUI for the final consolidaton pass.
@@ -1433,7 +1413,7 @@ async fn compact_with_llm(
 
     match result {
         Ok(response) => {
-            let summary = strip_thinking_tags(&response.message.content);
+            let summary = strip_thinking_tags(&response.content);
             Ok(summary)
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),

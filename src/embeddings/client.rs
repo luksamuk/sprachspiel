@@ -8,6 +8,7 @@
 //! is supplied explicitly via [`EmbeddingClient::with_model`] and
 //! resolved from `[indexing].model` in `config.toml`.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{OnceCell, Semaphore};
@@ -36,7 +37,7 @@ const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 /// `crate::provider::Ollama` API (for backward compat) and `LlmProvider`
 /// (via internal delegation to `OpenAICompatibleProvider`).
 pub struct EmbeddingClient {
-    ollama: crate::provider::Ollama,
+    provider: Arc<dyn crate::provider::LlmProvider>,
     model: String,
     /// Output dimension of the embedding model (from the alias's
     /// `dimensions = N` in models.toml). Used for vector store
@@ -58,7 +59,7 @@ impl EmbeddingClient {
     /// errors.
     pub fn with_model(ollama: crate::provider::Ollama, model: String, dimensions: u32) -> Self {
         Self {
-            ollama,
+            provider: Arc::from(ollama.boxed_provider()),
             model,
             dimensions,
             cached_context_length: OnceCell::new(),
@@ -141,20 +142,13 @@ impl EmbeddingClient {
         // verified the server returns this exact dim count.
         let result = tokio::time::timeout(
             Duration::from_secs(EMBEDDING_TIMEOUT_SECS),
-            self.ollama.generate_embeddings(
-                ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest::new(
-                    self.model.clone(),
-                    ollama_rs::generation::embeddings::request::EmbeddingsInput::Single(
-                        prefixed_text,
-                    ),
-                )
-                .dimensions(self.dimensions),
-            ),
+            self.provider
+                .embed(&prefixed_text, &self.model, Some(self.dimensions as usize)),
         )
         .await;
 
         let embedding = match result {
-            Ok(Ok(resp)) => resp.embeddings.into_iter().next().unwrap_or_default(),
+            Ok(Ok(vec)) => vec,
             Ok(Err(e)) => {
                 let error_msg = e.to_string();
                 if Self::is_context_exceeded(&error_msg) {

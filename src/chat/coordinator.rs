@@ -12,8 +12,7 @@ pub const CANCELLED_BY_USER: &str = "CANCELLED_BY_USER";
 
 use std::{collections::HashMap, future::Future, pin::Pin};
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::chat::llm_event::LlmEvent;

@@ -2,7 +2,7 @@
 //!
 //! Word-based estimation with message overhead for LLM context management.
 
-use ollama_rs::generation::chat::ChatMessage;
+use crate::provider::types::LlmMessage;
 
 /// Tokens per message overhead (role, formatting)
 pub const MESSAGE_OVERHEAD: usize = 4;
@@ -96,7 +96,7 @@ impl ContextMetrics {
 /// [`ContextUsage`] so the breakdown is consistent with the rest of the
 /// codebase (see commit history for the unification rationale).
 pub fn calculate_context_metrics(
-    history_messages: &[ChatMessage],
+    history_messages: &[LlmMessage],
     context_window: usize,
     system_prompt: &str,
     tools_tokens: usize,
@@ -267,7 +267,7 @@ impl ContextUsage {
     /// Add `extra_messages` (new user/assistant/tool messages that will
     /// be appended in this request). Returns a new `ContextUsage` with
     /// updated `history_tokens` and `total_tokens`.
-    pub fn with_growth(&self, extra_messages: &[ChatMessage]) -> Self {
+    pub fn with_growth(&self, extra_messages: &[LlmMessage]) -> Self {
         let added: usize = extra_messages
             .iter()
             .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
@@ -344,8 +344,8 @@ mod context_usage_tests {
     fn test_with_growth_adds_to_history_and_total() {
         let base = ContextUsage::from_api_usage(1000, "sys", 0);
         let extra = vec![
-            ChatMessage::user("hello world".to_string()),
-            ChatMessage::assistant("hi there".to_string()),
+            LlmMessage::user("hello world".to_string()),
+            LlmMessage::assistant("hi there".to_string()),
         ];
         let grown = base.with_growth(&extra);
         assert!(grown.history_tokens > base.history_tokens);
@@ -458,8 +458,8 @@ mod tests {
     #[test]
     fn test_calculate_context_metrics() {
         let messages = vec![
-            ChatMessage::user("hello world".to_string()),
-            ChatMessage::assistant("hi there".to_string()),
+            LlmMessage::user("hello world".to_string()),
+            LlmMessage::assistant("hi there".to_string()),
         ];
         let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100, None);
         assert_eq!(metrics.system_tokens, 8);
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_calculate_context_metrics_empty() {
-        let messages: Vec<ChatMessage> = Vec::new();
+        let messages: Vec<LlmMessage> = Vec::new();
         let metrics = calculate_context_metrics(&messages, 4096, "", 0, None);
         assert_eq!(metrics.system_tokens, 4);
         assert_eq!(metrics.history_tokens, 0);
