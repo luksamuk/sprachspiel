@@ -20,46 +20,6 @@ pub fn classify_for_retry(error: &ProviderError) -> RetryCategory {
     error.retry_category()
 }
 
-/// Temporary bridge: convert `OllamaError` to `ProviderError` for the retry loop.
-///
-/// This exists only during Phase 1 of #123. It will be removed in Phase 2
-/// (LUC-41) when `Coordinator` returns `ProviderError` directly.
-pub fn ollama_error_to_provider_error(error: &ollama_rs::error::OllamaError) -> ProviderError {
-    use ollama_rs::error::{OllamaError, ToolCallError};
-
-    match error {
-        OllamaError::ToolCallError(e) => match e {
-            ToolCallError::UnknownToolName => ProviderError::Other("unknown tool name".to_string()),
-            ToolCallError::InvalidToolArguments(json_err) => {
-                ProviderError::Other(format!("invalid tool arguments: {json_err}"))
-            }
-            ToolCallError::InternalToolError(tool_err) => {
-                ProviderError::Other(format!("internal tool error: {tool_err}"))
-            }
-        },
-        OllamaError::ReqwestError(e) => {
-            let msg = e.to_string();
-            if msg.contains("timed out") || msg.contains("Timeout") {
-                ProviderError::Timeout(msg)
-            } else {
-                ProviderError::Connection(msg)
-            }
-        }
-        OllamaError::InternalError(e) => ProviderError::Api {
-            status: 500,
-            body: e.message.clone(),
-        },
-        OllamaError::JsonError(e) => ProviderError::Other(format!("JSON error: {e}")),
-        OllamaError::Other(msg) => {
-            if msg.contains("Timeout:") || msg.contains("SSE stream idle timeout") {
-                ProviderError::Timeout(msg.clone())
-            } else {
-                ProviderError::Other(msg.clone())
-            }
-        }
-    }
-}
-
 /// Sleep for the given duration, aborting early if `cancel_token` fires.
 ///
 /// Returns `true` if the sleep completed normally, `false` if cancelled.
