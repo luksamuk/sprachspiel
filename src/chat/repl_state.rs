@@ -58,7 +58,7 @@ pub struct ReplState {
     pub cli_soulless: bool,
 
     // External clients (immutable after init)
-    pub ollama: crate::provider::Ollama,
+    pub ollama: crate::provider::OpenAICompatibleProvider,
     pub db: Option<Arc<Database>>,
     pub embedding_client: Option<Arc<EmbeddingClient>>,
 
@@ -91,7 +91,7 @@ pub struct ReplStateBuilder {
     agents_md: Option<String>,
     cli_code: bool,
     cli_soulless: bool,
-    ollama: Option<crate::provider::Ollama>,
+    ollama: Option<crate::provider::OpenAICompatibleProvider>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
     settings: Option<Settings>,
@@ -151,7 +151,7 @@ impl ReplStateBuilder {
         self
     }
 
-    pub fn ollama(mut self, ollama: crate::provider::Ollama) -> Self {
+    pub fn ollama(mut self, ollama: crate::provider::OpenAICompatibleProvider) -> Self {
         self.ollama = Some(ollama);
         self
     }
@@ -320,12 +320,12 @@ mod tests {
     fn test_replstate_builder_requires_settings() {
         use crate::capabilities::ModelCapabilities;
         use crate::config::ModelConfig;
-        use crate::provider::Ollama;
+        use crate::provider::OpenAICompatibleProvider;
 
         let session = ChatSession::new("test-model".to_string(), None, false);
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = Ollama::new("http://localhost".to_string(), 11434);
+        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
 
         let result = ReplStateBuilder::new()
             .session(session)

@@ -22,7 +22,7 @@ pub struct ModelSwitchResult {
     /// `models.toml` para o novo modelo). Sem isto, o `/model` troca o
     /// `model_config` mas mantém o cliente HTTP do provider antigo,
     /// causando `no router for requested model` no próximo prompt.
-    pub ollama: crate::provider::Ollama,
+    pub ollama: crate::provider::OpenAICompatibleProvider,
 }
 
 /// Switch to a new model with full state management.
@@ -173,18 +173,8 @@ pub async fn switch_model(
 mod tests {
     use super::*;
 
-    /// The `CompatOllama` shim exposes `base_url` via its `Debug` impl
-    /// (`ollama_shim.rs:423`). Extract it so tests can assert which
-    /// provider the client points to without accessing the private field.
-    fn ollama_base_url(ollama: &crate::provider::Ollama) -> String {
-        let dbg = format!("{ollama:?}");
-        // The Debug output is: CompatOllama { base_url: "..." }
-        let start = dbg.find("base_url: \"").map(|i| i + "base_url: \"".len());
-        let end = dbg.rfind('"');
-        match (start, end) {
-            (Some(s), Some(e)) if s < e => dbg[s..e].to_string(),
-            _ => String::new(),
-        }
+    fn ollama_base_url(ollama: &crate::provider::OpenAICompatibleProvider) -> String {
+        ollama.base_url().to_string()
     }
 
     /// Verifies that `switch_model` builds a NEW `ollama` client pointing

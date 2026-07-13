@@ -295,12 +295,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let provider_options = model_config.build_provider_options();
     let model_options = provider_options.clone();
 
-    let mut coordinator = chat::Coordinator::new(
-        ollama.boxed_provider(),
-        model_config.model_id.clone(),
-        vec![],
-    )
-    .options(model_options);
+    let mut coordinator =
+        chat::Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+            .options(model_options);
 
     let system_message = LlmMessage::system(prompt);
     let user_message = LlmMessage::user("".to_string());
@@ -592,7 +589,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
             prompt_override,
             &model_id,
             model_options,
-            ollama.inner(),
+            &ollama,
             true,
         )
         .await
@@ -899,7 +896,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let processor = VisionProcessor::new();
 
     match processor
-        .process(&args, &model_id, ollama.inner(), model_options, true)
+        .process(&args, &model_id, &ollama, model_options, true)
         .await
     {
         Ok(result) => {

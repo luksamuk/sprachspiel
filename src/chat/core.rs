@@ -139,7 +139,7 @@ pub fn build_session_system_prompt(
 /// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
-    ollama: crate::provider::Ollama,
+    ollama: crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     model_options: ProviderOptions,
     think_enabled: bool,
@@ -392,7 +392,7 @@ pub fn process_chat_response(
 /// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -666,7 +666,7 @@ pub async fn send_message(
 /// delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message_stream(
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -1021,7 +1021,7 @@ pub async fn send_message_stream(
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &ChatSession,
     _settings: &Settings,
@@ -1216,7 +1216,7 @@ pub async fn compact_conversation(
 /// indirection for recursive async functions (the future size would
 /// otherwise be infinite).
 fn compact_recursive<'a>(
-    ollama: &'a crate::provider::Ollama,
+    ollama: &'a crate::provider::OpenAICompatibleProvider,
     model_config: &'a ModelConfig,
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1359,7 +1359,7 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// and the summary is returned, but the TUI shows no intermediate content
 /// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1371,12 +1371,8 @@ async fn compact_with_llm(
     let provider_options = model_cfg.build_provider_options();
     let model_options = provider_options.clone();
 
-    let mut coordinator = Coordinator::new(
-        ollama.boxed_provider(),
-        model_config.model_id.clone(),
-        vec![],
-    )
-    .options(model_options);
+    let mut coordinator = Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+        .options(model_options);
 
     let messages = vec![
         LlmMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),

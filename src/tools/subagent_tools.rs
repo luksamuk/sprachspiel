@@ -118,7 +118,7 @@ pub async fn spawn_ocr_agent(
         }
     }
 
-    let runner = SubagentRunner::new(llm.boxed_provider(), config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Ocr, String::new(), validated_paths)
         .await
@@ -229,7 +229,7 @@ pub async fn spawn_vision_agent(
         Describe what you see thoroughly and accurately. Output only your analysis.";
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm.boxed_provider(), config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Vision, prompt, validated_paths)
         .await
@@ -306,7 +306,7 @@ pub async fn spawn_translate_agent(
         Preserve meaning, tone, and formatting. Output only the translation, no explanations.";
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm.boxed_provider(), config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Translate, prompt, Vec::new())
         .await
@@ -386,7 +386,7 @@ pub async fn spawn_summarize_agent(
     );
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm.boxed_provider(), config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Summarize, prompt, Vec::new())
         .await

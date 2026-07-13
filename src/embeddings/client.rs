@@ -8,7 +8,6 @@
 //! is supplied explicitly via [`EmbeddingClient::with_model`] and
 //! resolved from `[indexing].model` in `config.toml`.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{OnceCell, Semaphore};
@@ -16,6 +15,7 @@ use tokio::sync::{OnceCell, Semaphore};
 use super::truncate::{
     TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
 };
+use crate::provider::LlmProvider;
 
 /// Default context length when model info is unavailable.
 pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
@@ -34,10 +34,10 @@ const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 /// Client for generating embeddings via LlmProvider.
 ///
 /// Holds an `Ollama` (the shim) which implements both the
-/// `crate::provider::Ollama` API (for backward compat) and `LlmProvider`
+/// `crate::provider::OpenAICompatibleProvider` API (for backward compat) and `LlmProvider`
 /// (via internal delegation to `OpenAICompatibleProvider`).
 pub struct EmbeddingClient {
-    provider: Arc<dyn crate::provider::LlmProvider>,
+    provider: crate::provider::OpenAICompatibleProvider,
     model: String,
     /// Output dimension of the embedding model (from the alias's
     /// `dimensions = N` in models.toml). Used for vector store
@@ -57,9 +57,13 @@ impl EmbeddingClient {
     /// `dimensions` value. There is no sensible default — silent
     /// assumptions about dimensions would mask user configuration
     /// errors.
-    pub fn with_model(ollama: crate::provider::Ollama, model: String, dimensions: u32) -> Self {
+    pub fn with_model(
+        ollama: crate::provider::OpenAICompatibleProvider,
+        model: String,
+        dimensions: u32,
+    ) -> Self {
         Self {
-            provider: Arc::from(ollama.boxed_provider()),
+            provider: ollama,
             model,
             dimensions,
             cached_context_length: OnceCell::new(),
@@ -272,8 +276,8 @@ impl std::error::Error for EmbeddingError {}
 mod tests {
     use super::*;
 
-    fn make_dummy_ollama() -> crate::provider::Ollama {
-        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+    fn make_dummy_ollama() -> crate::provider::OpenAICompatibleProvider {
+        crate::provider::OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434)
     }
 
     #[test]

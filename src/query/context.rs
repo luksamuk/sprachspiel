@@ -29,7 +29,7 @@ pub struct QueryContext {
     pub prompt_type: PromptType,
     pub prompt_name: String,
     pub system_prompt: String,
-    pub ollama: crate::provider::Ollama,
+    pub ollama: crate::provider::OpenAICompatibleProvider,
 }
 
 /// Builder for QueryContext

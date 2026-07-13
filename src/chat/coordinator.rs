@@ -21,6 +21,7 @@ use crate::context_overflow::{
     needs_inter_tool_compaction,
 };
 use crate::provider::LlmProvider;
+use crate::provider::OpenAICompatibleProvider;
 use crate::provider::types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage, ProviderError,
     ProviderOptions, ToolInfo,
@@ -225,7 +226,7 @@ struct ContextCheckResult {
 /// A coordinator for managing chat interactions with event callbacks.
 pub struct Coordinator {
     model: String,
-    provider: Box<dyn LlmProvider>,
+    provider: OpenAICompatibleProvider,
     options: ProviderOptions,
     history: Vec<LlmMessage>,
     tool_infos: Vec<ToolInfo>,
@@ -449,7 +450,11 @@ impl StreamTurnState {
 
 impl Coordinator {
     /// Creates a new `Coordinator` instance.
-    pub fn new(provider: Box<dyn LlmProvider>, model: String, history: Vec<LlmMessage>) -> Self {
+    pub fn new(
+        provider: OpenAICompatibleProvider,
+        model: String,
+        history: Vec<LlmMessage>,
+    ) -> Self {
         Self {
             model,
             provider,

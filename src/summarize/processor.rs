@@ -45,12 +45,9 @@ impl SummarizeProcessor {
         let provider_options = model_config.build_provider_options();
 
         // Build coordinator WITHOUT tools (security requirement)
-        let mut coordinator = Coordinator::new(
-            ollama.boxed_provider(),
-            model_config.model_id.clone(),
-            vec![],
-        )
-        .options(provider_options);
+        let mut coordinator =
+            Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+                .options(provider_options);
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)

@@ -159,7 +159,7 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
 pub async fn run_search(
     db: &Database,
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     embedding_model_id: &str,
     embedding_dimensions: u32,
     query: &str,

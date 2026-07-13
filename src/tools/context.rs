@@ -3,7 +3,7 @@
 //! Provides async-safe access to Database, EmbeddingClient, LLM provider,
 //! and Settings for tools that need them.
 //!
-//! Stores `crate::provider::Ollama` (the shim) for backward compatibility
+//! Stores `crate::provider::OpenAICompatibleProvider` (the shim) for backward compatibility
 //! with the existing tool implementations. The shim delegates to
 //! `OpenAICompatibleProvider` internally.
 
@@ -20,7 +20,7 @@ tokio::task_local! {
     /// Embedding client for tools that need semantic search
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
     /// Ollama-compatible shim for tools that need LLM access
-    pub static TOOL_LLM: crate::provider::Ollama;
+    pub static TOOL_LLM: crate::provider::OpenAICompatibleProvider;
     /// Settings for tools that need configuration (e.g., agent spawning tools)
     pub static TOOL_SETTINGS: Arc<Settings>;
 }
@@ -36,12 +36,12 @@ pub fn get_embedding() -> Option<Arc<EmbeddingClient>> {
 }
 
 /// Helper to get Ollama-compatible shim from task-local context
-pub fn get_ollama() -> Option<crate::provider::Ollama> {
+pub fn get_ollama() -> Option<crate::provider::OpenAICompatibleProvider> {
     TOOL_LLM.try_with(|o| o.clone()).ok()
 }
 
 /// Helper to get LLM provider from task-local context (alias for get_ollama)
-pub fn get_llm() -> Option<crate::provider::Ollama> {
+pub fn get_llm() -> Option<crate::provider::OpenAICompatibleProvider> {
     get_ollama()
 }
 
@@ -52,7 +52,7 @@ pub fn get_settings() -> Option<Arc<Settings>> {
 
 #[expect(clippy::redundant_async_block)]
 pub async fn with_tool_context<F, T>(
-    ollama: crate::provider::Ollama,
+    ollama: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     f: F,
 ) -> T
@@ -70,7 +70,7 @@ where
 pub async fn with_full_context<F, T>(
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
-    ollama: crate::provider::Ollama,
+    ollama: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     f: F,
 ) -> T
@@ -95,7 +95,10 @@ mod tests {
 
     #[test]
     async fn with_tool_context_scopes_ollama_and_settings() {
-        let dummy_ollama = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama = crate::provider::OpenAICompatibleProvider::new_local(
+            "http://localhost".to_string(),
+            11434,
+        );
         let dummy_settings = Arc::new(Settings::default());
 
         let result = with_tool_context(dummy_ollama, dummy_settings, async {
@@ -121,15 +124,23 @@ mod tests {
 
     #[test]
     async fn with_full_context_scopes_all_four() {
-        let dummy_ollama = crate::provider::Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama = crate::provider::OpenAICompatibleProvider::new_local(
+            "http://localhost".to_string(),
+            11434,
+        );
         let dummy_settings = Arc::new(Settings::default());
         let dummy_embedding = Arc::new(EmbeddingClient::with_model(
-            crate::provider::Ollama::new("http://localhost".to_string(), 11434),
+            crate::provider::OpenAICompatibleProvider::new_local(
+                "http://localhost".to_string(),
+                11434,
+            ),
             dummy_settings.indexing_model_alias().to_string(),
             768, // TRANSITIONAL: placeholder
         ));
-        let dummy_ollama_for_test =
-            crate::provider::Ollama::new("http://localhost".to_string(), 11434);
+        let dummy_ollama_for_test = crate::provider::OpenAICompatibleProvider::new_local(
+            "http://localhost".to_string(),
+            11434,
+        );
         let dummy_db = Arc::new(Database::in_memory().unwrap());
 
         let result = with_full_context(

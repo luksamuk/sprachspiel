@@ -3262,14 +3262,14 @@ mod tests {
     use super::*;
     use crate::capabilities::ModelCapabilities;
     use crate::config::ModelConfig;
-    use crate::provider::Ollama;
+    use crate::provider::OpenAICompatibleProvider;
     use crate::settings::Settings;
 
     fn create_test_state() -> ReplState {
         let session = ChatSession::new("test-model".to_string(), None, false);
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = Ollama::new("http://localhost".to_string(), 11434);
+        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
         let settings = Settings::default();
 
         ReplState {
@@ -3396,7 +3396,7 @@ mod tests {
 
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = Ollama::new("http://localhost".to_string(), 11434);
+        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
         let settings = Settings::default();
 
         ReplState {
@@ -3572,7 +3572,7 @@ pub async fn handle_subagent_ocr(
 
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
     let config = SubagentConfig::new(model, "OCR extraction").with_ocr_mode(mode);
-    let runner = SubagentRunner::new(state.ollama.boxed_provider(), config);
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
@@ -3614,7 +3614,7 @@ pub async fn handle_subagent_vision(
 
     let (model, _, _) = state.settings.get_subcommand_config("vision");
     let config = SubagentConfig::new(model, "Vision analysis");
-    let runner = SubagentRunner::new(state.ollama.boxed_provider(), config);
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     let prompt_str = prompt
         .as_deref()
@@ -3646,7 +3646,7 @@ pub async fn handle_subagent_translate(
 
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
-    let runner = SubagentRunner::new(state.ollama.boxed_provider(), config);
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
@@ -3670,7 +3670,7 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) -> V
 
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
-    let runner = SubagentRunner::new(state.ollama.boxed_provider(), config);
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_summarize(&text).await {
         Ok(result) => {

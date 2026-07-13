@@ -292,6 +292,14 @@ pub enum LlmStreamEvent {
     },
 }
 
+/// A local model entry returned by `list_local_models()`.
+#[derive(Debug, Clone)]
+pub struct LocalModel {
+    pub name: String,
+    pub modified_at: String,
+    pub size: u64,
+}
+
 /// Capabilities reported by a model/provider.
 ///
 /// Based on llama-swap feature flags for OpenAI-compatible backends.

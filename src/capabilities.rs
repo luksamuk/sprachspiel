@@ -27,7 +27,8 @@
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
 
-use crate::provider::ollama_shim::ModelInfo;
+use crate::provider::LlmProvider;
+use crate::provider::OpenAICompatibleProvider;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.
 ///
@@ -49,7 +50,9 @@ pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// This health check with explicit timeout is the minimum-viable fix until
 /// #120 replaces `ollama-rs` with direct reqwest.
 #[allow(dead_code)] // Called from repl.rs startup in this same PR (#116)
-pub async fn check_server_health(ollama: &crate::provider::Ollama) -> crate::AppResult<()> {
+pub async fn check_server_health(
+    ollama: &crate::provider::OpenAICompatibleProvider,
+) -> crate::AppResult<()> {
     let check = async {
         ollama.list_local_models().await.map_err(|e| {
             format!(
@@ -109,7 +112,7 @@ impl ModelCapabilities {
     /// probe (which uses `/v1/models` for OpenAI-compat — see
     /// `CompatOllama::show_model_info`).
     pub async fn detect(
-        ollama: &crate::provider::Ollama,
+        ollama: &crate::provider::OpenAICompatibleProvider,
         model_name: &str,
     ) -> crate::AppResult<Self> {
         // If the model is declared in models.toml as a user-defined
@@ -137,19 +140,19 @@ impl ModelCapabilities {
     /// and exposed publicly for callers that need the raw server
     /// result (e.g., legacy chat subcommand startup).
     pub async fn detect_from_server(
-        ollama: &crate::provider::Ollama,
+        ollama: &crate::provider::OpenAICompatibleProvider,
         model_name: &str,
     ) -> crate::AppResult<Self> {
-        let info: ModelInfo = ollama
-            .show_model_info(model_name.to_string())
+        let caps = ollama
+            .detect_capabilities(model_name)
             .await
-            .map_err(|e| format!("Failed to query model info: {}", e))?;
+            .map_err(|e| format!("Failed to query model capabilities: {e}"))?;
 
         Ok(Self {
-            tools: info.capabilities.contains(&"tools".to_string()),
-            vision: info.capabilities.contains(&"vision".to_string()),
-            completion: info.capabilities.contains(&"completion".to_string()),
-            thinking: info.capabilities.contains(&"thinking".to_string()),
+            tools: caps.tools,
+            vision: caps.vision,
+            completion: caps.completion,
+            thinking: caps.thinking,
         })
     }
 
@@ -157,7 +160,10 @@ impl ModelCapabilities {
     ///
     /// Prints a warning on detection failure and returns default capabilities
     /// with completion enabled (safe fallback for most operations).
-    pub async fn detect_or_default(ollama: &crate::provider::Ollama, model_name: &str) -> Self {
+    pub async fn detect_or_default(
+        ollama: &crate::provider::OpenAICompatibleProvider,
+        model_name: &str,
+    ) -> Self {
         match Self::detect(ollama, model_name).await {
             Ok(caps) => caps,
             Err(e) => {
@@ -172,7 +178,6 @@ impl ModelCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::Ollama;
 
     #[test]
     fn test_capabilities_detection() {
@@ -201,7 +206,7 @@ mod tests {
     async fn test_health_check_returns_error_for_unreachable_server() {
         // Point at a port that nothing is listening on. The health check
         // should return an Err quickly (well under the 3s timeout).
-        let ollama = Ollama::new("http://127.0.0.1", 1);
+        let ollama = OpenAICompatibleProvider::new_local("http://127.0.0.1", 1);
         let start = std::time::Instant::now();
         let result = check_server_health(&ollama).await;
         let elapsed = start.elapsed();

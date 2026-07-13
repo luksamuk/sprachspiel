@@ -8,6 +8,7 @@
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
 //! - `/api/chat`: For text-based tasks (Translate, Summarize)
 
+use crate::provider::LlmProvider;
 use crate::provider::types::LlmMessage;
 
 use crate::provider::types::ProviderOptions;
@@ -138,13 +139,16 @@ impl SubagentConfig {
 /// detection, continuation tags), `SubagentRunner` is intentionally minimal:
 /// just an Ollama client, a config, and a `run()` method.
 pub struct SubagentRunner {
-    provider: Box<dyn crate::provider::LlmProvider>,
+    provider: crate::provider::OpenAICompatibleProvider,
     config: SubagentConfig,
 }
 
 impl SubagentRunner {
     /// Create a new runner with the given provider and config.
-    pub fn new(provider: Box<dyn crate::provider::LlmProvider>, config: SubagentConfig) -> Self {
+    pub fn new(
+        provider: crate::provider::OpenAICompatibleProvider,
+        config: SubagentConfig,
+    ) -> Self {
         Self { provider, config }
     }
 
@@ -308,7 +312,7 @@ impl SubagentRunner {
             .process(
                 &args,
                 &model,
-                &*self.provider,
+                &self.provider,
                 self.config.model_options.clone(),
                 false,
             )
@@ -356,7 +360,7 @@ impl SubagentRunner {
                 prompt_override,
                 &self.config.model,
                 self.config.model_options.clone(),
-                &*self.provider,
+                &self.provider,
                 false,
             )
             .await

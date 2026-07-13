@@ -53,14 +53,14 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 ///   4. Initialize the database and the `EmbeddingClient`.
 async fn init_chat_database(
     settings: &Settings,
-    ollama: &crate::provider::Ollama,
+    ollama: &crate::provider::OpenAICompatibleProvider,
     _chat_model_name: &str,
     anonymous: bool,
     db_path: Option<PathBuf>,
 ) -> (
     Option<Arc<crate::db::Database>>,
     Option<Arc<crate::embeddings::EmbeddingClient>>,
-    crate::provider::Ollama,
+    crate::provider::OpenAICompatibleProvider,
     Option<String>,
 ) {
     // ollama client is built by the caller so that it can target the
@@ -85,7 +85,8 @@ async fn init_chat_database(
     };
 
     // Build a separate Ollama (shim) for the embedding provider.
-    let embedding_ollama = crate::provider::Ollama::from_provider_config(provider_cfg);
+    let embedding_ollama =
+        crate::provider::OpenAICompatibleProvider::from_provider_config(provider_cfg);
 
     // Probe the embedding endpoint with strict dim verify
     // (response dim == alias's declared dimensions).

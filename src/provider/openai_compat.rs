@@ -56,8 +56,8 @@ type ConvertedOptions = (
     Option<String>,      // reasoning_effort (from think)
 );
 use super::types::{
-    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage, ProviderCapabilities,
-    ProviderError, ProviderOptions, ToolInfo, ToolType,
+    LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LlmUsage, LocalModel,
+    ProviderCapabilities, ProviderError, ProviderOptions, ToolInfo, ToolType,
 };
 use crate::provider::LlmProvider;
 use crate::user_models::ProviderConfig;
@@ -127,12 +127,99 @@ enum RetryAction {
 }
 
 impl OpenAICompatibleProvider {
-    /// Access the underlying reqwest client (used by the ollama_rs shim).
+    #[allow(dead_code)]
     pub fn as_client(&self) -> &reqwest::Client {
         &self.client
     }
 
-    /// Create a new `OpenAICompatibleProvider`.
+    /// Return the base URL configured for this provider.
+    pub fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    /// Create a provider pointing to a default localhost URL.
+    #[expect(clippy::panic, reason = "fallback URL is hardcoded and always valid")]
+    pub fn new_local(host: impl Into<String>, _port: u16) -> Self {
+        let base_url = format!("{}/v1", host.into().trim_end_matches('/'));
+        let cfg = OpenAICompatibleConfig {
+            base_url: base_url.clone(),
+            api_key: None,
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 3,
+            retry_base_delay_ms: 2000,
+            retry_max_delay_ms: 16000,
+            retry_jitter_percent: 20,
+        };
+        Self::new(cfg).unwrap_or_else(|e| {
+            log::error!("Failed to create OpenAI provider: {e}");
+            Self::new(Self::fallback_config()).unwrap_or_else(|e2| {
+                log::error!("Fallback config also failed: {e2}");
+                panic!("OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}");
+            })
+        })
+    }
+
+    /// Create a provider from a `ProviderConfig` (from `models.toml`).
+    #[expect(clippy::panic, reason = "fallback URL is hardcoded and always valid")]
+    pub fn from_provider_config(cfg: &ProviderConfig) -> Self {
+        let openai_cfg = OpenAICompatibleConfig::from(cfg);
+        Self::new(openai_cfg).unwrap_or_else(|e| {
+            log::error!("Failed to create OpenAI provider from config: {e}");
+            Self::new(Self::fallback_config()).unwrap_or_else(|e2| {
+                log::error!("Fallback config also failed: {e2}");
+                panic!("OpenAICompatibleProvider::new() failed on hardcoded fallback URL: {e2}");
+            })
+        })
+    }
+
+    fn fallback_config() -> OpenAICompatibleConfig {
+        OpenAICompatibleConfig {
+            base_url: "http://localhost:11434/v1".to_string(),
+            api_key: None,
+            connect_timeout_secs: 5,
+            read_timeout_secs: 300,
+            stream_idle_timeout_secs: 60,
+            max_retries: 0,
+            retry_base_delay_ms: 1000,
+            retry_max_delay_ms: 1000,
+            retry_jitter_percent: 0,
+        }
+    }
+
+    /// List models available on the server via `GET /v1/models`.
+    pub async fn list_local_models(&self) -> Result<Vec<LocalModel>, ProviderError> {
+        use crate::provider::openai_types::ModelsResponse;
+        let url = self.url("models");
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| ProviderError::Other(format!("Failed to list models: {e}")))?;
+        if !response.status().is_success() {
+            return Err(ProviderError::Other(format!(
+                "Failed to list models: HTTP {}",
+                response.status().as_u16()
+            )));
+        }
+        let models: ModelsResponse = response
+            .json()
+            .await
+            .map_err(|e| ProviderError::Other(format!("Failed to parse models response: {e}")))?;
+        Ok(models
+            .data
+            .into_iter()
+            .map(|m| LocalModel {
+                name: m.id,
+                modified_at: String::new(),
+                size: 0,
+            })
+            .collect())
+    }
+
+    /// Create a new `OpenAICompatibleProvider` from config.
     pub fn new(config: OpenAICompatibleConfig) -> Result<Self, ProviderError> {
         let api_key = config
             .api_key
@@ -1038,7 +1125,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             .ok_or_else(|| ProviderError::Other("Empty embeddings response".to_string()))
     }
 
-    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
+    #[allow(dead_code)]
     async fn detect_capabilities(
         &self,
         model: &str,
@@ -1096,12 +1183,12 @@ impl LlmProvider for OpenAICompatibleProvider {
         })
     }
 
-    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
+    #[allow(dead_code)]
     fn provider_name(&self) -> &str {
         "openai-compatible"
     }
 
-    #[allow(dead_code)] // W2 #123: consumed when ollama-rs is removed
+    #[allow(dead_code)]
     async fn is_available(&self) -> bool {
         let url = self.url("/models");
         match self
