@@ -29,7 +29,7 @@ pub struct QueryContext {
     pub prompt_type: PromptType,
     pub prompt_name: String,
     pub system_prompt: String,
-    pub ollama: crate::provider::OpenAICompatibleProvider,
+    pub provider: crate::provider::OpenAICompatibleProvider,
 }
 
 /// Builder for QueryContext
@@ -116,9 +116,9 @@ impl QueryContextBuilder {
 
         let model_config = user_models::resolve_model_config(&model_name);
         #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-        let ollama = settings.ollama_client_for_model(&model_config.model_id);
+        let provider = settings.provider_for_model(&model_config.model_id);
         let capabilities =
-            ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+            ModelCapabilities::detect_or_default(&provider, &model_config.model_id).await;
 
         let use_tools = self.cli_tools || (subcommand_tools && capabilities.tools);
         let use_think = user_models::resolve_think_mode(
@@ -172,7 +172,7 @@ impl QueryContextBuilder {
         };
         let result = crate::db::init_database_core(
             crate::db::IndexingInit {
-                provider: ollama.clone(),
+                provider: provider.clone(),
                 model_id,
                 dimensions,
                 probe: false, // query subcommand skips the probe (one-shot)
@@ -219,7 +219,7 @@ impl QueryContextBuilder {
             prompt_type,
             prompt_name,
             system_prompt,
-            ollama,
+            provider,
         }
     }
 }

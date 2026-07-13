@@ -14,7 +14,7 @@ pub fn build_query_coordinator(ctx: &QueryContext, settings: &Settings) -> Coord
     let model_options = ctx.model_config.build_provider_options();
 
     let coordinator = Coordinator::new(
-        ctx.ollama.clone(),
+        ctx.provider.clone(),
         ctx.model_config.model_id.clone(),
         vec![],
     )

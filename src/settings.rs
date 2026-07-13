@@ -1186,10 +1186,7 @@ impl Settings {
     /// Build a client for a named provider from `models.toml`.
     /// Each model declares its `provider = "<name>"` in `models.toml`; this
     /// function returns the appropriate `Ollama` (shim) for that provider.
-    pub fn ollama_client_for(
-        &self,
-        provider_name: &str,
-    ) -> crate::provider::OpenAICompatibleProvider {
+    pub fn provider_for(&self, provider_name: &str) -> crate::provider::OpenAICompatibleProvider {
         let providers = crate::user_models::get_providers();
         if let Some(cfg) = providers.get(provider_name) {
             crate::provider::OpenAICompatibleProvider::from_provider_config(cfg)
@@ -1206,12 +1203,12 @@ impl Settings {
     /// Resolves the model's `provider = "<name>"` from `models.toml`
     /// and returns the appropriate `Ollama` shim.
     /// Falls back to default Ollama if model is not found or has no provider.
-    pub fn ollama_client_for_model(
+    pub fn provider_for_model(
         &self,
         model_name: &str,
     ) -> crate::provider::OpenAICompatibleProvider {
         if let Some(provider_name) = crate::user_models::get_provider_for_model(model_name) {
-            return self.ollama_client_for(&provider_name);
+            return self.provider_for(&provider_name);
         }
         // Fallback: use the first OpenAI provider if available, else default Ollama
         let providers = crate::user_models::get_providers();

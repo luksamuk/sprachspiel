@@ -58,12 +58,12 @@ impl EmbeddingClient {
     /// assumptions about dimensions would mask user configuration
     /// errors.
     pub fn with_model(
-        ollama: crate::provider::OpenAICompatibleProvider,
+        provider: crate::provider::OpenAICompatibleProvider,
         model: String,
         dimensions: u32,
     ) -> Self {
         Self {
-            provider: ollama,
+            provider,
             model,
             dimensions,
             cached_context_length: OnceCell::new(),

@@ -40,13 +40,13 @@ impl SummarizeProcessor {
 
         let model_config = crate::user_models::resolve_model_config(model_id);
 
-        let ollama = settings.ollama_client_for_model(model_id);
+        let provider = settings.provider_for_model(model_id);
 
         let provider_options = model_config.build_provider_options();
 
         // Build coordinator WITHOUT tools (security requirement)
         let mut coordinator =
-            Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+            Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
                 .options(provider_options);
         // Note: No .add_tool() calls - tools are disabled
 

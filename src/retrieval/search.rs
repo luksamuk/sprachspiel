@@ -159,7 +159,7 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
 pub async fn run_search(
     db: &Database,
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     embedding_model_id: &str,
     embedding_dimensions: u32,
     query: &str,
@@ -176,7 +176,7 @@ pub async fn run_search(
 
     // Generate embedding for query
     let embedding_client = EmbeddingClient::with_model(
-        ollama.clone(),
+        provider.clone(),
         embedding_model_id.to_string(),
         embedding_dimensions,
     );

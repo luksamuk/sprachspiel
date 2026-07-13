@@ -290,13 +290,12 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         }
     };
 
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_config.model_id);
+    let provider = settings.provider_for_model(&model_config.model_id);
     let provider_options = model_config.build_provider_options();
     let model_options = provider_options.clone();
 
     let mut coordinator =
-        chat::Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+        chat::Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
             .options(model_options);
 
     let system_message = LlmMessage::system(prompt);
@@ -547,10 +546,9 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     // Check if the model supports vision capabilities (required for OCR).
     // Abort unless the user passes --force to override the capability check.
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_id);
+    let provider = settings.provider_for_model(&model_id);
     let capabilities =
-        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+        crate::capabilities::ModelCapabilities::detect_or_default(&provider, &model_id).await;
     if !capabilities.vision {
         if cli.force {
             eprintln!(
@@ -589,7 +587,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
             prompt_override,
             &model_id,
             model_options,
-            &ollama,
+            &provider,
             true,
         )
         .await
@@ -861,10 +859,9 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     // Check if the model supports vision capabilities.
     // Abort unless the user passes --force to override the capability check.
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_id);
+    let provider = settings.provider_for_model(&model_id);
     let capabilities =
-        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+        crate::capabilities::ModelCapabilities::detect_or_default(&provider, &model_id).await;
     if !capabilities.vision {
         if cli.force {
             eprintln!(
@@ -896,7 +893,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let processor = VisionProcessor::new();
 
     match processor
-        .process(&args, &model_id, &ollama, model_options, true)
+        .process(&args, &model_id, &provider, model_options, true)
         .await
     {
         Ok(result) => {

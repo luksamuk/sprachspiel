@@ -886,7 +886,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     match crate::retrieval::run_search(
         &db,
-        &state.ollama,
+        &state.provider,
         &embedding_model_id,
         embedding_dimensions,
         &query,
@@ -994,7 +994,7 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
     };
 
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
-        state.ollama.clone(),
+        state.provider.clone(),
         embedding_model_id,
         embedding_dimensions,
     );
@@ -1096,7 +1096,7 @@ pub async fn handle_compact(
     ))];
 
     match super::core::compact_conversation(
-        &state.ollama,
+        &state.provider,
         &state.model_config,
         &state.session,
         &state.settings,
@@ -1210,7 +1210,7 @@ pub async fn handle_retry(
     // Send the message again with the correct user content
     let think_enabled = state.session.think;
     match super::core::send_message(
-        &state.ollama,
+        &state.provider,
         &state.model_config,
         &mut state.session,
         &user_content,
@@ -1244,7 +1244,7 @@ pub async fn handle_retry(
 
             // Auto-compact if needed (after response, before next input)
             super::compaction::CompactionContext {
-                ollama: &state.ollama,
+                provider: &state.provider,
                 model_config: &state.model_config,
                 session: &mut state.session,
                 settings: &state.settings,
@@ -2168,11 +2168,11 @@ pub async fn handle_model_switch(
     };
 
     // Rebuild the LLM client with the new model's provider (resolved from
-    // models.toml inside switch_model). Without this, state.ollama would
+    // models.toml inside switch_model). Without this, state.provider would
     // stay bound to the initial model's provider and the next prompt would
     // hit the wrong provider — causing `no router for requested model`
-    // when switching across providers (e.g., llama-swap → ollama).
-    state.ollama = result.ollama;
+    // when switching across providers (e.g., llama-swap → provider).
+    state.provider = result.provider;
     state.current_model_name = result.model_name.clone();
     state.session.set_model(result.model_name.clone());
     state.model_config = result.model_config;
@@ -3269,7 +3269,7 @@ mod tests {
         let session = ChatSession::new("test-model".to_string(), None, false);
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
+        let provider = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
         let settings = Settings::default();
 
         ReplState {
@@ -3281,7 +3281,7 @@ mod tests {
             agents_md: None,
             cli_code: false,
             cli_soulless: false,
-            ollama,
+            provider,
             db: None,
             embedding_client: None,
             settings,
@@ -3396,7 +3396,7 @@ mod tests {
 
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
+        let provider = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
         let settings = Settings::default();
 
         ReplState {
@@ -3408,7 +3408,7 @@ mod tests {
             agents_md: None,
             cli_code: false,
             cli_soulless: false,
-            ollama,
+            provider,
             db: Some(std::sync::Arc::new(db)),
             embedding_client: None,
             settings,
@@ -3572,7 +3572,7 @@ pub async fn handle_subagent_ocr(
 
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
     let config = SubagentConfig::new(model, "OCR extraction").with_ocr_mode(mode);
-    let runner = SubagentRunner::new(state.ollama.clone(), config);
+    let runner = SubagentRunner::new(state.provider.clone(), config);
 
     match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
@@ -3614,7 +3614,7 @@ pub async fn handle_subagent_vision(
 
     let (model, _, _) = state.settings.get_subcommand_config("vision");
     let config = SubagentConfig::new(model, "Vision analysis");
-    let runner = SubagentRunner::new(state.ollama.clone(), config);
+    let runner = SubagentRunner::new(state.provider.clone(), config);
 
     let prompt_str = prompt
         .as_deref()
@@ -3646,7 +3646,7 @@ pub async fn handle_subagent_translate(
 
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
-    let runner = SubagentRunner::new(state.ollama.clone(), config);
+    let runner = SubagentRunner::new(state.provider.clone(), config);
 
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
@@ -3670,7 +3670,7 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) -> V
 
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
-    let runner = SubagentRunner::new(state.ollama.clone(), config);
+    let runner = SubagentRunner::new(state.provider.clone(), config);
 
     match runner.run_summarize(&text).await {
         Ok(result) => {

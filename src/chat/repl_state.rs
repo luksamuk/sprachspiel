@@ -58,7 +58,7 @@ pub struct ReplState {
     pub cli_soulless: bool,
 
     // External clients (immutable after init)
-    pub ollama: crate::provider::OpenAICompatibleProvider,
+    pub provider: crate::provider::OpenAICompatibleProvider,
     pub db: Option<Arc<Database>>,
     pub embedding_client: Option<Arc<EmbeddingClient>>,
 
@@ -91,7 +91,7 @@ pub struct ReplStateBuilder {
     agents_md: Option<String>,
     cli_code: bool,
     cli_soulless: bool,
-    ollama: Option<crate::provider::OpenAICompatibleProvider>,
+    provider: Option<crate::provider::OpenAICompatibleProvider>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
     settings: Option<Settings>,
@@ -108,7 +108,7 @@ impl ReplStateBuilder {
             agents_md: None,
             cli_code: false,
             cli_soulless: false,
-            ollama: None,
+            provider: None,
             db: None,
             embedding_client: None,
             settings: None,
@@ -151,8 +151,8 @@ impl ReplStateBuilder {
         self
     }
 
-    pub fn ollama(mut self, ollama: crate::provider::OpenAICompatibleProvider) -> Self {
-        self.ollama = Some(ollama);
+    pub fn provider(mut self, provider: crate::provider::OpenAICompatibleProvider) -> Self {
+        self.provider = Some(provider);
         self
     }
 
@@ -175,7 +175,7 @@ impl ReplStateBuilder {
         let session = self.session.ok_or("session is required")?;
         let model_config = self.model_config.ok_or("model_config is required")?;
         let capabilities = self.capabilities.ok_or("capabilities is required")?;
-        let ollama = self.ollama.ok_or("LLM client is required")?;
+        let provider = self.provider.ok_or("LLM client is required")?;
         let settings = self.settings.ok_or("settings is required")?;
 
         let current_model_name = session.model.clone();
@@ -189,7 +189,7 @@ impl ReplStateBuilder {
             agents_md: self.agents_md,
             cli_code: self.cli_code,
             cli_soulless: self.cli_soulless,
-            ollama,
+            provider,
             db: self.db,
             embedding_client: self.embedding_client,
             settings,
@@ -325,13 +325,13 @@ mod tests {
         let session = ChatSession::new("test-model".to_string(), None, false);
         let model_config = ModelConfig::get_default();
         let capabilities = ModelCapabilities::default();
-        let ollama = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
+        let provider = OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434);
 
         let result = ReplStateBuilder::new()
             .session(session)
             .model_config(model_config)
             .capabilities(capabilities)
-            .ollama(ollama)
+            .provider(provider)
             .build();
         assert!(result.is_err());
         if let Err(err) = result {

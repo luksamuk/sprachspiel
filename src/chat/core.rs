@@ -139,7 +139,7 @@ pub fn build_session_system_prompt(
 /// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
-    ollama: crate::provider::OpenAICompatibleProvider,
+    provider: crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     model_options: ProviderOptions,
     think_enabled: bool,
@@ -152,7 +152,7 @@ pub fn setup_coordinator(
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> Coordinator {
     let coordinator = crate::query::ChatContext {
-        ollama,
+        provider,
         model_id: model_config.model_id.clone(),
         model_options,
         use_think: think_enabled,
@@ -392,7 +392,7 @@ pub fn process_chat_response(
 /// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -518,7 +518,7 @@ pub async fn send_message(
     let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
 
     let mut coordinator = setup_coordinator(
-        ollama.clone(),
+        provider.clone(),
         model_config,
         model_options,
         think_enabled,
@@ -569,14 +569,14 @@ pub async fn send_message(
             with_full_context(
                 db.clone(),
                 embedding.clone(),
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat(messages.clone()),
             )
             .await
         } else {
             with_tool_context(
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat(messages.clone()),
             )
@@ -666,7 +666,7 @@ pub async fn send_message(
 /// delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message_stream(
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -747,7 +747,7 @@ pub async fn send_message_stream(
     let coordinator_cancel = cancel_token.clone();
 
     let mut coordinator = setup_coordinator(
-        ollama.clone(),
+        provider.clone(),
         model_config,
         model_options,
         think_enabled,
@@ -823,7 +823,7 @@ pub async fn send_message_stream(
             with_full_context(
                 db.clone(),
                 embedding.clone(),
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
@@ -838,7 +838,7 @@ pub async fn send_message_stream(
             .await
         } else {
             with_tool_context(
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
@@ -1021,7 +1021,7 @@ pub async fn send_message_stream(
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &ChatSession,
     _settings: &Settings,
@@ -1083,7 +1083,7 @@ pub async fn compact_conversation(
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
-        match compact_with_llm(ollama, model_config, compact_prompt, llm_tx.clone(), true).await {
+        match compact_with_llm(provider, model_config, compact_prompt, llm_tx.clone(), true).await {
             Ok(summary) => return Ok((summary, range)),
             Err(e) if is_prompt_too_long_error(&e.to_string()) => {
                 log::warn!(
@@ -1126,7 +1126,7 @@ pub async fn compact_conversation(
         message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
     });
 
-    match compact_recursive(ollama, model_config, &chunks, llm_tx.clone(), 0).await {
+    match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0).await {
         Ok(summary) => {
             log::info!(
                 "Layer 2 (chunked summarization): succeeded with {} chunks",
@@ -1175,7 +1175,7 @@ pub async fn compact_conversation(
 
     // Layer 3 is the last resort. If even truncation fails to fit the prompt,
     // compaction is truly impossible — return a clear error with diagnostics.
-    match compact_with_llm(ollama, model_config, compact_prompt, llm_tx, true).await {
+    match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true).await {
         Ok(summary) => Ok((summary, range)),
         Err(e) if is_prompt_too_long_error(&e.to_string()) => {
             log::error!(
@@ -1216,7 +1216,7 @@ pub async fn compact_conversation(
 /// indirection for recursive async functions (the future size would
 /// otherwise be infinite).
 fn compact_recursive<'a>(
-    ollama: &'a crate::provider::OpenAICompatibleProvider,
+    provider: &'a crate::provider::OpenAICompatibleProvider,
     model_config: &'a ModelConfig,
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1262,7 +1262,8 @@ fn compact_recursive<'a>(
 
             // Intermediate chunk summaries are processed silently (stream=false).
             // Only the final consolidation pass streams to the TUI.
-            match compact_with_llm(ollama, model_config, chunk_prompt, llm_tx.clone(), false).await
+            match compact_with_llm(provider, model_config, chunk_prompt, llm_tx.clone(), false)
+                .await
             {
                 Ok(summary) => summaries.push(summary),
                 Err(e) => {
@@ -1294,7 +1295,7 @@ fn compact_recursive<'a>(
             // Combined summaries fit — do a final summarization pass.
             // Stream the final consolidation so the user sees progress.
             let final_prompt = build_compaction_prompt(&combined);
-            compact_with_llm(ollama, model_config, final_prompt, llm_tx, true).await
+            compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
             log::debug!(
@@ -1317,7 +1318,7 @@ fn compact_recursive<'a>(
             let chunk_budget = max_chunk_tokens(context_window);
             let sub_chunks = split_into_chunks(&summary_messages, chunk_budget);
 
-            compact_recursive(ollama, model_config, &sub_chunks, llm_tx, depth + 1).await
+            compact_recursive(provider, model_config, &sub_chunks, llm_tx, depth + 1).await
         }
     })
 }
@@ -1359,7 +1360,7 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// and the summary is returned, but the TUI shows no intermediate content
 /// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1371,7 +1372,7 @@ async fn compact_with_llm(
     let provider_options = model_cfg.build_provider_options();
     let model_options = provider_options.clone();
 
-    let mut coordinator = Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+    let mut coordinator = Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
         .options(model_options);
 
     let messages = vec![

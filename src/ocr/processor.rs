@@ -65,7 +65,7 @@ impl OcrProcessor {
         let content = provider
             .generate(model, prompt, vec![base64_image], vec![], model_options)
             .await
-            .map_err(|e| OcrError::OllamaError {
+            .map_err(|e| OcrError::ProviderError {
                 message: format!("Failed to process image: {e}"),
             })?;
 
@@ -117,7 +117,7 @@ impl OcrProcessor {
         }
 
         if results.is_empty() {
-            return Err(OcrError::OllamaError {
+            return Err(OcrError::ProviderError {
                 message: "All files failed to process".to_string(),
             });
         }

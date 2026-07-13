@@ -46,7 +46,7 @@ pub struct QueryResult {
 
 /// Context for building a chat coordinator
 pub struct ChatContext {
-    pub ollama: crate::provider::OpenAICompatibleProvider,
+    pub provider: crate::provider::OpenAICompatibleProvider,
     pub model_id: String,
     pub model_options: ProviderOptions,
     pub use_think: bool,
@@ -58,7 +58,7 @@ impl ChatContext {
     pub fn build_coordinator(self) -> Coordinator {
         let use_think = self.use_think;
 
-        let mut coordinator = Coordinator::new(self.ollama.clone(), self.model_id, vec![])
+        let mut coordinator = Coordinator::new(self.provider.clone(), self.model_id, vec![])
             .options(self.model_options)
             .think(use_think);
 
@@ -315,7 +315,7 @@ pub async fn run_query(
         messages,
         ctx.db,
         ctx.embedding_client,
-        ctx.ollama.clone(),
+        ctx.provider.clone(),
         Arc::new(settings.clone()),
         &ctx.tool_names,
         spinner.clone(),

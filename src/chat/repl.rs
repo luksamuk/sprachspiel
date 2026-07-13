@@ -38,7 +38,7 @@ const MAX_COMPACTION_CYCLES: usize = 3;
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Initialize database and embedding client for chat mode.
-/// Returns (db, embedding_client, ollama, error_message).
+/// Returns (db, embedding_client, provider, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 ///
 /// The chat subcommand's embedding setup is wired to the alias-based
@@ -53,7 +53,7 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 ///   4. Initialize the database and the `EmbeddingClient`.
 async fn init_chat_database(
     settings: &Settings,
-    ollama: &crate::provider::OpenAICompatibleProvider,
+    provider: &crate::provider::OpenAICompatibleProvider,
     _chat_model_name: &str,
     anonymous: bool,
     db_path: Option<PathBuf>,
@@ -63,13 +63,13 @@ async fn init_chat_database(
     crate::provider::OpenAICompatibleProvider,
     Option<String>,
 ) {
-    // ollama client is built by the caller so that it can target the
+    // provider client is built by the caller so that it can target the
     // model the user actually asked for. The DB init needs a client
     // for embeddings + health, so we keep a clone here.
-    let ollama = ollama.clone();
+    let provider = provider.clone();
 
     if anonymous {
-        return (None, None, ollama, None);
+        return (None, None, provider, None);
     }
 
     // Resolve the indexing alias to (model_cfg, provider_cfg,
@@ -80,18 +80,18 @@ async fn init_chat_database(
         Err(e) => {
             log::error!("{e}");
             eprintln!("\x1B[31m{e}\x1B[0m");
-            return (None, None, ollama, Some(e));
+            return (None, None, provider, Some(e));
         }
     };
 
     // Build a separate Ollama (shim) for the embedding provider.
-    let embedding_ollama =
+    let embedding_provider =
         crate::provider::OpenAICompatibleProvider::from_provider_config(provider_cfg);
 
     // Probe the embedding endpoint with strict dim verify
     // (response dim == alias's declared dimensions).
     if let Err(msg) = crate::db::run_indexing_probe(
-        &embedding_ollama,
+        &embedding_provider,
         model_id,
         dimensions,
         settings.indexing_probe_enabled(),
@@ -100,12 +100,12 @@ async fn init_chat_database(
     {
         log::error!("{msg}");
         eprintln!("\x1B[31m{msg}\x1B[0m");
-        return (None, None, ollama, Some(msg));
+        return (None, None, provider, Some(msg));
     }
 
     let result = crate::db::init_database_core(
         crate::db::IndexingInit {
-            provider: embedding_ollama,
+            provider: embedding_provider,
             model_id: model_id.to_string(),
             dimensions,
             probe: false, // already probed above
@@ -132,7 +132,7 @@ async fn init_chat_database(
     // (repl_tui.rs), not here. It runs before embedding recovery to ensure
     // normalized items (has_embedding=0) are picked up for regeneration.
 
-    (result.db, result.embedding, ollama, error_detail)
+    (result.db, result.embedding, provider, error_detail)
 }
 
 /// Run startup tasks (decay cycles).
@@ -233,7 +233,7 @@ pub async fn handle_user_message_stream(
 
     loop {
         match send_message_stream(
-            &state.ollama,
+            &state.provider,
             &state.model_config,
             &mut state.session,
             &current_input,
@@ -705,7 +705,7 @@ pub async fn run_chat_repl(
     // W2 Wave Context (#116): Health check the Ollama server BEFORE
     // initializing the database. This prevents the startup hang reported
     // during manual testing: when Ollama is unreachable, the heavy
-    // init_chat_database path could hang indefinitely because ollama-rs
+    // init_chat_database path could hang indefinitely because provider-rs
     // does not expose a configurable request timeout. The health check
     // has a 3s timeout and fails fast with a clear error message.
     // Resolved permanently by #120 (OllamaProvider reqwest direct).
@@ -713,8 +713,8 @@ pub async fn run_chat_repl(
     // /api/tags. The Ollama shim's `list_local_models` handles both
     // endpoints (it knows the base URL of the configured provider).
     #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let pre_init_ollama = settings.ollama_client_for_model(&settings.model.default);
-    if let Err(e) = check_server_health(&pre_init_ollama).await {
+    let pre_init_provider = settings.provider_for_model(&settings.model.default);
+    if let Err(e) = check_server_health(&pre_init_provider).await {
         log::error!("Ollama health check failed: {e}");
         eprintln!("\x1B[31mError: {e}\x1B[0m");
         eprintln!(
@@ -729,11 +729,11 @@ pub async fn run_chat_repl(
     // Ollama client. We pass it to init_chat_database so the client
     // survives the session reload (which might change model).
     let active_chat_model = model_override.unwrap_or(default_model);
-    let initial_ollama = settings.ollama_client_for_model(active_chat_model);
+    let initial_provider = settings.provider_for_model(active_chat_model);
 
     let (db, embedding_client, _ollama_for_db, db_error) = init_chat_database(
         settings,
-        &initial_ollama,
+        &initial_provider,
         active_chat_model,
         args.anonymous,
         db_path,
@@ -777,15 +777,16 @@ pub async fn run_chat_repl(
     // Rebuild the LLM client for the FINAL resolved model (after
     // session model has been applied). This ensures the streaming
     // coordinator and the banner both use the same provider.
-    let ollama = match Some(session.model.as_str()) {
-        Some(model) => settings.ollama_client_for_model(model),
-        None => settings.ollama_client_for_model(default_model),
+    let provider = match Some(session.model.as_str()) {
+        Some(model) => settings.provider_for_model(model),
+        None => settings.provider_for_model(default_model),
     };
 
     let current_model_name = session.model.clone();
     let model_config = crate::user_models::resolve_model_config(&current_model_name);
 
-    let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+    let capabilities =
+        ModelCapabilities::detect_or_default(&provider, &model_config.model_id).await;
 
     // Thinking mode priority:
     // 1. Model capability check (can't enable if not supported)
@@ -832,7 +833,7 @@ pub async fn run_chat_repl(
         .agents_md(agents_md.clone())
         .cli_code(cli_code)
         .cli_soulless(cli_soulless)
-        .ollama(ollama.clone())
+        .provider(provider.clone())
         .db(db.clone())
         .embedding_client(embedding_client.clone())
         .settings(settings.clone())

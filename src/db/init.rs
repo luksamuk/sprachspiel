@@ -108,7 +108,7 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            // EmbeddingClient::with_model now takes (ollama,
+            // EmbeddingClient::with_model now takes (provider,
             // model_name, dimensions). dimensions is sourced from
             // the alias in models.toml and propagated through
             // IndexingInit; the EmbeddingClient is just a thin

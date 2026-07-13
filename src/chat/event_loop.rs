@@ -961,7 +961,7 @@ fn spawn_compact_task(
 
     tokio::spawn(async move {
         match super::core::compact_conversation(
-            &task_state.ollama,
+            &task_state.provider,
             &task_state.model_config,
             &task_state.session,
             &task_state.settings,

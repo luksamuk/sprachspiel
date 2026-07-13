@@ -29,7 +29,7 @@ pub async fn execute_query_with_retry(
     messages: Vec<LlmMessage>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
-    ollama: crate::provider::OpenAICompatibleProvider,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
@@ -40,14 +40,22 @@ pub async fn execute_query_with_retry(
             messages,
             db.clone(),
             embedding.clone(),
-            ollama,
+            provider,
             settings,
             tool_names,
             spinner,
         )
         .await
     } else {
-        execute_without_context(coordinator, messages, ollama, settings, tool_names, spinner).await
+        execute_without_context(
+            coordinator,
+            messages,
+            provider,
+            settings,
+            tool_names,
+            spinner,
+        )
+        .await
     }
 }
 
@@ -58,12 +66,12 @@ async fn execute_with_context(
     messages: Vec<LlmMessage>,
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
-    ollama: crate::provider::OpenAICompatibleProvider,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<LlmResponse, String> {
-    with_full_context(db, embedding, ollama, settings, async {
+    with_full_context(db, embedding, provider, settings, async {
         execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await
@@ -73,12 +81,12 @@ async fn execute_with_context(
 async fn execute_without_context(
     coordinator: Coordinator,
     messages: Vec<LlmMessage>,
-    ollama: crate::provider::OpenAICompatibleProvider,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<LlmResponse, String> {
-    with_tool_context(ollama, settings, async {
+    with_tool_context(provider, settings, async {
         execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await

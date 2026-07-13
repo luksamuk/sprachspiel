@@ -32,7 +32,7 @@ use crate::utils::truncate_to_budget;
 /// Result type for tool execution
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private.
+/// Trait to hold and call tools - our own implementation since provider-rs's ToolHolder is private.
 /// Bound is `Send` (not `Send + Sync`) because tool futures await
 /// `LlmProvider::embed`/`chat` which are Send only.
 pub trait ToolHolder: Send {

@@ -27,7 +27,7 @@ use super::view::ChatView;
 ///
 /// ```ignore
 /// let mut ctx = CompactionContext {
-///     ollama: &state.ollama,
+///     provider: &state.provider,
 ///     model_config: &state.model_config,
 ///     session: &mut state.session,
 ///     settings: &state.settings,
@@ -39,7 +39,7 @@ use super::view::ChatView;
 /// ctx.compact_if_needed().await;
 /// ```
 pub struct CompactionContext<'a> {
-    pub ollama: &'a OpenAICompatibleProvider,
+    pub provider: &'a OpenAICompatibleProvider,
     pub model_config: &'a ModelConfig,
     pub session: &'a mut ChatSession,
     pub settings: &'a Settings,
@@ -76,7 +76,7 @@ impl CompactionContext<'_> {
 
         // Attempt auto-compaction with streaming
         match compact_conversation(
-            self.ollama,
+            self.provider,
             self.model_config,
             self.session,
             self.settings,

@@ -84,12 +84,4 @@ pub trait LlmProvider: Send + Sync {
     /// Detect model capabilities (tools, vision, thinking, etc.).
     async fn detect_capabilities(&self, model: &str)
     -> Result<ProviderCapabilities, ProviderError>;
-
-    /// Provider identifier (e.g., "openai-compatible").
-    #[allow(dead_code)]
-    fn provider_name(&self) -> &str;
-
-    /// Health check — is the provider reachable?
-    #[allow(dead_code)]
-    async fn is_available(&self) -> bool;
 }

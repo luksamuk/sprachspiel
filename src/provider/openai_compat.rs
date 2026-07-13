@@ -127,11 +127,6 @@ enum RetryAction {
 }
 
 impl OpenAICompatibleProvider {
-    #[allow(dead_code)]
-    pub fn as_client(&self) -> &reqwest::Client {
-        &self.client
-    }
-
     /// Return the base URL configured for this provider.
     pub fn base_url(&self) -> &str {
         &self.config.base_url
@@ -1125,7 +1120,6 @@ impl LlmProvider for OpenAICompatibleProvider {
             .ok_or_else(|| ProviderError::Other("Empty embeddings response".to_string()))
     }
 
-    #[allow(dead_code)]
     async fn detect_capabilities(
         &self,
         model: &str,
@@ -1181,27 +1175,6 @@ impl LlmProvider for OpenAICompatibleProvider {
                 .map(|m| m.id.clone())
                 .unwrap_or_else(|| model.to_string()),
         })
-    }
-
-    #[allow(dead_code)]
-    fn provider_name(&self) -> &str {
-        "openai-compatible"
-    }
-
-    #[allow(dead_code)]
-    async fn is_available(&self) -> bool {
-        let url = self.url("/models");
-        match self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .timeout(Duration::from_secs(3))
-            .send()
-            .await
-        {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
     }
 }
 
