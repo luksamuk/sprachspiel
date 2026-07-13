@@ -674,7 +674,7 @@ impl OpenAICompatibleProvider {
                     message: body,
                     retry_after,
                 },
-                event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+                event: (attempt > 1).then_some(LlmStreamEvent::ProviderRetryFinished {
                     success: false,
                     attempt,
                 }),
@@ -710,7 +710,7 @@ impl OpenAICompatibleProvider {
                     status: status.as_u16(),
                     body: format!("HTTP {} (server error)", status.as_u16()),
                 },
-                event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+                event: (attempt > 1).then_some(LlmStreamEvent::ProviderRetryFinished {
                     success: false,
                     attempt,
                 }),
@@ -762,7 +762,7 @@ impl OpenAICompatibleProvider {
                 status: status.as_u16(),
                 body,
             },
-            event: (attempt > 1).then(|| LlmStreamEvent::ProviderRetryFinished {
+            event: (attempt > 1).then_some(LlmStreamEvent::ProviderRetryFinished {
                 success: false,
                 attempt,
             }),
