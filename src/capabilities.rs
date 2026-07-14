@@ -28,6 +28,7 @@
 use std::time::Duration;
 
 use crate::provider::LlmProvider;
+#[cfg(test)]
 use crate::provider::OpenAICompatibleProvider;
 
 /// Maximum time to wait for the Ollama server to respond to a health check.

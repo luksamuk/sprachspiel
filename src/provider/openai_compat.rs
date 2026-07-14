@@ -70,6 +70,7 @@ pub struct OpenAICompatibleConfig {
     pub connect_timeout_secs: u64,
     pub read_timeout_secs: u64,
     pub stream_idle_timeout_secs: u64,
+    pub ttfb_timeout_secs: u64,
     pub max_retries: u32,
     pub retry_base_delay_ms: u64,
     pub retry_max_delay_ms: u64,
@@ -87,6 +88,7 @@ impl From<&ProviderConfig> for OpenAICompatibleConfig {
             connect_timeout_secs: cfg.connect_timeout_secs,
             read_timeout_secs: cfg.read_timeout_secs,
             stream_idle_timeout_secs: cfg.stream_idle_timeout_secs,
+            ttfb_timeout_secs: cfg.ttfb_timeout_secs,
             max_retries: cfg.max_retries,
             retry_base_delay_ms: cfg.retry_base_delay_ms,
             retry_max_delay_ms: cfg.retry_max_delay_ms,
@@ -142,6 +144,7 @@ impl OpenAICompatibleProvider {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -176,6 +179,7 @@ impl OpenAICompatibleProvider {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 0,
             retry_base_delay_ms: 1000,
             retry_max_delay_ms: 1000,
@@ -1020,7 +1024,8 @@ impl LlmProvider for OpenAICompatibleProvider {
 
         let (response, retry_events) = self.send_stream_request(&request).await?;
         let idle_timeout = Duration::from_secs(self.config.stream_idle_timeout_secs);
-        let sse_stream = parse_sse_stream(response, idle_timeout);
+        let ttfb_timeout = Duration::from_secs(self.config.ttfb_timeout_secs);
+        let sse_stream = parse_sse_stream(response, ttfb_timeout, idle_timeout);
 
         // Prepend retry lifecycle events so the consumer sees them before
         // any content events.
@@ -1211,12 +1216,12 @@ fn classify_reqwest_error(err: reqwest::Error) -> ProviderError {
 
 /// Parse a Server-Sent Events stream from an OpenAI chat completion response.
 ///
-/// TODO #123: add a TTFB (time-to-first-byte) watchdog here. If no SSE chunk
-/// arrives within ~120s of stream start, reconnect instead of waiting the
-/// full idle_timeout (300s). Inspired by Hermes Agent's
-/// HERMES_CODEX_TTFB_TIMEOUT_SECONDS. See IMPLEMENTATION.md #123 open topics.
+/// `ttfb_timeout` is the time-to-first-byte watchdog: if no chunk arrives
+/// within this window at stream start, a `ProviderError::Timeout` is emitted.
+/// After the first byte, `idle_timeout` applies for inter-chunk gaps.
 fn parse_sse_stream(
     response: reqwest::Response,
+    ttfb_timeout: Duration,
     idle_timeout: Duration,
 ) -> impl Stream<Item = Result<LlmStreamEvent, ProviderError>> + Send {
     async_stream::stream! {
@@ -1227,12 +1232,19 @@ fn parse_sse_stream(
         let mut tool_call_accumulators = ToolCallAccumulator::new();
         let mut text_started = false;
         let mut thinking_started = false;
+        let mut first_byte_received = false;
 
         loop {
-            let chunk_result = tokio::time::timeout(idle_timeout, stream.next()).await;
+            let current_timeout = if first_byte_received {
+                idle_timeout
+            } else {
+                ttfb_timeout
+            };
+            let chunk_result = tokio::time::timeout(current_timeout, stream.next()).await;
 
             match chunk_result {
                 Ok(Some(Ok(bytes))) => {
+                    first_byte_received = true;
                     let text = String::from_utf8_lossy(&bytes);
                     buffer.push_str(&text);
 
@@ -1336,10 +1348,17 @@ fn parse_sse_stream(
                     return;
                 }
                 Err(_elapsed) => {
-                    yield Err(ProviderError::Timeout(format!(
-                        "SSE stream idle timeout after {}s",
-                        idle_timeout.as_secs()
-                    )));
+                    if first_byte_received {
+                        yield Err(ProviderError::Timeout(format!(
+                            "SSE stream idle timeout after {}s",
+                            idle_timeout.as_secs()
+                        )));
+                    } else {
+                        yield Err(ProviderError::Timeout(format!(
+                            "SSE TTFB timeout after {}s — no data received from provider",
+                            ttfb_timeout.as_secs()
+                        )));
+                    }
                     return;
                 }
             }
@@ -1374,6 +1393,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -1393,6 +1413,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 8000,
@@ -1503,6 +1524,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -1523,6 +1545,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,

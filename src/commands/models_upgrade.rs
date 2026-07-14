@@ -487,6 +487,7 @@ base_url = "http://127.0.0.1:11434/v1"
 # connect_timeout_secs = 5
 # read_timeout_secs = 300
 # stream_idle_timeout_secs = 300
+# ttfb_timeout_secs = 120
 # max_retries = 3
 # retry_base_delay_ms = 2000
 # retry_max_delay_ms = 16000
