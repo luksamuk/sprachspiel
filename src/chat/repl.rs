@@ -712,7 +712,6 @@ pub async fn run_chat_repl(
     // For llama-swap (OpenAI-compat), we hit /v1/models instead of
     // /api/tags. The Ollama shim's `list_local_models` handles both
     // endpoints (it knows the base URL of the configured provider).
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
     let pre_init_provider = settings.provider_for_model(&settings.model.default);
     if let Err(e) = check_server_health(&pre_init_provider).await {
         log::error!("Ollama health check failed: {e}");
