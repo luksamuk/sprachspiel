@@ -276,7 +276,7 @@ impl std::error::Error for EmbeddingError {}
 mod tests {
     use super::*;
 
-    fn make_dummy_ollama() -> crate::provider::OpenAICompatibleProvider {
+    fn make_dummy_provider() -> crate::provider::OpenAICompatibleProvider {
         crate::provider::OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434)
     }
 
@@ -352,7 +352,7 @@ mod tests {
     fn test_with_model_constructor() {
         // with_model also takes `dimensions`.
         let _client = EmbeddingClient::with_model(
-            make_dummy_ollama(),
+            make_dummy_provider(),
             "nomic-embed-text-v2-moe".to_string(),
             768,
         );
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn test_with_model_stores_model_name() {
         let client =
-            EmbeddingClient::with_model(make_dummy_ollama(), "bge-small-en-v1.5".to_string(), 768);
+            EmbeddingClient::with_model(make_dummy_provider(), "bge-small-en-v1.5".to_string(), 768);
         assert_eq!(client.model(), "bge-small-en-v1.5");
         assert_eq!(client.dimensions, 768);
     }
