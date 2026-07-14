@@ -173,11 +173,11 @@ pub async fn switch_model(
 mod tests {
     use super::*;
 
-    fn ollama_base_url(provider: &crate::provider::OpenAICompatibleProvider) -> String {
+    fn provider_base_url(provider: &crate::provider::OpenAICompatibleProvider) -> String {
         provider.base_url().to_string()
     }
 
-    /// Verifies that `switch_model` builds a NEW `ollama` client pointing
+    /// Verifies that `switch_model` builds a NEW provider client pointing
     /// to the provider declared in `models.toml` for the requested model.
     ///
     /// This is a regression test for the provider-switching bug: previously
@@ -186,15 +186,15 @@ mod tests {
     /// even after `/model` switched to a model on a different provider.
     ///
     /// Environment-dependent: requires `qwen3.5-4b-abliterated` (provider:
-    /// `llama-swap`) and `glm-5.2` (provider: `ollama`) to be declared in
+    /// `llama-swap`) and `glm-5.2` (provider: `llama-swap`) to be declared in
     /// `~/.config/sprachspiel/models.toml`. Skips (returns early) if either
     /// model is missing so the test is a no-op in CI without that config.
     ///
     /// Does NOT require any provider to be online — capability detection
     /// falls back to `current_capabilities` on connection failure, but the
-    /// `ollama` client is still constructed with the correct `base_url`.
+    /// provider client is still constructed with the correct `base_url`.
     #[tokio::test]
-    async fn switch_model_rebuilds_ollama_for_new_provider() {
+    async fn switch_model_rebuilds_provider_for_new_provider() {
         let local = "qwen3.5-4b-abliterated";
         let cloud = "glm-5.2";
         // Sanity: skip if the environment's models.toml doesn't declare
@@ -213,8 +213,8 @@ mod tests {
             .await
             .expect("cloud switch should succeed");
 
-        let local_url = ollama_base_url(&result_local.provider);
-        let cloud_url = ollama_base_url(&result_cloud.provider);
+        let local_url = provider_base_url(&result_local.provider);
+        let cloud_url = provider_base_url(&result_cloud.provider);
 
         // The two providers have different base_urls (llama-swap vs provider).
         assert!(
