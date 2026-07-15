@@ -25,11 +25,13 @@
 use std::sync::Arc;
 
 use super::command_output::{
-    CommandOutput, CompactData, ContentPruneData, ContextData, DocumentEntry, DocumentListData,
-    ExportData, ExportFormat, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
-    FactSearchResult, GcData, NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry,
-    SessionListData, SkillEntry, SkillListData, TodoListData,
+    CommandOutput, CompactData, ContentPruneData, ContextData, ExportData, ExportFormat,
+    FactListData, FactListScopeData, FactRemoveResult, FactSearchData, FactSearchResult, GcData,
+    NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry, SessionListData,
+    SkillEntry, SkillListData, TodoListData,
 };
+#[cfg(feature = "document-tools")]
+use super::command_output::{DocumentEntry, DocumentListData};
 use super::commands::{ChatCommand, FactListScope, SessionForgetTarget};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;

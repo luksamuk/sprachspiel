@@ -268,6 +268,8 @@ fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
         // Track fenced code blocks
         if trimmed.starts_with("```") {
             let lang = trimmed.trim_start_matches('`').trim();
+            #[cfg(not(any(feature = "mermaid", feature = "latex")))]
+            let _ = &lang; // suppress unused when no rendering features
 
             #[cfg(feature = "mermaid")]
             if in_mermaid_block {
@@ -885,6 +887,7 @@ fn table_style_border(theme: MarkdownTheme) -> Style {
 /// the entire diagram — labels and box-drawing structure — blends
 /// with normal chat content. No "bluish" tint from table cell colors
 /// (Cyan/Blue) and no dim/DarkGray for borders.
+#[cfg(feature = "mermaid")]
 fn mermaid_style(_theme: MarkdownTheme) -> Style {
     Style::default()
 }
@@ -1426,6 +1429,9 @@ fn render_markdown_impl(
     render_mermaid: bool,
     style_enabled: bool,
 ) -> Text<'static> {
+    #[cfg(not(feature = "mermaid"))]
+    let _ = render_mermaid; // suppress unused when mermaid is disabled
+
     // Fast path: if no table or Mermaid structure detected, use tui-markdown directly
     if !content_contains_special_blocks(content) {
         let mut text = render_markdown_inner_owned(content, theme);
@@ -1521,6 +1527,8 @@ fn content_contains_special_blocks(content: &str) -> bool {
         let trimmed = line.trim();
         if trimmed.starts_with("```") {
             let lang = trimmed.trim_start_matches('`').trim();
+            #[cfg(not(any(feature = "mermaid", feature = "latex")))]
+            let _ = &lang; // suppress unused when no rendering features
             if in_code_block {
                 in_code_block = false;
             } else {
