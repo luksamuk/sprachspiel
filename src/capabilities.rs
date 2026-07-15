@@ -50,7 +50,6 @@ pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// when the server is unreachable, the HTTP request hangs indefinitely.
 /// This health check with explicit timeout is the minimum-viable fix until
 /// #120 replaces `ollama-rs` with direct reqwest.
-#[allow(dead_code)] // Called from repl.rs startup in this same PR (#116)
 pub async fn check_server_health(
     provider: &crate::provider::OpenAICompatibleProvider,
 ) -> crate::AppResult<()> {

@@ -177,7 +177,7 @@ pub struct ChatChunk {
     pub usage: Option<Usage>,
 }
 
-#[allow(dead_code)] // Used indirectly: deserialized via ChatChunk.choices
+#[allow(dead_code)] // Serde deserialization target — populated by serde, not accessed directly
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkChoice {
     pub index: u32,
@@ -206,7 +206,7 @@ pub struct EmbeddingsResponse {
     pub usage: Usage,
 }
 
-#[allow(dead_code)] // Used indirectly: deserialized via EmbeddingsResponse.data
+#[allow(dead_code)] // Serde deserialization target — populated by serde, not accessed directly
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingObject {
     /// OpenAI sends `"object": "embedding"` per-item. llama-swap
@@ -229,7 +229,7 @@ pub struct ModelsResponse {
     pub data: Vec<ModelInfo>,
 }
 
-#[allow(dead_code)] // Used indirectly: deserialized via ModelsResponse.data
+#[allow(dead_code)] // Serde deserialization target — populated by serde, not accessed directly
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub id: String,

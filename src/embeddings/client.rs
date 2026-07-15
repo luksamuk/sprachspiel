@@ -360,8 +360,11 @@ mod tests {
 
     #[test]
     fn test_with_model_stores_model_name() {
-        let client =
-            EmbeddingClient::with_model(make_dummy_provider(), "bge-small-en-v1.5".to_string(), 768);
+        let client = EmbeddingClient::with_model(
+            make_dummy_provider(),
+            "bge-small-en-v1.5".to_string(),
+            768,
+        );
         assert_eq!(client.model(), "bge-small-en-v1.5");
         assert_eq!(client.dimensions, 768);
     }

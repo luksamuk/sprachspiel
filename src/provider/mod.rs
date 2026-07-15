@@ -4,7 +4,6 @@
 //! used across all LLM providers (OpenAI-compatible, etc.).
 
 pub mod embedding_models;
-pub mod factory;
 pub mod openai_compat;
 pub mod openai_types;
 pub mod retry;
@@ -12,15 +11,12 @@ pub mod tool_accumulator;
 pub mod types;
 
 pub use openai_compat::OpenAICompatibleProvider;
-#[allow(unused_imports)]
+#[allow(unused_imports)] // Re-exports used by different feature combinations in bin vs lib
 pub use types::{
     LlmMessage, LlmResponse, LlmRole, LlmStreamEvent, LlmToolCall, LocalModel,
-    ProviderCapabilities, ProviderError, ProviderOptions, RetryCategory, ToolFunctionInfo,
-    ToolInfo, ToolType, retry_delay,
+    ProviderCapabilities, ProviderError, ProviderOptions, RetryCategory, ToolInfo, ToolType,
+    retry_delay,
 };
-
-#[allow(unused_imports)]
-pub use factory::build_provider;
 
 use async_trait::async_trait;
 use std::pin::Pin;
