@@ -302,7 +302,7 @@ pub struct ProviderOptions {
 
 /// Provider error with retry classification semantics.
 ///
-/// Each variant maps to a `RetryCategory` for the W2 retry infrastructure (#116).
+/// Each variant maps to a `RetryCategory` for the retry infrastructure.
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum ProviderError {
     #[error("Connection error: {0}")]
@@ -355,7 +355,7 @@ impl ProviderError {
 
 /// Retry strategy for a classified error.
 ///
-/// Relocated from `src/retry.rs` per W2 Provider Chain plan.
+/// Retry strategy for a classified error.
 /// Each variant carries its own `max_attempts` so per-category limits
 /// are visible in the type signature.
 #[derive(Debug, Clone, PartialEq, Eq)]

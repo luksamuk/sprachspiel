@@ -13,16 +13,6 @@
 //!    default set (completion, tools, thinking) but **not** vision
 //!    (the OpenAI spec doesn't expose a vision flag). So vision
 //!    MUST be declared explicitly in `models.toml`.
-//!
-//! # W2 Wave Context (Issue #116)
-//!
-//! `check_server_health()` is the entry point for the startup health check.
-//! It calls `/api/tags` via the Ollama shim with a 3-second timeout.
-//! This is a **pre-check** that catches "Ollama is not running" before
-//! the heavier `show_model_info()` call would hang indefinitely. When
-//! #120 (OllamaProvider reqwest direct) lands, this was replaced by
-//! `ProviderError`-aware health check; #121 consolidates everything
-//! via OpenAICompatibleProvider with /v1/models.
 
 #![expect(clippy::print_stderr)] // Model capability detection output
 use std::time::Duration;
@@ -31,16 +21,16 @@ use crate::provider::LlmProvider;
 #[cfg(test)]
 use crate::provider::OpenAICompatibleProvider;
 
-/// Maximum time to wait for the Ollama server to respond to a health check.
+/// Maximum time to wait for the provider server to respond to a health check.
 ///
-/// Tuned for the "Ollama is not running" case: localhost connection
+/// Tuned for the "server is not running" case: localhost connection
 /// refused returns in milliseconds, so a 3s timeout is more than enough.
 /// Network issues (firewall, DNS) will hit this timeout and abort cleanly.
 pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Check whether the Ollama server is reachable and responsive.
+/// Check whether the provider server is reachable and responsive.
 ///
-/// Hits the `/api/tags` endpoint via `provider.list_local_models()` with a
+/// Calls `provider.list_local_models()` with a 3-second timeout.
 /// 3-second timeout. Returns `Ok(())` if the server responds (even with
 /// zero models), `Err` with a user-friendly message if it doesn't.
 ///
@@ -48,16 +38,14 @@ pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// hang reported during #116 manual testing (Scenario 2). The hang happens
 /// because `ollama-rs` does not expose a configurable request timeout, so
 /// when the server is unreachable, the HTTP request hangs indefinitely.
-/// This health check with explicit timeout is the minimum-viable fix until
-/// #120 replaces `ollama-rs` with direct reqwest.
 pub async fn check_server_health(
     provider: &crate::provider::OpenAICompatibleProvider,
 ) -> crate::AppResult<()> {
     let check = async {
         provider.list_local_models().await.map_err(|e| {
             format!(
-                "Failed to reach Ollama server: {e}. \
-                 Make sure Ollama is running (try `ollama serve` in another terminal)."
+                "Failed to reach LLM server: {e}. \
+                 Make sure the server is running."
             )
         })?;
         Ok::<(), String>(())
@@ -67,8 +55,8 @@ pub async fn check_server_health(
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.into()),
         Err(_elapsed) => Err(format!(
-            "Ollama server did not respond within {}s at the configured URL. \
-             Make sure Ollama is running and accessible.",
+            "LLM server did not respond within {}s at the configured URL. \
+             Make sure the server is running and accessible.",
             HEALTH_CHECK_TIMEOUT.as_secs()
         )
         .into()),
@@ -99,7 +87,7 @@ impl ModelCapabilities {
     /// Detect model capabilities by querying the LLM server
     ///
     /// # Arguments
-    /// * `ollama` - The LLM server client instance
+    /// * `provider` - The LLM provider client instance
     /// * `model_name` - The name of the model to check (e.g., "qwen3.5:4b")
     ///
     /// # Returns

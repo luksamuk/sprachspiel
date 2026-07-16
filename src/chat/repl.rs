@@ -702,23 +702,15 @@ pub async fn run_chat_repl(
         &settings.model.default
     };
 
-    // W2 Wave Context (#116): Health check the Ollama server BEFORE
-    // initializing the database. This prevents the startup hang reported
-    // during manual testing: when Ollama is unreachable, the heavy
-    // init_chat_database path could hang indefinitely because provider-rs
-    // does not expose a configurable request timeout. The health check
-    // has a 3s timeout and fails fast with a clear error message.
-    // Resolved permanently by #120 (OllamaProvider reqwest direct).
-    // For llama-swap (OpenAI-compat), we hit /v1/models instead of
-    // /api/tags. The Ollama shim's `list_local_models` handles both
-    // endpoints (it knows the base URL of the configured provider).
+    // Health check the provider BEFORE initializing the database.
+    // This prevents a startup hang when the server is unreachable:
+    // the init_chat_database path could hang indefinitely. The health
+    // check has a 3s timeout and fails fast with a clear error message.
     let pre_init_provider = settings.provider_for_model(&settings.model.default);
     if let Err(e) = check_server_health(&pre_init_provider).await {
-        log::error!("Ollama health check failed: {e}");
+        log::error!("Provider health check failed: {e}");
         eprintln!("\x1B[31mError: {e}\x1B[0m");
-        eprintln!(
-            "\x1B[33mHint: Start Ollama with `ollama serve` in another terminal, then retry.\x1B[0m"
-        );
+        eprintln!("\x1B[33mHint: Start your LLM server, then retry.\x1B[0m");
         return Ok(());
     }
 
@@ -730,7 +722,7 @@ pub async fn run_chat_repl(
     let active_chat_model = model_override.unwrap_or(default_model);
     let initial_provider = settings.provider_for_model(active_chat_model);
 
-    let (db, embedding_client, _ollama_for_db, db_error) = init_chat_database(
+    let (db, embedding_client, _provider_for_db, db_error) = init_chat_database(
         settings,
         &initial_provider,
         active_chat_model,

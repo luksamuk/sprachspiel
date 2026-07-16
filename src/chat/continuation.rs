@@ -237,7 +237,7 @@ pub struct ContinuationResult {
 ///
 /// # Arguments
 ///
-/// * `state` - Mutable reference to REPL state (contains session, ollama client, etc.)
+/// * `state` - Mutable reference to REPL state (contains session, provider client, etc.)
 /// * `initial_result` - The result from the initial `send_message` call that requested continuation
 /// * `user_message_id` - The ID of the original user message (for linking continuation pre-tool messages)
 /// * `view` - View for rendering output

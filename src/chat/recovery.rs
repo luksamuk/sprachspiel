@@ -1,8 +1,7 @@
 //! LlmMessage::tool() wrapper for LLM error recovery.
 //!
 //! The recovery pattern (push a tool message after an error so the LLM can
-//! self-correct) is the central pattern of #116. By centralizing the
-//! `LlmMessage::tool()` call here, future changes to the message format
+//! self-correct) is centralized here so future changes to the message format
 //! only need to update ONE function body.
 
 use crate::provider::types::LlmMessage;

@@ -1243,7 +1243,7 @@ mod tests {
     fn test_default_settings() {
         let settings = Settings::default();
         assert_eq!(settings.model.default, "qwen3.5:4b");
-        // ollama_host/port removed in #120 - now in models.toml [provider]
+        // Host/port config moved to models.toml [provider.*] section
         assert_eq!(settings.display.skin, "dark");
         assert!(settings.display.show_tool_calls);
         // These should be false by default

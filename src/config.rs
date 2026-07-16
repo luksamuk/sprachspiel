@@ -7,7 +7,7 @@
 //! The model schema is OpenAI-aligned. `top_k`, `repeat_penalty`, and `think`
 //! (Ollama-native fields) are no longer exposed. `num_ctx` may be auto-detected
 //! from the server. `build_provider_options()` produces a `ProviderOptions` for
-//! `LlmProvider` instead of an `ollama_rs::ModelOptions`.
+//! `LlmProvider` instead of a `ProviderOptions`.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
