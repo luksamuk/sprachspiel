@@ -6,7 +6,7 @@ A Rust CLI harness for research, interaction, and cognitive evolution with local
 
 ## Overview
 
-Sprachspiel is a cognitive interaction harness — not a code-specific tool — built for local and cloud LLMs via Ollama and compatible backends. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
+Sprachspiel is a cognitive interaction harness — not a code-specific tool — built for local and cloud LLMs via OpenAI-compatible backends. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
 
 Key capabilities:
 - **Persistent memory** — facts, notes, documents with semantic search and Ebbinghaus decay
@@ -115,7 +115,7 @@ cd sprachspiel-0.26.0-termux-aarch64
 ./install.sh
 ```
 
-**Note:** An LLM server (Ollama by default) must run on a separate machine. Configure in `~/.config/sprachspiel/config.toml`:
+**Note:** An LLM server (e.g. Ollama, llama.cpp, vLLM) must run on a separate machine. Configure in `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [ollama]
@@ -246,7 +246,7 @@ sprach -m glm-5:cloud -t "Explain quantum computing step by step"
 
 ## Requirements
 
-- [Ollama](https://ollama.ai) running locally (or a compatible backend; remote server for Termux)
+- An OpenAI-compatible LLM server (Ollama, llama.cpp, vLLM, LM Studio, llama-swap) running locally or remotely
 - Required models: `qwen3.5:4b` (default, multimodal), `translategemma:4b`, `glm-ocr:bf16`
 - Optional: `moondream:1.8b` (alternative vision), `llama3.1:8b` (alternative general)
 

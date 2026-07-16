@@ -195,7 +195,7 @@ serde_json = "1"        # JSON persistence (already exists)
 
 ## Integration with Coordinator
 
-The ollama-rs Coordinator supports passing message history:
+The Coordinator supports passing message history:
 
 ```rust
 let messages: Vec<ChatMessage> = session.messages.clone();

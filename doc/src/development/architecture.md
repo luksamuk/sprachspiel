@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of Sprachspiel.
 
 ## Overview
 
-Sprachspiel is a Rust CLI tool that provides an interface to LLM models via Ollama and compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
+Sprachspiel is a Rust CLI tool that provides an interface to LLM models via OpenAI-compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
 
 ## System Architecture
 
@@ -42,7 +42,7 @@ graph TB
     end
 
     subgraph External["External"]
-        C --> O[Ollama API]
+        C --> O[LLM Provider]
         D --> O
         E --> O
         F --> O
@@ -199,11 +199,11 @@ erDiagram
 
 #### Embeddings (`src/embeddings/`)
 
-Ollama-based embedding generation:
+Embedding generation via LlmProvider trait: generation:
 
 ```rust
 pub struct EmbeddingClient {
-    ollama: Ollama,
+    provider: OpenAICompatibleProvider,
     model: String,
     semaphore: Semaphore,  // Serializes embedding requests (Semaphore(1))
 }
@@ -423,10 +423,10 @@ Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and highe
 
 ### 7. Tools (`src/tools/`)
 
-Tool implementations using the `ollama-rs` macro:
+Tool implementations using the `#[sprachspiel::tool]` macro:
 
 ```rust
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn my_tool(param: String) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Always return Ok(String), even on error
     Ok(result)
@@ -518,7 +518,7 @@ sequenceDiagram
     participant Query
     participant DB
     participant Embedding
-    participant Ollama
+    participant LLM Provider
     
     User->>Query: "What did we discuss about X?"
     Query->>DB: Get project_id
@@ -526,8 +526,8 @@ sequenceDiagram
     Query->>DB: Search by project_id
     DB-->>Query: Relevant messages
     Query->>Query: Build context
-    Query->>Ollama: Send query + context
-    Ollama-->>Query: Response
+    Query->>LLM Provider: Send query + context
+    LLM Provider-->>Query: Response
     Query-->>User: Answer (no persistence)
 ```
 
@@ -687,7 +687,7 @@ sequenceDiagram
     participant REPL
     participant Retriever
     participant DB
-    participant Ollama
+    participant LLM Provider
     
     User->>REPL: Message
     REPL->>DB: Check message count
@@ -703,8 +703,8 @@ sequenceDiagram
         Note over REPL: Skip retrieval
     end
     
-    REPL->>Ollama: Chat with context
-    Ollama-->>REPL: Response
+    REPL->>LLM Provider: Chat with context
+    LLM Provider-->>REPL: Response
     REPL->>DB: Save messages + embeddings
     REPL-->>User: Display response
 ```
@@ -807,7 +807,7 @@ sprachspiel/
 
 | Crate | Purpose |
 |-------|---------|
-| `ollama-rs` | Ollama API client |
+| `OpenAICompatibleProvider` | LLM provider (OpenAI-compat) |
 | `clap` | CLI parsing |
 | `termimad` | Markdown rendering |
 | `indicatif` | Progress spinners |
