@@ -16,12 +16,12 @@ pub struct ModelSwitchResult {
     pub tools_active: bool,
     pub think_active: bool,
     pub warnings: Vec<String>,
-    /// O cliente LLM reconstruído para o provider do novo modelo.
-    /// O caller DEVE atualizar `state.provider` com este valor para que
-    /// os próximos requests vão para o provider correto (declarado em
-    /// `models.toml` para o novo modelo). Sem isto, o `/model` troca o
-    /// `model_config` mas mantém o cliente HTTP do provider antigo,
-    /// causando `no router for requested model` no próximo prompt.
+    /// The rebuilt LLM provider client for the new model's provider.
+    /// The caller MUST update `state.provider` with this value so that
+    /// subsequent requests go to the correct provider (declared in
+    /// `models.toml` for the new model). Without this, `/model` switches
+    /// `model_config` but keeps the old provider's HTTP client, causing
+    /// `no router for requested model` on the next prompt.
     pub provider: crate::provider::OpenAICompatibleProvider,
 }
 
