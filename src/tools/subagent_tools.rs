@@ -18,7 +18,7 @@ use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::ocr::mode::parse_ocr_mode;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::security::validate_subagent_paths;
-use crate::tools::context::{get_llm, get_settings};
+use crate::tools::context::{get_provider, get_settings};
 use crate::utils::expand_tilde_path;
 use sprachspiel_tool_derive::tool;
 use std::path::PathBuf;
@@ -87,7 +87,7 @@ pub async fn spawn_ocr_agent(
         }
     };
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -206,7 +206,7 @@ pub async fn spawn_vision_agent(
         }
     };
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -283,7 +283,7 @@ pub async fn spawn_translate_agent(
         })],
     );
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -360,7 +360,7 @@ pub async fn spawn_summarize_agent(
         })],
     );
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();

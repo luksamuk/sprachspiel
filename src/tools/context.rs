@@ -2,10 +2,6 @@
 //!
 //! Provides async-safe access to Database, EmbeddingClient, LLM provider,
 //! and Settings for tools that need them.
-//!
-//! Stores `crate::provider::OpenAICompatibleProvider` (the shim) for backward compatibility
-//! with the existing tool implementations. The shim delegates to
-//! `OpenAICompatibleProvider` internally.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -19,7 +15,7 @@ tokio::task_local! {
     pub static REMEMBER_DB: Arc<Database>;
     /// Embedding client for tools that need semantic search
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
-    /// Ollama-compatible shim for tools that need LLM access
+    /// LLM provider for tools that need LLM access
     pub static TOOL_LLM: crate::provider::OpenAICompatibleProvider;
     /// Settings for tools that need configuration (e.g., agent spawning tools)
     pub static TOOL_SETTINGS: Arc<Settings>;
@@ -35,14 +31,9 @@ pub fn get_embedding() -> Option<Arc<EmbeddingClient>> {
     REMEMBER_EMBEDDING.try_with(|e| e.clone()).ok()
 }
 
-/// Helper to get Ollama-compatible shim from task-local context
-pub fn get_ollama() -> Option<crate::provider::OpenAICompatibleProvider> {
+/// Helper to get LLM provider from task-local context
+pub fn get_provider() -> Option<crate::provider::OpenAICompatibleProvider> {
     TOOL_LLM.try_with(|o| o.clone()).ok()
-}
-
-/// Helper to get LLM provider from task-local context (alias for get_provider)
-pub fn get_llm() -> Option<crate::provider::OpenAICompatibleProvider> {
-    get_ollama()
 }
 
 /// Helper to get Settings from task-local context
@@ -94,7 +85,7 @@ mod tests {
     use tokio::test;
 
     #[test]
-    async fn with_tool_context_scopes_ollama_and_settings() {
+    async fn with_tool_context_scopes_provider_and_settings() {
         let dummy_provider = crate::provider::OpenAICompatibleProvider::new_local(
             "http://localhost".to_string(),
             11434,
@@ -102,12 +93,12 @@ mod tests {
         let dummy_settings = Arc::new(Settings::default());
 
         let result = with_tool_context(dummy_provider, dummy_settings, async {
-            let provider = get_ollama();
+            let provider = get_provider();
             let settings = get_settings();
 
             assert!(
                 provider.is_some(),
-                "get_ollama should return Some inside scope"
+                "get_provider should return Some inside scope"
             );
             assert!(
                 settings.is_some(),
@@ -118,7 +109,7 @@ mod tests {
         })
         .await;
 
-        assert!(result.0, "ollama should be scoped");
+        assert!(result.0, "provider should be scoped");
         assert!(result.1, "settings should be scoped");
     }
 
@@ -151,7 +142,7 @@ mod tests {
             async {
                 let db = get_db();
                 let embedding = get_embedding();
-                let provider = get_ollama();
+                let provider = get_provider();
                 let settings = get_settings();
 
                 assert!(db.is_some(), "get_db should return Some inside full scope");
@@ -161,7 +152,7 @@ mod tests {
                 );
                 assert!(
                     provider.is_some(),
-                    "get_ollama should return Some inside full scope"
+                    "get_provider should return Some inside full scope"
                 );
                 assert!(
                     settings.is_some(),
@@ -180,14 +171,14 @@ mod tests {
 
         assert!(result.0, "db should be scoped");
         assert!(result.1, "embedding should be scoped");
-        assert!(result.2, "ollama should be scoped");
+        assert!(result.2, "provider should be scoped");
         assert!(result.3, "settings should be scoped");
     }
 
     #[test]
-    async fn get_ollama_returns_none_outside_scope() {
+    async fn get_provider_returns_none_outside_scope() {
         let result = tokio::spawn(async {
-            let provider = get_ollama();
+            let provider = get_provider();
             let settings = get_settings();
             let db = get_db();
             let embedding = get_embedding();
@@ -202,7 +193,7 @@ mod tests {
         .await;
 
         let (o, s, d, e) = result.unwrap();
-        assert!(o, "get_ollama should return None outside scope");
+        assert!(o, "get_provider should return None outside scope");
         assert!(s, "get_settings should return None outside scope");
         assert!(d, "get_db should return None outside scope");
         assert!(e, "get_embedding should return None outside scope");
