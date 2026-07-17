@@ -147,10 +147,10 @@ SQLite database for conversation history, content, facts, and embeddings:
 erDiagram
     CONVERSATIONS ||--o{ CONTENT_ITEMS : contains
     CONTENT_ITEMS ||--o{ CONTENT_CHUNKS : has
-    CONTENT_ITEMS ||--o| CONTENT_EMBEDDINGS : has
-    CONTENT_CHUNKS ||--o| CHUNK_EMBEDDINGS : has
+    CONTENT_ITEMS ||--o{ CONTENT_EMBEDDINGS : has
+    CONTENT_CHUNKS ||--o{ CHUNK_EMBEDDINGS : has
     CONTENT_ITEMS ||--o{ FEEDBACK_SIGNALS : receives
-    FACTS ||--o| FACT_EMBEDDINGS : has
+    FACTS ||--o{ FACT_EMBEDDINGS : has
 
     CONVERSATIONS {
         string id PK
@@ -165,11 +165,21 @@ erDiagram
         string content_type
         string role
         string content
-        string thinking_content NULL
-        string t3_status DEFAULT none
+        string thinking_content
+        string t3_status
         datetime timestamp
         float importance
         float decay_score
+        int has_embedding
+    }
+
+    CONTENT_CHUNKS {
+        int id PK
+        int item_id FK
+        int chunk_index
+        string content
+        int start_offset
+        int end_offset
         int has_embedding
     }
 
@@ -191,10 +201,22 @@ erDiagram
         datetime created_at
     }
 
-    EMBEDDINGS {
-        int id PK
-        float distance
-        string vec0_cosine_distance_metric
+    CONTENT_EMBEDDINGS {
+        int item_id PK
+        string content_type
+        string conversation_id
+    }
+
+    CHUNK_EMBEDDINGS {
+        int chunk_id PK
+        string content_type
+        string conversation_id
+    }
+
+    FACT_EMBEDDINGS {
+        int fact_id PK
+        string scope
+        string category
     }
 ```
 
@@ -264,34 +286,27 @@ pub struct SearchResult {
 
 **Architecture Bug (Current):**
 
-```
-Current Storage Path:
-┌─────────────────────┐    strip_thinking     ┌─────────────┐
-│ Normal Assistant      │ ─────────────────→    │ LOST        │
-│ <thinking>content    │     (removed)         │ FOREVER     │
-│ </thinking>response  │                        └─────────────┘
-└─────────────────────┘
+```mermaid
+graph LR
+    subgraph "Normal Assistant Message"
+        A["thinking + response"] -->|"strip_thinking (removed)"| B["LOST FOREVER"]
+    end
 
-┌─────────────────────┐   concat inline   ┌──────────────┐   search by     ┌─────────┐
-│ Pre-Tool             │ ───────────────→  │ content field │ ──────────────→  │ Found   │
-│ <thinking>content   │   (incidental)    │ (mixed XML)  │   accident       │ (luck)  │
-│ </thinking>response │                   └──────────────┘                  └─────────┘
-└─────────────────────┘
+    subgraph "Pre-Tool Message"
+        C["thinking + response"] -->|"concat inline (incidental)"| D["content field (mixed XML)"]
+        D -->|"search by accident"| E["Found (luck)"]
+    end
 ```
 
 **Fixed Architecture (Planned — v14):**
 
+```mermaid
+graph LR
+    A["Any Assistant msg with thinking"] -->|process_thinking| B["content field - clean response"]
+    A -->|process_thinking| C["thinking_content - preserved reasoning"]
 ```
-Planned Storage Path:
-┌─────────────────────┐   process_thinking   ┌──────────────┐
-│ Any Assistant msg    │ ─────────────────→   │ content field │ ← clean response text
-│ with <thinking>      │                      └──────────────┘
-└─────────────────────┘                      ┌──────────────────┐
-                                               │ thinking_content │ ← preserved reasoning
-                                               └──────────────────┘
 
-(Phase 1 adds thinking_trace_status INTEGER: 0=none, 1=raw, 2=pending, 3=done)
-```
+> Phase 1 adds `thinking_trace_status INTEGER`: 0=none, 1=raw, 2=pending, 3=done
 
 **5 Data Loss Paths Identified (Phase 0 fixes 4):**
 

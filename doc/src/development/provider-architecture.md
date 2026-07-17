@@ -106,29 +106,55 @@ Key features:
 
 ## Configuration
 
-Providers are configured in `~/.config/sprachspiel/config.toml`:
+Providers are configured in `~/.config/sprachspiel/models.toml`:
 
 ```toml
-[provider]
-base_url = "http://localhost:11434/v1"  # Any OpenAI-compatible endpoint
-api_key = ""                            # Optional, for cloud providers
+# Define one or more providers — each is a transport endpoint
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+# Optional timeouts:
+# connect_timeout_secs = 5
+# read_timeout_secs = 300
+# stream_idle_timeout_secs = 300
+# ttfb_timeout_secs = 120
+# max_retries = 3
 
-[embedding]
-model = "nomic-embed-text"
-dimensions = 256                        # Matryoshka truncation
+# Ollama as a provider (via its OpenAI-compatible endpoint):
+[provider."ollama"]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
+
+# Cloud provider example:
+[provider."openai-cloud"]
+kind = "openai"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
 ```
 
-Model definitions in `~/.config/sprachspiel/models.toml`:
+Each model references a provider by name:
 
 ```toml
-[models."my-model"]
-provider = "openai"  # Currently the only option; reserved for future providers
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "llama-swap"
 tools = true
-vision = false
-thinking = false
+vision = true
+thinking = true
+temperature = 0.6
+top_p = 0.95
+
+# Embedding models require embeddings = true + dimensions
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true
+dimensions = 768
 ```
 
-> **Note:** The `provider` field in model configs is reserved for future multi-provider support. Currently, all models use the configured `base_url` endpoint.
+The `provider` field in each `[models.*]` entry must reference a `[provider.*]` section defined in the same file. A model can use any provider — you can mix local and cloud providers freely.
+
+See [Model Guide](../models.md) for the full model configuration reference.
 
 ## Module Structure
 

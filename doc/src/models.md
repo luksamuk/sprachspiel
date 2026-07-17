@@ -365,5 +365,4 @@ dimensions = 1024
 - [summarize](./commands/summarize.md) — Summarization command
 - [vision](./commands/vision.md) — Vision command
 - [Configuration](./configuration.md) — Full configuration reference
-- [Evaluated Models](./evaluated-models.md) — Detailed model benchmarks
 - [Provider Architecture](./development/provider-architecture.md) — LlmProvider trait design

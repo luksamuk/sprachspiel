@@ -21,7 +21,6 @@
   - [search](./commands/search.md)
   - [config](./commands/config.md)
 - [Models](./models.md)
-- [Evaluated Models](./evaluated-models.md)
 - [Prompts](./prompts.md)
 - [SOUL.md](./soul.md)
 - [Tools](./tools.md)
