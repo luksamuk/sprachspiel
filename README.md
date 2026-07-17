@@ -90,9 +90,6 @@ cd sprachspiel-0.26.0-linux-x86_64
 git clone https://github.com/luksamuk/sprachspiel.git
 cd sprachspiel
 
-# Install required models first
-cd modelfiles && make models-essential && cd ..
-
 # Build and install
 make install
 
@@ -115,11 +112,12 @@ cd sprachspiel-0.26.0-termux-aarch64
 ./install.sh
 ```
 
-**Note:** An LLM server (e.g. Ollama, llama.cpp, vLLM) must run on a separate machine. Configure in `~/.config/sprachspiel/config.toml`:
+**Note:** An LLM server (e.g. Ollama, llama.cpp, llama-swap, vLLM) must run on a separate machine. Configure the provider in `~/.config/sprachspiel/models.toml`:
 
 ```toml
-[ollama]
-host = "192.168.1.100:11434"  # Your desktop/server IP
+[provider."remote"]
+kind = "openai"
+base_url = "http://192.168.1.100:11434/v1"
 ```
 
 ### Post-Installation
@@ -162,7 +160,7 @@ Interactive chat with persistent history and semantic search:
 
 ```bash
 sprach chat                      # Start chat session
-sprach chat -m glm-5:cloud       # Specific model
+sprach chat -m qwen3.5-4b       # Specific model
 sprach chat -t                   # Chat with thinking
 sprach chat --anonymous          # Anonymous session (no history)
 ```
@@ -227,13 +225,13 @@ sprach ocr document.png | sprach summarize | sprach translate :pt
 cat article.txt | sprach translate :es
 
 # Code with specific model
-sprach -m qwen3-coder "Write a Python function"
+sprach -m qwen3.5-4b "Write a Python function"
 
 # Interactive chat with semantic search
 sprach chat
 >>> /search "What did we discuss about databases?"
 >>> /context
->>> /model glm-5:cloud
+>>> /model qwen3.5-4b
 
 # Query with tools
 sprach "What's the weather in Tokyo?"
@@ -241,32 +239,13 @@ sprach "Read the README.md and explain the project"
 sprach "Calculate 15% of 847"
 
 # Think mode for complex reasoning
-sprach -m glm-5:cloud -t "Explain quantum computing step by step"
+sprach -m qwen3.5-4b -t "Explain quantum computing step by step"
 ```
 
 ## Requirements
 
 - An OpenAI-compatible LLM server (Ollama, llama.cpp, vLLM, LM Studio, llama-swap) running locally or remotely
-- Required models: `qwen3.5:4b` (default, multimodal), `translategemma:4b`, `glm-ocr:bf16`
-- Optional: `moondream:1.8b` (alternative vision), `llama3.1:8b` (alternative general)
-
-## Installing Models
-
-Sprachspiel uses **modelfiles** that must be **built** with custom parameters. Simply pulling models directly won't work.
-
-```bash
-cd modelfiles
-
-# Install essential models (builds with custom config)
-make models-essential
-
-# Install optional recommended models
-make models-optional
-```
-
-**Important:** Models must be built via the Makefile to apply custom configurations (context window, temperature, etc.). Direct `ollama pull` won't work correctly.
-
-See `modelfiles/README.md` for details.
+- Models configured in `~/.config/sprachspiel/models.toml` — see the [Model Guide](./doc/src/models.md) for details
 
 ## Project Context (AGENTS.md)
 
@@ -299,14 +278,13 @@ make install-local-all-tools
 
 | Feature | Tools | Default | Notes |
 |---------|-------|---------|-------|
-| `pokemon-tools` | 9 Pokémon data tools | ❌ No | Fetch Pokémon stats, types, abilities |
+| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | Fetch Pokémon stats, types, abilities |
 | `weather-tools` | 3 Weather tools | ✅ Yes | Current weather, forecast, air quality |
 | `file-tools` | 5 File tools | ✅ Yes | Read files, search, list directories |
 | `calc-tools` | 1 Calculator | ✅ Yes | Mathematical expressions |
-| `serper-tools` | 2 Web search tools | ✅ Yes | Requires `SERPER_API_KEY` |
 | `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
 | `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
-| `led-tools` | 4 LED control tools | ✅ Yes | Control GPIO LEDs (embedded) |
+| `led-tools` | 4 LED control tools | ❌ No | Control GPIO LEDs (embedded) |
 | `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
 | `document-tools` | 3 Document tools | ✅ Yes | Import, list, show documents |
 | `subagent-tools` | 1 Subagent tool | ✅ Yes | LLM-initiated subagent delegation |
@@ -315,26 +293,34 @@ make install-local-all-tools
 
 ## Configuration
 
-Create `~/.config/sprachspiel/config.toml`:
+Sprachspiel uses two config files:
+
+1. **`~/.config/sprachspiel/models.toml`** — Provider endpoints and model definitions
+2. **`~/.config/sprachspiel/config.toml`** — Per-subcommand defaults and display settings
 
 ```toml
-[ollama]
-host = "localhost:11434"        # LLM server address
+# models.toml — define providers and models
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
 
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "llama-swap"
+tools = true
+thinking = true
+```
+
+```toml
+# config.toml — per-subcommand defaults
 [model]
-default = "qwen3.5:4b"         # Default model (multimodal)
-
-[model.code]
-# model = "qwen2.5-coder:7b"   # Code mode default (qwen2.5-coder:7b if not set)
-# tools = true                  # Tools enabled by default for code mode
+default = "qwen3.5-4b"
 
 [display]
 skin = "dark"                   # Markdown theme: dark, light, mono
-
-[retrieval]
-enabled = true                  # Enable semantic search in chat
-relevant_count = 5              # Number of messages to retrieve
 ```
+
+See the [Model Guide](./doc/src/models.md) and [Configuration Guide](./doc/src/configuration.md) for full details.
 
 ## Distribution Tarballs
 
@@ -385,9 +371,13 @@ Code block styling uses colors from the [Catppuccin](https://catppuccin.com) pal
 Developed with assistance from:
 - **GLM 4.7 Flash** (Z.ai) — Project inception and initial scaffolding
 - **GLM 5** (Z.ai) — Plan, research, and implementation
-- **GLM 5.1** (Z.ai) — Ongoing development and refinement
+- **GLM 5.1** (Z.ai) — Development and refinement
+- **GLM 5.2** (Z.ai) — Ongoing development, refinement and testing
 - **Kimi K2.5** (Moonshot AI) — Architecture design
+- **Kimi K2.7 Code** (Moonshot AI) — Bugfixes
 - **MiniMax M2.7** (MiniMax) — Code review and testing
+- **MiniMax M3** (MiniMax) — Code review
+- **Nemotron 3 Super** (NVIDIA) — Bugfixes
 
 Agent harnesses used:
 - **OpenCode** — Primary development harness
