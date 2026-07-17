@@ -400,13 +400,14 @@ impl OpenAICompatibleProvider {
 
     /// Convert `ProviderOptions` to OpenAI request fields.
     fn convert_options(options: &ProviderOptions) -> ConvertedOptions {
-        let reasoning_effort = options.think.map(|enabled| {
-            if enabled {
-                "medium".to_string()
-            } else {
-                "none".to_string()
-            }
-        });
+        // Only emit reasoning_effort when thinking is explicitly enabled.
+        // Sending "none" can break tool calling on some backends (llama-swap,
+        // llama.cpp) that interpret it as disabling reasoning entirely.
+        let reasoning_effort = if options.think == Some(true) {
+            Some("medium".to_string())
+        } else {
+            None
+        };
         (
             options.temperature,
             options.top_p,

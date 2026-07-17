@@ -116,7 +116,7 @@ impl ModelConfig {
             repeat_penalty: None,
             num_predict: None,
             stop_sequences: None,
-            think: Some(self.thinking),
+            think: None,
             format: None,
             audio_format: None,
             seed: None,
@@ -212,9 +212,8 @@ mod tests {
         let opts = qwen.build_provider_options();
         assert_eq!(opts.temperature, Some(1.0));
         assert_eq!(opts.top_p, Some(0.95));
-        assert_eq!(opts.think, Some(true));
-        // top_k and repeat_penalty fields are removed from
-        // ProviderOptions (not OpenAI-portable). Verified by absence.
+        // think is None by default — controlled by CLI/REPL, not model config
+        assert!(opts.think.is_none());
         assert!(opts.repeat_penalty.is_none());
     }
 
@@ -223,7 +222,7 @@ mod tests {
         let ocr = ModelConfig::get("glm-ocr").unwrap();
         let opts = ocr.build_provider_options();
         assert_eq!(opts.temperature, Some(0.1));
-        assert_eq!(opts.think, Some(false));
+        assert!(opts.think.is_none());
         assert!(opts.top_p.is_none());
     }
 }
