@@ -1149,6 +1149,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             );
             return Ok(ProviderCapabilities {
                 completion: true,
+                tools: true,
                 provider: "openai-compatible".to_string(),
                 model: model.to_string(),
                 ..Default::default()
@@ -1169,9 +1170,9 @@ impl LlmProvider for OpenAICompatibleProvider {
 
         Ok(ProviderCapabilities {
             completion: true,
-            tools: false,    // Default to false; merged with user models.toml flags
+            tools: true, // Default to true — OpenAI-compat servers generally support function calling
             thinking: false, // OpenAI doesn't expose "thinking" capability separately
-            vision: true,    // Most OpenAI-compat servers support vision via image_url
+            vision: true, // Most OpenAI-compat servers support vision via image_url
             embedding: true, // /v1/embeddings is standard
             insert: false,
             audio: false,
