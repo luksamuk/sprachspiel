@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of Sprachspiel.
 
 ## Overview
 
-Sprachspiel is a Rust CLI tool that provides an interface to LLM models via OpenAI-compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
+Sprachspiel is a Rust CLI tool that provides an interface to LLM models via OpenAI-compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, tool integration, and a responsive Ratatui-based TUI.
 
 ## System Architecture
 
@@ -51,7 +51,7 @@ graph TB
     end
 
     subgraph Output["Output"]
-        O --> Q[termimad]
+        O --> Q[Markdown Renderer]
         Q --> R[Terminal]
     end
 ```
@@ -96,8 +96,9 @@ Model configuration with per-subcommand overrides:
 ```rust
 pub struct ModelConfig {
     pub model_id: String,
+    pub num_ctx: u32,       // 0 = auto-detect
     pub temperature: f32,
-    pub num_ctx: u32,
+    pub top_p: Option<f32>,
     pub thinking: bool,
 }
 ```
@@ -317,27 +318,29 @@ Planned Storage Path:
 
 #### Architecture (Layers)
 
-The chat REPL follows a layered architecture for maintainability and future TUI compatibility:
+The chat REPL follows a layered architecture for maintainability:
 
 ```
 Layer 5: repl.rs           - Entry point, coordinator
 Layer 4: core.rs           - Business logic (send_message, compact)
 Layer 3: repl_state.rs     - State management (ReplState)
-Layer 2: input/rustyline.rs, view/terminal.rs - I/O implementations
+Layer 2: input/crossterm.rs, view/ratatui_view.rs - I/O implementations
 Layer 1: session.rs, cli.rs - Session and CLI handling
 Layer 0: input/mod.rs, view/mod.rs - Traits (abstractions)
 ```
 
 This separation enables:
 - **Testing**: Each layer can be tested in isolation
-- **TUI Migration**: Swap rustyline for ratatui input/output (Responsive Chat Rebuild, M1 W6)
 - **Maintainability**: 200-400 line modules vs 1100+ line function
 
-**Planned Layer 2 migration (W6):**
+The I/O layer was rebuilt in W6 (v0.44.0) from `rustyline` + `println!` + ANSI to Ratatui + Crossterm:
+
 ```
-Current:  input/rustyline.rs,   view/terminal.rs    - println + ANSI
-Rebuild:  input/crossterm_input.rs, view/ratatui_view.rs  - ratatui + crossterm
-Layer 2 also gains: app.rs (event loop), tui/ (components)
+Previous (removed in W6):     Current (W6):
+input/rustyline.rs            input/crossterm.rs    — CrosstermInput
+view/terminal.rs              view/ratatui_view.rs — RatatuiView
+println! + ANSI               ratatui declarative rendering
+rustyline blocking input      crossterm key events + mpsc event loop
 ```
 
 #### Session Management (`src/chat/session.rs`)
@@ -423,7 +426,7 @@ Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and highe
 
 ### 7. Tools (`src/tools/`)
 
-Tool implementations using the `#[sprachspiel::tool]` macro:
+Tool implementations using the `#[sprachspiel::tool]` proc macro:
 
 ```rust
 #[sprachspiel::tool]
@@ -448,8 +451,6 @@ Tool categories (feature-flags):
 
 ### 8. Skills System (`src/skills/`)
 
-**Status:** Planned (see [Skills System Design](./skills-system-design.md))
-
 Skills are Markdown files that define AI behavior and tool usage patterns:
 
 ```
@@ -472,8 +473,6 @@ When asked to process PDF or ePub files:
 
 ### 9. External Tools (`src/external/`)
 
-**Status:** Planned
-
 External CLI tools integration for PDF processing, OCR, and image manipulation:
 
 ```rust
@@ -488,14 +487,14 @@ pub fn run_command(
 ) -> Result<String, ...>
 ```
 
-Configuration via `~/.config/sprachspiel/tools.toml`:
+Configuration via `~/.config/sprachspiel/config.toml`:
 
 ```toml
-[pdftotext]
+[external.pdftotext]
 enabled = true
 timeout = 30
 
-[tesseract]
+[external.tesseract]
 enabled = true
 timeout = 120
 ```
@@ -736,15 +735,14 @@ sprachspiel/
 │   │   ├── repl_state.rs    # ReplState struct (state management)
 │   │   ├── input/           # Input abstraction layer
 │   │   │   ├── mod.rs       # InputBackend trait
-│   │   │   └── rustyline.rs # RustylineInput implementation
+│   │   │   └── crossterm.rs  # CrosstermInput implementation
 │   │   ├── view/            # Output abstraction layer
 │   │   │   ├── mod.rs       # ChatView trait
-│   │   │   └── terminal.rs  # TerminalView implementation
+│   │   │   └── ratatui_view.rs  # RatatuiView implementation
 │   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
-│   │   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages
-│   │   ├── thinking.rs           # Thinking tag processing + display
-│   │   ├── thinking_preserve.rs  # (planned) Thinking preservation for storage
+│   │   ├── coordinator.rs   # Coordinator (tool calls, streaming)
+│   │   ├── thinking.rs      # Thinking tag processing + display
 │   │   └── compaction.rs    # Context management
 │   ├── project.rs           # Project identification
 │   ├── db/                  # Database operations
@@ -807,17 +805,19 @@ sprachspiel/
 
 | Crate | Purpose |
 |-------|---------|
-| `OpenAICompatibleProvider` | LLM provider (OpenAI-compat) |
+| `reqwest` | HTTP client for OpenAI-compatible API |
 | `clap` | CLI parsing |
-| `termimad` | Markdown rendering |
-| `indicatif` | Progress spinners |
+| `ratatui` | TUI rendering framework |
+| `crossterm` | Terminal backend + input events |
+| `ratatui-textarea` | Text editing widget |
+| `tui-markdown` | Markdown rendering in ratatui |
+| `indicatif` | Progress spinners (non-chat) |
 | `tokio` | Async runtime |
-| `reqwest` | HTTP client |
 | `rusqlite` + `sqlite-vec` | Database + embeddings |
 | `serde` | Serialization |
 | `chrono` | DateTime handling |
-| `which` | (Planned) Command detection |
-| `shell-words` | (Planned) Safe argument parsing |
+| `which` | Command detection |
+| `shell-words` | Safe argument parsing |
 
 ## Performance Considerations
 

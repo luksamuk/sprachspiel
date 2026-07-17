@@ -68,8 +68,8 @@ sprachspiel/
 │   └── src/               # Documentation source
 │       ├── development/   # <-- You are here
 │       │   ├── implementation-directive.md  # CANONICAL
-│       │   ├── roadmap.md
 │       │   ├── architecture.md
+│       │   ├── provider-architecture.md     # Provider-agnostic layer
 │       │   ├── research/  # Research background
 │       │   └── ...
 │       └── ...
@@ -105,7 +105,7 @@ cargo test
 cargo fmt
 
 # Lint
-cargo clippy -- -D warnings
+cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity
 ```
 
 ## Documentation

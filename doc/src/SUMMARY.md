@@ -2,11 +2,14 @@
 
 [Introduction](./README.md)
 
-# User Guide
+# Getting Started
 
 - [Introduction](./introduction.md)
 - [Installation](./installation.md)
 - [Quick Start](./quickstart.md)
+
+# User Guide
+
 - [Commands](./commands/README.md)
   - [query](./commands/query.md)
   - [chat](./commands/chat.md)
@@ -15,6 +18,7 @@
   - [ocr](./commands/ocr.md)
   - [vision](./commands/vision.md)
   - [summarize](./commands/summarize.md)
+  - [search](./commands/search.md)
   - [config](./commands/config.md)
 - [Models](./models.md)
 - [Evaluated Models](./evaluated-models.md)
@@ -25,43 +29,43 @@
 - [Configuration](./configuration.md)
 - [Troubleshooting](./troubleshooting.md)
 
-# Development
+# Architecture
 
 - [Overview](./development/README.md)
-- [Implementation Directive](./development/implementation-directive.md)
 - [Architecture](./development/architecture.md)
-- [Roadmap](./development/roadmap.md)
-
-# Memory & Context
-
+- [Provider Architecture](./development/provider-architecture.md)
+- [Content Block Streaming](./development/content-block-streaming.md)
 - [Memory Architecture](./development/memory-architecture.md)
-- [Factual Memory System](./development/factual-memory-system.md)
-- [Feedback Architecture](./development/feedback-architecture.md)
 - [Context Anatomy](./development/context-anatomy.md)
 - [Context Continuity](./development/context-continuity.md)
 - [Inter-Tool Compaction](./development/inter-tool-compaction-design.md)
-
-# Features
-
+- [Factual Memory System](./development/factual-memory-system.md)
+- [Feedback Architecture](./development/feedback-architecture.md)
+- [Belief System Design](./development/belief-system-design.md)
 - [Skills System Design](./development/skills-system-design.md)
 - [Chat Mode Design](./development/chat-mode-design.md)
 - [File Write Tools](./development/file-write-tools.md)
 - [Unified Vision](./development/unified-vision.md)
+- [Embedding Scheduler Redesign](./development/embedding-scheduler-redesign.md)
+
+# Roadmap & Planning
+
+- [Roadmap](./development/roadmap.md)
+- [Feature Status](./development/feature-status.md)
+- [Completed Features](./development/completed-features.md)
+- [Implementation Status](./development/implementation-status.md)
+- [Implementation Directive](./development/implementation-directive.md)
+- [Implementation History](./development/implementation-history.md)
+- [Run Command Redesign](./development/run-command-redesign.md)
+- [Source Attribution](./development/plan-source-attribution.md)
+- [Meta-cognition Proposal](./development/meta-cognition-proposal.md)
+- [Prompt Refactoring](./development/prompt-refactor.md)
 
 # Process
 
 - [Contributing](./development/contributing.md)
 - [Pull Request Process](./development/PR-PROCESS.md)
 - [Manual Test Template](./development/MANUAL-TEST-TEMPLATE.md)
-
-# Design & Planning
-
-- [Belief System Design](./development/belief-system-design.md)
-- [Meta-cognition Proposal](./development/meta-cognition-proposal.md)
-- [Prompt Refactoring](./development/prompt-refactor.md)
-- [Run Command Redesign](./development/run-command-redesign.md)
-- [Source Attribution](./development/plan-source-attribution.md)
-- [Implementation History](./development/implementation-history.md)
 
 # Research
 
@@ -71,12 +75,10 @@
   - [OpenClaw-RL Analysis](./development/research/openclaw-rl-analysis.md)
   - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
   - [Context Management Research](./development/research/context_management_research.md)
+  - [OpenAI Streaming Tool Calls](./development/research/openai-streaming-tool-calls.md)
 - [Sprach 2.0 Research](./development/sprach-2-0-research.md)
 - [Query Routing Research](./development/research-query-routing.md)
 - [Research Icebox](./development/research-icebox.md)
-
-# Completed Research
-
 - [CLI Tools Research](./development/cli-tools-research.md)
 - [CLI Tools Planning Session](./development/planning-session-cli-tools.md)
 - [Code Mode Research](./development/code_mode_research.md)

@@ -6,8 +6,8 @@ Get up and running with Sprachspiel in just 5 minutes. This guide covers the ess
 
 Before starting, ensure:
 - Sprachspiel is installed (see [Installation](./installation.md))
-- Ollama is running (`ollama serve`)
-- Default model is pulled (`ollama pull qwen3.5:4b`)
+- An OpenAI-compatible LLM server is running (e.g., `ollama serve`, `llama-server`, or a cloud endpoint)
+- Default model is available (e.g., `ollama pull qwen3.5:4b` for Ollama)
 
 ## Your First Query
 

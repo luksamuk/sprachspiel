@@ -1,11 +1,10 @@
-# Evaluated Models (llama-swap)
+# Evaluated Models
 
-Models evaluated for local inference via llama-swap on **RTX 3050 Laptop 6GB VRAM**.
-Target: Sprachspiel multi-provider support (OpenAI-compatible endpoints).
+Models evaluated for local inference on **RTX 3050 Laptop 6GB VRAM**, served via [llama-swap](https://github.com/mostlygeeksllc/llama-swap) (an OpenAI-compatible model swap manager for llama.cpp). These models were benchmarked using Sprachspiel's OpenAI-compatible provider.
 
-When Sprachspiel gains OpenAI endpoint support, these models will be benchmarked
-for tool calling, reasoning, vision, and specialized tasks. This catalog tracks
-what we've tested, what works, and what doesn't.
+> **Note:** These are the models *we* tested. Sprachspiel accepts any OpenAI-compatible backend — you are not limited to these models or to llama-swap. See [Available Models](../models.md) for how to configure your own.
+
+These models have been benchmarked for tool calling, reasoning, vision, and specialized tasks. This catalog tracks what we've tested, what works, and what doesn't.
 
 ## Evaluation Status
 
@@ -16,22 +15,18 @@ what we've tested, what works, and what doesn't.
 
 ## Sprachspiel Sub-Agent Roles
 
-When Sprachspiel gains multi-model support, models will be assigned to sub-agent roles
-based on their strengths. Current role taxonomy:
+Models are assigned to sub-agent roles based on their strengths. Current role
+taxonomy:
 
 | Role | Requirements | Best Candidates |
 |------|-------------|-----------------|
-| **Coordinator** | Tool calling, reasoning, JSON compliance | lfm2.5-1.2b, qwen3.5-4b, qwen3.5-9b |
-| **Coder** | Code generation, tool calling, agentic loops | qwopus-coder-9b, gpt-oss-20b, qwen3.6-35b-moe |
+| **Coordinator** | Tool calling, reasoning, JSON compliance | lfm2.5-230m, lfm2.5-8b-a1b, qwen3.5-4b, qwen3.5-9b |
+| **Coder** | Code generation, tool calling, agentic loops | ornith-1.0-35b, agents-a1-35b, qwen3.6-35b-a3b, north-mini-code |
 | **Translator** | Translation quality, multi-language | hy-mt2-1.8b, translategemma-4b |
-| **Vision** | Image understanding, OCR | lfm2.5-vl-450m, minicpm-v-4.6 |
-| **Reasoner** | Deep thinking, math, logic | gemma4-e4b, qwen3.5-9b:think |
-| **Lightweight** | Fast, low VRAM, simple tasks | lfm2.5-1.2b, littlelamb-0.3b-tc |
-| **World Model** | Web interaction prediction | webworld-8b |
-
-> **Note:** None of these models have been tested directly in Sprachspiel yet.
-> Sprachspiel currently only supports Ollama as backend. Multi-provider support
-> (OpenAI endpoints via llama-swap) is planned but not yet implemented.
+| **Vision** | Image understanding, OCR | lfm2.5-vl-450m, lfm2.5-vl-1.6b, minicpm-v-4.6, qwen3-vl-4b, glm-ocr |
+| **Reasoner** | Deep thinking, math, logic | gemma4-e4b, qwen3.5-9b:think, glm-4.7-flash |
+| **Lightweight** | Fast, low VRAM, simple tasks | lfm2.5-230m, lfm2.5-8b-a1b, gemma4-e2b |
+| **Embedding** | Vector embeddings for retrieval | nomic-embed-text-v2-moe, lfm2.5-embedding-350m |
 
 ---
 
@@ -52,12 +47,12 @@ based on their strengths. Current role taxonomy:
 | KV cache | q8_0 (K) + q4_0 (V) + hadamard (-khad/-vhad) |
 | Thinking | ✅ Yes (dual mode: base + :think) |
 | Tool Calling | ✅ Yes |
-| Vision | ❌ Disabled (mmproj crash on CUDA #21402) |
+| Vision | ✅ Yes (model supports vision; mmproj crash was specific to one CUDA build) |
 | attn_rot | ✅ head_dim=256 |
 
 **Sprachspiel Sub-Agent Fit:**
 - **Reasoner** ✅ — Good reasoning quality at 4B, hadamard KV preserves cache quality
-- **Coder** ⚠️ — Decent but Qwen3.6-35B-MoE and Qwopus are stronger for code
+- **Coder** ⚠️ — Decent but Qwen3.6-35B-MoE is stronger for code
 - ⚠️ E4B MTP OOMs on 6GB — no speculative decoding
 
 **Recommended params:** temp=0.7/top-p=0.9 (chat), temp=0.6/top-p=0.9 (think)
@@ -79,7 +74,7 @@ based on their strengths. Current role taxonomy:
 | KV cache | q4_0 + attn_rot (iSWA fix) |
 | Thinking | ✅ Yes (dual mode: base + :think) |
 | Tool Calling | ✅ Yes |
-| Vision | ❌ Disabled (--no-mmproj) |
+| Vision | ✅ Yes (model supports vision) |
 | attn_rot | ✅ head_dim=256 |
 
 **Sprachspiel Sub-Agent Fit:**
@@ -90,7 +85,7 @@ based on their strengths. Current role taxonomy:
 
 ---
 
-### qwen3.6-35b-moe — Qwen3.6 35B A3B MoE (Primary Coder)
+### qwen3.6-35b-a3b — Qwen3.6 35B A3B MoE (Primary Coder)
 
 | Field | Value |
 |-------|-------|
@@ -105,7 +100,7 @@ based on their strengths. Current role taxonomy:
 | KV cache | q4_0 K + q4_0 V + hadamard + attn_rot |
 | Thinking | ✅ Yes (dual mode: base + :think) |
 | Tool Calling | ✅ Yes (--parallel-tool-calls) |
-| Vision | ❌ Disabled (--no-mmproj to free VRAM for offload) |
+| Vision | ✅ Yes (Qwen3.6 is multimodal) |
 | attn_rot | ✅ head_dim=256 |
 | MTP | ⚠️ NOT active — APEX GGUFs lack MTP tensors, and MTP OOMs on 6GB |
 
@@ -118,31 +113,6 @@ based on their strengths. Current role taxonomy:
 **Recommended params:** temp=0.6/top-p=0.95 (code-optimized)
 
 **Aliases:** "Lain" (primary Sprachspiel model via `lain` alias)
-
----
-
-### qwopus-coder-9b — Qwopus 3.5-9B Coder
-
-| Field | Value |
-|-------|-------|
-| Status | ✅ Running |
-| Source | [jackrong/Qwopus3.5-9B-coder](https://huggingface.co/jackrong/Qwopus3.5-9B-coder) |
-| License | Apache 2.0 |
-| Architecture | Qwen3.5ForCausalLM (qwen3.5) — dense 9B, fine-tuned with Trace Inversion + agent traces |
-| Params | 9B |
-| Quant | Q4_K_M (~5.63 GB) |
-| Context | 131072 |
-| Backend | ik_llama.cpp (v4542) — pinned memory |
-| KV cache | --fit + --fit-margin 512 |
-| Thinking | ✅ Yes |
-| Tool Calling | ✅ Yes (--parallel-tool-calls) |
-| Vision | ❌ No (--no-mmproj: mmproj blocks offload) |
-| attn_rot | ✅ head_dim=256 |
-
-**Sprachspiel Sub-Agent Fit:**
-- **Coder** ✅ — Specialized for agentic coding + tool calling, stronger than base Qwen3.5-9B
-
-**Recommended params:** temp=0.6/top-p=0.95 (code-optimized)
 
 ---
 
@@ -184,7 +154,7 @@ based on their strengths. Current role taxonomy:
 | Params | 4B |
 | Quant | i1-Q4_K_M (~2.6 GB) + DFlash drafter Q4_K_M (~313 MB) |
 | Context | 98304 (DFlash speculative decoding, BeeLlama backend) |
-| Backend | BeeLlama.cpp (v0.3.2) — DFlash speculative decoding |
+| Backend | BeeLama.cpp (v0.3.2) — DFlash speculative decoding |
 | KV cache | q4_0 K + V |
 | Thinking | ✅ Yes (dual mode: base + :think, reasoning_content field) |
 | Tool Calling | ✅ Yes (parallel tool calls via Jinja template) |
@@ -207,59 +177,156 @@ based on their strengths. Current role taxonomy:
 
 ---
 
-### lfm2.5-1.2b — LFM2.5 1.2B Instruct
+### lfm2.5-8b-a1b — LFM2.5 8B A1B MoE
 
 | Field | Value |
 |-------|-------|
 | Status | ✅ Running |
-| Source | [LiquidAI/LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF) |
+| Source | [LiquidAI/LFM2.5-8B-A1B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-Instruct-GGUF) |
 | License | LFM2 Community License |
-| Architecture | lfm2 (Liquid AI) — dense hybrid (conv + GQA) |
-| Params | 1.2B |
-| Quant | Q8_0 (~1.25 GB) |
+| Architecture | lfm2 (Liquid AI) — hybrid MoE |
+| Params | 8.3B total / 1.5B active per token |
+| Quant | Q4_K_M (~4.8 GB) |
 | Context | 32K–128K (dynamic) |
 | Backend | llama.cpp upstream (v674) |
-| KV cache | q8_0 + attn_rot |
-| Thinking | ❌ No |
-| Tool Calling | ✅ Yes (consistent, best LFM2 for agentic tasks) |
+| Thinking | ✅ Yes |
+| Tool Calling | ✅ Yes |
 | Vision | ❌ No |
-| attn_rot | ✅ head_dim=64 (64%64==0) |
 
 **Sprachspiel Sub-Agent Fit:**
-- **Lightweight Coordinator** ✅✅ — Best tool-calling model under 2B, consistent JSON format
-- Fast and reliable for simple agentic loops
-- ⚠️ No thinking mode — not suitable for complex reasoning
+- **Coordinator** ✅ — Good balance MoE, strong tool calling with 1.5B active params
+- ⚠️ MoE — 8.3B total weight, but only 1.5B active keeps inference fast
 
 **Recommended params:** temp=0.3/top-p=0.9/min-p=0.15/repeat-penalty=1.05
 
 ---
 
-### littlelamb-0.3b-tc — LittleLamb 0.3B Tool Calling
+### lfm2.5-230m — LFM2.5 230M Ultra-Small
 
 | Field | Value |
 |-------|-------|
 | Status | ✅ Running |
-| Source | [mradermacher/LittleLamb-ToolCalling-GGUF](https://huggingface.co/mradermacher/LittleLamb-ToolCalling-GGUF) |
-| License | Apache 2.0 |
-| Architecture | Qwen3 (qwen3) — compressed from 0.6B to 290M via CompactifAI |
-| Params | 290M (compressed) |
-| Quant | Q8_0 (~303 MB) |
-| Context | 8K–40K (dynamic) |
-| Backend | llama.cpp upstream (v674) — ik_llama segfaults with this model |
-| KV cache | q8_0 + attn_rot |
-| Thinking | ✅ Yes (dual mode) |
-| Tool Calling | ✅ Yes (Qwen3-style JSON, BFCL v4 51.5%) |
+| Source | [LiquidAI/LFM2.5-230M-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-230M-Instruct-GGUF) |
+| License | LFM2 Community License |
+| Architecture | lfm2 (Liquid AI) — hybrid (conv + GQA) |
+| Params | 230M |
+| Quant | Q8_0 (~0.3 GB) |
+| Context | dynamic |
+| Backend | llama.cpp upstream (v674) |
+| Thinking | ❌ No |
+| Tool Calling | ✅ Yes |
 | Vision | ❌ No |
-| attn_rot | ✅ head_dim=256 |
 
 **Sprachspiel Sub-Agent Fit:**
-- **Ultra-lightweight Coordinator** ⚠️ — BFCL 51.5% is mediocre
-- Useful for extremely VRAM-constrained scenarios or simple tool loops
-- ⚠️ Not suitable for complex agentic tasks (low accuracy)
+- **Lightweight** ✅✅ — Ultra-light, fast tool calling, minimal VRAM (~0.3 GB)
+- Designed for robotics and edge cases — works for tool calling but very small
+- ⚠️ Very small — limited reasoning capability, best for simple tool loops
 
-**Issues:** ik_llama.cpp segfaults with qwen3 arch — upstream only
+**Recommended params:** temp=0.3/top-p=0.9/min-p=0.15/repeat-penalty=1.05
 
-**Recommended params:** uses code_temp/code_top_p/code_top_k
+---
+
+### ornith-1.0-35b — Ornith 1.0 35B Agentic Coder
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [mudler/Ornith-1.0-35B-APEX-GGUF](https://huggingface.co/mudler/Ornith-1.0-35B-APEX-GGUF) |
+| License | Apache 2.0 |
+| Architecture | Qwen3.5ForCausalLM (qwen35moe) — MoE 35B, 33 experts, top-8 routing, 3B active/token |
+| Params | 35B total / 3B active per token |
+| Quant | APEX I-Compact (~16.5 GB) |
+| Context | 262144 |
+| Backend | ik_llama.cpp (v4542) |
+| Thinking | ✅ Yes |
+| Tool Calling | ✅ Yes |
+| Vision | ❌ No |
+
+**Sprachspiel Sub-Agent Fit:**
+- **Coder** ✅✅ — Self-improving agentic coder with self-scaffolding RL
+- **Reasoner** ✅ — 3B active params with expert routing
+- ⚠️ Heavy offload — ~10GB RAM, slower than pure GPU models
+
+**Recommended params:** temp=0.6/top-p=0.95 (code-optimized)
+
+---
+
+### agents-a1-35b — Qwen AgentWorld 35B
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [mudler/Agents-A1-APEX-GGUF](https://huggingface.co/mudler/Agents-A1-APEX-GGUF) |
+| License | Apache 2.0 |
+| Architecture | Qwen3.5ForCausalLM (qwen35moe) — MoE 35B, 33 experts, top-8 routing, 3B active/token |
+| Params | 35B total / 3B active per token |
+| Quant | APEX I-Compact (~16.5 GB) |
+| Context | 131072 |
+| Backend | ik_llama.cpp (v4542) |
+| Thinking | ✅ Yes |
+| Tool Calling | ✅ Yes |
+| Vision | ❌ No |
+
+**Description:** Qwen's native language world model. 35B params, 3B active. Simulates 7 agent environments (MCP, Search, Terminal, SWE, Android, Web, OS) via long chain-of-thought reasoning.
+
+**Sprachspiel Sub-Agent Fit:**
+- **Coder** ✅ — Long-horizon agentic tasks, simulates 7 agent environments
+- **Reasoner** ✅ — Long chain-of-thought reasoning across agent environments
+- ⚠️ Heavy offload — ~10GB RAM
+
+**Recommended params:** temp=0.6/top-p=0.95
+
+---
+
+### glm-4.7-flash — GLM 4.7 Flash
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [unsloth/GLM-4.7-Flash-GGUF](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF) |
+| License | GLM License |
+| Architecture | GLM — MLA MoE, 30B total, 3.6B active, 64 experts top-4 |
+| Params | 30B total / 3.6B active per token |
+| Quant | APEX I-Compact (~17 GB) |
+| Context | 128K |
+| Backend | ik_llama.cpp (v4542) |
+| Thinking | ✅ Yes |
+| Tool Calling | ✅ Yes |
+| Vision | ❌ No |
+
+**Benchmarks:** IFEval 71.71, BFCLv3 43.26
+
+**Sprachspiel Sub-Agent Fit:**
+- **Reasoner** ✅ — Fast reasoning with MoE efficiency
+- **Coordinator** ✅ — Good tool calling (BFCLv3 43.26)
+- ⚠️ Heavy offload — ~10GB RAM
+
+**Recommended params:** temp=0.6/top-p=0.95
+
+---
+
+### north-mini-code — North Mini Code 1.0
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [unsloth/North-Mini-Code-1.0-GGUF](https://huggingface.co/unsloth/North-Mini-Code-1.0-GGUF) |
+| License | Apache 2.0 |
+| Architecture | cohere2moe — MoE 30B, 3B active |
+| Params | 30B total / 3B active per token |
+| Quant | APEX (~18.6 GB) |
+| Context | 131072 |
+| Backend | ik_llama.cpp (v4542) |
+| Thinking | ❌ No |
+| Tool Calling | ✅ Yes |
+| Vision | ❌ No |
+
+**Sprachspiel Sub-Agent Fit:**
+- **Coder** ✅ — Code generation specialist, Cohere2MoE architecture
+- ⚠️ Heavy offload — ~12GB RAM
+- ⚠️ No thinking mode — pure code generation
+
+**Recommended params:** temp=0.6/top-p=0.95
 
 ---
 
@@ -287,6 +354,28 @@ based on their strengths. Current role taxonomy:
 
 ---
 
+### lfm2.5-vl-1.6b — LFM2.5-VL 1.6B Vision
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [LiquidAI/LFM2.5-VL-1.6B-GGUF](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) |
+| License | LFM2 Community License |
+| Architecture | lfm2 (Liquid AI) — vision-language |
+| Params | ~1.6B |
+| Quant | Q8_0 (~1.6 GB) |
+| Context | dynamic |
+| Backend | llama.cpp upstream (v674) |
+| Thinking | ❌ No |
+| Tool Calling | ❌ No |
+| Vision | ✅ Yes (grounding, bounding boxes) |
+
+**Sprachspiel Sub-Agent Fit:**
+- **Vision** ✅ — Better vision quality than 450M, supports bounding box grounding
+- ⚠️ Larger than 450M but significantly better image understanding quality
+
+---
+
 ### minicpm-v-4.6 — MiniCPM-V 4.6 Vision-Language
 
 | Field | Value |
@@ -307,6 +396,52 @@ based on their strengths. Current role taxonomy:
 - **Vision** ✅ — Higher quality than LFM2.5-VL-450M for detailed image understanding, OCR, document analysis
 - ⚠️ Larger and slower than LFM2.5-VL-450M
 - ✅ Video support, 256K context
+
+---
+
+### qwen3-vl-4b — Qwen3-VL 4B Vision-Language
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [Qwen/Qwen3-VL-4B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) |
+| License | Apache 2.0 |
+| Architecture | qwen3 (vision) — vision-language |
+| Params | 4B |
+| Quant | Q4_K_M (~2.5 GB) |
+| Context | dynamic |
+| Backend | llama.cpp upstream (v674) |
+| Thinking | ❌ No |
+| Tool Calling | ❌ No |
+| Vision | ✅ Yes (grounding, 0–1000 bounding boxes) |
+
+**Sprachspiel Sub-Agent Fit:**
+- **Vision** ✅ — Vision-language with bounding box detection (up to 1000 boxes)
+- ✅ Good balance of size and capability — 4B with Q4_K_M fits in ~2.5 GB
+- ⚠️ No tool calling — vision-only role
+
+---
+
+### glm-ocr — GLM OCR Specialist
+
+| Field | Value |
+|-------|-------|
+| Status | ✅ Running |
+| Source | [zai-org/GLM-OCR](https://huggingface.co/zai-org/GLM-OCR) |
+| License | GLM License |
+| Architecture | GLM — OCR specialist |
+| Params | ~1.4B |
+| Quant | BF16 (~1.4 GB) |
+| Context | auto |
+| Backend | llama.cpp upstream (v674) |
+| Thinking | ❌ No |
+| Tool Calling | ❌ No |
+| Vision | ✅ Yes |
+
+**Sprachspiel Sub-Agent Fit:**
+- **Vision** ✅ — Document understanding, text/table/formula extraction
+- ✅ Specialized OCR — better text extraction than general VLMs
+- ⚠️ Not a chatbot — specialized for OCR only
 
 ---
 
@@ -363,104 +498,58 @@ based on their strengths. Current role taxonomy:
 
 ---
 
-### gpt-oss-20b — GPT-OSS 20B MoE Coding
+### nomic-embed-text-v2-moe — Nomic Embed v2 MoE
 
 | Field | Value |
 |-------|-------|
 | Status | ✅ Running |
-| Source | [unsloth/gpt-oss-20b-GGUF](https://huggingface.co/unsloth/gpt-oss-20b-GGUF) |
+| Source | [nomic-ai/nomic-embed-text-v2-moe](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe) |
 | License | Apache 2.0 |
-| Architecture | OPENAI_MOE (gpt_oss) — 20.91B, top-4/8 experts, ~3.5B active |
-| Params | 20.91B total / ~3.5B active |
-| Quant | Q4_K_M (~10.8 GB) |
-| Context | 16K–128K (dynamic) |
-| Backend | ik_llama.cpp (v4542) — pinned memory + hadamard |
-| KV cache | q4_0 + hadamard + attn_rot |
-| Thinking | ✅ Yes (ALWAYS — Harmony format, not optional) |
-| Tool Calling | ✅ Yes |
-| Vision | ❌ No |
+| Architecture | nomic-bert — MoE embedding model |
+| Params | 475M |
+| Quant | Q4_K_M (~1 GB) |
+| Context | 512 |
+| Dimensions | 768 |
+| Backend | llama.cpp (--embeddings --pooling cls) |
+| Thinking | ❌ No (embedding-only) |
+| Tool Calling | ❌ No (embedding-only) |
+| Vision | ❌ No (embedding-only) |
 
 **Sprachspiel Sub-Agent Fit:**
-- **Coder** ✅ — Strong coding model with always-on reasoning (Harmony format)
-- ⚠️ Heavy — ~6GB RAM offload, slower than pure GPU models
-- ⚠️ Always thinks internally — no way to disable reasoning
-
-**Recommended params:** temp=0.6/top-p=0.9, --ubatch-size 2048 --batch-size 2048
+- **Embedding** ✅✅ — General-purpose embeddings, Matryoshka truncation
+- ✅ Small and fast (~1 GB), supports dimension truncation
+- ⚠️ Embedding-only — not for chat, tool calling, or reasoning
 
 ---
 
-### webworld-8b — WebWorld 8B World Model
+### lfm2.5-embedding-350m — LFM2.5 Embedding 350M
 
 | Field | Value |
 |-------|-------|
 | Status | ✅ Running |
-| Source | [Qwen/WebWorld-8B](https://huggingface.co/Qwen/WebWorld-8B) |
-| License | Apache 2.0 |
-| Architecture | qwen3 — previously segfaulted in ik, FIXED in v4524+ |
-| Params | 8B |
-| Quant | i1-Q5_K_M |
-| Context | 40960 |
-| Backend | ik_llama.cpp (v4542) |
-| KV cache | (default) |
-| Thinking | ❌ No |
-| Tool Calling | ❌ No |
-| Vision | ❌ No |
+| Source | [LiquidAI/LFM2.5-Embedding-350M](https://huggingface.co/LiquidAI/LFM2.5-Embedding-350M) |
+| License | LFM2 Community License |
+| Architecture | lfm2-bidir — dense bi-encoder |
+| Params | 354M |
+| Quant | Q8_0 (~0.4 GB) |
+| Context | 512 |
+| Dimensions | 1024 |
+| Backend | llama.cpp (--embeddings --pooling cls --cont-batching, CPU-only -ngl 0) |
+| Thinking | ❌ No (embedding-only) |
+| Tool Calling | ❌ No (embedding-only) |
+| Vision | ❌ No (embedding-only) |
 
 **Sprachspiel Sub-Agent Fit:**
-- **World Model** ✅ — Predicts next web page state given current state + action
-- NOT a chatbot — requires specialized prompt format (world model system prompt + state/action)
-- Action space: click(bid), fill(bid,text), goto(url), scroll(dx,dy), keyboard_press(key)
-
----
-
-### MiniCPM5-1B (Not in active roster)
-
-| Field | Value |
-|-------|-------|
-| Status | ⏳ GGUF available, not in llama-swap |
-| Source | [openbmb/MiniCPM5-1B-GGUF](https://huggingface.co/openbmb/MiniCPM5-1B-GGUF) |
-| License | Apache 2.0 |
-| Architecture | LlamaForCausalLM |
-| Params | 1.08B (680M non-embedding) |
-| Quant | Q8_0 (~1.15 GB) |
-| Context | 131,072 (128K) |
-| Thinking | ✅ Yes (enable_thinking) |
-| Tool Calling | ❌ XML-style — incompatible with OpenAI tool_calls format |
-| Vision | ❌ No |
-| attn_rot | ❌ head_dim=96, 96%64≠0 |
-
-**Sprachspiel Sub-Agent Fit:**
-- ❌ NOT suitable for tool calling (XML format incompatible)
-- ❌ Think mode too verbose for tool-calling tasks
-- ⚠️ #1 on Artificial Analysis index for small models (17.9) — good for non-tool reasoning
-
-**Issues:** llama.cpp autoparser TAG_WITH_TAGGED boundary bug — XML tool calls not parsed as structured tool_calls. SGLang OOM on 6GB. Awaiting upstream fix.
-
----
-
-### NuExtract3 (Not in active roster)
-
-| Field | Value |
-|-------|-------|
-| Status | ⏳ GGUF available, not in llama-swap |
-| Source | [numind/NuExtract3-GGUF](https://huggingface.co/numind/NuExtract3-GGUF) |
-| License | Apache 2.0 |
-| Architecture | Qwen3_5ForConditionalGeneration (Gated Delta Net hybrid) |
-| Params | 4B (vision-language) |
-| Thinking | ✅ Yes (enable_thinking) |
-| Tool Calling | ❌ No (specialized extraction model) |
-| Vision | ✅ Yes (document understanding) |
-
-**Sprachspiel Sub-Agent Fit:**
-- **Extraction Specialist** ⏳ — Structured extraction from text/images + JSON templates
-- ⚠️ Same Qwen3.5 VL architecture that crashes mmproj on CUDA
-- Not a general chatbot — specialized for extraction/OCR only
+- **Embedding** ✅✅ — Fast multilingual retrieval, 11 languages
+- ✅ Best-in-class dense embedder at 350M scale, ultra-small (~0.4 GB)
+- ⚠️ CPU-only (-ngl 0) — no GPU offload
+- ⚠️ Embedding-only — not for chat, tool calling, or reasoning
 
 ---
 
 ## Benchmark Plan
 
-When Sprachspiel gains OpenAI endpoint support, we need to benchmark:
+These models are benchmarked via Sprachspiel's OpenAI-compatible provider:
 
 ### Tool Calling (all chat models)
 - BFCL v3/v4 function calling benchmark
@@ -477,42 +566,12 @@ When Sprachspiel gains OpenAI endpoint support, we need to benchmark:
 - Document OCR accuracy
 - Chart/diagram understanding
 
-### Specialized (extraction/translation)
-- NuExtract structured extraction with JSON templates
+### Specialized (extraction/translation/embedding)
 - Translation quality: Hy-MT2 vs TranslateGemma
+- Embedding quality: Nomic v2 MoE vs LFM2.5 Embedding 350M
+- OCR quality: GLM-OCR vs MiniCPM-V-4.6
 
 ### Throughput (all models)
 - TTFT (time to first token)
 - Tokens/second
 - VRAM usage at various context lengths
-
-## Format
-
-When adding a new model, copy the template below:
-
-```
-### [Model Name]
-
-| Field | Value |
-|-------|-------|
-| Status | ⏳/✅/❌ |
-| Source | [HF link] |
-| License | [license] |
-| Architecture | [arch] |
-| Params | [size] |
-| Quant | [quantization] |
-| Context | [max context] |
-| Backend | [engine + version] |
-| KV cache | [cache type] |
-| Thinking | Yes/No (method) |
-| Tool Calling | [format or No] |
-| Vision | Yes/No |
-| attn_rot | ✅/❌ (head_dim info) |
-
-**Sprachspiel Sub-Agent Fit:**
-- [Role] ✅/⚠️/❌ — [reasoning]
-
-**Recommended params:** temp=X, top_p=X, ...
-
-**Issues:** [any known problems]
-```

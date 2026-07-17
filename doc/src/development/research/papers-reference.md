@@ -9,23 +9,23 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **MemOS: A Memory OS for AI System** | Li et al. (38 authors) | [arXiv:2507.03724](https://arxiv.org/abs/2507.03724) | 2025 |
 | **OpenClaw-RL: Train Any Agent Simply by Talking** | Wang et al. (5 authors) | [arXiv:2603.10165](https://arxiv.org/abs/2603.10165) | 2026 |
 | **MemGPT: Towards LLMs as Operating Systems** | Packer et al. (7 authors) | [arXiv:2310.08560](https://arxiv.org/abs/2310.08560) | 2023 |
-| **Contradiction Detection with Contradiction-Specific Word Embedding** | Li, Qin & Liu | [DOI: 10.3390/info10020059](https://www.mdpi.com/1999-4893/10/2/59) | 2017 |
-| **Contradiction Detection in RAG Systems** | Gokul, Tenneti & Nakkiran | [arXiv:2504.00180](https://arxiv.org/abs/2504.00180) | 2025 |
+| **Contradiction Detection with Contradiction-Specific Word Embedding** | Li, Luyang; Qin, Bing; Liu, Ting | [DOI: 10.3390/a10020059](https://www.mdpi.com/1999-4893/10/2/59) | 2017 |
+| **Contradiction Detection in RAG Systems** | Gokul, Vignesh; Tenneti, Srikanth; Nakkiran, Alwarappan | [arXiv:2504.00180](https://arxiv.org/abs/2504.00180) | 2025 |
 | **DRAGged into Conflicts (CONFLICTS benchmark)** | Cattan et al. | [arXiv:2506.08500](https://arxiv.org/abs/2506.08500) | 2025 |
 | **LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory** | Wu et al. | [arXiv:2410.10813](https://arxiv.org/abs/2410.10813) | 2024 |
-| **WikiContradict: Evaluating LLMs on Real-World Contradictory Knowledge** | Wasserblat et al. | [arXiv:2406.13805](https://arxiv.org/abs/2406.13805) | 2024 |
-| **HaluMem: Evaluating Hallucinations in Memory Systems of Agents** | MemTensor team | [arXiv:2511.03506](https://arxiv.org/abs/2511.03506) | 2025 |
+| **WikiContradict: A Benchmark for Evaluating LLMs on Real-World Knowledge Conflicts from Wikipedia** | Hou et al. (8 authors) | [arXiv:2406.13805](https://arxiv.org/abs/2406.13805) | 2024 |
+| **HaluMem: Evaluating Hallucinations in Memory Systems of Agents** | Chen, Ding et al. (9 authors) | [arXiv:2511.03506](https://arxiv.org/abs/2511.03506) | 2025 |
 | **Beyond Cosine Similarity: Antonym Intrusion in Synonym Graphs** | Tosun & Buldur | [arXiv:2601.13251](https://arxiv.org/abs/2601.13251) | 2026 |
-| **On the Theoretical Limitations of Embedding-Based Retrieval** | Boratko et al. | [arXiv:2508.21038](https://arxiv.org/abs/2508.21038) | 2025 |
-| **How Small Transformations Expose Weakness of Similarity Measures** | — | [arXiv:2509.09714](https://arxiv.org/abs/2509.09714) | 2025 |
-| **Sparse Contrastive Learning for Contradiction Retrieval (SparseCL)** | — | [arXiv:2406.10746](https://arxiv.org/abs/2406.10746) | 2025 |
+| **On the Theoretical Limitations of Embedding-Based Retrieval** | Weller, Boratko et al. | [arXiv:2508.21038](https://arxiv.org/abs/2508.21038) | 2025 |
+| **How Small Transformation Expose the Weakness of Semantic Similarity Measures** | Nikiema et al. | [arXiv:2509.09714](https://arxiv.org/abs/2509.09714) | 2025 |
+| **SparseCL: Sparse Contrastive Learning for Contradiction Retrieval** | Xu et al. | [arXiv:2406.10746](https://arxiv.org/abs/2406.10746) | 2024 |
 | **RAG over Thinking Traces Can Improve Reasoning Tasks (T3)** | Arabzadeh, Ma, Min, Zaharia | [arXiv:2605.03344](https://arxiv.org/abs/2605.03344) | 2026 |
 | **PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents** | Gu et al. | [arXiv:2605.19932](https://arxiv.org/abs/2605.19932) | 2026 |
-| **Gated DeltaNet-2** | Hatamizadeh et al. | [arXiv:2605.22791](https://arxiv.org/abs/2605.22791) | 2026 |
-| **UniMem: Towards a Unified View of Memory Architectures** | Fang et al. | [arXiv:2402.03009](https://arxiv.org/abs/2402.03009) | 2024 |
-| **Pichay: Demand Paging for LLM Context** | Mason | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) | 2026 |
+| **Gated DeltaNet-2: Decoupling Erase and Write in Linear Attention** | Hatamizadeh, Choi, Kautz | [arXiv:2605.22791](https://arxiv.org/abs/2605.22791) | 2026 |
+| **UniMem: Towards a Unified View of Long-Context Large Language Models** | Fang et al. (15 authors) | [arXiv:2402.03009](https://arxiv.org/abs/2402.03009) | 2024 |
+| **The Missing Memory Hierarchy: Demand Paging for LLM Context Windows** | Mason, Tony | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) | 2026 |
 | **Titans: Learning to Memorize at Test Time** | Behrouz et al. | [arXiv:2501.00663](https://arxiv.org/abs/2501.00663) | 2024 |
-| **Context Cartography** | Wu & Gartner | [arXiv:2603.20578](https://arxiv.org/abs/2603.20578) | 2026 |
+| **Context Cartography: Toward Structured Governance of Contextual Space** | Wu, Zihua; Gartner, Georg | [arXiv:2603.20578](https://arxiv.org/abs/2603.20578) | 2026 |
 | **Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?** | Wu, Li, Yang, Jiang, Yan, Li, Yu, Zhang & Nahrstedt | [arXiv:2506.17417](https://arxiv.org/abs/2506.17417) | 2025 |
 | **Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning** | Long, Jiang, Chen, Guo, Gan & Wang | [arXiv:2602.03485](https://arxiv.org/abs/2602.03485) | 2026 |
 | **Diverse Inference and Verification for Advanced Reasoning** | Drori, Longhitano, Mao, Hyun, Zhang, Park, Meeks, Zhang, Segev, Yong, Verma, Shporer, Amit, Udell | [arXiv:2502.09955](https://arxiv.org/abs/2502.09955) | 2025 |
@@ -57,7 +57,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - Proves semantic similarity alone cannot detect contradictions
 - **Sprachspiel implication:** Two-step approach needed — embeddings for retrieval, triples for disambiguation
 
-#### Gokul, Tenneti & Nakkiran (2025) — Contradiction Detection in RAG
+#### Gokul, Vignesh; Tenneti, Srikanth; Nakkiran, Alwarappan (2025) — Contradiction Detection in RAG
 - LLMs achieve at most 71% F1 on contradiction detection in RAG
 - Three contradiction types: self, pair, conditional
 - **Sprachspiel implication:** LLM-based contradiction detection is unreliable; deterministic approach preferred
@@ -127,9 +127,9 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   - Empathy ≠ failure: behavioral shifts are not bugs, opacity is
 - **Sprachspiel implication:** Cultural Grounding (R-24, moved to M4). Empathy ≠ Failure principle orients S2.meta1-3 (#99/#100/#101). See unified-vision.md §8.
 
-#### TurboQuant / RaBitQ — Norm Correction for Embeddings (Zandieh et al. 2026, Gao & Long 2024)
+#### TurboQuant / RaBitQ — Norm Correction for Embeddings (Zandieh et al. 2025, Gao & Long 2024)
 
-- **Papers:** ICLR 2026 (arXiv:2504.19874), SIGMOD 2024 (arXiv:2405.12497)
+- **Papers:** arXiv:2504.19874 (2025), SIGMOD 2024 (arXiv:2405.12497)
 - **Key findings:** Scalar quantization systematically underestimates cosine similarity. 1 float per vector corrects the bias at zero query-time cost.
 - **Sprachspiel implication:** Norm correction (R-25) as ~20-line Rust addendum to W4.x. Critical when d_eff < 0.7 (Matryoshka truncation). Prerequisite of TAP-2.
 
@@ -151,13 +151,13 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Key findings:** Decoupled gates (separate forget gate and update gate) outperform monolithic gates in linear attention. Fine-grained, independent control over what to forget vs. what to update provides better information routing than a single combined gate.
 - **Sprachspiel implication:** Informs multi-head retrieval design (#137) and multi-signal compaction (R-23). The key insight: **decoupled, fine-grained gates outperform monolithic ones** — applied to RRF fusion (separate weights per head) and compaction (separate signals for recency/relevance/importance instead of a single heuristic).
 
-#### UniMem: Towards a Unified View of Memory Architectures (Fang et al. 2024)
+#### UniMem: Towards a Unified View of Long-Context Large Language Models (Fang et al. 2024)
 
 - **Paper:** arXiv:2402.03009
 - **Key findings:** Proposes a unified framework for understanding diverse memory architectures (attention, retrieval, compression, persistent storage) as instances of the same abstract operation with different hyperparameters.
 - **Sprachspiel implication:** Validates the information routing abstraction (#179) — our compaction, RAG检索, and memory systems share the same underlying pattern. UniMem provides the academic framing for why thinking traces, facts, and context all benefit from the same gate/retain/evict pattern.
 
-#### Pichay: Demand Paging for LLM Context (Mason 2026)
+#### The Missing Memory Hierarchy (Mason 2026)
 
 - **Paper:** arXiv:2603.09023
 - **Key findings:** LLM context can be managed like virtual memory, with demand paging bringing in information on demand. The cost model (latency of page fault vs. latency of lost information) directly informs the offload vs. compaction tradeoff.
@@ -224,18 +224,18 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 
 @article{li2017contradiction,
   title={Contradiction Detection with Contradiction-Specific Word Embedding},
-  author={Li, Qin and Liu, Yang},
-  journal={Information},
+  author={Li, Luyang and Qin, Bing and Liu, Ting},
+  journal={Algorithms},
   volume={10},
   number={2},
   pages={59},
   year={2017},
-  doi={10.3390/info10020059}
+  doi={10.3390/a10020059}
 }
 
 @article{gokul2025contradiction,
-  title={Contradiction Detection in RAG Systems: Evaluating LLMs as Context Validators},
-  author={Gokul, Tenneti and Nakkiran},
+  title={Contradiction Detection in RAG Systems: Evaluating LLMs as Context Validators for Improved Information Consistency},
+  author={Gokul, Vignesh and Tenneti, Srikanth and Nakkiran, Alwarappan},
   journal={arXiv preprint arXiv:2504.00180},
   year={2025}
 }
@@ -254,50 +254,51 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2024}
 }
 
-@article{wikicontradict2024,
-  title={WikiContradict: A Benchmark for Evaluating LLMs on Real-World Contradictory Knowledge},
-  author={Wasserblat, Moshe and others},
+@article{hou2024wikicontradict,
+  title={WikiContradict: A Benchmark for Evaluating LLMs on Real-World Knowledge Conflicts from Wikipedia},
+  author={Hou, Yufang and Pascale, Alessandra and Carnerero-Cano, Javier and Tchrakian, Tigran and Marinescu, Radu and Daly, Elizabeth and Padhi, Inkit and Sattigeri, Prasanna},
   journal={arXiv preprint arXiv:2406.13805},
   year={2024}
 }
 
-@article{halumem2025,
+@article{chen2025halumem,
   title={HaluMem: Evaluating Hallucinations in Memory Systems of Agents},
-  author={MemTensor team},
+  author={Chen, Ding and Niu, Simin and Li, Kehang and Liu, Peng and Zheng, Xiangping and Tang, Bo and Li, Xinchi and Xiong, Feiyu and Li, Zhiyu},
   journal={arXiv preprint arXiv:2511.03506},
   year={2025}
 }
 
 @article{tosun2026beyond,
   title={Beyond Cosine Similarity: Taming Semantic Drift and Antonym Intrusion in a 15-Million Node Turkish Synonym Graph},
-  author={Tosun, Ebubekir and Buldur, Mehmet Emin},
+  author={Tosun, Ebubekir and Buldur, Mehmet Emin and Ezerceli, {\"O}zay and ElHussieni, Mahmoud},
   journal={arXiv preprint arXiv:2601.13251},
   year={2026}
 }
 
-@article{sparsecl2025,
-  title={Sparse Contrastive Learning for Contradiction Retrieval},
+@article{xu2024sparsecl,
+  title={SparseCL: Sparse Contrastive Learning for Contradiction Retrieval},
+  author={Xu, Haike and Lin, Zongyu and Sun, Yizhou and Chang, Kai-Wei and Indyk, Piotr},
   journal={arXiv preprint arXiv:2406.10746},
-  year={2025}
+  year={2024}
 }
 
-@article{t3_2026,
+@article{arabzadeh2026t3,
   title={RAG over Thinking Traces Can Improve Reasoning Tasks},
-  author={Arabzadeh, Negar and Ma, Wentai and Min, Sewon and Zaharia, Matei},
+  author={Arabzadeh, Negar and Ma, Wenjie and Min, Sewon and Zaharia, Matei},
   journal={arXiv preprint arXiv:2605.03344},
   year={2026}
 }
 
-@article{peek_2026,
+@article{gu2026peek,
   title={PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents},
-  author={Gu, Zijian and others},
+  author={Gu, Zhuohan and Zhang, Qizheng and Khattab, Omar and Madden, Samuel},
   journal={arXiv preprint arXiv:2605.19932},
   year={2026}
 }
 
-@article{rlm_2025,
+@article{zhang2025recursive,
   title={Recursive Language Models},
-  author={Zhang, Xiang and Kraska, Tim and Khattab, Omar},
+  author={Zhang, Alex L. and Kraska, Tim and Khattab, Omar},
   journal={arXiv preprint arXiv:2512.24601},
   year={2025}
 }
@@ -310,25 +311,25 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   doi={10.53660/PRW-5188-2880}
 }
 
-@article{turboquant_2026,
-  title={TurboQuant: Productive Quantization for Vector Search},
-  author={Zandieh, Amin and others},
-  journal={ICLR 2026},
-  year={2026},
-  note={arXiv:2504.19874}
+@article{zandieh2025turboquant,
+  title={TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate},
+  author={Zandieh, Amir and Daliri, Majid and Hadian, Majid and Mirrokni, Vahab},
+  journal={arXiv preprint arXiv:2504.19874},
+  year={2025}
 }
 
-@article{rabitq_2024,
-  title={RaBitQ: Quantization for Vector Search},
-  author={Gao, Jianhao and Long, Cheng},
+@article{gao2024rabitq,
+  title={RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search},
+  author={Gao, Jianyang and Long, Cheng},
   journal={SIGMOD 2024},
   year={2024},
   note={arXiv:2405.12497}
 }
 
-@article{fademem_2026,
-  title={FadeMem: Dual-Layer Ebbinghaus Decay},
-  journal={arXiv:2601.18642},
+@article{wei2026fademem,
+  title={FadeMem: Biologically-Inspired Forgetting for Efficient Agent Memory},
+  author={Wei, Lei and Peng, Xiao and Dong, Xu and Xie, Niantao and Wang, Bin},
+  journal={arXiv preprint arXiv:2601.18642},
   year={2026}
 }
 
@@ -354,24 +355,24 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2024}
 }
 
-@article{webworld_2026,
-  title={WebWorld: World Model for Web Agents},
-  author={Xiao, Zikai and Tu, Jianhong and Zou, Chuhang and others},
+@article{xiao2026webworld,
+  title={WebWorld: A Large-Scale World Model for Web Agent Training},
+  author={Xiao, Zikai and Tu, Jianhong and Zou, Chuhang and Zuo, Yuxin and Li, Zhi and Wang, Peng and Yu, Bowen and Huang, Fei and Lin, Junyang and Liu, Zuozhu},
   journal={arXiv preprint arXiv:2602.14721},
   year={2026}
 }
 
-@article{dreamer4_2025,
-  title={Mastering Diverse Domains through World Models},
+@article{hafner2025dreamer,
+  title={Training Agents Inside of Scalable World Models},
   author={Hafner, Danijar and Yan, Wilson and Lillicrap, Timothy},
   journal={arXiv preprint arXiv:2509.24527},
   year={2025}
 }
 
 @article{shaukat2026chunking,
-  title={Document Chunking Strategies},
-  author={Shaukat, H. and others},
-  journal={arXiv:2603.06976},
+  title={A Systematic Investigation of Document Chunking Strategies and Embedding Sensitivity},
+  author={Shaukat, Muhammad Arslan and others},
+  journal={arXiv preprint arXiv:2603.06976},
   year={2026}
 }
 
@@ -396,37 +397,38 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2008}
 }
 
-@article{gated_deltanet_2026,
-  title={Gated DeltaNet-2},
-  author={Hatamizadeh, Ali and others},
+@article{hatamizadeh2026gateddeltanet2,
+  title={Gated DeltaNet-2: Decoupling Erase and Write in Linear Attention},
+  author={Hatamizadeh, Ali and Choi, Yejin and Kautz, Jan},
   journal={arXiv preprint arXiv:2605.22791},
   year={2026}
 }
 
-@article{unimem_2024,
-  title={UniMem: Towards a Unified View of Memory Architectures},
-  author={Fang, Xiang and others},
+@article{fang2024unimem,
+  title={UniMem: Towards a Unified View of Long-Context Large Language Models},
+  author={Fang, Junjie and Tang, Likai and Bi, Hongzhe and Qin, Yujia and Sun, Si and Li, Zhenyu and Li, Haolun and Li, Yongjian and Cong, Xin and Lin, Yankai and Yan, Yukun and Shi, Xiaodong and Song, Sen and Liu, Zhiyuan and Sun, Maosong},
   journal={arXiv preprint arXiv:2402.03009},
-  year={2024}
+  year={2024},
+  note={COLM 2024}
 }
 
-@article{pichay_2026,
-  title={Pichay: Demand Paging for LLM Context},
-  author={Mason, David},
+@article{mason2026missing,
+  title={The Missing Memory Hierarchy: Demand Paging for LLM Context Windows},
+  author={Mason, Tony},
   journal={arXiv preprint arXiv:2603.09023},
   year={2026}
 }
 
-@article{titans_2024,
+@article{behrouz2024titans,
   title={Titans: Learning to Memorize at Test Time},
-  author={Behrouz, Ali and Delavari, Pezhman and Bighash, Simin},
+  author={Behrouz, Ali and Zhong, Peilin and Mirrokni, Vahab},
   journal={arXiv preprint arXiv:2501.00663},
   year={2024}
 }
 
-@article{context_cartography_2026,
-  title={Context Cartography: Mapping Attention Deserts in LLM Context},
-  author={Wu, Zhiyuan and Gartner, Jan},
+@article{wu2026cartography,
+  title={Context Cartography: Toward Structured Governance of Contextual Space in Large Language Model Systems},
+  author={Wu, Zihua and Gartner, Georg},
   journal={arXiv preprint arXiv:2603.20578},
   year={2026}
 }
@@ -468,15 +470,16 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2024}
 }
 
-@article{boratko2025limitations,
+@article{weller2025limitations,
   title={On the Theoretical Limitations of Embedding-Based Retrieval},
-  author={Boratko, Michael and others},
+  author={Weller, Orion and Boratko, Michael and Naim, Iftekhar and Lee, Jinhyuk},
   journal={arXiv preprint arXiv:2508.21038},
   year={2025}
 }
 
-@article{transformations2025weakness,
-  title={How Small Transformations Expose Weakness of Similarity Measures},
+@article{nikiema2025transformation,
+  title={How Small Transformation Expose the Weakness of Semantic Similarity Measures},
+  author={Nikiema, Serge Lionel and Djire, Albérick Euraste and Bonkoungou, Abdoul Aziz and Moumoula, Micheline Bénédicte and Samhi, Jordan and Kabore, Abdoul Kader and Klein, Jacques and Bissyande, Tegawendé F.},
   journal={arXiv preprint arXiv:2509.09714},
   year={2025}
 }

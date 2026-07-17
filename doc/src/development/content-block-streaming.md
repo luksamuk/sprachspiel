@@ -1,4 +1,8 @@
-# Content Block Stateful Streaming — Arquitetura para Streaming + Tool Calls no TUI
+# Content Block Stateful Streaming
+
+Architecture for streaming + tool calls in the TUI. This document describes the problem of pre-tool text disappearing during tool calls in streaming mode, and the content block lifecycle solution.
+
+> **Note:** This document was originally written in Portuguese. The technical content is preserved as-is; the architecture applies regardless of language.
 
 ## Resumo Executivo
 

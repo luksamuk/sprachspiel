@@ -1,355 +1,194 @@
-# Available Models
+# Model Guide
 
-Sprachspiel uses a two-tier model system:
+Sprachspiel supports any OpenAI-compatible LLM backend. You can run models locally via [llama-swap](https://github.com/mostlygeeksllc/llama-swap), [llama.cpp](https://github.com/ggerganov/llama.cpp), [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), or [vLLM](https://github.com/vllm-project/vllm), or use a cloud provider that exposes an OpenAI-compatible `/v1/chat/completions` endpoint. Sprachspiel communicates with all of them through the provider-agnostic `LlmProvider` trait.
 
-1. **Built-in models** - Essential models for core functionality
-2. **Recommended models** - Additional models configured via `~/.config/sprachspiel/models.toml`
+Sprachspiel does not bundle or distribute any models — you download and configure your own. The models listed below have been evaluated on consumer hardware (RTX 3050 Laptop, 6GB VRAM) and are known to work well. You are not limited to these; any model served by an OpenAI-compatible backend will work.
 
-## Built-in Models
+## Configuration Overview
 
-These models are configured by default and provide core functionality:
+Sprachspiel uses two config files:
 
-| Preset | Model ID | Size | Context | Best For |
-|--------|----------|------|---------|----------|
-| **qwen3.5:4b** | qwen3.5:4b | 3.4 GB | 96K | General queries, code, vision (multimodal) |
-| translategemma | translategemma:4b | ~3 GB | 4K | Translation |
-| glm-ocr | glm-ocr:bf16 | 2.2 GB | Auto | OCR/image text extraction |
+1. **`~/.config/sprachspiel/models.toml`** — Provider endpoints and model definitions (`[provider.*]` and `[models.*]` sections).
+2. **`~/.config/sprachspiel/config.toml`** — Per-subcommand defaults (`[model]`, `[model.query]`, `[model.code]`, etc.).
 
-### Installation
+### Provider Configuration (`models.toml`)
 
-```bash
-# Required models (built-in)
-ollama pull qwen3.5:4b       # Default model (multimodal)
-ollama pull translategemma:4b # Translation
-ollama pull glm-ocr:bf16      # OCR
-```
-
-### Recommended Upgrades
-
-For users who want better quality, the same model family offers larger variants:
-
-| Model ID | Size | Context | Best For |
-|----------|------|---------|----------|
-| **qwen3.5:9b** | 6.6 GB | 131K | **Better quality** — recommended for daily use |
-| qwen3.5:27b | 17 GB | 64K | **Full agent experience** — overkill for most tasks |
-
-**Recommendation:**
-- **qwen3.5:9b** — Good balance between quality and speed. Worth it if you have the RAM.
-- **qwen3.5:27b** — Overkill. Only for users who need maximum reasoning capability and have lots of RAM.
-
-To use these models, configure them in `~/.config/sprachspiel/config.toml`:
+The `[provider]` section defines the transport — how Sprachspiel reaches the LLM backend. Example with llama-swap on `localhost:12434`:
 
 ```toml
-[model]
-default = "qwen3.5:9b"  # Upgrade from 4b
+# ~/.config/sprachspiel/models.toml
 
-[model.query]
-model = "qwen3.5:9b"
-
-[model.code]
-model = "qwen3.5:9b"  # Or "qwen3.5:27b" for complex tasks
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+# connect_timeout_secs = 5
+# read_timeout_secs = 300
+# stream_idle_timeout_secs = 300
+# ttfb_timeout_secs = 120
+# max_retries = 3
 ```
 
-And define the model in `~/.config/sprachspiel/models.toml`:
+Each model entry references its provider by name and can override inference parameters:
 
 ```toml
-[models."qwen3.5:9b"]
-model_id = "qwen3.5:9b"
-num_ctx = 131072
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "llama-swap"
+tools = true
+vision = true
+thinking = true
 temperature = 0.6
 top_p = 0.95
-top_k = 20
-thinking = true
 
-[models."qwen3.5:27b"]
-model_id = "qwen3.5:27b"
-num_ctx = 65536
-temperature = 0.6
-top_p = 0.95
-top_k = 20
-thinking = true
+# Embedding models require embeddings = true + dimensions
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true
+dimensions = 768
 ```
 
-## Alternative Models
+### Per-Command Defaults (`config.toml`)
 
-These models can be installed for specific use cases:
-
-| Model ID | Size | Context | Best For |
-|----------|------|---------|----------|
-| llama3.1:8b | 4.9 GB | 4K | General queries (alternative) |
-| moondream:1.8b | 1.7 GB | 2K | Vision (lightweight alternative) |
-
-```bash
-# Alternative models (optional)
-ollama pull llama3.1:8b      # Alternative general model
-ollama pull moondream:1.8b   # Alternative vision model
-```
-
-## Recommended Models
-
-These optional models can be configured in `~/.config/sprachspiel/models.toml`:
-
-### General Purpose
-
-| Preset | Model ID | Context | Best For |
-|--------|----------|---------|----------|
-| ministral | ministral-3:14b | 32K | General queries, fast |
-| qwen3 | qwen3:8b | 32K | General with thinking |
-| **nemotron-3-nano** | nemotron-3-nano:4b | 131K | **Efficient tool calling**, 2.8GB |
-| **gemma4:e2b** | gemma4:e2b | 131K | **Native FC**, Google's compact model |
-| **gemma4:e4b** | gemma4:e4b | 131K | **Native FC**, Google's larger variant |
-| nanbeige4.1 | nanbeige4.1:3b | 64K | Tool calling + thinking |
-| ministral-3 | ministral-3:3b | 256K | Fast tool calling (temp=0.3) |
-
-### Code & Development
-
-| Preset | Model ID | Context | Best For |
-|--------|----------|---------|----------|
-| **qwen2.5-coder:7b** | qwen2.5-coder:7b | 128K | **Default for code mode**, function calling |
-| qwen3-coder | qwen3-coder:30b | 32K | Code generation with tools |
-| qwen3-coder-next | qwen3-coder-next:cloud | 260K | Cloud code generation |
-| nemotron | nemotron-3-nano:30b | 32K | Thinking mode |
-
-### Cloud Models
-
-High-capability models with large context windows:
-
-| Preset | Model ID | Context | Best For |
-|--------|----------|---------|----------|
-| glm-5 | glm-5:cloud | 200K+ | Complex reasoning, thinking |
-| qwen3.5 | qwen3.5:cloud | 256K | Vision-language, fallback |
-| kimi-k2.5 | kimi-k2.5:cloud | 202K | Alternative cloud |
-| minimax-m2.7 | minimax-m2.7:cloud | 204K | Fast cloud option |
-| qwen3-coder-next | qwen3-coder-next:cloud | 256K | Coding specialist |
-
-### Character Models
-
-| Preset | Model ID | Context | Best For |
-|--------|----------|---------|----------|
-| assistant-pepe | assistant-pepe:8b | 64K | Entertainment |
-
-### Vision Models
-
-These models are used by the `sprach vision` command for image analysis:
-
-| Model ID | Size | Context | Multi-Image | Best For |
-|----------|------|---------|-------------|----------|
-| qwen3.5:4b | 3.4 GB | 96K | Yes | Default, multimodal |
-| moondream:1.8b | 1.7 GB | 2K | No | Lightweight alternative |
-| llava:13b | 8.0 GB | 4K | No | Better quality |
-| ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |
-
-**Note:** The default model (qwen3.5:4b) is multimodal and can handle vision tasks.
-
-```bash
-# Install vision models
-ollama pull qwen3.5:4b           # Default (multimodal, also handles vision)
-ollama pull llava:13b            # Optional, better quality
-ollama pull ministral-3:14b      # Optional, multi-image support
-```
-
-## Sample Configuration
-
-Create `~/.config/sprachspiel/models.toml`:
+The `[model]` section in `config.toml` sets which model each subcommand uses:
 
 ```toml
-# General purpose models
-[models.ministral]
-model_id = "ministral-3:14b"
-num_ctx = 32768
-temperature = 0.2
+# ~/.config/sprachspiel/config.toml
 
-[models.qwen3]
-model_id = "qwen3:8b"
-num_ctx = 32768
-temperature = 1.0
-thinking = true
-
-# Code models
-[models.qwen3-coder]
-model_id = "qwen3-coder:30b"
-num_ctx = 32768
-temperature = 0.3
-
-# Tool-calling models (optimized)
-[models.nemotron]
-model_id = "nemotron-3-nano:4b"
-num_ctx = 131072
-temperature = 0.3
-
-[models.gemma4-e2b]
-model_id = "gemma4:e2b"
-num_ctx = 131072
-temperature = 0.7
-repeat_penalty = 1.1
-
-[models.gemma4-e4b]
-model_id = "gemma4:e4b"
-num_ctx = 131072
-temperature = 0.7
-repeat_penalty = 1.1
-
-[models.ministral-3]
-model_id = "ministral-3:3b"
-num_ctx = 262144
-temperature = 0.3  # Critical for FC accuracy
-
-# Cloud models with thinking
-[models.glm-5]
-model_id = "glm-5:cloud"
-num_ctx = 202752
-thinking = true
-
-[models.kimi-k2.5]
-model_id = "kimi-k2.5:cloud"
-num_ctx = 202144
-thinking = true
-```
-
-## Per-Command Model Configuration
-
-Configure different models for different tasks in `~/.config/sprachspiel/config.toml`:
-
-```toml
 [model]
-default = "qwen3.5:4b"      # Global default
+default = "qwen3.5-4b"       # Global default
 
 [model.query]
-model = "qwen3.5:4b"        # For queries
+model = "qwen3.5-4b"
 thinking = true
 tools = true
 
 [model.summarize]
-model = "qwen3.5:4b"        # For summarization
+model = "qwen3.5-4b"
 thinking = false
 tools = false
 
 [model.code]
-model = "qwen3.5:9b"        # For code (larger model)
+model = "qwen3.6-35b-a3b"
 tools = true
 
 [model.vision]
-model = "qwen3.5:4b"        # For vision (multimodal)
+model = "lfm2.5-vl-1.6b"
 tools = false
 ```
 
-## Tool Calling Performance
+## Recommended Models for Local Inference
 
-Models tested for function calling (tool use) capability. Rankings based on benchmark tests:
+### Chat / General
 
-### EXCELLENT (Recommended)
+| Model | Size | Tools | Thinking | Vision | Best For |
+|-------|------|-------|----------|--------|----------|
+| [Qwen3.5-4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ✅ | ✅ | ✅ | **Default** — best balance of size, tool calling, thinking, multimodal |
+| [Gemma 4 E2B](https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF) | 2.7 GB | ✅ | ✅ | ✅ | Google 2B dense, native function calling, dual-mode thinking |
+| [LFM2.5-8B-A1B](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF) | 4.8 GB | ✅ | ✅ | ❌ | MoE 8B (1.5B active), good balance |
+| [Qwen3.5-9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 5.1 GB | ✅ | ✅ | ✅ | **Recommended upgrade** — better quality, multimodal |
+| [Gemma 4 E4B](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) | 4.5 GB | ✅ | ✅ | ✅ | Google 4B dense, native function calling, thinking |
+| [Qwen3.6-35B-A3B](https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-GGUF) | 17.3 GB | ✅ | ✅ | ✅ | MoE 35B (3B active), primary coder |
+| [Ornith 1.0-35B](https://huggingface.co/mudler/Ornith-1.0-35B-APEX-GGUF) | 16.5 GB | ✅ | ✅ | ❌ | Large MoE, self-improving agentic coder |
+| [Agents-A1-35B](https://huggingface.co/mudler/Agents-A1-APEX-GGUF) | 16.5 GB | ✅ | ✅ | ❌ | Agentic model, long-horizon tasks |
+| [GLM-4.7-Flash](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF) | ~17 GB | ✅ | ✅ | ❌ | Fast reasoning (30B MoE, 3.6B active) |
+| [North-Mini-Code](https://huggingface.co/unsloth/North-Mini-Code-1.0-GGUF) | 18.6 GB | ✅ | ❌ | ❌ | Code specialist (Cohere2MoE, 30B A3B) |
 
-| Model | Size | Speed | Notes |
-|-------|------|-------|-------|
-| **qwen3.5:4b** | 3.4 GB | Fast | Default, multimodal, reliable FC |
-| **qwen3.5:9b** | 6.6 GB | Fast | Best quality/speed balance |
-| **nemotron-3-nano:4b** | 2.8 GB | Fast | Most efficient, smallest footprint |
+### OCR
 
-### GOOD (Solid alternatives)
+| Model | Size | Vision | Best For |
+|-------|------|--------|----------|
+| [GLM-OCR](https://huggingface.co/zai-org/GLM-OCR) | ~1.4 GB | ✅ | **Recommended** — document understanding, text/table/formula extraction |
 
-| Model | Size | Speed | Notes |
-|-------|------|-------|-------|
-| **gemma4:e2b** | 7.2 GB | ~2min/test | Native FC (Google), needs temp=0.7 |
-| **gemma4:e4b** | 9.6 GB | ~4min/test | Native FC (Google), larger variant |
-| **ministral-3:3b** | 3.0 GB | Moderate | Uses vision, needs temp=0.3 |
-| **qwen3.5:4b** | 3.4 GB | Fast | Default, tools + multimodal |
+> **Note:** GLM-OCR is purpose-built for OCR, but any general-purpose model with vision capability (e.g., Qwen3.5-4B, Gemma 4 E2B) can also handle basic image text extraction. For best results with complex documents, use a dedicated OCR model.
 
-### OK (Works with caveats)
+### Vision
 
-| Model | Size | Speed | Notes |
-|-------|------|-------|-------|
-| nanbeige4.1:3b | 2.4 GB | Slow | Tools + thinking, but slow response |
+> **Note:** Any general-purpose model with `vision = ✅` in the Chat/General table above (e.g., Qwen3.5-4B, Qwen3.5-9B, Gemma 4 E2B/E4B, Qwen3.6-35B-A3B) can also be used for image analysis via `sprach vision`. The models listed below are dedicated vision-language models optimized for image understanding.
 
-### Known Issues
+| Model | Size | Vision | Grounding | Thinking | Best For |
+|-------|------|--------|-----------|----------|----------|
+| [LFM2.5-VL-450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | ~0.5 GB | ✅ | ✅ | ❌ | Ultra-light VLM, bounding boxes |
+| [LFM2.5-VL-1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | ~1.6 GB | ✅ | ✅ | ❌ | Better vision quality, grounding |
+| [MiniCPM-V-4.6](https://huggingface.co/openbmb/MiniCPM-V-4.6-GGUF) | ~1.7 GB | ✅ | ✅ | ✅ | VLM with grounding + video support |
+| [Qwen3-VL-4B](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) | ~2.5 GB | ✅ | ✅ | ❌ | Vision-language, bounding boxes (0–1000) |
 
-| Model | Issue | Notes |
-|-------|-------|-------|
-| qwen2.5-coder:7b | Template JSON issue | Tool calls fail with malformed JSON |
-| llama3.1:8b | No tools support | Architecture doesn't support FC |
-| deepseek-r1:7b | Thinking only | `tools` parameter triggers thinking, no FC |
-| granite3.3:8b | OOM | Too large for 6GB GPU |
-| Qwopus3.5 | Bug #14575 | Loading error on HuggingFace GGUF |
+### Translation
 
-**Recommendation:** For tool calling tasks, use **qwen3.5:4b** (default) or **nemotron-3-nano:4b** (most efficient).
+> **Note:** Any general-purpose model can translate text, but the models listed below are translation specialists trained to handle many languages and preserve nuance.
 
-## Model Capabilities
+| Model | Size | Best For |
+|-------|------|----------|
+| [TranslateGemma-4B](https://huggingface.co/mradermacher/TranslateGemma-4B-GGUF) | ~3 GB | 50+ languages, better nuance and context understanding **(recommended)** |
+| [Hy-MT2-1.8B](https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF) | 1.1 GB | 33 languages + 5 dialects, lightweight, no system prompt needed |
 
-| Model | Tools | Vision | Think | Local | Size | Notes |
-|-------|-------|--------|-------|-------|------|-------|
-| qwen3.5:4b | Yes | Yes | Yes | Yes | 3.4 GB | Default, multimodal |
-| qwen3.5:9b | Yes | Yes | Yes | Yes | 6.6 GB | **Recommended upgrade** |
-| qwen3.5:27b | Yes | Yes | Yes | Yes | 17 GB | Overkill for most |
-| translategemma | No | No | No | Yes | ~3 GB | Translation specialist |
-| glm-ocr | No | Yes | No | Yes | 2.2 GB | OCR specialist |
-| llama3.1:8b | Yes | No | No | Yes | 4.9 GB | Alternative general |
-| moondream:1.8b | No | Yes | No | Yes | 1.7 GB | Alternative vision (light) |
-| llava:13b | No | Yes | No | Yes | 8.0 GB | Better vision quality |
-| ministral | Yes | Yes | No | Yes | 7.5 GB | Multi-image support |
-| qwen3 | No | No | Yes | Yes | ~5 GB | Thinking support |
-| qwen3-coder | Yes | No | No | Yes | ~17 GB | Code specialist |
-| glm-5 | Yes | No | Yes* | No | Cloud | Complex reasoning |
-| kimi-k2.5 | Yes | Yes | Yes* | No | Cloud | Multimodal cloud |
-| minimax-m2.5 | Yes | No | Yes* | No | Cloud | Agentic tasks |
-| qwen3.5:cloud | Yes | Yes | Yes* | No | Cloud | Large context |
-| **nemotron-3-nano:4b** | Yes | No | No | Yes | 2.8 GB | **Efficient tool calling** |
-| **gemma4:e2b** | Yes | No | No | Yes | 7.2 GB | **Native FC (Google)** |
-| **gemma4:e4b** | Yes | No | No | Yes | 9.6 GB | **Native FC (Google)** |
-| nanbeige4.1:3b | Yes | No | Yes | Yes | 2.4 GB | Tools + thinking |
-| ministral-3:3b | Yes | Yes | No | Yes | 3.0 GB | Fast FC (temp=0.3) |
+### Embedding
 
-\* Cloud models support thinking via `thinking = true` in config.
+| Model | Size | Dimensions | Best For |
+|-------|------|------------|----------|
+| [Nomic Embed v2](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe) | ~1 GB | 768 | General-purpose embeddings, MoE, supports Matryoshka truncation **(recommended)** |
+| [LFM2.5-Embed-350M](https://huggingface.co/LiquidAI/LFM2.5-Embedding-350M) | ~0.4 GB | 1024 | Dense bi-encoder, fast multilingual retrieval, 11 languages |
+
+> Embedding models are declared with `embeddings = true` and `dimensions` in `models.toml`. They cannot be used for chat (the `-m` and `/model` commands reject them).
+
+## Quick Recommendations
+
+| Use Case | Model | Why |
+|----------|-------|-----|
+| Daily use | Qwen3.5-4B | Default, multimodal, good balance of size and capability |
+| **Better quality** | **Qwen3.5-9B** | **Recommended upgrade, worth the VRAM** |
+| Code | Ornith 1.0-35B | Self-improving agentic coder |
+| Fast reasoning | GLM-4.7-Flash | 30B MoE, fast decode |
+| OCR | GLM-OCR | Document extraction (recommended) |
+| Vision (light) | LFM2.5-VL-450M | Ultra-light VLM |
+| Vision (quality) | Qwen3-VL-4B | Best dedicated vision quality |
+| Translation (quality) | TranslateGemma-4B | 50+ languages, better nuance |
+| Translation (fast) | Hy-MT2-1.8B | 33+ languages, lightweight |
+| Embedding | Nomic Embed v2 | 768d, Matryoshka, general-purpose |
 
 ## Choosing a Model
 
 ### For General Queries
+
 ```bash
-sprach "Your question"           # Default model (qwen3.5:4b)
-sprach -m "qwen3.5:9b" "question" # Better quality (recommended)
-sprach -m ministral "question"   # Fast, capable
-sprach -m qwen3 -t "reasoning"   # With thinking
+sprach "Your question"                    # Default (Qwen3.5-4B)
+sprach -m qwen3.5-9b "question"           # Better quality
+sprach -m lfm2.5-8b-a1b "question"        # Good balance
+sprach -m glm-4.7-flash "question" -t     # Fast reasoning
 ```
 
 ### For Code
+
 ```bash
-sprach -m "qwen3.5:9b" "Write a Rust function"  # Good for code
-sprach -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
-sprach -m qwen3-coder "Write a Rust function"   # Code specialist
+sprach -m qwen3.6-35b-a3b "Write a Rust function"  # Primary coder
+sprach -m north-mini-code "Refactor this module"  # Code specialist
+sprach -m ornith-1.0-35b "Complex agentic task"   # Agentic coder
 ```
 
 ### For Vision
+
 ```bash
-sprach vision photo.png                        # Default (qwen3.5:4b)
-sprach vision -m "qwen3.5:9b" photo.png        # Better quality
-sprach vision -m moondream photo.png           # Lightweight alternative
-sprach vision -m llava:13b photo.png --detailed  # Better quality
+sprach vision photo.png                     # Default (LFM2.5-VL-1.6B)
+sprach vision -m lfm2.5-vl-450m photo.png   # Lightweight
+sprach vision -m minicpm-v-4.6 photo.png    # Higher quality
+sprach vision -m qwen3-vl-4b photo.png     # Bounding boxes
+sprach vision -m qwen3.5-4b photo.png      # General-purpose with vision
 ```
 
-### For Cloud Models
+### For OCR
+
 ```bash
-sprach -m glm-5 "Complex analysis"
-sprach -m kimi-k2.5 "Multimodal task"
-sprach -m minimax-m2.5 "Coding task"
+sprach ocr document.png                     # Default (GLM-OCR)
+sprach ocr document.png --mode table         # Table extraction
+sprach ocr document.png --formula            # Formula extraction
 ```
 
-### For Tool Calling (Function Calling)
+### For Translation
+
 ```bash
-sprach -m nemotron "List files in current directory"  # Most efficient FC
-sprach -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
-sprach -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
+sprach translate "Hello world"               # Default (TranslateGemma)
+sprach translate -m hy-mt2-1.8b "Hello world"  # Lightweight (Hy-MT2)
 ```
-
-### Quick Recommendations
-
-| Use Case | Recommended Model | Why |
-|----------|-------------------|-----|
-| Daily use | qwen3.5:4b | Default, multimodal, good balance |
-| **Better quality** | **qwen3.5:9b** | **Recommended upgrade, worth the RAM** |
-| Complex tasks | qwen3.5:27b | Overkill, only if you need max reasoning |
-| Translation | translategemma | Specialist |
-| OCR | glm-ocr | Specialist |
-| Vision | qwen3.5:4b | Multimodal (same as default) |
-| **Tool calling** | **nemotron-3-nano:4b** | **Most efficient FC (2.8 GB)** |
-| Tool calling (quality) | qwen3.5:9b | Best FC quality/speed |
 
 ## Custom Models
 
@@ -357,24 +196,27 @@ Add your own models in `~/.config/sprachspiel/models.toml`:
 
 ```toml
 [models."my-model"]
-model_id = "my-model:7b"    # Required
-num_ctx = 32768             # Optional: context window
-temperature = 0.7           # Optional: temperature
-top_k = 40                  # Optional: top-k
-top_p = 0.9                 # Optional: top-p
-repeat_penalty = 1.1        # Optional: repeat penalty
-thinking = true             # Optional: for models that support it
+model_id = "my-model-7b"       # Required: Model ID recognized by backend
+provider = "llama-swap"        # Required: References a [provider.*] section
+tools = true                    # Optional: tool calling capability
+vision = false                  # Optional: vision capability
+thinking = true                 # Optional: thinking/reasoning mode
+temperature = 0.7              # Optional: temperature
+top_p = 0.9                    # Optional: top-p
+seed = 42                      # Optional: reproducible outputs
+embeddings = false             # Optional: marks as embedding-only
+dimensions = 768               # Required if embeddings = true
 ```
 
-### Model Parameter Defaults
+### Model Parameters
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
-| num_ctx | 32768 (32K) | Omit for auto-detect |
-| temperature | 0.8 | From docs.ollama.com |
-| top_k | not set | Uses Ollama default |
-| top_p | not set | Uses Ollama default |
-| repeat_penalty | 1.1 | From docs.ollama.com |
+| `temperature` | 0.8 | From docs.ollama.com |
+| `top_p` | not set | Uses backend default |
+| `seed` | not set | Optional, for reproducible outputs |
+| `num_ctx` | 32768 (32K) | Omit for auto-detect |
+| `thinking` | not set | Tri-state: `true`/`false`/probe |
 
 ## Listing Models
 
@@ -384,9 +226,144 @@ sprach --list
 
 Shows built-in models and user-defined models (marked with `[user]`).
 
+## Sample `models.toml`
+
+A complete configuration example:
+
+```toml
+# ~/.config/sprachspiel/models.toml
+
+# ── Provider ──────────────────────────────────────────────
+
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+# ── Chat / General ─────────────────────────────────────────
+
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "llama-swap"
+tools = true
+thinking = true
+temperature = 0.6
+top_p = 0.95
+
+[models."gemma4-e2b"]
+model_id = "gemma4-e2b"
+provider = "llama-swap"
+tools = true
+thinking = true
+temperature = 0.7
+
+[models."lfm2.5-8b-a1b"]
+model_id = "lfm2.5-8b-a1b"
+provider = "llama-swap"
+tools = true
+thinking = true
+
+[models."qwen3.5-9b"]
+model_id = "qwen3.5-9b"
+provider = "llama-swap"
+tools = true
+thinking = true
+temperature = 0.6
+top_p = 0.95
+
+[models."gemma4-e4b"]
+model_id = "gemma4-e4b"
+provider = "llama-swap"
+tools = true
+thinking = true
+temperature = 0.7
+
+[models."qwen3.6-35b-a3b"]
+model_id = "qwen3.6-35b-a3b"
+provider = "llama-swap"
+tools = true
+thinking = true
+
+[models."ornith-1.0-35b"]
+model_id = "ornith-1.0-35b"
+provider = "llama-swap"
+tools = true
+thinking = true
+
+[models."agents-a1-35b"]
+model_id = "agents-a1-35b"
+provider = "llama-swap"
+tools = true
+thinking = true
+
+[models."glm-4.7-flash"]
+model_id = "glm-4.7-flash"
+provider = "llama-swap"
+tools = true
+thinking = true
+
+[models."north-mini-code"]
+model_id = "north-mini-code"
+provider = "llama-swap"
+tools = true
+
+# ── OCR ─────────────────────────────────────────────────────
+
+[models."glm-ocr"]
+model_id = "glm-ocr"
+provider = "llama-swap"
+vision = true
+
+# ── Vision ─────────────────────────────────────────────────
+
+[models."lfm2.5-vl-450m"]
+model_id = "lfm2.5-vl-450m"
+provider = "llama-swap"
+vision = true
+
+[models."lfm2.5-vl-1.6b"]
+model_id = "lfm2.5-vl-1.6b"
+provider = "llama-swap"
+vision = true
+
+[models."minicpm-v-4.6"]
+model_id = "minicpm-v-4.6"
+provider = "llama-swap"
+vision = true
+thinking = true
+
+[models."qwen3-vl-4b"]
+model_id = "qwen3-vl-4b"
+provider = "llama-swap"
+vision = true
+
+# ── Translation ────────────────────────────────────────────
+
+[models."hy-mt2-1.8b"]
+model_id = "hy-mt2-1.8b"
+provider = "llama-swap"
+temperature = 0.7
+top_p = 0.6
+
+# ── Embedding ──────────────────────────────────────────────
+
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true
+dimensions = 768
+
+[models."lfm2.5-embedding-350m"]
+model_id = "lfm2.5-embedding-350m"
+provider = "llama-swap"
+embeddings = true
+dimensions = 1024
+```
+
 ## See Also
 
-- [query](./commands/query.md) - Using models for queries
-- [summarize](./commands/summarize.md) - Summarization command
-- [vision](./commands/vision.md) - Vision command
-- [Configuration](./configuration.md) - Custom models setup
+- [query](./commands/query.md) — Using models for queries
+- [summarize](./commands/summarize.md) — Summarization command
+- [vision](./commands/vision.md) — Vision command
+- [Configuration](./configuration.md) — Full configuration reference
+- [Evaluated Models](./evaluated-models.md) — Detailed model benchmarks
+- [Provider Architecture](./development/provider-architecture.md) — LlmProvider trait design
