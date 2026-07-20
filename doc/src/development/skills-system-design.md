@@ -68,7 +68,7 @@ Instructions in Markdown...
 
 ### Current Limitations
 
-1. **Tools are hardcoded**: Every tool requires Rust code with `#[ollama_rs::function]` macro
+1. **Tools are hardcoded**: Every tool requires Rust code with `#[sprachspiel::tool]` macro
 2. **Tool behavior is fixed**: LLM receives tool descriptions but no guidance on *when* or *how* to use them
 3. **External tools impossible**: Using CLI tools like `pdftotext`, `tesseract` requires code changes
 4. **Binary size**: Rust crates for PDF/image processing add 2-10MB to binary
@@ -576,7 +576,7 @@ binary = "ffmpeg"
 ///
 /// # Returns
 /// Formatted list: "name: description\\n..."
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let indexes = load_skill_indexes();
     
@@ -606,7 +606,7 @@ pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + S
 ///
 /// # Returns
 /// Full skill content with detailed instructions and examples.
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn skill_view(name: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     match get_skill_content(&name) {
         Some(skill) => {

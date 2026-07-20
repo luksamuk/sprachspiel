@@ -18,7 +18,6 @@
   - [ocr](./commands/ocr.md)
   - [vision](./commands/vision.md)
   - [summarize](./commands/summarize.md)
-  - [search](./commands/search.md)
   - [config](./commands/config.md)
 - [Models](./models.md)
 - [Prompts](./prompts.md)

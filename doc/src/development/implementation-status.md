@@ -38,7 +38,7 @@
 - ✅ Feedback-Driven Memory (good/bad/correction signals with RRF fusion)
 - ✅ Context Continuity with Graceful Interruption
 - ✅ 3-Layer Compaction Strategy (pre-prune → chunked recursive → fallback truncation)
-- ✅ SQLite storage with sqlite-vec (schema v12, cosine distance)
+- ✅ SQLite storage with sqlite-vec (schema v14, cosine distance)
 - ✅ Embedding generation with Matryoshka truncation (768d → 256d)
 - ✅ Responsive chat rendering at any terminal width (Ratatui)
 - ✅ Thinking content preservation (T3-Phase0, #151)

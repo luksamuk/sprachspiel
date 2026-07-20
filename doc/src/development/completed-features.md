@@ -8,9 +8,9 @@ This document lists features that have been implemented and are available in the
 - 5 subcommands (query, chat, translate, ocr, summarize)
 - 3 built-in model presets (llama3.1, translategemma, glm-ocr)
 - User-defined models via `~/.config/sprachspiel/models.toml`
-- Optional model parameters (top_k, top_p, repeat_penalty)
+- Optional model parameters (top_p, temperature)
 - Thinking support for cloud models (`thinking = true` in config)
-- Markdown rendering via termimad
+- Standalone monochrome markdown renderer
 - Model capability detection (tools, vision, ocr)
 - Pipe support for all commands
 - Debug mode, Think mode, Code mode
