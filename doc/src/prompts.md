@@ -143,13 +143,13 @@ sprach -p code "Write a function"
 
 ```bash
 # Tool user with capable model
-sprach -m qwen2.5-coder:7b -p tool_user "Tell me about Pikachu"
+sprach -m ornith-1.0-35b -p tool_user "Tell me about Pikachu"
 
 # Code mode with code model
-sprach -m qwen2.5-coder:7b -p code "Implement sort"
+sprach -m ornith-1.0-35b -p code "Implement sort"
 
 # Default with any model
-sprach -m qwen3.5:4b -p default "Question"
+sprach -m qwen3.5-4b -p default "Question"
 ```
 
 ### Combining Options
@@ -162,7 +162,7 @@ sprach -p code -t "Complex algorithm"
 sprach -p tool_user -d "Debug this"
 
 # Code with specific model and debug
-sprach -m qwen3-coder -p code -d "Debug code generation"
+sprach -m ornith-1.0-35b -p code -d "Debug code generation"
 ```
 
 ## Mode Selection Guide

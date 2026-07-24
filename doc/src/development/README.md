@@ -34,26 +34,7 @@ Welcome to the Sprachspiel development documentation. This section contains tech
 
 ## Current Development Focus
 
-See **[Implementation Directive](./implementation-directive.md)** for the canonical implementation direction.
-
-### Phase 1 (Current Priority)
-
-1. `/feedback` command (good/bad/correction)
-2. Feedback signal storage
-3. Weight propagation
-4. Context statistics enhancement
-
-### Phase 2 (Next)
-
-1. Feedback-weighted retrieval
-2. Temporal decay implementation
-3. Context composition improvements
-
-### Phase 3 (Future)
-
-1. Tool outcome tracking
-2. Skill success tracking
-3. User pattern learning
+See **[Implementation Directive](./implementation-directive.md)** for the canonical implementation direction and **[Roadmap](./roadmap.md)** for current status.
 
 ## Project Structure
 

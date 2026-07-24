@@ -25,7 +25,7 @@ All backends expose the same `/v1/chat/completions` endpoint that Sprachspiel us
 
 #### Option A: llama-swap (recommended for local multi-model)
 
-llama-swap loads GGUF model files and exposes them through a single OpenAI-compatible API at `http://localhost:12434/v1`. Install and start it following the [llama-swap documentation](https://github.com/sguscher/llama-swap).
+llama-swap loads GGUF model files and exposes them through a single OpenAI-compatible API at `http://localhost:12434/v1`. Install and start it following the [llama-swap documentation](https://github.com/mostlygeeksllc/llama-swap).
 
 ```bash
 # Start llama-swap (default port 12434)

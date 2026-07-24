@@ -12,7 +12,7 @@ sprach [GLOBAL OPTIONS] summarize [TEXT]
 
 Create summaries of long documents, articles, or any text. The summarize command:
 
-- Uses the qwen3.5:4b model by default (optimized for summarization)
+- Uses the qwen3.5-4b model by default (optimized for summarization)
 - Supports multiple output formats (paragraph, bullets, both)
 - Offers style presets for different contexts
 - Accepts input from arguments or stdin
@@ -124,14 +124,14 @@ sprach summarize --style academic -f paragraph -l 200 "Research paper..."
 ### Model Selection
 
 ```bash
-# Use default (qwen3.5:4b)
+# Use default (qwen3.5-4b)
 sprach summarize "Text..."
 
 # Use specific model
-sprach -m qwen2.5-coder:7b summarize "Text..."
+sprach -m ornith-1.0-35b summarize "Text..."
 
 # Use smaller model
-sprach -m nanbeige4.1:3b summarize "Text..."
+sprach -m qwen3.5-4b summarize "Text..."
 ```
 
 ### From Files
@@ -297,17 +297,16 @@ grep -A 20 "^///" src/*.rs | sprach summarize --style technical
 
 ## Limitations
 
-- Uses `qwen3.5:4b` model by default
-- Requires model to be pulled: `ollama pull qwen3.5:4b`
+- Uses `qwen3.5-4b` model by default
+- Requires a model to be available on your LLM server
 - Very long texts may be truncated
 - Does not use tools (by design)
-- Pepe model does not get sarcastic personality (professional mode)
 
 ## Error Handling
 
 ```bash
-# Model not found
-ollama pull qwen3.5:4b
+# Model not available — ensure the model is running on your LLM server
+# Check with: sprach --list
 
 # Empty input
 # Ensure text is provided or piped correctly

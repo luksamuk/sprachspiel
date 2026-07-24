@@ -459,9 +459,8 @@ Tool categories (feature-flags):
 | `weather-tools` | 3 | ✅ |
 | `file-tools` | 5 | ✅ |
 | `calc-tools` | 1 | ✅ |
-| `serper-tools` | 2 | ✅ |
-| `system-tools` | 2 | ✅ |
 | `search-tools` | 3 | ❌ |
+| `system-tools` | 2 | ✅ |
 | `led-tools` | 5 | ❌ |
 
 ### 8. Skills System (`src/skills/`)

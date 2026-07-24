@@ -126,23 +126,25 @@ done
 
 ```bash
 # Use specific model
-sprach vision -m llava:13b photo.png
-sprach vision -m qwen3.5:4b screenshot.png
-sprach vision -m ministral-3:14b img1.png img2.png -- "Compare these"
+sprach vision -m llava-13b photo.png
+sprach vision -m qwen3.5-4b screenshot.png
+sprach vision -m ministral-3-14b img1.png img2.png -- "Compare these"
 
 # Via config file (~/.config/sprachspiel/config.toml):
 # [model.vision]
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 ```
 
 ## Vision Models
 
 | Model | Size | Context | Multi-Image | Best For |
 |-------|------|---------|-------------|----------|
-| `qwen3.5:4b` | 3.4 GB | 96K | Yes | Default, multimodal, good quality |
-| `moondream:1.8b` | 1.7 GB | 2K | No | Lightweight alternative |
-| `llava:13b` | 8.0 GB | 4K | No | Better quality |
-| `ministral-3:14b` | 7.5 GB | 32K | Yes | Multi-image, general purpose |
+| `qwen3.5-4b` | 3.4 GB | 96K | Yes | Default, multimodal, good quality |
+| `moondream` | 1.7 GB | 2K | No | Lightweight alternative |
+| `llava-13b` | 8.0 GB | 4K | No | Better quality |
+| `ministral-3-14b` | 7.5 GB | 32K | Yes | Multi-image, general purpose |
+
+> **Note:** These models are available via [llama-swap](https://github.com/mostlygeeksllc/llama-swap) or any other OpenAI-compatible backend. They are not limited to Ollama — configure them in your `models.toml` with the appropriate provider. See [Models](../models.md) for the full list of recommended models.
 
 **Note:** 8K context is sufficient for most vision tasks.
 
@@ -185,7 +187,7 @@ sprach vision chart.png -- "What trends does this chart show?"
 
 ```bash
 # Multi-image comparison (requires model with multi-image support)
-sprach vision -m ministral-3:14b v1.png v2.png -- "What are the differences?"
+sprach vision -m ministral-3-14b v1.png v2.png -- "What are the differences?"
 ```
 
 ## Configuration
@@ -203,7 +205,7 @@ tools = false
 
 1. CLI flag `-m` → use specified model
 2. Config file `[model.vision].model` → use configured model
-3. Default → `qwen3.5:4b`
+3. Default → `qwen3.5-4b`
 
 ## Pipelines
 
@@ -242,14 +244,14 @@ sprach vision chart.png "Extract the data as a markdown table"
 
 ### Multi-Image Tasks
 
-- Use `minicpm-v:8b` for comparing images
+- Use `ministral-3-14b` for comparing images
 - Be explicit about comparison type
 - Limit to 2-4 images for best results
 
 ## Limitations
 
-- Requires vision model (run `ollama pull qwen3.5:4b`)
-- Context varies by model (moondream: 2K, llava: 32K)
+- Requires vision model (ensure `qwen3.5-4b` or a dedicated VLM is available on your LLM server)
+- Context varies by model (moondream: 2K, llava: 4K)
 - Multi-image support varies by model
 - Complex images may need `--detailed` or custom prompts
 
@@ -258,8 +260,8 @@ sprach vision chart.png "Extract the data as a markdown table"
 Common errors and solutions:
 
 ```bash
-# Model not found
-ollama pull qwen3.5:4b
+# Model not available — ensure a vision model is running on your LLM server
+# Check with: sprach --list
 
 # File not found
 sprach vision /path/to/existing/file.png

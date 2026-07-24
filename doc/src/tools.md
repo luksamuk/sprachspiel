@@ -9,9 +9,8 @@ Sprachspiel provides tools that enhance queries with real-time data from externa
 | Document Import | 1 | Local files | ✅ Working | ✅ Enabled |
 | Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
-| Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
-| Web Search | 2 | Google via Serper | ✅ Working | ✅ Enabled* |
-| Web Scraper | 1 | html2md | ✅ Working | ❌ Disabled |
+| Calculator | 1 | Built-in | ✅ Working | ✅ Enabled |
+| Web Search | 3 | DuckDuckGo | ✅ Working | ❌ Opt-in |
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 8 | Local filesystem | ✅ Working | ✅ Enabled |
@@ -21,11 +20,9 @@ Sprachspiel provides tools that enhance queries with real-time data from externa
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
 | Subagent | 4 | SubagentRunner | ✅ Working | ✅ Enabled |
-| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
+| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled* |
 
-\* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
-
-\** **LED tools require configuration.** See [LED Control Tools](#led-control-tools-5) section.
+\* **LED tools require configuration.** See [LED Control Tools](#led-control-tools-5) section.
 
 ## Compilation Features
 
@@ -36,13 +33,15 @@ Tools are organized into feature flags that can be enabled or disabled at compil
 The default build includes:
 - `weather-tools` - Weather lookup tools
 - `calc-tools` - Mathematical calculator
-- `serper-tools` - Google Search via Serper (requires API key)
 - `system-tools` - Date/time and project context
 - `file-tools` - File system operations
 - `skills-tools` - AI behavior skills (skill_list, skill_view)
-- `todo-tools` - Session todo list management
 - `document-tools` - Document import
 - `subagent-tools` - Specialized subagent delegation (spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent)
+- `mermaid` - Mermaid diagram rendering (Unicode box-drawing text)
+- `latex` - LaTeX formula rendering (Unicode character art)
+
+> **Note:** Todo tools, feedback tools, factual memory, notes, and memory retrieval are always available — they are not feature-gated.
 
 ### Available Features
 
@@ -51,40 +50,36 @@ The default build includes:
 | `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ❌ No |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
 | `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
-| `serper-tools` | Google Search via Serper API | web_search, web_search_news | ✅ Yes |
-| `search-tools` | DuckDuckGo + Web scraper | web_search, web_search_news, web_scrape | ❌ No |
+| `search-tools` | DuckDuckGo web search + web scraper | web_search, web_search_news, web_scrape | ❌ No |
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
-| `todo-tools` | Session todo list | todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all | ✅ Yes |
 | `subagent-tools` | Specialized subagent delegation | spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
-| `all-tools` | Enable all tool categories | All of the above | - |
+| `mermaid` | Mermaid diagram rendering | — (rendering feature, not a tool) | ✅ Yes |
+| `latex` | LaTeX formula rendering | — (rendering feature, not a tool) | ✅ Yes |
+| `sandbox` | Landlock sandbox for Linux (kernel 5.13+) | — (security feature, not a tool) | ❌ No |
+| `all-tools` | Enable all tool categories + rendering + sandbox | All of the above | - |
 
 ### Web Search Configuration
 
-**Option 1: Serper (Recommended)** - Google Search results
-```bash
-# Set environment variable
-export SERPER_API_KEY="your-api-key-here"
+Web search is provided by DuckDuckGo via the `search-tools` feature flag. No API key is required.
 
-# Build with serper-tools (default)
-cargo build --release
+```bash
+# Build with web search enabled (adds search-tools to the default features)
+cargo build --release --features search-tools
+
+# Or build with all tools (includes search-tools)
+cargo build --release --features all-tools
 ```
 
-Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/month).
-
-**Option 2: DuckDuckGo** - Free but may be blocked
-```bash
-# Build with search-tools instead of serper-tools
-cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools,todo-tools,document-tools"
-```
+DuckDuckGo may occasionally rate-limit automated traffic or show CAPTCHA challenges. This is a third-party service limitation, not a bug in Sprachspiel.
 
 ### Building with Custom Features
 
-**Default build (includes Serper tools):**
+**Default build:**
 ```bash
 cargo build --release
 ```
@@ -756,10 +751,10 @@ Subagents are specialized AI models that handle specific tasks:
 
 | Type | Purpose | File Required | Default Model |
 |------|---------|---------------|---------------|
-| `ocr` | Image text extraction | ✅ Yes | `glm-ocr:bf16` |
-| `vision` | Image analysis/description | ✅ Yes | `qwen3.5:4b` |
-| `translate` | Translation between languages | ❌ No | `translategemma:4b` |
-| `summarize` | Text summarization | ❌ No | `qwen3.5:4b` |
+|| `ocr` | Image text extraction | ✅ Yes | `glm-ocr` |
+|| `vision` | Image analysis/description | ✅ Yes | `qwen3.5-4b` |
+|| `translate` | Translation between languages | ❌ No | `translategemma-4b` |
+|| `summarize` | Text summarization | ❌ No | `qwen3.5-4b` |
 
 ### Using Chat Commands
 
@@ -842,24 +837,24 @@ Subagent models are configured in `~/.config/sprachspiel/config.toml`. Each suba
 # ~/.config/sprachspiel/config.toml
 
 [model.ocr]
-model = "glm-ocr:bf16"
+model = "glm-ocr"
 
 [model.vision]
-model = "qwen3.5:4b"
+model = "qwen3.5-4b"
 
 [model.translate]
-model = "translategemma:4b"
+model = "translategemma-4b"
 
 [model.summarize]
-model = "qwen3.5:4b"
+model = "qwen3.5-4b"
 ```
 
 **Configuration Notes:**
 
-- Models must be installed in Ollama before use
-- OCR requires a model with OCR capabilities (e.g., `glm-ocr:bf16`)
-- Vision requires a multimodal model (e.g., `qwen3.5:4b`, `moondream:1.8b`)
-- Translation works best with dedicated translation models (e.g., `translategemma:4b`)
+- Models must be available on your LLM server before use
+- OCR requires a model with OCR capabilities (e.g., `glm-ocr`)
+- Vision requires a multimodal model (e.g., `qwen3.5-4b`, `lfm2.5-vl-1.6b`)
+- Translation works best with dedicated translation models (e.g., `translategemma-4b`)
 - Summarization can use general-purpose models
 - If a subagent model is not configured, the system uses sensible defaults
 
@@ -1671,11 +1666,11 @@ cargo build --release --features "led-tools,finance-tools"
 Tools are automatically enabled for capable models:
 
 ```bash
-# Tools auto-enabled for qwen2.5-coder:7b
-sprach -m qwen2.5-coder:7b "Tell me about Pikachu"
+# Tools auto-enabled for ornith-1.0-35b
+sprach -m ornith-1.0-35b "Tell me about Pikachu"
 
-# Tools auto-enabled for qwen3-coder
-sprach -m qwen3-coder "What's the weather in Tokyo?"
+# Tools auto-enabled for qwen3.5-4b
+sprach -m qwen3.5-4b "What's the weather in Tokyo?"
 ```
 
 ### Force Enable Tools
@@ -1830,9 +1825,9 @@ None currently.
 
 | Model | Tools | Notes |
 |-------|-------|-------|
-| qwen2.5-coder:7b | ✅ | Best for tools |
-| qwen3-coder | ✅ | Code + tools |
-| qwen3.5:4b | ✅ | General purpose (multimodal) |
+| ornith-1.0-35b | ✅ | Agentic coder, tool-capable |
+| qwen3.5-4b | ✅ | General purpose (multimodal) |
+| qwen3.5-9b | ✅ | General purpose (multimodal) |
 
 ## Debug Mode
 
@@ -1946,7 +1941,7 @@ This helps developers debug API issues and tool failures.
 
 ## Best Practices
 
-1. **Use capable models** - qwen2.5-coder:7b works best
+1. **Use capable models** - `ornith-1.0-35b` or `qwen3.5-4b` work well with tools
 2. **Be specific** - "Pikachu stats" vs "Tell me about Pikachu"
 3. **Use tool_user prompt** - For complex queries
 4. **Check debug mode** - If tools aren't working

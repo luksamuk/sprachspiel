@@ -282,7 +282,7 @@ Extract text from an image using the GLM-OCR specialized subagent.
 /ocr ~/documents/diagram.jpg figure
 ```
 
-The image is processed by the configured OCR model (default: `glm-ocr:bf16`). OCR prompts adapt to the model type — GLM-OCR uses rigid prefixes, while vision models use descriptive restricted prompts. The optional mode parameter selects the extraction type (text, table, figure, or formula).
+The image is processed by the configured OCR model (default: `glm-ocr`). OCR prompts adapt to the model type — GLM-OCR uses rigid prefixes, while vision models use descriptive restricted prompts. The optional mode parameter selects the extraction type (text, table, figure, or formula).
 
 #### /vision
 
@@ -362,7 +362,7 @@ Show token usage and context utilization for the current session:
 ```
 > /context
 Context Information:
-  Model:          qwen3.5:4b (96K context)
+  Model:          qwen3.5-4b (96K context)
 
   Token Breakdown:
     System prompt:    ~890 tokens
@@ -433,10 +433,7 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
 
 ### Prerequisites
 
-1. **LLM server running** with embedding model:
-   ```bash
-   ollama pull nomic-embed-text-v2-moe
-   ```
+1. **LLM server running** with embedding model (e.g., `nomic-embed-text-v2-moe`). See [Models](../models.md) for embedding model recommendations and [Configuration](../configuration.md#indexing-configuration) for setup.
 
 2. **Messages indexed** - Messages are automatically indexed when saved to SQLite.
 
@@ -773,8 +770,8 @@ lfm> What is Rust?
 lfm> What about its memory safety features?
 [Response that includes context from previous message]
 
-lfm> /model qwen3.5:4b
-Model switched to: qwen3.5:4b
+lfm> /model qwen3.5-4b
+Model switched to: qwen3.5-4b
 
 qwen3.5> /quit
 Goodbye!

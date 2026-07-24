@@ -44,8 +44,8 @@ Sprachspiel looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: sprach --list-models
-# Default: "qwen3.5:4b"
-default = "qwen3.5:4b"
+# Default: "qwen3.5-4b"
+default = "qwen3.5-4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.
@@ -68,7 +68,7 @@ default = "qwen3.5:4b"
 [model.query]
 # The model to use for 'sprach query'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -82,7 +82,7 @@ default = "qwen3.5:4b"
 [model.chat]
 # The model to use for 'sprach chat'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Enable thinking mode for chat. Some models show their reasoning process.
 # If not specified, defaults to: false for chat
@@ -97,7 +97,7 @@ default = "qwen3.5:4b"
 # The model to use for 'sprach summarize'.
 # Recommended: a lightweight model for speed.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Summarization typically doesn't need thinking mode.
 # If not specified, defaults to: false for summarize
@@ -110,9 +110,9 @@ default = "qwen3.5:4b"
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
-# Default: qwen2.5-coder:7b (optimized for coding with function calling)
-# If not specified, falls back to the code default (qwen2.5-coder:7b).
-# model = "qwen2.5-coder:7b"
+# Default: ornith-1.0-35b (agentic coder with function calling)
+# If not specified, falls back to the code default (ornith-1.0-35b).
+# model = "ornith-1.0-35b"
 
 # Code generation typically doesn't need thinking mode.
 # If not specified, defaults to: false for code
@@ -139,10 +139,9 @@ default = "qwen3.5:4b"
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
-#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
+#   - web_search, web_search_news, web_scrape (DuckDuckGo — requires search-tools feature)
 #
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Note: DuckDuckGo may occasionally rate-limit or show CAPTCHA. This is a third-party limitation.
 # Default: [] (all enabled tools are available)
 blacklist = []
 
@@ -517,7 +516,7 @@ blacklist = ["fetch_pokemon", "get_pokemon_ability"]
 
 **Important**: When a tool is blacklisted, it's completely hidden from the model. The system prompt won't mention the tool, and the model won't try to use it. This saves context window space.
 
-**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_instant_answer`) may fail due to CAPTCHA. For reliable web search, use Serper tools (`serper_search`, `serper_search_news`) which require the `SERPER_API_KEY` environment variable.
+**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_scrape`) may occasionally be rate-limited or show CAPTCHA. This is a third-party service limitation, not a bug in Sprachspiel. These tools require the `search-tools` feature flag at compile time.
 
 ### Enabling Pokémon Tools
 

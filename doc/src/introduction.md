@@ -20,7 +20,7 @@ Get answers from AI models with beautiful markdown formatting:
 
 ```bash
 sprach "Explain quantum computing in simple terms"
-sprach -m qwen3.5:4b "Generate a Python function for Fibonacci"
+sprach -m qwen3.5-4b "Generate a Python function for Fibonacci"
 sprach -t "Solve this step by step"  # Think mode
 ```
 

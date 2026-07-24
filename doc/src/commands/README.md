@@ -6,12 +6,12 @@ Sprachspiel provides six main commands for different tasks. Each command is desi
 
 | Command | Purpose | Default Model |
 |---------|---------|---------------|
-| `query` | General LLM queries | qwen3.5:4b |
-| `chat` | Interactive chat with history | qwen3.5:4b |
-| `translate` | Language translation | translategemma |
+| `query` | General LLM queries | qwen3.5-4b |
+| `chat` | Interactive chat with history | qwen3.5-4b |
+| `translate` | Language translation | translategemma-4b |
 | `ocr` | Image text extraction | glm-ocr |
-| `vision` | Image description and analysis | qwen3.5:4b |
-| `summarize` | Text summarization | qwen3.5:4b |
+| `vision` | Image description and analysis | qwen3.5-4b |
+| `summarize` | Text summarization | qwen3.5-4b |
 
 ## Default Mode
 

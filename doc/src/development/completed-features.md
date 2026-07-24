@@ -62,8 +62,7 @@ This document lists features that have been implemented and are available in the
 | File Read | 5 | `file-tools` | ✅ Enabled |
 | File Write | 3 | `file-tools` | ✅ Enabled |
 | Calculator | 1 | `calc-tools` | ✅ Enabled |
-| Web Search (Serper) | 2 | `serper-tools` | ✅ Enabled |
-| Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
+| Web Search (DuckDuckGo) | 3 | `search-tools` | ❌ Opt-in |
 | System | 2 | `system-tools` | ✅ Enabled |
 | Factual Memory | 3 | (always on) | ✅ Enabled |
 | Memory Retrieval | 1 | (always on) | ✅ Enabled |
