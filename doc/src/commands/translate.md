@@ -198,7 +198,6 @@ cat english.txt | sprach translate :pt > portuguese.txt
 
 ## Limitations
 
-- Requires `translategemma-4b` model
 - Best for single sentences or short paragraphs
 - Very long texts may be truncated
 

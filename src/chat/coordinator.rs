@@ -681,14 +681,9 @@ impl Coordinator {
         // Preemptively truncate at 75% of the ESTIMATE so there's headroom
         // for the real tokenizer to be ~33% higher and still fit.
         //
-        // TODO: A real tokenizer would give 100%
-        // accuracy and let us size to the actual budget. Two options:
-        //   1. tiktoken-rs (GPT-style BPE) — ~5MB binary, ~100ms load.
-        //      Doesn't match Llama/Mistral/Qwen tokenizers 100%.
-        //   2. Ollama's /api/tokenize endpoint — model-specific, no
-        //      binary bloat, but adds HTTP RTT on the compaction path.
-        // Deferred until we have a clearer accuracy-vs-complexity trade-off
-        // from real-world data.
+        // The heuristic underestimates by ~30% vs real tokenizers.
+        // See research-icebox.md R-02 / D-02 and IMPLEMENTATION.md W4.4
+        // (#107) for the token-aware chunking roadmap.
         if total_after_add < ctx_window.saturating_mul(3) / 4 {
             return None;
         }
