@@ -107,7 +107,6 @@ fn file_section(blacklist: &HashSet<&str>) -> Option<String> {
         "read_file_segment",
         "count_lines",
         "list_directory",
-        "search_files",
     ];
     let available = filter_available(&tools, blacklist);
     if available.is_empty() {
@@ -115,10 +114,12 @@ fn file_section(blacklist: &HashSet<&str>) -> Option<String> {
     }
     Some(
         r#"### FILE TOOLS
-Use for reading, listing, and searching files.
-Available: read_file, read_file_segment, count_lines, list_directory, search_files
+Use for reading and listing files.
+Available: read_file, read_file_segment, count_lines, list_directory
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
+
+**Searching file contents:** Use run_command("rg -n <pattern> <path>") for regex search. rg respects .gitignore, handles binary files, and has no file count or depth limits. Use head/tail to control output: run_command("rg -n pattern src/", "50", null, null) for first 50 lines. Use --glob for file filtering: run_command("rg -n --glob *.rs pattern .", null, null, null).
 
 **PDFs:** read_file cannot read PDFs (binary format). **Load the document-processing skill FIRST** with skill_view(name="document-processing") for the complete two-phase pipeline (text extraction + vision analysis)."#
             .to_string(),
