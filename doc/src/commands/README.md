@@ -70,7 +70,6 @@ sprach ocr doc.png | sprach summarize | sprach translate :pt
 |---------|-------|------|-----------|-----|--------|-----------|
 | **Input** | Text query | Interactive | Text + language codes | Image files | Image files | Text |
 | **Output** | AI response | Interactive | Translated text | Extracted text | Description | Summary |
-| **Model** | Configurable | Configurable | translategemma (fixed) | glm-ocr (fixed) | Configurable | Configurable |
 | **Tools** | Yes (auto) | Yes (auto) | No | No | No | No |
 | **Stdin** | Yes | No | Yes | No | No | Yes |
 | **History** | No | Yes | No | No | No | No |
