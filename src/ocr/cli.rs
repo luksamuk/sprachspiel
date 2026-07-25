@@ -1,7 +1,7 @@
 //! OCR subcommand CLI
 //!
 //! Defines the command-line interface for the OCR subcommand
-//! which extracts text from images using GLM-OCR.
+//! which extracts text from images using an OCR model.
 
 use clap::Args;
 use std::path::PathBuf;
@@ -11,8 +11,8 @@ use super::mode::OcrMode;
 /// Arguments for the OCR subcommand
 #[derive(Args, Debug, Clone)]
 #[command(
-    about = "Extract text from images using GLM-OCR",
-    long_about = r#"Extract text, tables, figures, or formulas from images using the GLM-OCR model.
+    about = "Extract text from images",
+    long_about = r#"Extract text, tables, figures, or formulas from images.
 
 SUPPORTED IMAGE FORMATS:
   - PNG (.png)
