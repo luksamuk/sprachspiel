@@ -1186,13 +1186,16 @@ impl Settings {
     /// Build a client for a named provider from `models.toml`.
     /// Each model declares its `provider = "<name>"` in `models.toml`; this
     /// function returns the appropriate `Ollama` (shim) for that provider.
-    pub fn ollama_client_for(&self, provider_name: &str) -> crate::provider::Ollama {
+    pub fn provider_for(&self, provider_name: &str) -> crate::provider::OpenAICompatibleProvider {
         let providers = crate::user_models::get_providers();
         if let Some(cfg) = providers.get(provider_name) {
-            crate::provider::Ollama::from_provider_config(cfg)
+            crate::provider::OpenAICompatibleProvider::from_provider_config(cfg)
         } else {
             // Fallback to default Ollama
-            crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+            crate::provider::OpenAICompatibleProvider::new_local(
+                "http://localhost".to_string(),
+                11434,
+            )
         }
     }
 
@@ -1200,18 +1203,21 @@ impl Settings {
     /// Resolves the model's `provider = "<name>"` from `models.toml`
     /// and returns the appropriate `Ollama` shim.
     /// Falls back to default Ollama if model is not found or has no provider.
-    pub fn ollama_client_for_model(&self, model_name: &str) -> crate::provider::Ollama {
+    pub fn provider_for_model(
+        &self,
+        model_name: &str,
+    ) -> crate::provider::OpenAICompatibleProvider {
         if let Some(provider_name) = crate::user_models::get_provider_for_model(model_name) {
-            return self.ollama_client_for(&provider_name);
+            return self.provider_for(&provider_name);
         }
         // Fallback: use the first OpenAI provider if available, else default Ollama
         let providers = crate::user_models::get_providers();
         for (_name, cfg) in providers.iter() {
             if matches!(cfg.kind, crate::user_models::ProviderKind::OpenAI) {
-                return crate::provider::Ollama::from_provider_config(cfg);
+                return crate::provider::OpenAICompatibleProvider::from_provider_config(cfg);
             }
         }
-        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+        crate::provider::OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434)
     }
 
     /// Create a sample config file if it doesn't exist
@@ -1237,7 +1243,7 @@ mod tests {
     fn test_default_settings() {
         let settings = Settings::default();
         assert_eq!(settings.model.default, "qwen3.5:4b");
-        // ollama_host/port removed in #120 - now in models.toml [provider]
+        // Host/port config moved to models.toml [provider.*] section
         assert_eq!(settings.display.skin, "dark");
         assert!(settings.display.show_tool_calls);
         // These should be false by default

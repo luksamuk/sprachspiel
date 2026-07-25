@@ -26,8 +26,7 @@
 
 use std::sync::Arc;
 
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
+use crate::provider::types::{LlmMessage, LlmResponse, ProviderOptions};
 
 use crate::config::ModelConfig;
 use crate::context_overflow::{
@@ -40,41 +39,23 @@ use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
     build_system_prompt,
 };
-use crate::provider::types::ProviderOptions;
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::finish_spinner;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
 
-use super::coordinator::{classify_ollama_error, format_recovery_message};
-use super::custom_coordinator::CustomCoordinator;
+use super::coordinator::Coordinator;
+use super::error_recovery::{classify_provider_error, format_recovery_message};
 use super::llm_event::LlmEvent;
 use super::recovery::push_tool_result;
 use super::session::ChatSession;
 use super::thinking::{extract_thinking, process_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
-use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
+use crate::provider::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// Convert `ProviderOptions` (agnostic) to legacy `ModelOptions` (ollama-rs).
-/// The CustomCoordinator still uses `ModelOptions` for now; this is removed
-/// in the P6.0e.4 commit that migrates `custom_coordinator.rs` to LlmProvider.
-pub fn convert_provider_to_model(opts: &ProviderOptions) -> ModelOptions {
-    let mut out = ModelOptions::default();
-    if let Some(t) = opts.temperature {
-        out = out.temperature(t);
-    }
-    if let Some(p) = opts.top_p {
-        out = out.top_p(p);
-    }
-    if let Some(n) = opts.num_predict {
-        out = out.num_predict(n);
-    }
-    out
-}
 
 /// Token usage metrics for a chat response
 #[derive(Debug, Clone, Default)]
@@ -158,9 +139,9 @@ pub fn build_session_system_prompt(
 /// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
-    ollama: crate::provider::Ollama,
+    provider: crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
-    model_options: ollama_rs::models::ModelOptions,
+    model_options: ProviderOptions,
     think_enabled: bool,
     tools_enabled: bool,
     settings: &Settings,
@@ -169,9 +150,9 @@ pub fn setup_coordinator(
     view_event_sender: super::view::ViewEventSender,
     llm_tx: Option<tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
-) -> CustomCoordinator<Vec<ChatMessage>> {
+) -> Coordinator {
     let coordinator = crate::query::ChatContext {
-        ollama,
+        provider,
         model_id: model_config.model_id.clone(),
         model_options,
         use_think: think_enabled,
@@ -185,7 +166,7 @@ pub fn setup_coordinator(
         // reference to ChatView, which is not possible with 'static closures.
         //
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
+            crate::chat::coordinator::ChatEvent::PreToolContent { content, thinking } => {
                 if llm_tx.is_some() {
                     // TUI streaming path: pre-tool content is already on screen via
                     // StreamToken/StreamThinking and will be finalized by ToolCallStarted.
@@ -202,7 +183,7 @@ pub fn setup_coordinator(
                     }
                 }
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
+            crate::chat::coordinator::ChatEvent::ContextNeedsCompaction {
                 tokens_used,
                 context_window,
                 ..
@@ -212,11 +193,11 @@ pub fn setup_coordinator(
                     percent: percent as u64,
                 });
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextTruncated { .. } => {
+            crate::chat::coordinator::ChatEvent::ContextTruncated { .. } => {
                 // Already logged via log::warn! — no view event needed
                 // (this is informational, not user-facing)
             }
-            crate::chat::custom_coordinator::ChatEvent::ToolExecutionStarted {
+            crate::chat::coordinator::ChatEvent::ToolExecutionStarted {
                 tool_call_id,
                 name,
                 args,
@@ -229,7 +210,7 @@ pub fn setup_coordinator(
                     });
                 }
             }
-            crate::chat::custom_coordinator::ChatEvent::ToolExecutionFinished {
+            crate::chat::coordinator::ChatEvent::ToolExecutionFinished {
                 tool_call_id,
                 result,
                 is_error,
@@ -279,9 +260,9 @@ pub async fn prepare_messages(
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     user_input: &str,
     system_prompt: &str,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: &mut Coordinator,
     continuation_tag: Option<&ContinuationTag>,
-) -> Vec<ChatMessage> {
+) -> Vec<LlmMessage> {
     let settings = crate::settings::Settings::load();
     let retrieval_config = if session.retrieval_enabled {
         RetrievalConfig {
@@ -323,12 +304,12 @@ pub async fn prepare_messages(
     // ephemeral user message via coordinator.push_ephemeral() below.
     // Adding an empty user message confuses the LLM and wastes tokens.
     if !user_input.is_empty() {
-        messages.push(ChatMessage::user(user_input.to_string()));
+        messages.push(LlmMessage::user(user_input.to_string()));
     }
 
     if let Some(tag) = continuation_tag {
         let continuation_prompt = build_continuation_prompt(&tag.paused_at, &tag.next_step);
-        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+        coordinator.push_ephemeral(LlmMessage::user(continuation_prompt));
         if log::log_enabled!(log::Level::Debug) {
             log::debug!("Injected continuation prompt as ephemeral message");
         }
@@ -341,20 +322,20 @@ pub async fn prepare_messages(
 ///
 /// Renders thinking content and the main response via the provided view.
 pub fn process_chat_response(
-    response: ollama_rs::generation::chat::ChatMessageResponse,
+    response: LlmResponse,
     think_enabled: bool,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    coordinator: &mut Coordinator,
     context_window: usize,
     system_prompt: String,
     view: &mut dyn ChatView,
 ) -> SendMessageResult {
-    let content = response.message.content.clone();
+    let content = response.content.clone();
 
-    let metrics = if let Some(ref final_data) = response.final_data {
+    let metrics = if let Some(prompt_eval_count) = response.prompt_eval_count {
         TokenMetrics {
-            prompt_tokens: final_data.prompt_eval_count,
-            response_tokens: final_data.eval_count,
-            total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+            prompt_tokens: prompt_eval_count as u64,
+            response_tokens: response.eval_count.unwrap_or(0) as u64,
+            total_tokens: prompt_eval_count as u64 + response.eval_count.unwrap_or(0) as u64,
         }
     } else {
         TokenMetrics::default()
@@ -362,7 +343,7 @@ pub fn process_chat_response(
 
     // Extract and render thinking content via view
     if think_enabled {
-        let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+        let thinking = extract_thinking(&content, response.thinking.as_ref());
         if let Some(ref thinking_content) = thinking {
             view.show_thinking(thinking_content);
         }
@@ -411,7 +392,7 @@ pub fn process_chat_response(
 /// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
-    ollama: &crate::provider::Ollama,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -427,8 +408,8 @@ pub async fn send_message(
     view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for CustomCoordinator.
-    let model_options = convert_provider_to_model(&provider_options);
+    // Bridge to legacy ProviderOptions for Coordinator.
+    let model_options = provider_options.clone();
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -537,7 +518,7 @@ pub async fn send_message(
     let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
 
     let mut coordinator = setup_coordinator(
-        ollama.clone(),
+        provider.clone(),
         model_config,
         model_options,
         think_enabled,
@@ -588,14 +569,14 @@ pub async fn send_message(
             with_full_context(
                 db.clone(),
                 embedding.clone(),
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat(messages.clone()),
             )
             .await
         } else {
             with_tool_context(
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat(messages.clone()),
             )
@@ -605,23 +586,12 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = e.clone();
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, &tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -696,7 +666,7 @@ pub async fn send_message(
 /// delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message_stream(
-    ollama: &crate::provider::Ollama,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     user_input: &str,
@@ -714,8 +684,8 @@ pub async fn send_message_stream(
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
-    // Bridge to legacy ModelOptions for CustomCoordinator.
-    let model_options = convert_provider_to_model(&provider_options);
+    // Bridge to legacy ProviderOptions for Coordinator.
+    let model_options = provider_options.clone();
     let blacklist_set = settings.blacklist_set();
 
     // Load facts from Factual Memory System
@@ -777,7 +747,7 @@ pub async fn send_message_stream(
     let coordinator_cancel = cancel_token.clone();
 
     let mut coordinator = setup_coordinator(
-        ollama.clone(),
+        provider.clone(),
         model_config,
         model_options,
         think_enabled,
@@ -853,7 +823,7 @@ pub async fn send_message_stream(
             with_full_context(
                 db.clone(),
                 embedding.clone(),
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
@@ -868,7 +838,7 @@ pub async fn send_message_stream(
             .await
         } else {
             with_tool_context(
-                ollama.clone(),
+                provider.clone(),
                 Arc::new(settings.clone()),
                 coordinator.chat_stream(
                     messages.clone(),
@@ -886,23 +856,12 @@ pub async fn send_message_stream(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = e.clone();
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, &tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -932,13 +891,6 @@ pub async fn send_message_stream(
 
                     continue;
                 } else {
-                    // Non-retryable error — propagate to the caller.
-                    // Note: "invalid tool call arguments" (HTTP 400) is now
-                    // handled inside the coordinator's process_next_stream
-                    // (custom_coordinator.rs), which sanitizes invalid
-                    // tool_calls and retries without breaking the ReAct loop.
-                    // If it reaches here, the coordinator has already exhausted
-                    // its internal retries (3 attempts) — propagate as fatal.
                     let error_str = e.to_string();
                     break Err(error_str);
                 }
@@ -957,13 +909,14 @@ pub async fn send_message_stream(
     // Process response
     let processed_result = match result {
         Ok(response) => {
-            let content = response.message.content.clone();
+            let content = response.content.clone();
 
-            let metrics = if let Some(ref final_data) = response.final_data {
+            let metrics = if let Some(prompt_eval_count) = response.prompt_eval_count {
                 TokenMetrics {
-                    prompt_tokens: final_data.prompt_eval_count,
-                    response_tokens: final_data.eval_count,
-                    total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+                    prompt_tokens: prompt_eval_count as u64,
+                    response_tokens: response.eval_count.unwrap_or(0) as u64,
+                    total_tokens: prompt_eval_count as u64
+                        + response.eval_count.unwrap_or(0) as u64,
                 }
             } else {
                 TokenMetrics::default()
@@ -977,7 +930,7 @@ pub async fn send_message_stream(
             // Content is already displayed via StreamToken events.
             // Don't call view.show_assistant_response() — that would duplicate.
 
-            let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+            let thinking = extract_thinking(&content, response.thinking.as_ref());
             let display_content = process_thinking(&content).content;
             let pre_tool = coordinator.take_pre_tool_content();
             let (pre_tool_content, pre_tool_thinking) = match pre_tool {
@@ -1068,7 +1021,7 @@ pub async fn send_message_stream(
 /// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
-    ollama: &crate::provider::Ollama,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     session: &ChatSession,
     _settings: &Settings,
@@ -1130,7 +1083,7 @@ pub async fn compact_conversation(
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
-        match compact_with_llm(ollama, model_config, compact_prompt, llm_tx.clone(), true).await {
+        match compact_with_llm(provider, model_config, compact_prompt, llm_tx.clone(), true).await {
             Ok(summary) => return Ok((summary, range)),
             Err(e) if is_prompt_too_long_error(&e.to_string()) => {
                 log::warn!(
@@ -1173,7 +1126,7 @@ pub async fn compact_conversation(
         message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
     });
 
-    match compact_recursive(ollama, model_config, &chunks, llm_tx.clone(), 0).await {
+    match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0).await {
         Ok(summary) => {
             log::info!(
                 "Layer 2 (chunked summarization): succeeded with {} chunks",
@@ -1222,7 +1175,7 @@ pub async fn compact_conversation(
 
     // Layer 3 is the last resort. If even truncation fails to fit the prompt,
     // compaction is truly impossible — return a clear error with diagnostics.
-    match compact_with_llm(ollama, model_config, compact_prompt, llm_tx, true).await {
+    match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true).await {
         Ok(summary) => Ok((summary, range)),
         Err(e) if is_prompt_too_long_error(&e.to_string()) => {
             log::error!(
@@ -1263,7 +1216,7 @@ pub async fn compact_conversation(
 /// indirection for recursive async functions (the future size would
 /// otherwise be infinite).
 fn compact_recursive<'a>(
-    ollama: &'a crate::provider::Ollama,
+    provider: &'a crate::provider::OpenAICompatibleProvider,
     model_config: &'a ModelConfig,
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1309,7 +1262,8 @@ fn compact_recursive<'a>(
 
             // Intermediate chunk summaries are processed silently (stream=false).
             // Only the final consolidation pass streams to the TUI.
-            match compact_with_llm(ollama, model_config, chunk_prompt, llm_tx.clone(), false).await
+            match compact_with_llm(provider, model_config, chunk_prompt, llm_tx.clone(), false)
+                .await
             {
                 Ok(summary) => summaries.push(summary),
                 Err(e) => {
@@ -1341,7 +1295,7 @@ fn compact_recursive<'a>(
             // Combined summaries fit — do a final summarization pass.
             // Stream the final consolidation so the user sees progress.
             let final_prompt = build_compaction_prompt(&combined);
-            compact_with_llm(ollama, model_config, final_prompt, llm_tx, true).await
+            compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
             log::debug!(
@@ -1364,7 +1318,7 @@ fn compact_recursive<'a>(
             let chunk_budget = max_chunk_tokens(context_window);
             let sub_chunks = split_into_chunks(&summary_messages, chunk_budget);
 
-            compact_recursive(ollama, model_config, &sub_chunks, llm_tx, depth + 1).await
+            compact_recursive(provider, model_config, &sub_chunks, llm_tx, depth + 1).await
         }
     })
 }
@@ -1406,7 +1360,7 @@ fn build_conversation_text(messages: &[super::session::SavedMessage]) -> String 
 /// and the summary is returned, but the TUI shows no intermediate content
 /// (used for intermediate chunk summarization in recursive compaction).
 async fn compact_with_llm(
-    ollama: &crate::provider::Ollama,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_config: &ModelConfig,
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
@@ -1416,15 +1370,14 @@ async fn compact_with_llm(
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
     let provider_options = model_cfg.build_provider_options();
-    let model_options = convert_provider_to_model(&provider_options);
+    let model_options = provider_options.clone();
 
-    let mut coordinator =
-        CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-            .options(model_options);
+    let mut coordinator = Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
+        .options(model_options);
 
     let messages = vec![
-        ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
-        ChatMessage::user(compact_prompt),
+        LlmMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
+        LlmMessage::user(compact_prompt),
     ];
 
     // Only stream tokens to TUI for the final consolidaton pass.
@@ -1457,7 +1410,7 @@ async fn compact_with_llm(
 
     match result {
         Ok(response) => {
-            let summary = strip_thinking_tags(&response.message.content);
+            let summary = strip_thinking_tags(&response.content);
             Ok(summary)
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),

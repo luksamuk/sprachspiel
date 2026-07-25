@@ -6,8 +6,8 @@ Get up and running with Sprachspiel in just 5 minutes. This guide covers the ess
 
 Before starting, ensure:
 - Sprachspiel is installed (see [Installation](./installation.md))
-- Ollama is running (`ollama serve`)
-- Default model is pulled (`ollama pull qwen3.5:4b`)
+- An OpenAI-compatible LLM server is running (e.g., `ollama serve`, `llama-server`, or a cloud endpoint)
+- Default model is available (e.g., `ollama pull qwen3.5:4b` for Ollama)
 
 ## Your First Query
 
@@ -180,7 +180,7 @@ cat to-translate.txt | sprach translate :pt
 
 4. **Model selection**: Different tasks benefit from different models:
    - General queries: `qwen3.5:4b` (default)
-   - Coding: `qwen2.5-coder:7b` (code mode)
+   - Coding: `ornith-1.0-35b` (code mode)
    - Tools: `qwen3.5:4b`
    - Summarization: `qwen3.5:4b`
 

@@ -2,15 +2,16 @@
 //!
 //! Provides a minimal interface for dispatching sub-tasks (OCR, Vision,
 //! Translate, Summarize) to Ollama models without the overhead
-//! of `CustomCoordinator` (no history, no callbacks, no overflow detection).
+//! of `Coordinator` (no history, no callbacks, no overflow detection).
 //!
 //! Two API paths:
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
 //! - `/api/chat`: For text-based tasks (Translate, Summarize)
 
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::generation::chat::request::ChatMessageRequest;
-use ollama_rs::models::ModelOptions;
+use crate::provider::LlmProvider;
+use crate::provider::types::LlmMessage;
+
+use crate::provider::types::ProviderOptions;
 
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 
@@ -92,7 +93,7 @@ impl SubagentType {
 /// are respected instead of falling back to a hardcoded temperature 0.0.
 ///
 /// Note: Sub-agent results are NOT truncated. The coordinator's emergency
-/// context overflow protection in `custom_coordinator.rs` handles any
+/// context overflow protection in `coordinator.rs` handles any
 /// results that would exceed the context window.
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
@@ -101,7 +102,7 @@ pub struct SubagentConfig {
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
     /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
-    pub model_options: ollama_rs::models::ModelOptions,
+    pub model_options: ProviderOptions,
     /// OCR extraction mode (Text, Table, Figure, Formula).
     pub ocr_mode: OcrMode,
 }
@@ -115,13 +116,8 @@ impl SubagentConfig {
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
         let config_key = model.into();
         let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
-            .map(|mc| {
-                (
-                    mc.model_id.clone(),
-                    crate::chat::core::convert_provider_to_model(&mc.build_provider_options()),
-                )
-            })
-            .unwrap_or_else(|| (config_key.clone(), ModelOptions::default().temperature(0.0)));
+            .map(|mc| (mc.model_id.clone(), mc.build_provider_options()))
+            .unwrap_or_else(|| (config_key.clone(), ProviderOptions::default()));
         Self {
             model: resolved_model,
             system_prompt: system_prompt.into(),
@@ -139,18 +135,21 @@ impl SubagentConfig {
 
 /// Lightweight one-shot executor for specialized sub-tasks.
 ///
-/// Unlike `CustomCoordinator` (992 lines with history, callbacks, overflow
+/// Unlike `Coordinator` (992 lines with history, callbacks, overflow
 /// detection, continuation tags), `SubagentRunner` is intentionally minimal:
 /// just an Ollama client, a config, and a `run()` method.
 pub struct SubagentRunner {
-    ollama: crate::provider::Ollama,
+    provider: crate::provider::OpenAICompatibleProvider,
     config: SubagentConfig,
 }
 
 impl SubagentRunner {
-    /// Create a new runner with the given Ollama client and config.
-    pub fn new(ollama: crate::provider::Ollama, config: SubagentConfig) -> Self {
-        Self { ollama, config }
+    /// Create a new runner with the given provider and config.
+    pub fn new(
+        provider: crate::provider::OpenAICompatibleProvider,
+        config: SubagentConfig,
+    ) -> Self {
+        Self { provider, config }
     }
 
     /// Execute a subagent task.
@@ -161,7 +160,7 @@ impl SubagentRunner {
     ///
     /// Results are returned in full — truncation is handled by the
     /// coordinator's emergency context overflow protection in
-    /// `custom_coordinator.rs` if needed.
+    /// `coordinator.rs` if needed.
     ///
     /// # Arguments
     /// * `subagent_type` - Which specialization to invoke.
@@ -185,31 +184,24 @@ impl SubagentRunner {
         }
     }
 
-    /// Execute via `/api/chat` — used for text-based subagents (Translate, Summarize).
-    ///
-    /// Constructs a system message from the config's system prompt and a user
-    /// message from the provided prompt, then sends a `ChatMessageRequest`.
+    /// Execute via `LlmProvider::chat` — used for text-based subagents (Translate, Summarize).
     async fn run_chat(
         &self,
         prompt: String,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let system_message = ChatMessage::system(self.config.system_prompt.clone());
-        let user_message = ChatMessage::user(prompt);
+        let system_message = LlmMessage::system(self.config.system_prompt.clone());
+        let user_message = LlmMessage::user(prompt);
 
-        let model_options = self.config.model_options.clone();
+        let messages = vec![system_message, user_message];
+        let options = self.config.model_options.clone();
 
-        let request = ChatMessageRequest::new(
-            self.config.model.clone(),
-            vec![system_message, user_message],
-        )
-        .options(model_options);
+        let response = self
+            .provider
+            .chat(&self.config.model, messages, vec![], options)
+            .await
+            .map_err(|e| format!("chat request failed for model '{}': {e}", self.config.model))?;
 
-        let response =
-            self.ollama.send_chat_messages(request).await.map_err(|e| {
-                format!("/api/chat failed for model '{}': {}", self.config.model, e)
-            })?;
-
-        Ok(response.message.content.trim().to_string())
+        Ok(response.content.trim().to_string())
     }
 
     /// Execute a translation task via `/api/chat`.
@@ -260,25 +252,24 @@ impl SubagentRunner {
                 .with_retrieval(false),
         );
 
-        let system_message = ChatMessage::system(system_prompt);
-        let user_message = ChatMessage::user(text.to_string());
+        let system_message = LlmMessage::system(system_prompt);
+        let user_message = LlmMessage::user(text.to_string());
 
-        let model_options = self.config.model_options.clone();
+        let messages = vec![system_message, user_message];
+        let options = self.config.model_options.clone();
 
-        let request = ChatMessageRequest::new(
-            self.config.model.clone(),
-            vec![system_message, user_message],
-        )
-        .options(model_options);
+        let response = self
+            .provider
+            .chat(&self.config.model, messages, vec![], options)
+            .await
+            .map_err(|e| {
+                format!(
+                    "chat request failed for summarize on model '{}': {e}",
+                    self.config.model
+                )
+            })?;
 
-        let response = self.ollama.send_chat_messages(request).await.map_err(|e| {
-            format!(
-                "/api/chat failed for summarize on model '{}': {}",
-                self.config.model, e
-            )
-        })?;
-
-        let raw = response.message.content.trim().to_string();
+        let raw = response.content.trim().to_string();
         Ok(raw)
     }
 
@@ -321,7 +312,7 @@ impl SubagentRunner {
             .process(
                 &args,
                 &model,
-                &self.ollama,
+                &self.provider,
                 self.config.model_options.clone(),
                 false,
             )
@@ -369,7 +360,7 @@ impl SubagentRunner {
                 prompt_override,
                 &self.config.model,
                 self.config.model_options.clone(),
-                &self.ollama,
+                &self.provider,
                 false,
             )
             .await
@@ -487,12 +478,12 @@ mod tests {
     fn test_subagent_config_model_options_from_unknown_model() {
         // Create a SubagentConfig with an unknown model
         let config = SubagentConfig::new("unknown-model-xyz", "test");
-        // Should fall back to default ModelOptions with temperature 0.0
+        // Should fall back to default ProviderOptions with temperature 0.0
         let opts = config.model_options.clone();
         let debug_str = format!("{:?}", opts);
         assert!(
             debug_str.contains("temperature"),
-            "ModelOptions should contain temperature field"
+            "ProviderOptions should contain temperature field"
         );
     }
 

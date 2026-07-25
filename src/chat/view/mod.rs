@@ -393,8 +393,8 @@ pub struct WelcomeInfo {
     pub session_name: String,
     pub is_anonymous: bool,
     pub version: String,
-    /// Name of the provider serving the current model (e.g., "my-ollama").
-    /// Replaces the previous `server_url` field (#120). Showing the provider
+    /// Name of the provider serving the current model (e.g., "llama-swap").
+    /// Showing the provider name helps users identify which backend
     /// name is more informative than the URL — the user already knows where
     /// Ollama is running, but with multiple providers, knowing which one is
     /// serving the model is useful.

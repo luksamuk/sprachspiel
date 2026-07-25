@@ -1,47 +1,39 @@
-//! ChatMessage::tool() wrapper for LLM error recovery.
-//!
-//! Delegates to `ChatMessage::tool()` from the shim. In #123 (Remove
-//! ollama-rs), this will be replaced with `LlmMessage::tool()` from
-//! #119 (Agnostic Provider Types).
+//! LlmMessage::tool() wrapper for LLM error recovery.
 //!
 //! The recovery pattern (push a tool message after an error so the LLM can
-//! self-correct) is the central pattern of #116. By centralizing the
-//! `ChatMessage::tool()` call here, future changes to the message format
+//! self-correct) is centralized here so future changes to the message format
 //! only need to update ONE function body.
-//!
-//! See: `IMPLEMENTATION.md` — W2 Provider Chain
 
-use crate::provider::ollama_shim::ChatMessage;
+use crate::provider::types::LlmMessage;
 
 /// Push a tool result message into the conversation history.
-///
-/// Wraps the ollama-rs shim's `ChatMessage::tool()` for the legacy
-/// coordinator path. The shim's `ChatMessage` is re-exported from
-/// `ollama_rs::generation::chat::ChatMessage`.
-pub fn push_tool_result(messages: &mut Vec<ChatMessage>, content: String) {
-    messages.push(ChatMessage::tool(content));
+pub fn push_tool_result(messages: &mut Vec<LlmMessage>, content: String) {
+    messages.push(LlmMessage::tool(content));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::ollama_shim::MessageRole;
+    use crate::provider::types::LlmRole;
 
     #[test]
     fn test_push_tool_result_appends_message() {
-        let mut messages: Vec<ChatMessage> = Vec::new();
+        let mut messages: Vec<LlmMessage> = Vec::new();
         push_tool_result(&mut messages, "Error: tool failed".to_string());
         assert_eq!(messages.len(), 1);
     }
 
     #[test]
     fn test_push_tool_result_preserves_existing_messages() {
-        let mut messages: Vec<ChatMessage> = vec![ChatMessage {
-            role: MessageRole::User,
+        let mut messages: Vec<LlmMessage> = vec![LlmMessage {
+            role: LlmRole::User,
             content: "Hello".to_string(),
-            tool_calls: vec![],
+            tool_calls: None,
             images: None,
+            audio: None,
             thinking: None,
+            name: None,
+            tool_call_id: None,
         }];
         push_tool_result(&mut messages, "Error: tool failed".to_string());
         assert_eq!(messages.len(), 2);

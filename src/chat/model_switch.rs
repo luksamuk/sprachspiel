@@ -16,13 +16,13 @@ pub struct ModelSwitchResult {
     pub tools_active: bool,
     pub think_active: bool,
     pub warnings: Vec<String>,
-    /// O cliente LLM reconstruído para o provider do novo modelo.
-    /// O caller DEVE atualizar `state.ollama` com este valor para que
-    /// os próximos requests vão para o provider correto (declarado em
-    /// `models.toml` para o novo modelo). Sem isto, o `/model` troca o
-    /// `model_config` mas mantém o cliente HTTP do provider antigo,
-    /// causando `no router for requested model` no próximo prompt.
-    pub ollama: crate::provider::Ollama,
+    /// The rebuilt LLM provider client for the new model's provider.
+    /// The caller MUST update `state.provider` with this value so that
+    /// subsequent requests go to the correct provider (declared in
+    /// `models.toml` for the new model). Without this, `/model` switches
+    /// `model_config` but keeps the old provider's HTTP client, causing
+    /// `no router for requested model` on the next prompt.
+    pub provider: crate::provider::OpenAICompatibleProvider,
 }
 
 /// Switch to a new model with full state management.
@@ -39,9 +39,9 @@ pub struct ModelSwitchResult {
 /// * `model_name` - The model name to switch to (e.g., "llama3.1", "qwen3")
 /// * `settings` - Settings used to build the LLM client for the new model's
 ///   provider (resolved from `models.toml`). This replaces the previous
-///   `ollama: &Ollama` parameter — the caller no longer needs to rebuild
+///   `provider: &Ollama` parameter — the caller no longer needs to rebuild
 ///   the client separately; `switch_model` does it internally and returns
-///   the new client in `ModelSwitchResult.ollama`.
+///   the new client in `ModelSwitchResult.provider`.
 /// * `current_capabilities` - Current capabilities (fallback on detection failure)
 /// * `current_think` - Current think mode state
 /// * `current_tools` - Current tools state
@@ -87,12 +87,12 @@ pub async fn switch_model(
 
     // 2b. Rebuild the LLM client for the NEW model's provider. The provider
     // is declared per-model in `models.toml` (`provider = "<name>"`).
-    // `settings.ollama_client_for_model()` resolves the provider and
+    // `settings.provider_for_model()` resolves the provider and
     // builds the `CompatOllama` shim pointing to its base_url. Without this,
-    // the caller's `state.ollama` would stay bound to the initial model's
+    // the caller's `state.provider` would stay bound to the initial model's
     // provider, causing `no router for requested model` errors when the new
     // model lives on a different provider (e.g., switching from llama-swap
-    // to ollama). The same client is used for capability detection below,
+    // to provider). The same client is used for capability detection below,
     // so detection hits the right provider from the start.
     //
     // R5 recommendation: log the provider resolution for auditability. If
@@ -112,7 +112,7 @@ pub async fn switch_model(
             model_name
         ),
     }
-    let ollama = settings.ollama_client_for_model(model_name);
+    let provider = settings.provider_for_model(model_name);
     log::debug!(
         "Model switch: built new LLM client for '{}' (provider: {})",
         model_name,
@@ -125,7 +125,7 @@ pub async fn switch_model(
         "Model switch: detecting capabilities for '{}' via the new provider",
         model_config.model_id
     );
-    let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
+    let capabilities = match ModelCapabilities::detect(&provider, &model_config.model_id).await {
         Ok(c) => c,
         Err(e) => {
             warnings.push(format!(
@@ -165,7 +165,7 @@ pub async fn switch_model(
         tools_active,
         think_active,
         warnings,
-        ollama,
+        provider,
     })
 }
 
@@ -173,38 +173,28 @@ pub async fn switch_model(
 mod tests {
     use super::*;
 
-    /// The `CompatOllama` shim exposes `base_url` via its `Debug` impl
-    /// (`ollama_shim.rs:423`). Extract it so tests can assert which
-    /// provider the client points to without accessing the private field.
-    fn ollama_base_url(ollama: &crate::provider::Ollama) -> String {
-        let dbg = format!("{ollama:?}");
-        // The Debug output is: CompatOllama { base_url: "..." }
-        let start = dbg.find("base_url: \"").map(|i| i + "base_url: \"".len());
-        let end = dbg.rfind('"');
-        match (start, end) {
-            (Some(s), Some(e)) if s < e => dbg[s..e].to_string(),
-            _ => String::new(),
-        }
+    fn provider_base_url(provider: &crate::provider::OpenAICompatibleProvider) -> String {
+        provider.base_url().to_string()
     }
 
-    /// Verifies that `switch_model` builds a NEW `ollama` client pointing
+    /// Verifies that `switch_model` builds a NEW provider client pointing
     /// to the provider declared in `models.toml` for the requested model.
     ///
     /// This is a regression test for the provider-switching bug: previously
-    /// `switch_model` received the existing `&ollama` and could not rebuild
-    /// it, so `state.ollama` stayed bound to the initial model's provider
+    /// `switch_model` received the existing `&provider` and could not rebuild
+    /// it, so `state.provider` stayed bound to the initial model's provider
     /// even after `/model` switched to a model on a different provider.
     ///
     /// Environment-dependent: requires `qwen3.5-4b-abliterated` (provider:
-    /// `llama-swap`) and `glm-5.2` (provider: `ollama`) to be declared in
+    /// `llama-swap`) and `glm-5.2` (provider: `llama-swap`) to be declared in
     /// `~/.config/sprachspiel/models.toml`. Skips (returns early) if either
     /// model is missing so the test is a no-op in CI without that config.
     ///
     /// Does NOT require any provider to be online — capability detection
     /// falls back to `current_capabilities` on connection failure, but the
-    /// `ollama` client is still constructed with the correct `base_url`.
+    /// provider client is still constructed with the correct `base_url`.
     #[tokio::test]
-    async fn switch_model_rebuilds_ollama_for_new_provider() {
+    async fn switch_model_rebuilds_provider_for_new_provider() {
         let local = "qwen3.5-4b-abliterated";
         let cloud = "glm-5.2";
         // Sanity: skip if the environment's models.toml doesn't declare
@@ -223,10 +213,10 @@ mod tests {
             .await
             .expect("cloud switch should succeed");
 
-        let local_url = ollama_base_url(&result_local.ollama);
-        let cloud_url = ollama_base_url(&result_cloud.ollama);
+        let local_url = provider_base_url(&result_local.provider);
+        let cloud_url = provider_base_url(&result_cloud.provider);
 
-        // The two providers have different base_urls (llama-swap vs ollama).
+        // The two providers have different base_urls (llama-swap vs provider).
         assert!(
             local_url != cloud_url,
             "expected different base_urls for different providers, got \

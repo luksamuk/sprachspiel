@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
-struct OllamaError {
+struct ProviderErrorResponse {
     #[serde(default)]
     error: Option<String>,
     #[serde(default)]
@@ -14,9 +14,9 @@ struct OllamaError {
 }
 
 pub fn format_tool_error(error: &str) -> String {
-    // Check if it's a JSON error from Ollama
+    // Check if it's a JSON error from the provider
     if (error.starts_with('{') || error.contains("\"error\":"))
-        && let Some(formatted) = try_format_ollama_error(error)
+        && let Some(formatted) = try_format_provider_error(error)
     {
         return formatted;
     }
@@ -59,7 +59,7 @@ pub fn format_tool_error(error: &str) -> String {
         );
     }
 
-    if error.contains("Failed to get response from Ollama") {
+    if error.contains("Failed to get response from the provider") {
         return format!(
             "{}\n\n\
             💡 **Tip:** {}",
@@ -71,7 +71,7 @@ pub fn format_tool_error(error: &str) -> String {
     error.to_string()
 }
 
-fn try_format_ollama_error(error: &str) -> Option<String> {
+fn try_format_provider_error(error: &str) -> Option<String> {
     // The error string is usually prefixed with status info from
     // convert_provider_error, e.g. "HTTP 400: {<body>}". Try the
     // whole string first; if that fails, try just the JSON portion
@@ -86,11 +86,11 @@ fn try_format_ollama_error(error: &str) -> Option<String> {
         },
     ];
 
-    // Try to parse as Ollama error JSON
+    // Try to parse as provider error JSON
     for candidate in candidates {
-        if let Ok(mut ollama_err) = serde_json::from_str::<OllamaError>(candidate) {
+        if let Ok(mut provider_err) = serde_json::from_str::<ProviderErrorResponse>(candidate) {
             // Some errors have the message nested
-            if let Some(msg) = ollama_err.error.take().or(ollama_err.message.take()) {
+            if let Some(msg) = provider_err.error.take().or(provider_err.message.take()) {
                 return Some(format_error_with_status(&msg));
             }
         }
@@ -101,9 +101,9 @@ fn try_format_ollama_error(error: &str) -> Option<String> {
     //   {"error": {"code": 400, "message": "request (N tokens) exceeds
     //    the available context size (M tokens)"}}
     //
-    // Older Ollama format is just {"error": "message"} or
+    // Older format is just {"error": "message"} or
     // {"message": "message"}; both forms use a string value, not an
-    // object. The OllamaError struct above catches the simple
+    // object. The ProviderErrorResponse struct above catches the simple
     // string forms. For the OpenAI object form, walk the JSON
     // manually so we can extract the nested "message" field.
     for candidate in candidates {
@@ -405,8 +405,8 @@ mod tests {
 
     #[serial_test::serial]
     #[test]
-    fn test_format_tool_error_legacy_ollama_string_error() {
-        // The legacy Ollama format uses "error" as a string, not an
+    fn test_format_tool_error_legacy_provider_string_error() {
+        // The legacy format uses "error" as a string, not an
         // object. The original parser must still work.
         let original_plain = crate::debug_tools::is_plain_mode();
         let original_tui = crate::logging::is_tui_mode();
@@ -416,7 +416,7 @@ mod tests {
         let result = format_tool_error(body);
         assert!(
             result.contains("500 Internal Server Error"),
-            "Legacy Ollama string error must still parse, got: {result}"
+            "Legacy provider string error must still parse, got: {result}"
         );
         crate::debug_tools::set_plain_mode(original_plain);
         crate::logging::set_tui_mode(original_tui);

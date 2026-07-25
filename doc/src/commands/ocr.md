@@ -247,7 +247,7 @@ sprach ocr --mode figure diagram.png
 
 ## Limitations
 
-- Requires `glm-ocr:bf16` model
+- Requires `glm-ocr` model
 - Handwriting recognition may be limited
 - Very small text might not be recognized
 - Complex layouts may need multiple passes
@@ -258,8 +258,8 @@ sprach ocr --mode figure diagram.png
 Common errors and solutions:
 
 ```bash
-# Model not found
-ollama pull glm-ocr:bf16
+# Model not available — ensure glm-ocr is running on your LLM server
+# Check with: sprach --list
 
 # File not found
 sprach ocr /path/to/exists.png

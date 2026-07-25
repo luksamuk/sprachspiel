@@ -1,4 +1,4 @@
-//! Sprachspiel: A CLI tool for querying LLM models via Ollama or compatible backends
+//! Sprachspiel: A CLI tool for querying LLM models via OpenAI-compatible backends
 //!
 //! Originally evolved from the Python ask-ai.py script, rewritten in Rust
 //! with enhanced features including markdown rendering, tool support,
@@ -32,7 +32,6 @@ mod prompts;
 mod provider;
 mod query;
 mod retrieval;
-mod retry;
 mod security;
 mod settings;
 mod skills;
@@ -47,11 +46,11 @@ mod user_models;
 mod utils;
 mod vision;
 
+use crate::provider::types::LlmMessage;
 use clap::Parser;
-use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
-use crate::chat::core::convert_provider_to_model;
+
 use crate::ocr::mode::is_glm_ocr_model;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
@@ -291,17 +290,16 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         }
     };
 
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_config.model_id);
+    let provider = settings.provider_for_model(&model_config.model_id);
     let provider_options = model_config.build_provider_options();
-    let model_options = convert_provider_to_model(&provider_options);
+    let model_options = provider_options.clone();
 
     let mut coordinator =
-        chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
+        chat::Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
             .options(model_options);
 
-    let system_message = ChatMessage::system(prompt);
-    let user_message = ChatMessage::user("".to_string());
+    let system_message = LlmMessage::system(prompt);
+    let user_message = LlmMessage::user("".to_string());
 
     let spinner = create_spinner("Translating...");
 
@@ -312,7 +310,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 
     finish_spinner(spinner);
 
-    let translated = response.message.content.trim();
+    let translated = response.content.trim();
 
     if output_flags.plain {
         markdown::print_markdown_plain(translated);
@@ -538,25 +536,19 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     let (model_key, _, _) = settings.get_subcommand_config("ocr");
     let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
-        .map(|mc| {
-            (
-                mc.model_id.clone(),
-                convert_provider_to_model(&mc.build_provider_options()),
-            )
-        })
+        .map(|mc| (mc.model_id.clone(), mc.build_provider_options()))
         .unwrap_or_else(|| {
             (
                 model_key.clone(),
-                ollama_rs::models::ModelOptions::default().temperature(0.0),
+                crate::provider::types::ProviderOptions::default(),
             )
         });
 
     // Check if the model supports vision capabilities (required for OCR).
     // Abort unless the user passes --force to override the capability check.
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_id);
+    let provider = settings.provider_for_model(&model_id);
     let capabilities =
-        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+        crate::capabilities::ModelCapabilities::detect_or_default(&provider, &model_id).await;
     if !capabilities.vision {
         if cli.force {
             eprintln!(
@@ -595,7 +587,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
             prompt_override,
             &model_id,
             model_options,
-            &ollama,
+            &provider,
             true,
         )
         .await
@@ -867,10 +859,9 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     // Check if the model supports vision capabilities.
     // Abort unless the user passes --force to override the capability check.
-    #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-    let ollama = settings.ollama_client_for_model(&model_id);
+    let provider = settings.provider_for_model(&model_id);
     let capabilities =
-        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+        crate::capabilities::ModelCapabilities::detect_or_default(&provider, &model_id).await;
     if !capabilities.vision {
         if cli.force {
             eprintln!(
@@ -898,11 +889,11 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     let mut provider_options = model_config.build_provider_options();
     provider_options.num_predict = Some(args.max_tokens as i32);
-    let model_options = convert_provider_to_model(&provider_options);
+    let model_options = provider_options.clone();
     let processor = VisionProcessor::new();
 
     match processor
-        .process(&args, &model_id, &ollama, model_options, true)
+        .process(&args, &model_id, &provider, model_options, true)
         .await
     {
         Ok(result) => {

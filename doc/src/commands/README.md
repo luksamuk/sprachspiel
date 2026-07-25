@@ -6,12 +6,12 @@ Sprachspiel provides six main commands for different tasks. Each command is desi
 
 | Command | Purpose | Default Model |
 |---------|---------|---------------|
-| `query` | General LLM queries | lfm |
-| `chat` | Interactive chat with history | lfm |
-| `translate` | Language translation | translate |
+| `query`/code | General LLM queries + code mode | qwen3.5-4b |
+| `chat` | Interactive chat with history | qwen3.5-4b |
+| `translate` | Language translation | translategemma-4b |
 | `ocr` | Image text extraction | glm-ocr |
-| `vision` | Image description and analysis | moondream |
-| `summarize` | Text summarization | qwen3.5:4b |
+| `vision` | Image description and analysis | qwen3.5-4b |
+| `summarize` | Text summarization | qwen3.5-4b |
 
 ## Default Mode
 
@@ -70,7 +70,6 @@ sprach ocr doc.png | sprach summarize | sprach translate :pt
 |---------|-------|------|-----------|-----|--------|-----------|
 | **Input** | Text query | Interactive | Text + language codes | Image files | Image files | Text |
 | **Output** | AI response | Interactive | Translated text | Extracted text | Description | Summary |
-| **Model** | Configurable | Configurable | translate (fixed) | glm-ocr (fixed) | moondream | Configurable |
 | **Tools** | Yes (auto) | Yes (auto) | No | No | No | No |
 | **Stdin** | Yes | No | Yes | No | No | Yes |
 | **History** | No | Yes | No | No | No | No |

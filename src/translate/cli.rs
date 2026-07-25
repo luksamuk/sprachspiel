@@ -18,11 +18,11 @@ pub enum Commands {
     #[command(visible_alias = "t")]
     Translate(TranslateArgs),
 
-    /// Query an Ollama LLM model
+    /// Query an LLM model
     #[command(visible_alias = "q")]
     Query(QueryArgs),
 
-    /// Extract text from images using GLM-OCR
+    /// Extract text from images
     #[command(visible_alias = "o")]
     Ocr(OcrArgs),
 
@@ -295,7 +295,7 @@ This command handles migrations that can't be done with simple field
 defaults, specifically:
 
 1. **Missing `[provider]` section**: If models.toml has no providers
-   defined, a default `[provider."my-ollama"]` block is created with
+   defined, a default `[provider."my-llama-swap"]` block is created with
    `base_url = "http://127.0.0.1:11434"`.
 
 2. **Models without `provider` field**: Any model entry that doesn't

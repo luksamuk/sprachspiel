@@ -70,7 +70,7 @@ pub fn search_similar_to_item(
 ///
 /// # Returns
 /// Mermaid graph and text summary of connections.
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn visualize_connections(
     id: Option<String>,
     query: Option<String>,

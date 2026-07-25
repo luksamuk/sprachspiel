@@ -1,17 +1,14 @@
-//! Provider-agnostic types for the W2 Provider Chain.
+//! Provider-agnostic types for LLM providers.
 //!
 //! These types decouple the codebase from specific LLM provider APIs
-//! (Ollama, OpenAI-compatible, etc.). They mirror the JSON shapes used
-//! by LLM provider APIs while providing a unified surface for business logic.
-
-#![allow(dead_code)] // W2 #123: retry_category, RetryCategory, LlmMessage methods will be consumed when the retry loop migrates from OllamaError to ProviderError
+//! (OpenAI-compatible, etc.). They mirror the JSON shapes used by LLM
+//! provider APIs while providing a unified surface for business logic.
 
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Tool type discriminator (re-exported for convenience).
-#[allow(dead_code)] // Consumed by #120
+/// Tool type discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all(deserialize = "PascalCase"))]
 pub enum ToolType {
@@ -19,9 +16,8 @@ pub enum ToolType {
 }
 
 /// Tool function info (name, description, JSON schema parameters).
-#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolFunctionInfo {
+pub(crate) struct ToolFunctionInfo {
     pub name: String,
     pub description: String,
     pub parameters: Schema,
@@ -40,17 +36,15 @@ pub struct ToolFunctionInfo {
 ///   }
 /// }
 /// ```
-#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolInfo {
     #[serde(rename = "type")]
     pub tool_type: ToolType,
-    pub function: ToolFunctionInfo,
+    pub(crate) function: ToolFunctionInfo,
 }
 
 impl ToolInfo {
     /// Create a new `ToolInfo` for the given `Tool` type.
-    #[allow(dead_code)] // Consumed by #120
     pub fn new<P, T>() -> Self
     where
         P: serde::de::DeserializeOwned + schemars::JsonSchema,
@@ -85,10 +79,8 @@ pub enum LlmRole {
     Tool,
 }
 
-/// A message in an LLM conversation.
-///
-/// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessage`.
-/// Extended with `name` and `tool_call_id` for OpenAI tool support.
+/// A message in an LLM conversation. Extended with `name` and `tool_call_id`
+/// for OpenAI tool support.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
@@ -109,7 +101,6 @@ pub struct LlmMessage {
     pub tool_call_id: Option<String>,
 }
 
-#[cfg(test)]
 impl LlmMessage {
     pub fn user(content: String) -> Self {
         Self {
@@ -162,40 +153,6 @@ impl LlmMessage {
             tool_call_id: None,
         }
     }
-
-    /// Tool result message with the id of the tool call being responded to.
-    pub fn tool_result(content: String, tool_call_id: String) -> Self {
-        Self {
-            role: LlmRole::Tool,
-            content,
-            tool_calls: None,
-            images: None,
-            audio: None,
-            thinking: None,
-            name: None,
-            tool_call_id: Some(tool_call_id),
-        }
-    }
-
-    pub fn with_tool_calls(mut self, calls: Vec<LlmToolCall>) -> Self {
-        self.tool_calls = Some(calls);
-        self
-    }
-
-    pub fn with_images(mut self, images: Vec<String>) -> Self {
-        self.images = Some(images);
-        self
-    }
-
-    pub fn with_audio(mut self, audio: Vec<String>) -> Self {
-        self.audio = Some(audio);
-        self
-    }
-
-    pub fn with_thinking(mut self, thinking: String) -> Self {
-        self.thinking = Some(thinking);
-        self
-    }
 }
 
 /// A tool call from the LLM.
@@ -208,14 +165,16 @@ pub struct LlmToolCall {
 
 /// Response from an LLM chat completion.
 ///
-/// Provider-agnostic equivalent of `ollama_rs::generation::chat::ChatMessageResponse`.
-#[allow(dead_code)] // Consumed by #120/#121
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {
     pub model: String,
     pub content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<LlmToolCall>>,
+    /// Thinking/reasoning content from the model, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,7 +206,8 @@ pub enum LlmStreamEvent {
 
     /// A new thinking/reasoning block has started.
     ThinkingStart {
-        #[allow(dead_code)] // Reasoning signature — used when provider implements signed thinking
+        #[allow(dead_code)]
+        // Protocol field — populated by SSE parser for signed thinking, not consumed by coordinator
         signature: Option<String>,
     },
     /// Incremental thinking token.
@@ -268,7 +228,8 @@ pub enum LlmStreamEvent {
     },
     /// Tool call finalized with parsed arguments.
     ToolCallEnd {
-        #[allow(dead_code)] // Debug correlation — matches ToolCallStart.index
+        #[allow(dead_code)]
+        // Protocol field — populated by SSE parser, not consumed by coordinator
         index: u32,
         call: LlmToolCall,
     },
@@ -285,16 +246,27 @@ pub enum LlmStreamEvent {
 
     /// Stream completed normally.
     Done {
-        #[allow(dead_code)] // Finish reason — used when provider emits it
+        #[allow(dead_code)]
+        // Protocol field — populated by SSE parser, not consumed by coordinator
         reason: Option<String>,
         usage: Option<LlmUsage>,
     },
 }
 
+/// A local model entry returned by `list_local_models()`.
+/// Fields are populated by the server response but not accessed
+/// by the health check caller (which only verifies connectivity).
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct LocalModel {
+    pub name: String,
+    pub modified_at: String,
+    pub size: u64,
+}
+
 /// Capabilities reported by a model/provider.
 ///
 /// Based on llama-swap feature flags for OpenAI-compatible backends.
-#[allow(dead_code)] // Consumed by #120
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     pub completion: bool,
@@ -311,7 +283,7 @@ pub struct ProviderCapabilities {
 
 /// Options for provider requests.
 ///
-/// Mirrors `ollama_rs::models::ModelOptions` with additions.
+/// Options for provider requests.
 /// Removed `top_k`, `repeat_penalty`, `think` (not OpenAI-portable).
 /// Added `seed` (cross-provider, optional).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -330,7 +302,7 @@ pub struct ProviderOptions {
 
 /// Provider error with retry classification semantics.
 ///
-/// Each variant maps to a `RetryCategory` for the W2 retry infrastructure (#116).
+/// Each variant maps to a `RetryCategory` for the retry infrastructure.
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum ProviderError {
     #[error("Connection error: {0}")]
@@ -343,7 +315,6 @@ pub enum ProviderError {
     RateLimit {
         message: String,
         // retry_after is not serialized; used internally for retry logic
-        #[allow(dead_code)] // Set in #122 via Retry-After header parsing
         retry_after: Option<Duration>,
     },
 
@@ -384,23 +355,24 @@ impl ProviderError {
 
 /// Retry strategy for a classified error.
 ///
-/// Relocated from `src/retry.rs` per W2 Provider Chain plan.
+/// Retry strategy for a classified error.
 /// Each variant carries its own `max_attempts` so per-category limits
 /// are visible in the type signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
 pub enum RetryCategory {
-    /// Tool execution failures — retry immediately, no delay
+    /// Tool execution failures — retry immediately, no delay.
+    /// Only constructed in tests; production error mapping uses `NoRetry`
+    /// for tool errors via `ProviderError::Other`.
+    #[allow(dead_code)]
     ImmediateRetry { max_attempts: usize },
     /// Network/timeout errors — exponential backoff
     NetworkRetry { max_attempts: usize },
     /// HTTP 500, OOM, cold start — long linear backoff
     ServerRetry { max_attempts: usize },
     /// Rate limiting (HTTP 429) — respects `Retry-After` header.
-    /// `retry_after` is `None` until #122 wires up header parsing.
     RateLimitRetry {
         max_attempts: usize,
-        #[allow(dead_code)] // Used in #122 Retry-After header parsing
         retry_after: Option<Duration>,
     },
     /// Non-recoverable errors (cancel, context overflow, malformed JSON)
@@ -426,7 +398,6 @@ impl RetryCategory {
 /// Calculate the backoff delay for a given retry category and attempt number.
 ///
 /// `attempt` is 1-indexed: the first retry is attempt 1.
-#[allow(dead_code)] // Consumed by #120/#121
 pub fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
     match category {
         RetryCategory::ImmediateRetry { .. } => Duration::ZERO,

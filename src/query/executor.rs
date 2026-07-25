@@ -1,24 +1,19 @@
 //! Query execution with retry logic
 //!
-//! Provides execute_query_with_retry to handle Ollama errors with retry logic.
-//!
-//! **W2 Wave Context:** This module's retry loop is migrated to the
-//! per-category classification in #116. `MAX_RETRIES` (the pre-#116
-//! constant in `coordinator.rs`) has been replaced by per-category
-//! limits from `crate::retry::classify_for_retry()`.
+//! Provides execute_query_with_retry to handle LLM errors with retry logic.
 
 #![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
 
+use crate::provider::types::{LlmMessage, LlmResponse};
 use indicatif::ProgressBar;
-use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::coordinator::{classify_ollama_error, format_recovery_message};
-use crate::chat::custom_coordinator::CustomCoordinator;
+use crate::chat::coordinator::Coordinator;
+use crate::chat::error_recovery::{classify_provider_error, format_recovery_message};
 use crate::chat::recovery::push_tool_result;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
-use crate::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
+use crate::provider::retry::{classify_for_retry, retry_delay, sleep_or_cancel};
 use crate::settings::Settings;
 use crate::tools::context::{with_full_context, with_tool_context};
 
@@ -30,45 +25,53 @@ use crate::tools::context::{with_full_context, with_tool_context};
 /// and agent spawning tools.
 #[expect(clippy::too_many_arguments)]
 pub async fn execute_query_with_retry(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
-    messages: Vec<ChatMessage>,
+    coordinator: Coordinator,
+    messages: Vec<LlmMessage>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
-    ollama: crate::provider::Ollama,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
-) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
+) -> Result<LlmResponse, String> {
     if let (Some(db), Some(embedding)) = (&db, &embedding_client) {
         execute_with_context(
             coordinator,
             messages,
             db.clone(),
             embedding.clone(),
-            ollama,
+            provider,
             settings,
             tool_names,
             spinner,
         )
         .await
     } else {
-        execute_without_context(coordinator, messages, ollama, settings, tool_names, spinner).await
+        execute_without_context(
+            coordinator,
+            messages,
+            provider,
+            settings,
+            tool_names,
+            spinner,
+        )
+        .await
     }
 }
 
 /// Execute with DB context (for remember tool support).
 #[expect(clippy::too_many_arguments)]
 async fn execute_with_context(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
-    messages: Vec<ChatMessage>,
+    coordinator: Coordinator,
+    messages: Vec<LlmMessage>,
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
-    ollama: crate::provider::Ollama,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
-) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
-    with_full_context(db, embedding, ollama, settings, async {
+) -> Result<LlmResponse, String> {
+    with_full_context(db, embedding, provider, settings, async {
         execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await
@@ -76,14 +79,14 @@ async fn execute_with_context(
 
 /// Execute without DB context (code mode or anonymous).
 async fn execute_without_context(
-    coordinator: CustomCoordinator<Vec<ChatMessage>>,
-    messages: Vec<ChatMessage>,
-    ollama: crate::provider::Ollama,
+    coordinator: Coordinator,
+    messages: Vec<LlmMessage>,
+    provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
-) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
-    with_tool_context(ollama, settings, async {
+) -> Result<LlmResponse, String> {
+    with_tool_context(provider, settings, async {
         execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await
@@ -91,11 +94,11 @@ async fn execute_without_context(
 
 /// Core retry loop shared by both execution paths.
 async fn execute_retry_loop(
-    mut coordinator: CustomCoordinator<Vec<ChatMessage>>,
-    messages: Vec<ChatMessage>,
+    mut coordinator: Coordinator,
+    messages: Vec<LlmMessage>,
     tool_names: &[String],
     spinner: ProgressBar,
-) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
+) -> Result<LlmResponse, String> {
     let mut attempts = 0;
     let mut messages = messages;
 
@@ -105,23 +108,12 @@ async fn execute_retry_loop(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                // W2 Wave Context (#116): retry classification is in place,
-                // but it only mitigates errors that ollama-rs RETURNS. When
-                // Ollama hangs (kill -STOP, packet drop, server stopped),
-                // ollama-rs does not return an error — the request hangs
-                // indefinitely and the user never sees the retry messages.
-                // TODO(#120): when OllamaProvider uses reqwest directly,
-                // configure explicit timeouts and propagate HTTP errors
-                // through ProviderError. Then this retry loop becomes
-                // effective for the ServerRetry (5s/10s/15s) and
-                // NetworkRetry (100ms→1.6s) scenarios from MANUAL_TEST_116.
-                // Acceptance criteria for #120 are documented in
-                // IMPLEMENTATION.md under W2 Wave Context.
-                let category = classify_for_retry(&e);
+                let provider_err = e.clone();
+                let category = classify_for_retry(&provider_err);
                 if category.is_retryable() && attempts < category.max_attempts() {
                     attempts += 1;
 
-                    let recovery_err = classify_ollama_error(&e, tool_names);
+                    let recovery_err = classify_provider_error(&provider_err, tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if log::log_enabled!(log::Level::Debug) {
@@ -145,7 +137,6 @@ async fn execute_retry_loop(
                         }
                     }
 
-                    // Query mode has no cancel token — unconditional sleep
                     let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
 
                     continue;

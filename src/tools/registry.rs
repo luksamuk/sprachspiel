@@ -54,18 +54,14 @@ use super::subagent_tools::{
 /// Trait for tool registration - implemented by the coordinator types
 /// that need to consume tools.
 ///
-/// The bound is `crate::tools::Tool` (our own trait). The dual-impl
-/// macro (in `sprachspiel-tool-derive`) ensures that every
-/// `#[sprachspiel::tool]` tool also implements `ollama_rs::Tool`, so
-/// they remain compatible with the parts of ollama-rs that consume
-/// tools directly (e.g., `crate::provider::Ollama::chat` with `tools: Vec<ToolInfo>`).
+/// The bound is `crate::tools::Tool` (our own trait). The
+/// `#[sprachspiel::tool]` proc-macro generates an impl of this trait
+/// for each tool function.
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self;
 }
 
-impl<C: ollama_rs::history::ChatHistory> ToolRegistrar
-    for crate::chat::custom_coordinator::CustomCoordinator<C>
-{
+impl ToolRegistrar for crate::chat::coordinator::Coordinator {
     fn register_tool<T: crate::tools::Tool + 'static>(self, tool: T) -> Self {
         self.add_tool(tool)
     }

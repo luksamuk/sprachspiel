@@ -113,6 +113,8 @@ pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
         // Track fenced code blocks
         if trimmed.starts_with("```") {
             let lang = trimmed.trim_start_matches('`').trim();
+            #[cfg(not(any(feature = "mermaid", feature = "latex")))]
+            let _ = &lang; // suppress unused when no rendering features
 
             #[cfg(feature = "mermaid")]
             if in_mermaid_block {

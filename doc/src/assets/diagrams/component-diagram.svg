@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580">
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+    </marker>
+    <marker id="ah-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/>
+    </marker>
+    <marker id="ah-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+    </marker>
+    <marker id="ah-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/>
+    </marker>
+    <marker id="ah-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+
+  <!-- ===== OUTER CONTAINER ===== -->
+  <rect x="20" y="20" width="960" height="540" rx="8" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+  <text x="500" y="45" fill="white" font-size="13" font-weight="700" text-anchor="middle">SPRACHSPIEL COMPONENTS</text>
+
+  <!-- ===== ROW 1: User → REPL → Coordinator ===== -->
+  <rect x="80" y="65" width="180" height="50" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="80" y="65" width="180" height="50" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="170" y="88" fill="white" font-size="11" font-weight="600" text-anchor="middle">User Interface</text>
+  <text x="170" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">terminal input</text>
+
+  <line x1="260" y1="90" x2="320" y2="90" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="330" y="65" width="180" height="50" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="330" y="65" width="180" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="420" y="88" fill="white" font-size="11" font-weight="600" text-anchor="middle">REPL (chat)</text>
+  <text x="420" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">interactive loop</text>
+
+  <line x1="510" y1="90" x2="570" y2="90" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="580" y="65" width="220" height="50" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="580" y="65" width="220" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="690" y="88" fill="white" font-size="11" font-weight="600" text-anchor="middle">Coordinator</text>
+  <text x="690" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">LlmProvider trait</text>
+
+  <!-- ===== Branch arrows from Coordinator ===== -->
+  <line x1="690" y1="115" x2="690" y2="140" stroke="#34d399" stroke-width="1.5"/>
+  <line x1="350" y1="140" x2="690" y2="140" stroke="#34d399" stroke-width="1.5"/>
+  <line x1="690" y1="140" x2="800" y2="140" stroke="#34d399" stroke-width="1.5"/>
+  <line x1="350" y1="140" x2="350" y2="165" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-emerald)"/>
+  <line x1="550" y1="140" x2="550" y2="165" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-emerald)"/>
+
+  <!-- ===== ROW 2: Feedback Collector + Context Builder ===== -->
+  <rect x="250" y="170" width="200" height="55" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="250" y="170" width="200" height="55" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="350" y="193" fill="white" font-size="10" font-weight="600" text-anchor="middle">Feedback Collector</text>
+  <text x="350" y="210" fill="#94a3b8" font-size="8" text-anchor="middle">good/bad/correction signals</text>
+
+  <rect x="450" y="170" width="200" height="55" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="450" y="170" width="200" height="55" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="550" y="193" fill="white" font-size="10" font-weight="600" text-anchor="middle">Context Builder</text>
+  <text x="550" y="210" fill="#94a3b8" font-size="8" text-anchor="middle">hybrid search + facts</text>
+
+  <!-- Arrows to SQLite DB -->
+  <line x1="350" y1="225" x2="350" y2="255" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="550" y1="225" x2="550" y2="255" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- ===== ROW 3: SQLite DB ===== -->
+  <rect x="100" y="260" width="700" height="100" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="100" y="260" width="700" height="100" rx="6" fill="rgba(76, 29, 149, 0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="450" y="285" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">SQLite DB</text>
+  <text x="130" y="310" fill="white" font-size="9">content_items (weighted by feedback)</text>
+  <text x="130" y="330" fill="white" font-size="9">embeddings (weighted retrieval, cosine distance)</text>
+  <text x="130" y="350" fill="white" font-size="9">feedback_signals (good/bad/correction)</text>
+
+  <!-- Arrow to Feedback-Aware Retrieval -->
+  <line x1="450" y1="360" x2="450" y2="390" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ah-violet)"/>
+
+  <!-- ===== ROW 4: Feedback-Aware Retrieval ===== -->
+  <rect x="100" y="395" width="700" height="80" rx="6" fill="#0f172a" stroke="none"/>
+  <rect x="100" y="395" width="700" height="80" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="450" y="420" fill="#34d399" font-size="11" font-weight="600" text-anchor="middle">Feedback-Aware Retrieval</text>
+  <text x="450" y="440" fill="white" font-size="9" text-anchor="middle">BM25 + Vector + Feedback Weight</text>
+  <text x="450" y="458" fill="#94a3b8" font-size="8" text-anchor="middle">Decay: recent > old, good > bad</text>
+
+  <!-- Feedback loop arrow back to Coordinator -->
+  <path d="M 800 435 Q 860 435 860 300 Q 860 90 800 90" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ah)"/>
+  <text x="870" y="260" fill="#fbbf24" font-size="8" transform="rotate(90, 870, 260)">feedback loop</text>
+
+  <!-- ===== LEGEND ===== -->
+  <text x="50" y="510" fill="white" font-size="10" font-weight="600">Legend</text>
+  <rect x="110" y="501" width="14" height="9" rx="2" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1"/>
+  <text x="130" y="510" fill="#94a3b8" font-size="7">Entry point</text>
+  <rect x="210" y="501" width="14" height="9" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="230" y="510" fill="#94a3b8" font-size="7">Processing</text>
+  <rect x="310" y="501" width="14" height="9" rx="2" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1"/>
+  <text x="330" y="510" fill="#94a3b8" font-size="7">Feedback</text>
+  <rect x="410" y="501" width="14" height="9" rx="2" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="430" y="510" fill="#94a3b8" font-size="7">Storage</text>
+  <rect x="510" y="501" width="14" height="9" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="530" y="510" fill="#94a3b8" font-size="7">Retrieval</text>
+  <rect x="610" y="501" width="14" height="9" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="630" y="510" fill="#94a3b8" font-size="7">Feedback loop</text>
+</svg>

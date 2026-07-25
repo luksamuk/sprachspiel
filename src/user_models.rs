@@ -91,6 +91,9 @@ pub struct ProviderConfig {
     #[serde(default = "default_stream_idle_timeout")]
     pub stream_idle_timeout_secs: u64,
 
+    #[serde(default = "default_ttfb_timeout")]
+    pub ttfb_timeout_secs: u64,
+
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
 
@@ -114,16 +117,14 @@ fn default_read_timeout() -> u64 {
     300
 }
 fn default_stream_idle_timeout() -> u64 {
-    // 300s — aligned with reqwest's read_timeout default (300s).
-    // Cloud reasoning models (MiniMax M3, Nemotron 3 Ultra, etc.) can
-    // take 120-180s between SSE connection and the first token during
-    // prefill + thinking. The previous 60s default caused spurious
-    // "SSE stream idle timeout" errors; 180s still triggered on models
-    // with very long prefill after tool results (8KB+ of tool output
-    // in history). 300s matches the read_timeout so the idle timeout
-    // doesn't fire before the HTTP-level timeout.
-    // Users can override via stream_idle_timeout_secs in models.toml.
     300
+}
+fn default_ttfb_timeout() -> u64 {
+    // 120s — time-to-first-byte watchdog. If no SSE chunk arrives
+    // within this window after stream start, abort with a Timeout
+    // error instead of waiting the full idle_timeout (300s).
+    // Inspired by Hermes Agent's HERMES_CODEX_TTFB_TIMEOUT_SECONDS.
+    120
 }
 fn default_max_retries() -> u32 {
     3
@@ -614,6 +615,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -632,6 +634,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -650,6 +653,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -668,6 +672,7 @@ mod tests {
             connect_timeout_secs: 5,
             read_timeout_secs: 300,
             stream_idle_timeout_secs: 60,
+            ttfb_timeout_secs: 120,
             max_retries: 3,
             retry_base_delay_ms: 2000,
             retry_max_delay_ms: 16000,
@@ -823,6 +828,7 @@ provider = "my-ollama"
         assert_eq!(prov.connect_timeout_secs, 5);
         assert_eq!(prov.read_timeout_secs, 300);
         assert_eq!(prov.stream_idle_timeout_secs, 300);
+        assert_eq!(prov.ttfb_timeout_secs, 120);
         assert_eq!(prov.max_retries, 3);
         assert_eq!(prov.retry_base_delay_ms, 2000);
         assert_eq!(prov.retry_max_delay_ms, 16000);

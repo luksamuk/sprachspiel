@@ -18,8 +18,6 @@
 //! - `pub struct foo;` (unit struct)
 //! - `__foo__Params` (struct with derived `Deserialize` + `JsonSchema`)
 //! - `impl crate::tools::Tool for foo` with `name`, `description`, `call`
-//! - `impl ::ollama_rs::generation::tools::Tool for foo` (the ollama-rs side
-//!   of the dual-impl; preserved until #123 removes ollama-rs entirely)
 //!
 //! The macro emits fully-qualified paths for the derive traits
 //! (`::schemars::JsonSchema`, `::serde::Deserialize`) so callers don't
@@ -43,7 +41,6 @@ use syn::{
 /// - `pub struct <fn_name>;` (unit struct)
 /// - `__<fn_name>__Params` (struct with derived `Deserialize` + `JsonSchema`)
 /// - `impl crate::tools::Tool for <fn_name>` with `name`, `description`, `call`
-/// - `impl ::ollama_rs::generation::tools::Tool for <fn_name>` (dual-impl side)
 ///
 /// # Example
 ///
@@ -161,8 +158,7 @@ fn build_tool_impl(
         .collect();
     let _function_params_struct_field_names2 = function_params_struct_field_names.clone();
 
-    // Emit our own `crate::tools::Tool` impl. The ollama-rs dual-impl
-    // was removed in W2 #121 (the shim handles serialization).
+    // Emit the `crate::tools::Tool` impl.
     quote_spanned!(input.span() =>
         impl crate::tools::Tool for #function_name {
             type Params = #function_module_name::#function_params_struct_name;

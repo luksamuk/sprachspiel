@@ -71,55 +71,7 @@ Current Sprachspiel:
 
 ### 2.1 Three-Tier Memory Model (Inspired by MemOS + MemGPT)
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     SPRACHSPIEL UNIFIED ARCHITECTURE                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────────┐  ┌──────────────────────────────────┐   │
-│  │   TIER 3: PARAMETER   │  │   TIER 2: ACTIVATION (Future)   │   │
-│  │   (Future: LoRA)      │  │   KV-Cache / Adapters            │   │
-│  │                      │  │                                  │   │
-│  │   - Skill adapters    │  │   - Session-level patterns       │   │
-│  │   - User embeddings   │  │   - Working memory              │   │
-│  │   - Long-term prefs   │  │   - Context compression         │   │
-│  │                      │  │                                  │   │
-│  │   ↑ OFFLINE BATCH    │  │   ↑ ONLINE LEARNING              │   │
-│  └──────────────────────┘  └──────────────────────────────────┘   │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────┤
-│  │                    TIER 1: PLAINTEXT (Current)                  │
-│  │                                                                 │
-│  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   │  WORKING     │  │  EPISODIC   │  │  FACTUAL            │  │
-│  │   │  CONTEXT     │  │  (Chat DB)  │  │  (AGENTS.md/SOUL)   │  │
-│  │   │              │  │             │  │                     │  │
-│  │   │  - Recent    │  │  - Messages │  │  - Project context  │  │
-│  │  │  - Retrieved │  │  - Embeddings│  │  - Personality      │  │
-│  │  │  - Decays    │  │  - Feedback  │  │  - Skills loaded    │  │
-│  │  │              │  │             │  │                     │  │
-│  │  │  ↑ Session   │  │  ↑ Weighted │  │  ↑ Static            │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│  │                                                                 │
-│  └─────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────┤
-│  │                    LEARNING SIGNAL PIPELINE                     │
-│  │                                                                 │
-│  │   User Interaction → Signal Capture → Weight Application        │
-│  │         ↓                  ↓                ↓                   │
-│  │   ┌──────────┐      ┌──────────┐      ┌──────────┐           │
-│  │   │ Explicit │      │ Implicit │      │  SQLite  │           │
-│  │   │ /feedback│      │ Continue │      │  Update  │           │
-│  │   │          │      │ Abandon  │      │          │           │
-│  │   │ Good/Bad │      │ Re-query │      │ Weight   │           │
-│  │   │ Correct  │      │ Repeat   │      │ Adjust   │           │
-│  │   └──────────┘      └──────────┘      └──────────┘           │
-│  │                                                                 │
-│  └─────────────────────────────────────────────────────────────────┤
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
+![Three-Tier Memory Model](../assets/diagrams/three-tier-memory.svg)
 
 ### 2.2 Data Model Additions
 
@@ -156,42 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_signals(created_at D
 
 ### 2.3 Component Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       SPRACHSPIEL COMPONENTS                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐    │
-│   │   User      │────▶│   REPL      │────▶│  Coordinator    │    │
-│   │   Interface │     │   (chat)    │     │  (ollama-rs)    │    │
-│   └─────────────┘     └─────────────┘     └────────┬────────┘    │
-│                                                      │             │
-│                              ┌───────────────────────┼─────────┐   │
-│                              │                       │         │   │
-│                              ▼                       ▼         ▼   │
-│                      ┌──────────────┐      ┌──────────────┐       │
-│                      │  Feedback    │      │  Context     │       │
-│                      │  Collector   │      │  Builder     │       │
-│                      │  (NEW)       │      │  (existing)  │       │
-│                      └──────┬───────┘      └──────┬───────┘       │
-│                             │                     │               │
-│                             ▼                     ▼               │
-│                      ┌─────────────────────────────────────┐      │
-│                      │           SQLite DB                  │      │
-│                      │  - messages (weighted by feedback)   │      │
-│                      │  - embeddings (weighted retrieval)   │      │
-│                      │  - feedback_signals (NEW)            │      │
-│                      └─────────────────────────────────────┘      │
-│                                            │                      │
-│                                            ▼                      │
-│                      ┌─────────────────────────────────────┐      │
-│                      │       Feedback-Aware Retrieval       │      │
-│                      │  - BM25 + Vector + Feedback Weight   │      │
-│                      │  - Decay: recent > old, good > bad   │      │
-│                      └─────────────────────────────────────┘      │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
+![Component Diagram](../assets/diagrams/component-diagram.svg)
 
 ---
 

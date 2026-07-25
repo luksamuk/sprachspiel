@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of Sprachspiel.
 
 ## Overview
 
-Sprachspiel is a Rust CLI tool that provides an interface to LLM models via Ollama and compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
+Sprachspiel is a Rust CLI tool that provides an interface to LLM models via OpenAI-compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, tool integration, and a responsive Ratatui-based TUI.
 
 ## System Architecture
 
@@ -42,7 +42,7 @@ graph TB
     end
 
     subgraph External["External"]
-        C --> O[Ollama API]
+        C --> O[LLM Provider]
         D --> O
         E --> O
         F --> O
@@ -51,7 +51,7 @@ graph TB
     end
 
     subgraph Output["Output"]
-        O --> Q[termimad]
+        O --> Q[Markdown Renderer]
         Q --> R[Terminal]
     end
 ```
@@ -96,8 +96,9 @@ Model configuration with per-subcommand overrides:
 ```rust
 pub struct ModelConfig {
     pub model_id: String,
+    pub num_ctx: u32,       // 0 = auto-detect
     pub temperature: f32,
-    pub num_ctx: u32,
+    pub top_p: Option<f32>,
     pub thinking: bool,
 }
 ```
@@ -146,10 +147,10 @@ SQLite database for conversation history, content, facts, and embeddings:
 erDiagram
     CONVERSATIONS ||--o{ CONTENT_ITEMS : contains
     CONTENT_ITEMS ||--o{ CONTENT_CHUNKS : has
-    CONTENT_ITEMS ||--o| CONTENT_EMBEDDINGS : has
-    CONTENT_CHUNKS ||--o| CHUNK_EMBEDDINGS : has
+    CONTENT_ITEMS ||--o{ CONTENT_EMBEDDINGS : has
+    CONTENT_CHUNKS ||--o{ CHUNK_EMBEDDINGS : has
     CONTENT_ITEMS ||--o{ FEEDBACK_SIGNALS : receives
-    FACTS ||--o| FACT_EMBEDDINGS : has
+    FACTS ||--o{ FACT_EMBEDDINGS : has
 
     CONVERSATIONS {
         string id PK
@@ -164,11 +165,21 @@ erDiagram
         string content_type
         string role
         string content
-        string thinking_content NULL
-        string t3_status DEFAULT none
+        string thinking_content
+        string t3_status
         datetime timestamp
         float importance
         float decay_score
+        int has_embedding
+    }
+
+    CONTENT_CHUNKS {
+        int id PK
+        int item_id FK
+        int chunk_index
+        string content
+        int start_offset
+        int end_offset
         int has_embedding
     }
 
@@ -190,20 +201,32 @@ erDiagram
         datetime created_at
     }
 
-    EMBEDDINGS {
-        int id PK
-        float distance
-        string vec0_cosine_distance_metric
+    CONTENT_EMBEDDINGS {
+        int item_id PK
+        string content_type
+        string conversation_id
+    }
+
+    CHUNK_EMBEDDINGS {
+        int chunk_id PK
+        string content_type
+        string conversation_id
+    }
+
+    FACT_EMBEDDINGS {
+        int fact_id PK
+        string scope
+        string category
     }
 ```
 
 #### Embeddings (`src/embeddings/`)
 
-Ollama-based embedding generation:
+Embedding generation via LlmProvider trait: generation:
 
 ```rust
 pub struct EmbeddingClient {
-    ollama: Ollama,
+    provider: OpenAICompatibleProvider,
     model: String,
     semaphore: Semaphore,  // Serializes embedding requests (Semaphore(1))
 }
@@ -263,34 +286,27 @@ pub struct SearchResult {
 
 **Architecture Bug (Current):**
 
-```
-Current Storage Path:
-┌─────────────────────┐    strip_thinking     ┌─────────────┐
-│ Normal Assistant      │ ─────────────────→    │ LOST        │
-│ <thinking>content    │     (removed)         │ FOREVER     │
-│ </thinking>response  │                        └─────────────┘
-└─────────────────────┘
+```mermaid
+graph LR
+    subgraph "Normal Assistant Message"
+        A["thinking + response"] -->|"strip_thinking (removed)"| B["LOST FOREVER"]
+    end
 
-┌─────────────────────┐   concat inline   ┌──────────────┐   search by     ┌─────────┐
-│ Pre-Tool             │ ───────────────→  │ content field │ ──────────────→  │ Found   │
-│ <thinking>content   │   (incidental)    │ (mixed XML)  │   accident       │ (luck)  │
-│ </thinking>response │                   └──────────────┘                  └─────────┘
-└─────────────────────┘
+    subgraph "Pre-Tool Message"
+        C["thinking + response"] -->|"concat inline (incidental)"| D["content field (mixed XML)"]
+        D -->|"search by accident"| E["Found (luck)"]
+    end
 ```
 
 **Fixed Architecture (Planned — v14):**
 
+```mermaid
+graph LR
+    A["Any Assistant msg with thinking"] -->|process_thinking| B["content field - clean response"]
+    A -->|process_thinking| C["thinking_content - preserved reasoning"]
 ```
-Planned Storage Path:
-┌─────────────────────┐   process_thinking   ┌──────────────┐
-│ Any Assistant msg    │ ─────────────────→   │ content field │ ← clean response text
-│ with <thinking>      │                      └──────────────┘
-└─────────────────────┘                      ┌──────────────────┐
-                                               │ thinking_content │ ← preserved reasoning
-                                               └──────────────────┘
 
-(Phase 1 adds thinking_trace_status INTEGER: 0=none, 1=raw, 2=pending, 3=done)
-```
+> Phase 1 adds `thinking_trace_status INTEGER`: 0=none, 1=raw, 2=pending, 3=done
 
 **5 Data Loss Paths Identified (Phase 0 fixes 4):**
 
@@ -317,27 +333,29 @@ Planned Storage Path:
 
 #### Architecture (Layers)
 
-The chat REPL follows a layered architecture for maintainability and future TUI compatibility:
+The chat REPL follows a layered architecture for maintainability:
 
 ```
 Layer 5: repl.rs           - Entry point, coordinator
 Layer 4: core.rs           - Business logic (send_message, compact)
 Layer 3: repl_state.rs     - State management (ReplState)
-Layer 2: input/rustyline.rs, view/terminal.rs - I/O implementations
+Layer 2: input/crossterm.rs, view/ratatui_view.rs - I/O implementations
 Layer 1: session.rs, cli.rs - Session and CLI handling
 Layer 0: input/mod.rs, view/mod.rs - Traits (abstractions)
 ```
 
 This separation enables:
 - **Testing**: Each layer can be tested in isolation
-- **TUI Migration**: Swap rustyline for ratatui input/output (Responsive Chat Rebuild, M1 W6)
 - **Maintainability**: 200-400 line modules vs 1100+ line function
 
-**Planned Layer 2 migration (W6):**
+The I/O layer was rebuilt in W6 (v0.44.0) from `rustyline` + `println!` + ANSI to Ratatui + Crossterm:
+
 ```
-Current:  input/rustyline.rs,   view/terminal.rs    - println + ANSI
-Rebuild:  input/crossterm_input.rs, view/ratatui_view.rs  - ratatui + crossterm
-Layer 2 also gains: app.rs (event loop), tui/ (components)
+Previous (removed in W6):     Current (W6):
+input/rustyline.rs            input/crossterm.rs    — CrosstermInput
+view/terminal.rs              view/ratatui_view.rs — RatatuiView
+println! + ANSI               ratatui declarative rendering
+rustyline blocking input      crossterm key events + mpsc event loop
 ```
 
 #### Session Management (`src/chat/session.rs`)
@@ -423,10 +441,10 @@ Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and highe
 
 ### 7. Tools (`src/tools/`)
 
-Tool implementations using the `ollama-rs` macro:
+Tool implementations using the `#[sprachspiel::tool]` proc macro:
 
 ```rust
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn my_tool(param: String) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Always return Ok(String), even on error
     Ok(result)
@@ -441,14 +459,11 @@ Tool categories (feature-flags):
 | `weather-tools` | 3 | ✅ |
 | `file-tools` | 5 | ✅ |
 | `calc-tools` | 1 | ✅ |
-| `serper-tools` | 2 | ✅ |
-| `system-tools` | 2 | ✅ |
 | `search-tools` | 3 | ❌ |
+| `system-tools` | 2 | ✅ |
 | `led-tools` | 5 | ❌ |
 
 ### 8. Skills System (`src/skills/`)
-
-**Status:** Planned (see [Skills System Design](./skills-system-design.md))
 
 Skills are Markdown files that define AI behavior and tool usage patterns:
 
@@ -472,8 +487,6 @@ When asked to process PDF or ePub files:
 
 ### 9. External Tools (`src/external/`)
 
-**Status:** Planned
-
 External CLI tools integration for PDF processing, OCR, and image manipulation:
 
 ```rust
@@ -488,14 +501,14 @@ pub fn run_command(
 ) -> Result<String, ...>
 ```
 
-Configuration via `~/.config/sprachspiel/tools.toml`:
+Configuration via `~/.config/sprachspiel/config.toml`:
 
 ```toml
-[pdftotext]
+[external.pdftotext]
 enabled = true
 timeout = 30
 
-[tesseract]
+[external.tesseract]
 enabled = true
 timeout = 120
 ```
@@ -518,7 +531,7 @@ sequenceDiagram
     participant Query
     participant DB
     participant Embedding
-    participant Ollama
+    participant LLM Provider
     
     User->>Query: "What did we discuss about X?"
     Query->>DB: Get project_id
@@ -526,8 +539,8 @@ sequenceDiagram
     Query->>DB: Search by project_id
     DB-->>Query: Relevant messages
     Query->>Query: Build context
-    Query->>Ollama: Send query + context
-    Ollama-->>Query: Response
+    Query->>LLM Provider: Send query + context
+    LLM Provider-->>Query: Response
     Query-->>User: Answer (no persistence)
 ```
 
@@ -687,7 +700,7 @@ sequenceDiagram
     participant REPL
     participant Retriever
     participant DB
-    participant Ollama
+    participant LLM Provider
     
     User->>REPL: Message
     REPL->>DB: Check message count
@@ -703,8 +716,8 @@ sequenceDiagram
         Note over REPL: Skip retrieval
     end
     
-    REPL->>Ollama: Chat with context
-    Ollama-->>REPL: Response
+    REPL->>LLM Provider: Chat with context
+    LLM Provider-->>REPL: Response
     REPL->>DB: Save messages + embeddings
     REPL-->>User: Display response
 ```
@@ -736,15 +749,14 @@ sprachspiel/
 │   │   ├── repl_state.rs    # ReplState struct (state management)
 │   │   ├── input/           # Input abstraction layer
 │   │   │   ├── mod.rs       # InputBackend trait
-│   │   │   └── rustyline.rs # RustylineInput implementation
+│   │   │   └── crossterm.rs  # CrosstermInput implementation
 │   │   ├── view/            # Output abstraction layer
 │   │   │   ├── mod.rs       # ChatView trait
-│   │   │   └── terminal.rs  # TerminalView implementation
+│   │   │   └── ratatui_view.rs  # RatatuiView implementation
 │   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
-│   │   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages
-│   │   ├── thinking.rs           # Thinking tag processing + display
-│   │   ├── thinking_preserve.rs  # (planned) Thinking preservation for storage
+│   │   ├── coordinator.rs   # Coordinator (tool calls, streaming)
+│   │   ├── thinking.rs      # Thinking tag processing + display
 │   │   └── compaction.rs    # Context management
 │   ├── project.rs           # Project identification
 │   ├── db/                  # Database operations
@@ -807,17 +819,19 @@ sprachspiel/
 
 | Crate | Purpose |
 |-------|---------|
-| `ollama-rs` | Ollama API client |
+| `reqwest` | HTTP client for OpenAI-compatible API |
 | `clap` | CLI parsing |
-| `termimad` | Markdown rendering |
-| `indicatif` | Progress spinners |
+| `ratatui` | TUI rendering framework |
+| `crossterm` | Terminal backend + input events |
+| `ratatui-textarea` | Text editing widget |
+| `tui-markdown` | Markdown rendering in ratatui |
+| `indicatif` | Progress spinners (non-chat) |
 | `tokio` | Async runtime |
-| `reqwest` | HTTP client |
 | `rusqlite` + `sqlite-vec` | Database + embeddings |
 | `serde` | Serialization |
 | `chrono` | DateTime handling |
-| `which` | (Planned) Command detection |
-| `shell-words` | (Planned) Safe argument parsing |
+| `which` | Command detection |
+| `shell-words` | Safe argument parsing |
 
 ## Performance Considerations
 

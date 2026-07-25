@@ -27,7 +27,7 @@ use std::time::Instant;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Parse inter-tool compaction error from OllamaError
+/// Parse inter-tool compaction error from a ProviderError string.
 ///
 /// Returns (tokens_used, context_window, tools_executed) if the error is
 /// a context needs compaction error, None otherwise.
@@ -120,7 +120,7 @@ pub async fn process_send_result(
 
     // Auto-compact if needed (after response, before next input)
     CompactionContext {
-        ollama: &state.ollama,
+        provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
         settings: &state.settings,
@@ -177,7 +177,7 @@ pub async fn check_and_compact_before_tool(
         );
 
         CompactionContext {
-            ollama: &state.ollama,
+            provider: &state.provider,
             model_config: &state.model_config,
             session: &mut state.session,
             settings: &state.settings,
@@ -237,7 +237,7 @@ pub struct ContinuationResult {
 ///
 /// # Arguments
 ///
-/// * `state` - Mutable reference to REPL state (contains session, ollama client, etc.)
+/// * `state` - Mutable reference to REPL state (contains session, provider client, etc.)
 /// * `initial_result` - The result from the initial `send_message` call that requested continuation
 /// * `user_message_id` - The ID of the original user message (for linking continuation pre-tool messages)
 /// * `view` - View for rendering output
@@ -273,7 +273,7 @@ pub async fn handle_continuation(
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
     CompactionContext {
-        ollama: &state.ollama,
+        provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
         settings: &state.settings,
@@ -288,7 +288,7 @@ pub async fn handle_continuation(
     // Send first continuation request
     let think_enabled = state.session.think;
     let continuation_result = send_message(
-        &state.ollama,
+        &state.provider,
         &state.model_config,
         &mut state.session,
         "", // empty user_input - continuation via ephemeral message
@@ -352,7 +352,7 @@ pub async fn handle_continuation(
 
                 // Compact again before next continuation
                 CompactionContext {
-                    ollama: &state.ollama,
+                    provider: &state.provider,
                     model_config: &state.model_config,
                     session: &mut state.session,
                     settings: &state.settings,
@@ -365,7 +365,7 @@ pub async fn handle_continuation(
                 .await;
 
                 let next_result = send_message(
-                    &state.ollama,
+                    &state.provider,
                     &state.model_config,
                     &mut state.session,
                     "", // empty user_input
@@ -490,7 +490,7 @@ pub async fn handle_overflow_error(
 
     view.show_progress("Auto-compacting after overflow error...");
     CompactionContext {
-        ollama: &state.ollama,
+        provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
         settings: &state.settings,
@@ -553,7 +553,7 @@ async fn handle_inter_tool_compaction_error(
     );
 
     CompactionContext {
-        ollama: &state.ollama,
+        provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
         settings: &state.settings,

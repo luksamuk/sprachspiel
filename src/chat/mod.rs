@@ -36,7 +36,7 @@ pub mod completer;
 pub mod continuation;
 pub mod coordinator;
 pub mod core;
-pub mod custom_coordinator;
+pub mod error_recovery;
 pub mod event_loop;
 pub mod input;
 pub mod llm_event;
@@ -54,7 +54,7 @@ pub mod view;
 
 pub use cli::ChatArgs;
 pub use command_output::CommandOutput;
-pub use custom_coordinator::{ContinuationTag, CustomCoordinator, parse_continuation_tag};
+pub use coordinator::{ContinuationTag, Coordinator, parse_continuation_tag};
 pub use repl::run_chat_repl;
 // Re-exported for external crate usage; not consumed within this crate
 #[allow(unused_imports)]

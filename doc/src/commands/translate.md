@@ -10,7 +10,7 @@ sprach [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
 
 ## Description
 
-Translate text between languages with automatic source language detection. The command uses the TranslateGemma model (12B parameters) optimized for translation tasks.
+Translate text between languages with automatic source language detection. The command uses the TranslateGemma-4B model optimized for translation tasks. (A 12B variant exists, but 4B delivers the same quality with a smaller footprint.)
 
 ## Arguments
 
@@ -198,7 +198,6 @@ cat english.txt | sprach translate :pt > portuguese.txt
 
 ## Limitations
 
-- Requires `translategemma:4b` model
 - Best for single sentences or short paragraphs
 - Very long texts may be truncated
 

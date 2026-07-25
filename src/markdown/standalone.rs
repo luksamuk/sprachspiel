@@ -57,6 +57,8 @@ pub fn render_markdown_streaming(content: &str, width: usize) -> String {
 /// When `render_special` is true, Mermaid blocks and LaTeX blocks are rendered
 /// as Unicode art. When false, they are treated as regular code blocks.
 fn render_segments(content: &str, width: usize, render_special: bool) -> String {
+    #[cfg(not(any(feature = "mermaid", feature = "latex")))]
+    let _ = render_special; // suppress unused when no rendering features
     let mut output = String::new();
     let segments = extract_content_segments(content);
     let mut first_segment = true;

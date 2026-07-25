@@ -44,8 +44,8 @@ Sprachspiel looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: sprach --list-models
-# Default: "qwen3.5:4b"
-default = "qwen3.5:4b"
+# Default: "qwen3.5-4b"
+default = "qwen3.5-4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.
@@ -53,12 +53,9 @@ default = "qwen3.5:4b"
 # Model capability takes precedence: if the model doesn't support thinking, this is ignored.
 # thinking = false
 
-# LLM server connection settings.
-# Change these if your LLM server is not running on the default localhost.
-# Default: "127.0.0.1"
-ollama_host = "127.0.0.1"
-# Default: 11434
-ollama_port = 11434
+# LLM server connection settings are configured in models.toml under [provider] sections.
+# See ~/.config/sprachspiel/models.toml for the provider configuration format.
+# Default: http://localhost:12434/v1 (llama-swap) or http://localhost:11434/v1 (Ollama)
 
 # -----------------------------------------------------------------------------
 # PER-SUBCOMMAND MODEL OVERRIDES (Optional)
@@ -71,7 +68,7 @@ ollama_port = 11434
 [model.query]
 # The model to use for 'sprach query'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -85,7 +82,7 @@ ollama_port = 11434
 [model.chat]
 # The model to use for 'sprach chat'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Enable thinking mode for chat. Some models show their reasoning process.
 # If not specified, defaults to: false for chat
@@ -100,7 +97,7 @@ ollama_port = 11434
 # The model to use for 'sprach summarize'.
 # Recommended: a lightweight model for speed.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3.5:4b"
+# model = "qwen3.5-4b"
 
 # Summarization typically doesn't need thinking mode.
 # If not specified, defaults to: false for summarize
@@ -113,9 +110,9 @@ ollama_port = 11434
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
-# Default: qwen2.5-coder:7b (optimized for coding with function calling)
-# If not specified, falls back to the code default (qwen2.5-coder:7b).
-# model = "qwen2.5-coder:7b"
+# Default: ornith-1.0-35b (agentic coder with function calling)
+# If not specified, falls back to the code default (ornith-1.0-35b).
+# model = "ornith-1.0-35b"
 
 # Code generation typically doesn't need thinking mode.
 # If not specified, defaults to: false for code
@@ -142,10 +139,9 @@ ollama_port = 11434
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
-#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
+#   - web_search, web_search_news, web_scrape (DuckDuckGo — requires search-tools feature)
 #
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Note: DuckDuckGo may occasionally rate-limit or show CAPTCHA. This is a third-party limitation.
 # Default: [] (all enabled tools are available)
 blacklist = []
 
@@ -234,11 +230,10 @@ Create `~/.config/sprachspiel/models.toml`:
 # Add a new model
 [models.my-coder]
 model_id = "phi3:mini-4k"    # Required: Model ID (as recognized by the backend)
-num_ctx = 4096                # Optional: context window (default: 4096)
-temperature = 0.3             # Optional: temperature (default: 0.2)
-top_k = 40                    # Optional: top-k sampling (default: 40)
-top_p = 0.9                   # Optional: top-p sampling (default: 0.9)
-repeat_penalty = 1.1          # Optional: repeat penalty (default: 1.0)
+num_ctx = 4096                # Optional: context window (0 or omit for auto-detect)
+temperature = 0.3             # Optional: temperature (default: 0.8)
+top_p = 0.9                   # Optional: top-p sampling (default: not set)
+seed = 42                     # Optional: seed for reproducible outputs
 
 # Add another model with minimal config
 [models.simple]
@@ -268,13 +263,11 @@ When defining a custom model without all parameters, these defaults are used:
 
 | Parameter    | Default |
 |-------------|---------|
-| `num_ctx`    | 32768 (32K) |
+| `num_ctx`    | 32768 (32K), or auto-detect if omitted |
 | `temperature`| 0.8     |
-| `top_k`      | not set (uses backend default) |
 | `top_p`      | not set (uses backend default) |
-| `repeat_penalty` | 1.1 |
-
-**Note**: If `num_ctx` is not specified, the default is 32K tokens. For cloud models or models where you want Ollama to automatically manage context, you can omit `num_ctx` entirely.
+| `seed`       | not set (optional, for reproducible outputs) |
+| `thinking`   | not set (tri-state: `true`/`false`/probe) |
 
 ### Enabling Thinking for Cloud Models
 
@@ -305,26 +298,19 @@ This shows both built-in models and user-defined models (marked with `[user]`).
 
 ### Remote LLM Server
 
-To connect to a remote LLM server (such as Ollama):
+To connect to a remote LLM server, configure the provider in `~/.config/sprachspiel/models.toml`:
 
 ```toml
-[model]
-# Both formats work - with or without http://
-ollama_host = "192.168.1.100"
-# Or explicitly: ollama_host = "http://192.168.1.100"
-ollama_port = 11434
+[provider.remote]
+kind = "openai"
+base_url = "http://192.168.1.100:11434/v1"
 ```
 
 This is useful for:
-- **Termux/Android** - Connect to an Ollama server running on your desktop
+- **Termux/Android** - Connect to an LLM server running on your desktop
 - **Remote servers** - Connect to an LLM server on a different machine
 - **Docker/containers** - Connect to an LLM server in a container
-
-Or use environment variables:
-
-```bash
-export OLLAMA_HOST="192.168.1.100:11434"
-```
+- **Cloud providers** - Connect to OpenAI, Groq, or other cloud endpoints
 
 ## Indexing Configuration
 
@@ -431,18 +417,19 @@ Error: 'nomic' is an embedding-only model and cannot be used for chat.
 
 The TUI tab completer in the `/model` command filters out embedding-only models automatically. `sprach --list` still shows all models (including embedding ones) with a `[embeddings-only]` tag appended.
 
-### `sprach models upgrade` Warning
+### Embedding Model Dimensions
 
-`sprach models upgrade` emits a warning (not an auto-add) when a `[models.*]` block has `embeddings = true` but no `dimensions`:
+When declaring an embedding model in `models.toml`, the `dimensions` field is required:
 
+```toml
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+provider = "llama-swap"
+embeddings = true
+dimensions = 768   # e.g. 768 for nomic-embed-text-v2-moe, 256 for Matryoshka-truncated
 ```
-WARN: 1 embedding model(s) do not declare `dimensions`:
-  - [models."nomic"]: no `dimensions = N` field. Add `dimensions = <N>`
-    (e.g. 768 for nomic-embed-text-v2-moe, 256 for Matryoshka-truncated)
-    so [indexing] can use this model.
-```
 
-The upgrade never auto-adds `dimensions` (the user must know the actual dim count the model produces). The startup probe will fail-fast with a clear error if the alias is referenced from `[indexing]` and the dimensions don't match the provider's response.
+The startup probe verifies that the provider's response dimensions match the declared value. Mismatch is a fatal error with a clear message.
 
 ## Per-Subcommand Configuration
 
@@ -529,7 +516,7 @@ blacklist = ["fetch_pokemon", "get_pokemon_ability"]
 
 **Important**: When a tool is blacklisted, it's completely hidden from the model. The system prompt won't mention the tool, and the model won't try to use it. This saves context window space.
 
-**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_instant_answer`) may fail due to CAPTCHA. For reliable web search, use Serper tools (`serper_search`, `serper_search_news`) which require the `SERPER_API_KEY` environment variable.
+**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_scrape`) may occasionally be rate-limited or show CAPTCHA. This is a third-party service limitation, not a bug in Sprachspiel. These tools require the `search-tools` feature flag at compile time.
 
 ### Enabling Pokémon Tools
 
@@ -550,20 +537,9 @@ sprach --tools "Tell me about Pikachu"
 
 ## Environment Variables
 
-### OLLAMA_HOST
+### Provider Configuration
 
-Configure the LLM server location (overrides config file):
-
-```bash
-# Default (local)
-export OLLAMA_HOST="localhost:11434"
-
-# Remote server
-export OLLAMA_HOST="192.168.1.100:11434"
-
-# Add to shell config
-echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
-```
+LLM server location is configured in `~/.config/sprachspiel/models.toml` under `[provider]` sections. See [Configuration](#remote-llm-server) for details.
 
 ### RUST_LOG
 
@@ -595,8 +571,7 @@ Models are configured in `src/config.rs`. Each preset includes:
 - Model ID
 - Temperature
 - Context window size
-- Sampling parameters (top_k, top_p)
-- Repeat penalty
+- top_p (optional)
 
 To add a custom model, you need to modify the source code and rebuild:
 
@@ -608,9 +583,8 @@ configs.insert(
         model_id: "my-custom-model:latest".to_string(),
         num_ctx: 32768,
         temperature: 0.5,
-        top_k: 40,
-        top_p: 0.9,
-        repeat_penalty: 1.1,
+        top_p: Some(0.9),
+        thinking: false,
     },
 );
 ```
@@ -652,24 +626,16 @@ Adjust in your config file (or model presets in `src/config.rs`):
 # Range: 0.0 to 2.0
 temperature = 0.1
 
-# Top-k sampling limits token selection to k most likely
-# Lower = more focused, higher = more diverse
-top_k = 40
-
 # Top-p (nucleus) sampling: consider tokens with cumulative prob < p
 top_p = 0.9
 
-# Penalty for repeating tokens
-repeat_penalty = 1.1
+# Seed for reproducible outputs (optional, cross-provider)
+seed = 42
 ```
 
 ### Timeout Settings
 
-Set Ollama timeout via environment variable:
-
-```bash
-export OLLAMA_TIMEOUT=120  # seconds
-```
+Timeouts are configured in `~/.config/sprachspiel/models.toml` under `[provider]` sections. See the [Provider Architecture](./development/provider-architecture.md) documentation for details.
 
 ## Installation Paths
 

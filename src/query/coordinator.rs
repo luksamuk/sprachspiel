@@ -3,23 +3,18 @@
 //! Provides helper to build a coordinator for query execution.
 
 #![expect(clippy::print_stderr)] // Query coordinator output
-use ollama_rs::generation::chat::ChatMessage;
 
-use crate::chat::custom_coordinator::CustomCoordinator;
+use crate::chat::coordinator::Coordinator;
 use crate::settings::Settings;
 
 use super::context::QueryContext;
 
 /// Build a coordinator for query execution.
-pub fn build_query_coordinator(
-    ctx: &QueryContext,
-    settings: &Settings,
-) -> CustomCoordinator<Vec<ChatMessage>> {
-    let model_options =
-        crate::chat::core::convert_provider_to_model(&ctx.model_config.build_provider_options());
+pub fn build_query_coordinator(ctx: &QueryContext, settings: &Settings) -> Coordinator {
+    let model_options = ctx.model_config.build_provider_options();
 
-    let coordinator = CustomCoordinator::new(
-        ctx.ollama.clone(),
+    let coordinator = Coordinator::new(
+        ctx.provider.clone(),
         ctx.model_config.model_id.clone(),
         vec![],
     )

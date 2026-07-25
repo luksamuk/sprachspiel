@@ -2,7 +2,7 @@
 //!
 //! Tests token estimation, message overhead, and context metrics.
 
-use ollama_rs::generation::chat::ChatMessage;
+use sprachspiel::provider::types::LlmMessage;
 use sprachspiel::tokens::{
     ContextMetrics, MESSAGE_OVERHEAD, calculate_context_metrics, estimate_tokens,
     estimate_tokens_code,
@@ -112,8 +112,8 @@ fn test_context_metrics_available_overflow() {
 #[test]
 fn test_calculate_context_metrics_basic() {
     let messages = vec![
-        ChatMessage::user("hello world".to_string()),
-        ChatMessage::assistant("hi there".to_string()),
+        LlmMessage::user("hello world".to_string()),
+        LlmMessage::assistant("hi there".to_string()),
     ];
     let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100, None);
     assert!(metrics.system_tokens > 0);
@@ -158,7 +158,7 @@ fn test_utilization_calculation() {
 
 #[test]
 fn test_available_tokens_calculation() {
-    let messages = vec![ChatMessage::user("test".to_string())];
+    let messages = vec![LlmMessage::user("test".to_string())];
     let metrics = calculate_context_metrics(&messages, 4096, "system prompt", 0, None);
     assert_eq!(
         metrics.available(),

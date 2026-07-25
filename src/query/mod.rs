@@ -9,11 +9,10 @@ mod executor;
 
 use std::sync::Arc;
 
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
+use crate::provider::types::ProviderOptions;
 
 use crate::capabilities::ModelCapabilities;
-use crate::chat::custom_coordinator::{ChatEvent, CustomCoordinator};
+use crate::chat::coordinator::{ChatEvent, Coordinator};
 use crate::config::ModelConfig;
 use crate::markdown;
 use crate::prompts::builder::PromptType;
@@ -47,19 +46,19 @@ pub struct QueryResult {
 
 /// Context for building a chat coordinator
 pub struct ChatContext {
-    pub ollama: crate::provider::Ollama,
+    pub provider: crate::provider::OpenAICompatibleProvider,
     pub model_id: String,
-    pub model_options: ModelOptions,
+    pub model_options: ProviderOptions,
     pub use_think: bool,
     pub context_window: Option<usize>,
     pub system_prompt: Option<String>,
 }
 
 impl ChatContext {
-    pub fn build_coordinator(self) -> CustomCoordinator<Vec<ChatMessage>> {
+    pub fn build_coordinator(self) -> Coordinator {
         let use_think = self.use_think;
 
-        let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
+        let mut coordinator = Coordinator::new(self.provider.clone(), self.model_id, vec![])
             .options(self.model_options)
             .think(use_think);
 
@@ -316,7 +315,7 @@ pub async fn run_query(
         messages,
         ctx.db,
         ctx.embedding_client,
-        ctx.ollama.clone(),
+        ctx.provider.clone(),
         Arc::new(settings.clone()),
         &ctx.tool_names,
         spinner.clone(),
@@ -346,8 +345,8 @@ pub async fn run_query(
     finish_spinner(spinner);
 
     let result = QueryResult {
-        content: response.message.content.clone(),
-        thinking: response.message.thinking.clone(),
+        content: response.content.clone(),
+        thinking: response.thinking.clone(),
     };
 
     display_result(&result, ctx.use_think, ctx.output_flags.plain);
@@ -357,7 +356,6 @@ pub async fn run_query(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_query_uses_indexing_weights() {

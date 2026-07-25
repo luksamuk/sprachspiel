@@ -2,7 +2,7 @@
 
 <img src="assets/sprachspiel-banner.png" alt="Sprachspiel banner" width="100%">
 
-Welcome to the Sprachspiel documentation! This is a comprehensive guide for the Sprachspiel command-line tool - a powerful Rust CLI for interacting with LLM models via Ollama and compatible backends.
+Welcome to the Sprachspiel documentation! This is a comprehensive guide for the Sprachspiel command-line tool - a powerful Rust CLI for interacting with LLM models via OpenAI-compatible backends.
 
 ## What is Sprachspiel?
 
@@ -87,8 +87,7 @@ sprach translate --help
 
 ## Requirements
 
-- **LLM Server (Ollama)**: Must be running locally or accessible remotely
-- **Rust**: Built with Rust for performance and reliability
+- **LLM Server**: Any OpenAI-compatible server must be running (Ollama, llama.cpp, LM Studio, vLLM, or cloud provider)
 - **Terminal**: Any modern terminal with UTF-8 support
 
 ## Support

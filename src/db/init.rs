@@ -36,7 +36,7 @@ pub struct DatabaseInitResult {
 pub struct IndexingInit {
     /// The provider (shim) used for embedding calls. Points to a
     /// provider in `models.toml [provider.*]`.
-    pub provider: crate::provider::Ollama,
+    pub provider: crate::provider::OpenAICompatibleProvider,
     /// Upstream `model_id` (the name passed verbatim to the
     /// provider's `/v1/embeddings` endpoint).
     pub model_id: String,
@@ -108,7 +108,7 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            // EmbeddingClient::with_model now takes (ollama,
+            // EmbeddingClient::with_model now takes (provider,
             // model_name, dimensions). dimensions is sourced from
             // the alias in models.toml and propagated through
             // IndexingInit; the EmbeddingClient is just a thin
@@ -174,7 +174,7 @@ pub fn init_database_core(
 /// - the probe call failed (HTTP 4xx/5xx, network error, timeout)
 /// - the response dim count does not match `dimensions`
 pub async fn run_indexing_probe(
-    provider: &crate::provider::Ollama,
+    provider: &crate::provider::OpenAICompatibleProvider,
     model_id: &str,
     dimensions: u32,
     probe_enabled: bool,
@@ -239,7 +239,8 @@ mod tests {
 
     #[test]
     fn test_indexing_init_struct_construction() {
-        let provider = crate::provider::Ollama::new("http://localhost", 11434);
+        let provider =
+            crate::provider::OpenAICompatibleProvider::new_local("http://localhost", 11434);
         let init = IndexingInit {
             provider,
             model_id: "nomic-embed-text-v2-moe".to_string(),
@@ -253,7 +254,8 @@ mod tests {
 
     #[test]
     fn test_init_database_core_skip_persistence() {
-        let provider = crate::provider::Ollama::new("http://localhost", 11434);
+        let provider =
+            crate::provider::OpenAICompatibleProvider::new_local("http://localhost", 11434);
         let result = init_database_core(
             IndexingInit {
                 provider,
@@ -272,7 +274,8 @@ mod tests {
 
     #[test]
     fn test_init_database_core_rejects_empty_model_id() {
-        let provider = crate::provider::Ollama::new("http://localhost", 11434);
+        let provider =
+            crate::provider::OpenAICompatibleProvider::new_local("http://localhost", 11434);
         let result = init_database_core(
             IndexingInit {
                 provider,
@@ -292,7 +295,8 @@ mod tests {
 
     #[test]
     fn test_init_database_core_rejects_whitespace_model_id() {
-        let provider = crate::provider::Ollama::new("http://localhost", 11434);
+        let provider =
+            crate::provider::OpenAICompatibleProvider::new_local("http://localhost", 11434);
         let result = init_database_core(
             IndexingInit {
                 provider,

@@ -185,7 +185,7 @@ fn is_blocked_path(path: &Path) -> bool {
 /// write_file("output.txt", "Hello, World!", "false")
 /// write_file("src/module.rs", code_content, "true")
 /// ```
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn write_file(
     path: String,
     content: String,
@@ -246,7 +246,7 @@ pub async fn write_file(
 /// // Replace with backup
 /// edit_file("important.py", "replace", "old_func", "new_func", null, null, null, null, null, "true")
 /// ```
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn edit_file(
     path: String,
     operation: String,
@@ -294,7 +294,7 @@ pub async fn edit_file(
 /// append_file("output.txt", "First line\n", "true")
 /// append_file("output.txt", "Second line\n", "false")
 /// ```
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn append_file(
     path: String,
     content: String,

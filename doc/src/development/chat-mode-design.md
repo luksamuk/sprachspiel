@@ -1,5 +1,10 @@
 # Chat Mode Design Plan
 
+> **⚠️ Legacy document.** This describes the pre-W6 chat architecture
+> (rustyline, TerminalView, termimad). For the current architecture, see
+> [Architecture](./architecture.md) and
+> [Content Block Streaming](./content-block-streaming.md).
+
 This document outlines the detailed design for the interactive multi-line chat mode feature.
 
 ## Overview
@@ -195,7 +200,7 @@ serde_json = "1"        # JSON persistence (already exists)
 
 ## Integration with Coordinator
 
-The ollama-rs Coordinator supports passing message history:
+The Coordinator supports passing message history:
 
 ```rust
 let messages: Vec<ChatMessage> = session.messages.clone();

@@ -15,6 +15,7 @@ use tokio::sync::{OnceCell, Semaphore};
 use super::truncate::{
     TRUNCATED_DIMENSIONS, TruncateResult, truncate_and_normalize_with_correction,
 };
+use crate::provider::LlmProvider;
 
 /// Default context length when model info is unavailable.
 pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
@@ -33,10 +34,10 @@ const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 /// Client for generating embeddings via LlmProvider.
 ///
 /// Holds an `Ollama` (the shim) which implements both the
-/// `crate::provider::Ollama` API (for backward compat) and `LlmProvider`
+/// `crate::provider::OpenAICompatibleProvider` API (for backward compat) and `LlmProvider`
 /// (via internal delegation to `OpenAICompatibleProvider`).
 pub struct EmbeddingClient {
-    ollama: crate::provider::Ollama,
+    provider: crate::provider::OpenAICompatibleProvider,
     model: String,
     /// Output dimension of the embedding model (from the alias's
     /// `dimensions = N` in models.toml). Used for vector store
@@ -56,9 +57,13 @@ impl EmbeddingClient {
     /// `dimensions` value. There is no sensible default — silent
     /// assumptions about dimensions would mask user configuration
     /// errors.
-    pub fn with_model(ollama: crate::provider::Ollama, model: String, dimensions: u32) -> Self {
+    pub fn with_model(
+        provider: crate::provider::OpenAICompatibleProvider,
+        model: String,
+        dimensions: u32,
+    ) -> Self {
         Self {
-            ollama,
+            provider,
             model,
             dimensions,
             cached_context_length: OnceCell::new(),
@@ -141,20 +146,13 @@ impl EmbeddingClient {
         // verified the server returns this exact dim count.
         let result = tokio::time::timeout(
             Duration::from_secs(EMBEDDING_TIMEOUT_SECS),
-            self.ollama.generate_embeddings(
-                ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest::new(
-                    self.model.clone(),
-                    ollama_rs::generation::embeddings::request::EmbeddingsInput::Single(
-                        prefixed_text,
-                    ),
-                )
-                .dimensions(self.dimensions),
-            ),
+            self.provider
+                .embed(&prefixed_text, &self.model, Some(self.dimensions as usize)),
         )
         .await;
 
         let embedding = match result {
-            Ok(Ok(resp)) => resp.embeddings.into_iter().next().unwrap_or_default(),
+            Ok(Ok(vec)) => vec,
             Ok(Err(e)) => {
                 let error_msg = e.to_string();
                 if Self::is_context_exceeded(&error_msg) {
@@ -278,8 +276,8 @@ impl std::error::Error for EmbeddingError {}
 mod tests {
     use super::*;
 
-    fn make_dummy_ollama() -> crate::provider::Ollama {
-        crate::provider::Ollama::new("http://localhost".to_string(), 11434)
+    fn make_dummy_provider() -> crate::provider::OpenAICompatibleProvider {
+        crate::provider::OpenAICompatibleProvider::new_local("http://localhost".to_string(), 11434)
     }
 
     #[test]
@@ -354,7 +352,7 @@ mod tests {
     fn test_with_model_constructor() {
         // with_model also takes `dimensions`.
         let _client = EmbeddingClient::with_model(
-            make_dummy_ollama(),
+            make_dummy_provider(),
             "nomic-embed-text-v2-moe".to_string(),
             768,
         );
@@ -362,8 +360,11 @@ mod tests {
 
     #[test]
     fn test_with_model_stores_model_name() {
-        let client =
-            EmbeddingClient::with_model(make_dummy_ollama(), "bge-small-en-v1.5".to_string(), 768);
+        let client = EmbeddingClient::with_model(
+            make_dummy_provider(),
+            "bge-small-en-v1.5".to_string(),
+            768,
+        );
         assert_eq!(client.model(), "bge-small-en-v1.5");
         assert_eq!(client.dimensions, 768);
     }

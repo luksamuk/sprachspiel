@@ -22,7 +22,7 @@ pub enum OcrError {
     #[allow(dead_code)]
     EmptyFile(String),
     /// Ollama communication error
-    OllamaError { message: String },
+    ProviderError { message: String },
     /// Model not available
     #[allow(dead_code)]
     ModelNotAvailable(String),
@@ -56,7 +56,7 @@ impl fmt::Display for OcrError {
                 writeln!(f, "Error: Empty file: {}", path)?;
                 write!(f, "The file appears to be empty or corrupted.")
             }
-            OcrError::OllamaError { message } => {
+            OcrError::ProviderError { message } => {
                 writeln!(f, "Error: {}", message)?;
                 writeln!(f)?;
                 writeln!(f, "Common causes:")?;
@@ -106,7 +106,7 @@ mod tests {
         assert!(msg.contains("pdf"));
         assert!(msg.contains("png, jpg"));
 
-        let err = OcrError::OllamaError {
+        let err = OcrError::ProviderError {
             message: "Connection refused".to_string(),
         };
         let msg = format!("{}", err);

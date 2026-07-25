@@ -21,7 +21,7 @@ This smoke test is designed to be run by an AI agent using the **terminal-use** 
 ```bash
 cd /home/alchemist/git/sprachspiel
 cargo build --release --features all-tools
-ollama serve  # In another terminal
+# Start your LLM server (llama-swap, ollama, llama.cpp, etc.)
 
 # Backup user's existing database
 cp ~/.local/share/sprachspiel/sprachspiel.db ~/.local/share/sprachspiel/sprachspiel.db.smoke-backup 2>/dev/null || true
@@ -34,8 +34,8 @@ rm -f ~/.local/share/sprachspiel/sprachspiel.db
 
 ```bash
 # Use environment variable or default
-MODEL=${SMOKE_MODEL:-qwen3.5:4b}
-ollama list | grep -q "$MODEL" || ollama pull "$MODEL"
+MODEL=${SMOKE_MODEL:-qwen3.5-4b}
+# Ensure model is available on your LLM server
 echo "Test model: $MODEL"
 ```
 
@@ -468,13 +468,13 @@ sprach vision /tmp/test.png
 echo "Exit: $?"  # Expected: 1
 ```
 
-**Resultado esperado (todos os modos):**
+**Expected output (all modes):**
 ```
-[ERROR sprach::user_models] Failed to load models.toml: Missing [provider."name"] section in models.toml at <path>. Add at least one [provider."my-ollama"] block with `kind = "ollama"` and `base_url = "http://127.0.0.1:11434"`. Run `sprach models upgrade` to migrate an existing config.
+[ERROR sprach::user_models] Failed to load models.toml: Missing [provider."name"] section in models.toml at <path>. Add at least one [provider."my-llama-swap"] block with `kind = "openai"` and `base_url = "http://localhost:12434/v1"`. Run `sprach models upgrade` to migrate an existing config.
 Error: Cannot determine provider: no providers defined in models.toml. Add a [provider."name"] section or run `sprach models upgrade` to migrate.
 ```
 
-**Para `sprach chat` especificamente, esperado adicional:**
+**For `sprach chat` specifically, additional expected output:**
 ```
 [ERROR sprach::chat::repl] No providers configured in models.toml
 Error: No providers configured in models.toml.
@@ -1806,6 +1806,127 @@ cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_line
 
 ---
 
+## 27. W2 Provider Chain Closure (#123)
+
+Tests for the removal of `ollama-rs` and migration to provider-agnostic types.
+
+### 27.1 ollama-rs Not in Dependency Tree
+
+```bash
+cd /home/alchemist/git/sprachspiel
+# Verify no ollama-rs in Cargo.toml
+grep -c "ollama-rs" Cargo.toml
+# Expected: 0
+
+# Verify no ollama-rs in Cargo.lock
+grep -c "ollama-rs" Cargo.lock
+# Expected: 0
+```
+
+- [ ] `Cargo.toml` has zero `ollama-rs` references
+- [ ] `Cargo.lock` has zero `ollama-rs` entries
+
+### 27.2 Feature-Matrix Clippy Clean
+
+```bash
+cd /home/alchemist/git/sprachspiel
+cargo clippy --no-default-features --features weather-tools 2>&1 | grep "^warning: unused\|never used"
+# Expected: no output (0 warnings)
+```
+
+- [ ] `cargo clippy --no-default-features --features weather-tools` has 0 unused/never-used warnings
+
+### 27.3 Tool Calling Without Explicit `tools = true`
+
+This tests the bug fix where `detect_capabilities()` was returning `tools: false` by default, preventing tools from being registered.
+
+```bash
+# Ensure llama-swap is running
+# Start chat with a model (model does NOT need tools = true in models.toml)
+./target/release/sprach chat
+```
+
+- [ ] Chat starts without errors
+- [ ] Ask the model: "Read the file Cargo.toml and tell me the crate name" — model should use `read_file` tool via function calling (not emit tool calls as text/markdown)
+- [ ] Tool result is displayed (content of Cargo.toml)
+- [ ] `/exit` works
+
+### 27.4 reasoning_effort Only Sent When Thinking Is Enabled
+
+```bash
+# Start chat WITHOUT -t flag
+RUST_LOG=debug ./target/release/sprach chat
+```
+
+- [ ] Send a simple message: "Hello"
+- [ ] Check debug logs: `reasoning_effort` field should NOT appear in the request JSON
+- [ ] `/think on`
+- [ ] Send another message: "What is 2+2?"
+- [ ] Check debug logs: `reasoning_effort: "medium"` should appear in the request JSON
+- [ ] `/exit`
+
+### 27.5 Provider-Agnostic Configuration
+
+```bash
+# Verify models.toml uses kind = "openai" (not "ollama")
+grep 'kind' ~/.config/sprachspiel/models.toml
+# Expected: kind = "openai" (not kind = "ollama")
+
+# Verify base_url includes /v1 suffix
+grep 'base_url' ~/.config/sprachspiel/models.toml
+# Expected: all base_url values end with /v1
+```
+
+- [ ] `models.toml` uses `kind = "openai"`
+- [ ] All `base_url` values include `/v1` suffix
+- [ ] `sprach chat` starts without config errors
+
+### 27.6 TTFB Watchdog
+
+Verify that streaming works normally (TTFB watchdog doesn't fire spuriously):
+
+```bash
+./target/release/sprach chat
+```
+
+- [ ] Send a message that triggers streaming: "Write a short poem about cats"
+- [ ] Streaming tokens appear within a few seconds (no 120s timeout)
+- [ ] Response completes normally
+- [ ] `/exit`
+
+---
+
+## 28. Known False Alarms
+
+These behaviors may appear as bugs during testing but are NOT Sprachspiel issues.
+
+### 28.1 Thinking Blocks Despite /think off
+
+**Symptom:** After `/think off`, thinking blocks (🧠) still appear in responses.
+**Cause:** When using llama-swap model aliases with `:think` suffix (e.g., `qwen3.5-4b:think`), the backend always generates thinking content server-side, regardless of `reasoning_effort`. Sprachspiel correctly omits `reasoning_effort` from the request, but the model sends thinking anyway.
+**Verification:** Check debug logs with `RUST_LOG=debug` — `reasoning_effort` should NOT be in the request JSON when `/think off` is active. If it IS present, that's a real bug.
+**Workaround:** Use a model alias without `:think` suffix if you want to control thinking via Sprachspiel.
+
+### 28.2 Model Loading Timeout on First Request
+
+**Symptom:** First request to a subcommand (OCR, Vision, Summarize) or `/model` switch times out or takes very long.
+**Cause:** llama-swap needs to load (or swap) the model into VRAM. The `read_timeout_secs` (default 300s, configurable in `models.toml [provider.*]`) controls the HTTP timeout. If the model takes longer to load than `read_timeout_secs`, the request fails with a timeout error.
+**Verification:** Retry the same request — the second attempt should be fast (model already loaded). If it consistently times out even on retry, check that `read_timeout_secs` is high enough for your hardware.
+**Configuration:** Increase `read_timeout_secs` in `models.toml [provider.*]` section (e.g., 900s for slow hardware with model offloading). All timeout fields are per-provider:
+- `connect_timeout_secs` (default 5s) — TCP connection establishment
+- `read_timeout_secs` (default 300s) — HTTP response timeout (non-streaming)
+- `stream_idle_timeout_secs` (default 300s) — Max gap between SSE chunks in streaming
+- `ttfb_timeout_secs` (default 120s) — Time to first byte in streaming
+
+### 28.3 read_file with Relative Path Fails
+
+**Symptom:** `read_file("Cargo.toml")` fails with "file not found" when chat is started without `--cwd`.
+**Cause:** `read_file` uses the current working directory (CWD). When `sprach chat` is started from `~`, the CWD is the home directory, not the project.
+**Verification:** Use `--cwd /path/to/project` when starting chat, or use absolute paths in tool calls. The model typically recovers via ReAct (calls `list_directory` to discover the correct path).
+**Not a bug:** This is expected CWD-dependent behavior.
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -1869,7 +1990,7 @@ The script above runs automated tests. The following tests must be run manually:
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
 6. **Section 6.6**: Command Safety ( /session forget, /search, skills)
-7. **Section 9**: Database (schema v13, norm_correction FLOAT verification)
+7. **Section 9**: Database (schema v14, norm_correction FLOAT verification)
 8. **Section 10**: File Tools (via LLM)
 9. **Section 10.5**: run_command Error Messages
 10. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
@@ -1882,7 +2003,7 @@ The script above runs automated tests. The following tests must be run manually:
 16. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 17. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 18. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-19. **Section 21**: Fact Embedding & Semantic Dedup (schema v13, norm_correction FLOAT, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, semantic threshold, end-to-end verification)
+19. **Section 21**: Fact Embedding & Semantic Dedup (schema v14, norm_correction FLOAT, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, semantic threshold, end-to-end verification)
 20. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
 21. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
 22. **Section 23**: TUI Event Loop & Rendering (multi-line rendering, embedding exit hint, provider-agnostic errors, event loop regression)

@@ -46,7 +46,7 @@ pub const ERR_LLM_CONNECTION: &str =
     "Could not connect to the LLM server. Make sure it is running.";
 
 /// Error message when the LLM server is not running.
-/// Used in vision/OCR error display where `ollama serve` was previously suggested.
+/// Used in vision/OCR error display where server startup was previously suggested.
 /// Provider-agnostic: does not reference any specific backend command.
 pub const ERR_LLM_NOT_RUNNING: &str = "LLM server is not running (start it and try again)";
 

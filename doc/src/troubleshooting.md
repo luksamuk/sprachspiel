@@ -57,15 +57,20 @@ sudo systemctl start ollama
 
 ### "Model not found"
 
-**Problem:** Model not pulled
+**Problem:** Model not available on your LLM server
 
 **Solution:**
 
 ```bash
-# Pull required models
-ollama pull qwen3.5:4b       # Default model (also works for vision)
-ollama pull translategemma:4b # Translation
-ollama pull glm-ocr:bf16      # OCR
+# Ensure required models are available on your LLM server
+# Check which models Sprachspiel can see:
+sprach --list
+
+# The default models are:
+#   qwen3.5-4b       — General queries, vision, summarization
+#   translategemma-4b — Translation
+#   glm-ocr           — OCR
+# Refer to your backend's documentation for how to load models.
 ```
 
 ## Model Issues
@@ -78,7 +83,7 @@ ollama pull glm-ocr:bf16      # OCR
 
 ```bash
 # Use think-capable model
-sprach -m lfm -t "Question"
+sprach -m qwen3.5-4b -t "Question"
 
 # Check capabilities
 sprach -d "Test query"
@@ -92,7 +97,7 @@ sprach -d "Test query"
 
 ```bash
 # Use tool-capable model
-sprach -m qwen3.5:4b "Tell me about Pikachu"
+sprach -m qwen3.5-4b "Tell me about Pikachu"
 
 # Force enable tools
 sprach --tools "Tell me about Pikachu"
@@ -107,8 +112,7 @@ sprach -d "Query"
 
 ```bash
 # Use alternative model
-sprach -m qwen3.5:4b "Query"
-sprach -m pepe "Query"
+sprach -m qwen3.5-4b "Query"
 ```
 
 ## Web Search Issues
@@ -117,7 +121,7 @@ sprach -m pepe "Query"
 
 **Problem:** Web search blocked
 
-**Status:** Currently blocked
+**Status:** DuckDuckGo may occasionally rate-limit automated traffic or show CAPTCHA challenges. This is a third-party service limitation.
 
 **Workaround:**
 
@@ -153,7 +157,7 @@ sprach translate --list pt
 
 ```bash
 # Try with specific model
-sprach translate --model nanbeige4.1:3b en:pt "Text"
+sprach translate -m translategemma-4b en:pt "Text"
 
 # Debug mode
 sprach translate -d en:pt "Text"
@@ -182,8 +186,8 @@ sprach ocr --help
 **Solution:**
 
 ```bash
-# Pull required model
-ollama pull glm-ocr:bf16
+# Ensure glm-ocr is available on your LLM server
+sprach --list | grep ocr
 
 # Try with higher quality image
 # Ensure text is clear and well-lit
@@ -199,7 +203,7 @@ ollama pull glm-ocr:bf16
 
 ```bash
 # Use smaller model
-sprach -m smollm3 "Question"
+sprach -m qwen3.5-4b "Question"
 
 # Reduce context
 sprach summarize --max-length 100 "Text"
@@ -213,8 +217,7 @@ sprach summarize --max-length 100 "Text"
 
 ```bash
 # Use smaller model
-sprach -m qwen3.5:4b "Question"  # 4B model (default)
-sprach -m nanbeige4.1:3b "Question"   # 3B model
+sprach -m qwen3.5-4b "Question"  # 4B model (default)
 ```
 
 ## Context Issues
@@ -264,7 +267,7 @@ sprach -m nanbeige4.1:3b "Question"   # 3B model
 **Workaround:**
 ```bash
 # Use smaller context model for tool-heavy tasks
-/model qwen3.5:4b   # Default model
+/model qwen3.5-4b   # Default model
 
 # Or reduce tool usage
 /tools off        # Disable tools temporarily

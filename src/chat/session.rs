@@ -2,8 +2,8 @@
 //!
 //! Handles the state of a chat session including messages, model, and metadata.
 
+use crate::provider::types::LlmMessage;
 use chrono::{DateTime, Utc};
-use ollama_rs::generation::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
@@ -1087,16 +1087,16 @@ impl ChatSession {
         &self,
         system_prompt: &str,
         include_thinking: bool,
-    ) -> Vec<ChatMessage> {
+    ) -> Vec<LlmMessage> {
         let mut messages = Vec::new();
 
         // Add system message
         let prompt = self.system_prompt.as_deref().unwrap_or(system_prompt);
-        messages.push(ChatMessage::system(prompt.to_string()));
+        messages.push(LlmMessage::system(prompt.to_string()));
 
         // Add compacted summary as a system message if present
         if let Some(ref summary) = self.compacted_summary {
-            messages.push(ChatMessage::system(format!(
+            messages.push(LlmMessage::system(format!(
                 "Previous conversation summary:\n{}",
                 summary
             )));
@@ -1107,10 +1107,10 @@ impl ChatSession {
         for msg in self.messages.iter().skip(start_idx) {
             match msg.role {
                 MessageRole::User => {
-                    messages.push(ChatMessage::user(msg.content.clone()));
+                    messages.push(LlmMessage::user(msg.content.clone()));
                 }
                 MessageRole::Assistant => {
-                    let mut chat_msg = ChatMessage::assistant(msg.content.clone());
+                    let mut chat_msg = LlmMessage::assistant(msg.content.clone());
                     if include_thinking {
                         chat_msg.thinking = msg.thinking.clone();
                     }
@@ -1120,7 +1120,7 @@ impl ChatSession {
                     // System messages are handled separately
                 }
                 MessageRole::Tool => {
-                    messages.push(ChatMessage::tool(msg.content.clone()));
+                    messages.push(LlmMessage::tool(msg.content.clone()));
                 }
             }
         }

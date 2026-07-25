@@ -74,6 +74,7 @@ pub mod subagent_tools;
 
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
+#[cfg(feature = "file-tools")]
 pub use files::*;
 #[cfg(feature = "file-tools")]
 pub use files_write::*;

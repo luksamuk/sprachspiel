@@ -18,7 +18,7 @@ use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::ocr::mode::parse_ocr_mode;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::security::validate_subagent_paths;
-use crate::tools::context::{get_llm, get_settings};
+use crate::tools::context::{get_provider, get_settings};
 use crate::utils::expand_tilde_path;
 use sprachspiel_tool_derive::tool;
 use std::path::PathBuf;
@@ -87,7 +87,7 @@ pub async fn spawn_ocr_agent(
         }
     };
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -118,7 +118,7 @@ pub async fn spawn_ocr_agent(
         }
     }
 
-    let runner = SubagentRunner::new(llm, config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Ocr, String::new(), validated_paths)
         .await
@@ -206,7 +206,7 @@ pub async fn spawn_vision_agent(
         }
     };
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -229,7 +229,7 @@ pub async fn spawn_vision_agent(
         Describe what you see thoroughly and accurately. Output only your analysis.";
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm, config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Vision, prompt, validated_paths)
         .await
@@ -283,7 +283,7 @@ pub async fn spawn_translate_agent(
         })],
     );
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -306,7 +306,7 @@ pub async fn spawn_translate_agent(
         Preserve meaning, tone, and formatting. Output only the translation, no explanations.";
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm, config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Translate, prompt, Vec::new())
         .await
@@ -360,7 +360,7 @@ pub async fn spawn_summarize_agent(
         })],
     );
 
-    let llm = match get_llm() {
+    let llm = match get_provider() {
         Some(o) => o,
         None => {
             let err = crate::consts::app::ERR_LLM_CLIENT_UNAVAILABLE.to_string();
@@ -386,7 +386,7 @@ pub async fn spawn_summarize_agent(
     );
     let config = SubagentConfig::new(model, system_prompt);
 
-    let runner = SubagentRunner::new(llm, config);
+    let runner = SubagentRunner::new(llm.clone(), config);
     let result = match runner
         .run(SubagentType::Summarize, prompt, Vec::new())
         .await

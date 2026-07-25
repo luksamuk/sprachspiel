@@ -1,8 +1,7 @@
 //! Web search using our own DuckDuckGo scraper.
 //!
-//! Replaces `ollama_rs::generation::tools::implementations::DDGSearcher` with
-//! a hand-rolled implementation using `reqwest` and `scraper` (both already
-//! in the dep tree). See `DdgSearcher` below for details.
+//! Uses `reqwest` and `scraper` to fetch and parse DuckDuckGo's HTML
+//! interface. See `DdgSearcher` below for details.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{format_size, parse_bounded_number};
@@ -28,9 +27,8 @@ pub struct SearchResult {
 
 /// Lightweight DuckDuckGo HTML scraper.
 ///
-/// Replacement for `ollama_rs::generation::tools::implementations::DDGSearcher`
-/// that avoids the ollama-rs dependency for search. Uses `reqwest` to fetch
-/// the DuckDuckGo HTML interface and `scraper` to parse results.
+/// DuckDuckGo web search using `reqwest` to fetch the HTML interface
+/// and `scraper` to parse results.
 ///
 /// # Usage
 ///

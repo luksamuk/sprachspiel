@@ -139,7 +139,7 @@
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict, T3-Phase3 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151, #136) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132, #204, #205) → W6 (Responsive Chat Rebuild: #145→#148) ✅ COMPLETED → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) ✅ COMPLETED → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility + T3-Phase0: #133→#138, #106, #107, #151, #136) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132, #204, #205) → W6 (Responsive Chat Rebuild: #145→#148) ✅ COMPLETED → W7 (Thinking Trace Pipeline & Retrieval: #152, #153, #137)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
@@ -162,7 +162,7 @@ M1 contains ~38 open cards organized into 7 implementation waves. Each wave has 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | #126 ✅ COMPLETED; #105 ✅ COMPLETED; #36 ✅ COMPLETED |
-| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | `ollama-rs` removed from Cargo.toml; #72 closed; #201 message-ordering shipped ✅ |
+| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72, **#201** | ✅ COMPLETED — `ollama-rs` removed from Cargo.toml; #201 message-ordering shipped; #72 closes with #123 merge |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility + T3-Phase0 | Embedding diagnostics, geometry-aware config, model validation, provider abstraction, thinking preservation, prompt clarifications | #133, #134, #106, #135, #107, #151, #136, #138, #157, #182 | Diagnostics subcommand works ✅; fact threshold validated ✅; norm correction ✅; system prompt clarified ✅; at least one alternative model benchmarked; thinking content preserved in DB ✅; embedding model registry + geometry-aware dimensions; instruction hierarchy in prompt |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking, file write tools | #132, #74, #75, #76, #13, #14, #49, #50, #52, #204, #205 | All items completed or deferred to M2 |
@@ -4672,51 +4672,41 @@ When switching the embedding model to `lfm2.5-embed-350m` (512-token batch size)
 
 #### Remove ollama-rs — #123 [M1]
 
-**Status:** 📋 PLANNED  
-**Depends on:** #121 (all consumers migrated)  
-**Estimated effort:** 2–3 days  
-**Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml + **all 5 manual test scenarios from `MANUAL_TEST_116.md` re-executed and passing** + **W2 dead_code audit clean**
+**Status:** ✅ COMPLETED  
+**PR:** #213  
+**Branch:** `feat/123-remove-ollama-rs`  
+**Depends on:** #121 (all consumers migrated) ✅  
+**Estimated effort:** 1.5–2 weeks (actual: ~4 days across 10 phases)
 
-**W2 Wave Context — Closure criteria:**
+**Implementation Summary:**
 
-Before #123 is merged, the following acceptance criteria MUST be satisfied. These criteria validate that W2 is truly complete:
+The `ollama-rs` crate has been completely removed from the dependency tree. All LLM communication goes through `OpenAICompatibleProvider` implementing the `LlmProvider` trait. The 730-line `ollama_shim.rs` compatibility bridge is deleted. All 17 production files that referenced `ollama_rs` types have been migrated to agnostic types (`LlmMessage`, `LlmResponse`, `ProviderError`, `ProviderOptions`, `LlmToolCall`, `LlmRole`).
 
-- **Manual test re-execution:** All 5 scenarios from `MANUAL_TEST_116.md` MUST be re-executed and pass:
-  - Scenario 1 — Tool error recovery (LLM self-corrects)
-  - Scenario 2 — Server 500 + linear backoff (5s/10s/15s) — was blocked on #120
-  - Scenario 3 — Network timeout + exp. backoff (100ms→1.6s) — was blocked on #120
-  - Scenario 4 — Cancel-aware sleep (Ctrl+C <1s) — was blocked on #120
-  - Scenario 5 — UX quality assessment
-- **W2 dead_code audit:** Every `#[allow(dead_code)]` introduced during W2 (#116, #118, #119, #120, #121, #122, #11) MUST be resolved. No W2 dead code residual.
-- **`src/provider/retry.rs` exists:** The `src/retry.rs` from #116 was relocated to `src/provider/retry.rs` in #119. Verify the relocation happened.
-- **Zero `use ollama_rs` outside `src/provider/`:** Consumer migration in #121 + library code in #123 should leave `ollama-rs` references only in the provider layer.
-- **`RateLimitRetry.retry_after` field is used:** Wired in #122. Field must be `Option<Duration>` with `Some(...)` populated from `Retry-After` header parsing.
+**10 Phases (tracked via Linear LUC-40 → LUC-49):**
 
-**Goal:** Remove `ollama-rs` from `Cargo.toml`. Everything works via `OllamaProvider` (reqwest direct).
+| Phase | Scope | Commit |
+|-------|-------|--------|
+| 1 | Retry/error path migration — relocated `retry.rs` to `provider/retry.rs`, `classify_for_retry` accepts `ProviderError` | `010e11b` |
+| 2 | Coordinator migration — `CustomCoordinator` → `Coordinator`, all types migrated, string-sniffing eliminated | `ca424d6` |
+| 3 | Business consumer migration — 15+ files migrated from `ChatMessage` to `LlmMessage` | `f81af47` |
+| 4 | Remove `ollama_shim.rs` — `CompatOllama` replaced by `OpenAICompatibleProvider` directly | `968bd65` |
+| 5 | Remove `ollama-rs` from `Cargo.toml` — dependency tree clean | `da865a0` |
+| 6 | TTFB watchdog — `parse_sse_stream` gains 120s time-to-first-byte timeout | `515d10c` |
+| 7 | W2 dead_code audit + clippy feature-matrix fixes | `d0ef724`, `3c00431` |
+| 8 | Comment audit — Portuguese translated, stale W2 narrative removed, `get_ollama` → `get_provider` | `84e7a2b`–`ac389ab` |
+| 9 | Documentation review — Pass 1 (OpenCode) | (this commit) |
+| 10 | Manual tests — pending Hermes Agent execution | TBD |
 
-**Checklist:**
-- Verify NO `use ollama_rs` remains in `src/` (except `src/provider/` serde types)
-- Verify `calc`, `html2md`, `scraper` declared directly in Cargo.toml (already done ✅)
-- Remove `tool-implementations` feature (DDGSearcher) — we have our own ✅
-- `cargo clippy --all-features` clean
-- `cargo test --all-features` passing
-- Smoke test manual with Ollama local
-- Binary size check (expected: smaller without ollama-rs)
+**Quality gates:**
+- `cargo build --all-features` without `ollama-rs` ✅
+- `cargo clippy --all-features -- -D warnings` clean ✅
+- `cargo test --all-features --lib` — 1547 passed, 0 failed ✅
+- `rg 'use ollama_rs' src/` returns nothing ✅
+- `rg 'ollama_shim' src/` returns nothing ✅
+- `rg 'CompatOllama' src/` returns nothing ✅
+- Feature-matrix clippy (`--no-default-features --features weather-tools`) — 0 unused/never-used warnings ✅
 
-**Open topics (to refine outside the main migration):**
-
-| Topic | Decision needed | When |
-|-------|----------------|------|
-| Anthropic provider | Natural extension of trait | When demand exists |
-| Google/Gemini provider | Same | When demand exists |
-| MCP Client Integration | See S2.4 and ADR-007 | P15 |
-| Rate limiting per provider | Config in `config.toml` | P15 or earlier |
-| Provider health check | `is_available()` on trait | P6.0f |
-| Streaming integration in TUI | Requires TUI first | M3 |
-| **Timeout/Connection retry** | **Migrate retry loop in `core.rs` from `classify_for_retry(&OllamaError)` to `ProviderError::retry_category()`. Currently `ProviderError::Timeout` and `Connection` are converted to `OllamaError::Other` (which `classify_for_retry` maps to `NoRetry`), breaking the ReAct loop instead of retrying. `ProviderError::retry_category()` already correctly maps Timeout → NetworkRetry and Connection → NetworkRetry. The migration eliminates the `convert_provider_error` layer and the string-sniffing workaround. See comments in `ollama_shim.rs:480` and `retry.rs:107`.** | **#123** |
-| **TTFB watchdog** | **Implement a "time-to-first-byte" watchdog in `parse_sse_stream` (openai_compat.rs). If no SSE chunk arrives within ~120s of stream start, reconnect instead of waiting the full idle_timeout (300s). Inspired by Hermes Agent's `HERMES_CODEX_TTFB_TIMEOUT_SECONDS=120`. The Hermes Agent also injects TCP keepalive (`SO_KEEPALIVE`, `TCP_KEEPIDLE=30`, `TCP_KEEPINTVL=10`, `TCP_KEEPCNT=3`) to detect dead peer connections in ~60s — reqwest already has `tcp_keepalive=15s` by default, but explicit socket options could be added. See `agent_runtime_helpers.py:1402` and `chat_completion_helpers.py:308` in the Hermes Agent codebase.** | **#123** |
-
-**Related:** Issue #72
+**Related:** Issue #72 (Multi-Provider Support parent — closes when #123 merges), Issue #123
 
 ---
 

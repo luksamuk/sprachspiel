@@ -4,9 +4,8 @@
 //! Uses /api/generate endpoint with images array for multi-image support.
 
 #![expect(clippy::print_stdout)] // CLI subcommand output
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::generation::images::Image;
-use ollama_rs::models::ModelOptions;
+
+use crate::provider::types::ProviderOptions;
 
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::utils::read_file_as_base64;
@@ -25,24 +24,23 @@ impl VisionProcessor {
         &self,
         args: &VisionArgs,
         model: &str,
-        ollama: &crate::provider::Ollama,
-        model_options: ModelOptions,
+        provider: &dyn crate::provider::LlmProvider,
+        model_options: ProviderOptions,
         show_spinner: bool,
     ) -> VisionResult<VisionOutput> {
         if args.files.is_empty() {
             return Err(VisionError::NoImages);
         }
 
-        // Validate all image files
         for file in &args.files {
             crate::utils::validate_image_file(file).map_err(VisionError::FileNotFound)?;
         }
 
-        // Load images as base64
         let images = self.load_images(&args.files).await?;
 
         let prompt = args.get_prompt().to_string();
-        let model_opts = model_options.num_predict(args.max_tokens as i32);
+        let mut model_opts = model_options;
+        model_opts.num_predict = Some(args.max_tokens as i32);
 
         let file_count = args.files.len();
         let spinner_msg = if file_count == 1 {
@@ -57,7 +55,7 @@ impl VisionProcessor {
         };
 
         let result = self
-            .call_vision_model(model, &prompt, images, model_opts, ollama)
+            .call_vision_model(model, &prompt, images, model_opts, provider)
             .await?;
 
         if let Some(sp) = spinner {
@@ -75,8 +73,8 @@ impl VisionProcessor {
         })
     }
 
-    /// Load multiple image files as base64 Image objects
-    async fn load_images(&self, files: &[std::path::PathBuf]) -> VisionResult<Vec<Image>> {
+    /// Load multiple image files as base64 strings
+    async fn load_images(&self, files: &[std::path::PathBuf]) -> VisionResult<Vec<String>> {
         let mut images = Vec::new();
         for file in files {
             let base64 = read_file_as_base64(file)
@@ -90,7 +88,7 @@ impl VisionProcessor {
                 file.display(),
                 base64.len()
             );
-            images.push(Image::from_base64(base64));
+            images.push(base64);
         }
         Ok(images)
     }
@@ -100,25 +98,18 @@ impl VisionProcessor {
         &self,
         model: &str,
         prompt: &str,
-        images: Vec<Image>,
-        model_options: ModelOptions,
-        ollama: &crate::provider::Ollama,
+        images: Vec<String>,
+        model_options: ProviderOptions,
+        provider: &dyn crate::provider::LlmProvider,
     ) -> VisionResult<String> {
-        let mut request =
-            GenerationRequest::new(model.to_string(), prompt.to_string()).options(model_options);
-
-        for image in images {
-            request = request.add_image(image);
-        }
-
-        let response = ollama
-            .generate(&request)
+        let content = provider
+            .generate(model, prompt, images, vec![], model_options)
             .await
             .map_err(|e| VisionError::OllamaError {
-                message: format!("Failed to process image(s): {}", e),
+                message: format!("Failed to process image(s): {e}"),
             })?;
 
-        Ok(response.response.trim().to_string())
+        Ok(content.trim().to_string())
     }
 }
 

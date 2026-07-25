@@ -3,9 +3,9 @@
 //! Handles text summarization respecting config.toml model settings with tools disabled.
 //! Ensures security and efficiency by not allowing tool calls during summarization.
 
-use ollama_rs::generation::chat::ChatMessage;
+use crate::provider::types::LlmMessage;
 
-use crate::chat::CustomCoordinator;
+use crate::chat::Coordinator;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -40,17 +40,14 @@ impl SummarizeProcessor {
 
         let model_config = crate::user_models::resolve_model_config(model_id);
 
-        // Initialize Ollama with settings
-        #[allow(deprecated)] // ollama_client() removed in #121 (Consumer Migration)
-        let ollama = settings.ollama_client_for_model(model_id);
+        let provider = settings.provider_for_model(model_id);
 
         let provider_options = model_config.build_provider_options();
-        // Bridge to legacy ModelOptions for CustomCoordinator.
-        let model_options = crate::chat::core::convert_provider_to_model(&provider_options);
 
         // Build coordinator WITHOUT tools (security requirement)
-        let mut coordinator = CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
-            .options(model_options);
+        let mut coordinator =
+            Coordinator::new(provider.clone(), model_config.model_id.clone(), vec![])
+                .options(provider_options);
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)
@@ -62,8 +59,8 @@ impl SummarizeProcessor {
         let system_prompt = args.build_prompt(&base_prompt);
 
         // Create messages
-        let system_message = ChatMessage::system(system_prompt);
-        let user_message = ChatMessage::user(text.to_string());
+        let system_message = LlmMessage::system(system_prompt);
+        let user_message = LlmMessage::user(text.to_string());
 
         // Show spinner
         let spinner = create_spinner("Summarizing...");
@@ -77,7 +74,7 @@ impl SummarizeProcessor {
         // Clear spinner
         finish_spinner(spinner);
 
-        let content = response.message.content.trim().to_string();
+        let content = response.content.trim().to_string();
 
         Ok(content)
     }

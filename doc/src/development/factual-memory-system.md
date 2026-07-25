@@ -910,7 +910,7 @@ fn build_facts_section(facts: &[Fact]) -> String {
 /// # Arguments
 /// * `content` - The fact to remember (max 500 chars)
 /// * `scope` - Optional: "project" (default) or "global"
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn fact_add(
     content: String,
     scope: Option<String>,  // "project" or "global"
@@ -922,7 +922,7 @@ pub async fn fact_add(
 }
 
 /// Search for facts in memory using keywords.
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn fact_search(
     query: String,
     scope: Option<String>,  // "project", "global", or null (both)
@@ -931,7 +931,7 @@ pub async fn fact_search(
 }
 
 /// Remove a fact by ID.
-#[ollama_rs::function]
+#[sprachspiel::tool]
 pub async fn fact_remove(
     id: String,  // String for LLM compatibility
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

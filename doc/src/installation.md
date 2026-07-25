@@ -6,23 +6,45 @@ This guide covers all the ways to install Sprachspiel on your system.
 
 Before installing Sprachspiel, ensure you have:
 
-1. **LLM Server (Ollama)** - The LLM server that Sprachspiel communicates with (Ollama by default)
+1. **LLM Server** - Any OpenAI-compatible LLM server (llama-swap, Ollama, llama.cpp, LM Studio, vLLM, or a cloud provider)
 2. **Rust toolchain** - Only needed if building from source
 3. **Git** - For cloning the repository
 
-### Installing Ollama
+### Installing an LLM Server
 
-Sprachspiel requires an LLM server to be running. Ollama is the default backend. Install it from [ollama.ai](https://ollama.ai):
+Sprachspiel requires an OpenAI-compatible LLM server to be running. You can use any of the following backends:
+
+- **[llama-swap](https://github.com/mostlygeeksllc/llama-swap)** — model swap manager for llama.cpp (recommended for multi-model local setups)
+- **[Ollama](https://ollama.com)** — simple local model runner
+- **[llama.cpp](https://github.com/ggerganov/llama.cpp)** — direct llama.cpp server
+- **[LM Studio](https://lmstudio.ai)** — GUI-based local model runner
+- **[vLLM](https://github.com/vllm-project/vllm)** — high-throughput inference engine
+- **Cloud providers** — any OpenAI-compatible API endpoint (OpenAI, Groq, Together, etc.)
+
+All backends expose the same `/v1/chat/completions` endpoint that Sprachspiel uses. Configure your provider in `~/.config/sprachspiel/models.toml`.
+
+#### Option A: llama-swap (recommended for local multi-model)
+
+llama-swap loads GGUF model files and exposes them through a single OpenAI-compatible API at `http://localhost:12434/v1`. Install and start it following the [llama-swap documentation](https://github.com/mostlygeeksllc/llama-swap).
+
+```bash
+# Start llama-swap (default port 12434)
+llama-swap serve
+```
+
+#### Option B: Ollama
+
+Ollama is a popular choice for local model serving. Install it from [ollama.com](https://ollama.com):
 
 ```bash
 # Linux
-curl -fsSL https://ollama.ai/install.sh | sh
+curl -fsSL https://ollama.com/install.sh | sh
 
 # macOS
 brew install ollama
 
 # Windows
-# Download from https://ollama.ai/download
+# Download from https://ollama.com/download
 ```
 
 After installing, start the Ollama service:
@@ -30,6 +52,19 @@ After installing, start the Ollama service:
 ```bash
 ollama serve
 ```
+
+Ollama exposes its OpenAI-compatible endpoint at `http://localhost:11434/v1`.
+
+#### Option C: Other compatible backends
+
+Other OpenAI-compatible backends also work:
+
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — direct GGUF serving
+- [LM Studio](https://lmstudio.ai/) — desktop GUI model server
+- [vLLM](https://github.com/vllm-project/vllm) — high-throughput serving
+- Cloud providers (OpenAI, Together, etc.)
+
+Configure the `base_url` in `~/.config/sprachspiel/models.toml` to point to your server's `/v1` endpoint (see [Configuring Models](#configuring-models) below).
 
 ### Installing Rust (for building from source)
 
@@ -51,7 +86,7 @@ Install directly from GitHub releases:
 curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 
 # Install specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version <version>
 
 # Install with all tools enabled
 curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all
@@ -80,11 +115,11 @@ Download from [GitHub Releases](https://github.com/luksamuk/sprachspiel/releases
 
 ```bash
 # Download latest release
-wget https://github.com/luksamuk/sprachspiel/releases/latest/download/sprachspiel-0.25.0-linux-x86_64.tar.gz
+wget https://github.com/luksamuk/sprachspiel/releases/latest/download/sprachspiel-<version>-linux-x86_64.tar.gz
 
 # Extract
-tar -xzf sprachspiel-0.25.0-linux-x86_64.tar.gz
-cd sprachspiel-0.25.0-linux-x86_64
+tar -xzf sprachspiel-<version>-linux-x86_64.tar.gz
+cd sprachspiel-<version>-linux-x86_64
 
 # Install (interactive)
 ./install.sh
@@ -131,7 +166,7 @@ This will:
 
 ### Method 4: Termux (Android)
 
-Sprachspiel can run on Android via Termux. Since local LLM servers (Ollama) don't run on Android, you'll need a remote server.
+Sprachspiel can run on Android via Termux. Since local LLM servers don't run on Android, you'll need a remote server.
 
 #### Quick Install (One-Liner)
 
@@ -149,11 +184,11 @@ The installer automatically detects Termux and configures the correct paths.
 pkg install wget
 
 # Download the tarball from GitHub releases
-wget https://github.com/luksamuk/sprachspiel/releases/download/v0.25.0/sprachspiel-0.25.0-termux-aarch64.tar.gz
+wget https://github.com/luksamuk/sprachspiel/releases/download/v<version>/sprachspiel-<version>-termux-aarch64.tar.gz
 
 # Extract
-tar -xzf sprachspiel-0.25.0-termux-aarch64.tar.gz
-cd sprachspiel-0.25.0-termux-aarch64
+tar -xzf sprachspiel-<version>-termux-aarch64.tar.gz
+cd sprachspiel-<version>-termux-aarch64
 
 # Install (creates ~/bin and adds to PATH)
 ./install.sh
@@ -164,10 +199,15 @@ cd sprachspiel-0.25.0-termux-aarch64
 # Create config directory
 mkdir -p ~/.config/sprachspiel
 
-# Configure remote Ollama
-cat > ~/.config/sprachspiel/config.toml << 'EOF'
-[ollama]
-host = "192.168.1.100:11434"  # Replace with your desktop/server IP
+# Configure remote LLM server (e.g. llama-swap on your desktop at 192.168.1.100)
+cat > ~/.config/sprachspiel/models.toml << 'EOF'
+[provider."remote-llama-swap"]
+kind = "openai"
+base_url = "http://192.168.1.100:12434/v1"
+
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "remote-llama-swap"
 EOF
 ```
 
@@ -175,8 +215,8 @@ EOF
 
 - **Binary location**: `~/bin` (or `~/.local/bin`)
 - **Manpage**: `~/.local/share/man/man1/sprach.1`
-- **Ollama**: Must run on a separate machine (desktop/laptop/server)
-- **Configuration**: `~/.config/sprachspiel/config.toml`
+- **LLM server**: Must run on a separate machine (desktop/laptop/server)
+- **Configuration**: `~/.config/sprachspiel/models.toml`
 - **See**: `README-TERMUX.txt` included in the tarball
 
 #### Building for Termux (Developers)
@@ -248,77 +288,70 @@ cargo build
 ./target/debug/sprach "Your query"
 ```
 
-## Installing Models
+## Configuring Models
 
-⚠️ **Important:** Sprachspiel models **must be built** using the provided modelfiles. Simply pulling models directly from Ollama won't work because our models require custom parameters (context window, temperature, etc.) that are configured in the modelfiles.
+Sprachspiel models are configured via `~/.config/sprachspiel/models.toml`. This file defines your LLM provider(s) and the models available to Sprachspiel. A default configuration file is created automatically on first run with recommended settings.
 
-### How Model Building Works
+### Provider Configuration
 
-Each modelfile:
-1. Pulls the base model from Ollama or Hugging Face
-2. Creates a new model with **custom parameters** optimized for Sprachspiel
-3. Names it with the exact ID that Sprachspiel expects
+Each provider is defined under a `[provider."<name>"]` section with a `kind` and `base_url`. The provider name is an arbitrary label you choose.
 
-**Always use the Makefile targets** - never use `ollama pull` directly.
+#### llama-swap (recommended local backend)
 
-### Quick Install (Essential Models Only)
-
-Install the three models required for basic functionality:
-
-```bash
-# Navigate to modelfiles directory
-cd modelfiles
-
-# Build and install all essential models
-make models-essential
+```toml
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
 ```
 
-This builds and installs:
-- **qwen3.5:4b** - Default for general queries (multimodal)
-- **qwen2.5-coder:7b** - Default for code mode
-- **translategemma:4b** - For translation command
-- **glm-ocr:bf16** - For OCR/text extraction
+#### Ollama
 
-Optional alternatives:
-- **moondream:1.8b** - Lightweight vision model
-- **llama3.1:8b** - General queries (alternative)
-
-Note: Context window sizes are configured in `~/.config/sprachspiel/models.toml`, not in model tags.
-
-### Installing Cloud Models
-
-Cloud models are pulled directly (no build needed) from remote APIs:
-
-```bash
-cd modelfiles
-make models-cloud
+```toml
+[provider.ollama]
+kind = "openai"
+base_url = "http://localhost:11434/v1"
 ```
 
-This pulls cloud-based models with large context windows (198K-256K tokens).
+#### Remote server (e.g. for Termux)
 
-### Installing Individual Models
-
-Pull individual models with `ollama pull`:
-
-```bash
-# Essential models (must have)
-ollama pull qwen3.5:4b       # Default model (multimodal)
-ollama pull qwen2.5-coder:7b # Code model
-ollama pull translategemma    # Translation model
-ollama pull glm-ocr          # OCR model
-
-# Optional models for specialized tasks
-ollama pull qwen3.5:9b           # Better quality (needs CPU offload)
-ollama pull qwen2.5-coder:7b     # Code specialist
-ollama pull nanbeige4.1:3b       # Fast alternative (edge-optimized)
-ollama pull ministral-3:3b       # Fast + vision support
+```toml
+[provider."remote-server"]
+kind = "openai"
+base_url = "http://192.168.1.100:12434/v1"
 ```
 
-### Additional Models
+### Model Configuration
 
-Additional models (qwen3.5:9b, nanbeige4.1:3b, ministral-3:3b, etc.) are configured via `~/.config/sprachspiel/models.toml`. A default configuration file is created automatically with recommended settings.
+Each model is defined under a `[models."<name>"]` section, specifying the `model_id` that the provider recognises and which provider to use:
 
-See [Custom Models](./configuration.md#custom-models) for details.
+```toml
+[provider."llama-swap"]
+kind = "openai"
+base_url = "http://localhost:12434/v1"
+
+[models."qwen3.5-4b"]
+model_id = "qwen3.5-4b"
+provider = "llama-swap"
+
+[models."ornith-1.0-35b"]
+model_id = "ornith-1.0-35b"
+provider = "llama-swap"
+
+[models."translategemma-4b"]
+model_id = "translategemma-4b"
+provider = "llama-swap"
+```
+
+### Loading Model Files
+
+Models are loaded as GGUF files by your backend server (llama-swap, llama.cpp, Ollama, etc.), not pulled by Sprachspiel itself. Refer to your backend's documentation for how to load or register GGUF model files:
+
+- **llama-swap**: Place GGUF files in the configured model directory; llama-swap loads them on demand.
+- **Ollama**: Use `ollama pull <model>` to download models, or import GGUF files with `ollama create`.
+- **llama.cpp**: Pass GGUF file paths when starting the server.
+- **LM Studio**: Load GGUF files through the LM Studio UI.
+
+See [Custom Models](./configuration.md#custom-models) for details on configuring model parameters (context window, temperature, etc.) in `models.toml`.
 
 ## Post-Installation
 
@@ -436,18 +469,6 @@ sprach --<TAB>        # Should show options
 sprach translate <TAB> # Should show translate options
 ```
 
-### Environment Variables
-
-You can configure Sprachspiel with environment variables:
-
-```bash
-# LLM server location (default: localhost:11434)
-export OLLAMA_HOST="localhost:11434"
-
-# Add to your shell config (.bashrc, .zshrc, etc.)
-echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
-```
-
 ## Troubleshooting Installation
 
 ### "command not found: sprach"
@@ -481,42 +502,48 @@ Ensure you have the latest Rust:
 rustup update
 ```
 
-### Ollama Connection Failed
+### LLM Server Connection Failed
 
-Make sure Ollama is running:
+Make sure your LLM server is running and reachable. The endpoint depends on which backend you use:
 
 ```bash
-# Check if Ollama is running
-curl http://localhost:11434/api/tags
+# Check llama-swap (default port 12434)
+curl http://localhost:12434/v1/models
 
-# Start Ollama if not running
-ollama serve
+# Check Ollama (default port 11434)
+curl http://localhost:11434/v1/models
+
+# Start your server if not running
+llama-swap serve   # or: ollama serve, ./server -m model.gguf, etc.
 ```
+
+Verify that the `base_url` in `~/.config/sprachspiel/models.toml` matches your server's address and port.
 
 ### "Model not found" Error
 
-If you get "Model not found" errors:
+If you get "Model not found" errors, check that:
+
+1. Your LLM server is running and the model is loaded/available
+2. The `model_id` in `models.toml` matches the model name your server recognises
+3. The `provider` field in `models.toml` matches a defined `[provider]` section
 
 ```bash
-# Check if Ollama has the model
-ollama list | grep qwen
+# List models available on your server (llama-swap)
+curl http://localhost:12434/v1/models
 
-# Install missing models
-ollama pull qwen3.5:4b       # Default model
-ollama pull qwen2.5-coder:7b # Code model
+# List models available on Ollama
+curl http://localhost:11434/v1/models
 ```
 
 ### Model Installation Fails
 
-If model installation fails:
+Models are loaded by your backend server, not by Sprachspiel. If a model fails to load:
 
-```bash
-# Check Ollama is running
-ollama serve
+- **llama-swap**: Check that the GGUF file exists in the configured model directory and the path is correct.
+- **Ollama**: Ensure the model was pulled or created successfully with `ollama list`.
+- **llama.cpp / LM Studio**: Verify the GGUF file path is correct and the file is not corrupted.
 
-# Try installing the model directly
-ollama pull qwen3.5:4b
-```
+Check your server's logs for detailed error messages.
 
 ## Next Steps
 

@@ -73,13 +73,13 @@ sprach query "What is the capital of France?"
 
 ```bash
 # Use a different model
-sprach -m qwen2.5-coder:7b query "Generate a Python function"
+sprach -m ornith-1.0-35b query "Generate a Python function"
 
 # Code-focused model
-sprach -m qwen3-coder query "Write a Rust struct for users"
+sprach -m ornith-1.0-35b query "Write a Rust struct for users"
 
 # Smaller model for quick answers
-sprach -m nanbeige4.1:3b query "What is 2+2?"
+sprach -m qwen3.5-4b query "What is 2+2?"
 ```
 
 ### Think Mode
@@ -106,7 +106,7 @@ sprach -c query "Write a Python function to sort a list"
 sprach -c --tools query "Read my config.rs and suggest improvements"
 
 # Explicit model selection
-sprach -m qwen2.5-coder:7b -c query "Implement a thread pool in Rust"
+sprach -m ornith-1.0-35b -c query "Implement a thread pool in Rust"
 ```
 
 #### Code Mode Configuration
@@ -116,7 +116,7 @@ Code mode uses settings from `[model.code]` in your config file:
 ```toml
 # ~/.config/sprachspiel/config.toml
 [model.code]
-model = "qwen2.5-coder:7b"  # Recommended: fast and accurate
+model = "ornith-1.0-35b"  # Recommended: agentic coder with function calling
 thinking = false
 tools = true  # Enable file operations for context-aware code
 ```
@@ -192,7 +192,7 @@ sprach --tools query "Tell me about Charizard"
 
 When tools are enabled, the model can access:
 
-### Pokémon Tools (8 total)
+### Pokémon Tools (9 total)
 - `fetch_pokemon` - Comprehensive Pokémon data
 - `fetch_pokemon_basic` - Basic info
 - `fetch_pokemon_stats` - Base stats
@@ -207,10 +207,9 @@ When tools are enabled, the model can access:
 - `get_current_weather` - Current conditions
 - `get_weather_forecast` - 7-day forecast
 
-### Web Search Tools (3 total)
+### Web Search Tools (2 total)
 - `web_search` - General web search
 - `web_search_news` - News search
-- `web_instant_answer` - Quick facts
 
 ## Output Formats
 
@@ -250,8 +249,8 @@ If a model doesn't support a feature:
 
 ```bash
 # Warning if think mode not supported
-sprach -m ministral-3:14b -t query "Question"
-# Output: Warning: ministral-3:14b does not support think mode. Ignoring -t.
+sprach -m ministral-3-14b -t query "Question"
+# Output: Warning: ministral-3-14b does not support think mode. Ignoring -t.
 ```
 
 ## AGENTS.md Context
