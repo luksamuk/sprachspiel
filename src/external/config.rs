@@ -292,6 +292,14 @@ fn default_install_hints(tool_name: &str) -> HashMap<Platform, String> {
             hints.insert(Platform::Termux, "pkg install imagemagick".to_string());
             hints
         }
+        "rg" => {
+            let mut hints = HashMap::new();
+            hints.insert(Platform::Arch, "sudo pacman -S ripgrep".to_string());
+            hints.insert(Platform::Debian, "sudo apt install ripgrep".to_string());
+            hints.insert(Platform::Fedora, "sudo dnf install ripgrep".to_string());
+            hints.insert(Platform::Termux, "pkg install ripgrep".to_string());
+            hints
+        }
         _ => HashMap::new(),
     }
 }
