@@ -87,7 +87,6 @@ serde_json = "1.0"
  # into existing config.toml without disturbing user content.
  toml_edit = "0.22"
  urlencoding = "2.1"
- walkdir = "2.5"
  unicode-width = "0.2.2"
  rand = "0.9"
 # Mermaid diagram rendering as Unicode box-drawing text (pure Rust, no browser)
