@@ -747,6 +747,44 @@ loop {
 
 ---
 
+### 🔴 PRIORITY: Remove search_files tool — #214 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #214
+**Depends on:** None (independent bug fix)
+
+**Goal:** Remove the unreliable `search_files` tool (6 root-cause bugs). The LLM uses `run_command("rg -n pattern path")` instead. `rg` (ripgrep) is added to the default external tools whitelist.
+
+**Bugs Fixed by Removal:**
+1. 100-file search cap (`MAX_RESULTS = 100`) — 80% of files in large projects never searched
+2. `max_depth(5)` — nested directories silently skipped
+3. 1MB file size cap — large files silently skipped, no warning
+4. Binary files silently skipped via `read_to_string` failure
+5. No output priority ordering — first 100 in walkdir order, not most relevant
+6. Naive `glob_to_regex` — no `**` recursive globs, no char classes, no escape handling
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Remove `search_files()`, `collect_files()`, `glob_to_regex()` from `files.rs` | `src/tools/files.rs` | ❌ NOT STARTED |
+| 2 | Remove `walkdir` from Cargo.toml | `Cargo.toml` | ❌ NOT STARTED |
+| 3 | Remove tool registration from `registry.rs` | `src/tools/registry.rs` | ❌ NOT STARTED |
+| 4 | Update prompts (`tools.rs`, `builder.rs`) — add `run_command("rg ...")` guidance | `src/prompts/tools.rs`, `src/prompts/builder.rs` | ❌ NOT STARTED |
+| 5 | Remove obsolete tests (glob_to_regex + regex pattern tests) | `src/tools/files.rs` | ❌ NOT STARTED |
+| 6 | Add `rg` to `ExternalToolsConfig::with_defaults()` + install hints | `src/external/types.rs`, `src/external/config.rs` | ❌ NOT STARTED |
+| 7 | Add `rg` to `generate_default_toml()` template | `src/external/config.rs` | ❌ NOT STARTED |
+| 8 | Update SMOKE_TEST.md section 12.2 | `SMOKE_TEST.md` | ❌ NOT STARTED |
+| 9 | Quality gates (fmt, clippy, test, dead code) | — | ❌ NOT STARTED |
+
+**Design Decisions:**
+1. **Remove, don't replace** — Instead of wrapping `rg` in a custom tool (Option A in the issue), remove `search_files` entirely. The LLM uses `run_command("rg -n pattern path")` which already has whitelist enforcement, Landlock sandbox, timeout, and head/tail. No wrapper code to maintain.
+2. **#208 is a separate PR** — Issue #208 (permissive shell operators) would enable `rg pattern | head -20`, but is a security philosophy change with its own scope. Even without #208, `run_command("rg -n pattern path", "50", null, null)` works.
+3. **`rg` in default whitelist** — Added to `ExternalToolsConfig::with_defaults()` so it works out-of-the-box without user configuration. Install hints for Arch/Debian/Fedora/Termux.
+4. **`walkdir` removed** — Only used by `collect_files()` which is deleted. `regex` crate stays (used by `soul.rs`, `skills/sanitize.rs`, `chat/thinking.rs`, `files_blocklist.rs`).
+
+---
+
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
 **Status:** ❌ NOT STARTED
