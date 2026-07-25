@@ -514,7 +514,7 @@ Via chat with a model that supports tools:
 - [ ] `read_file(path="/tmp/truncation_test.txt")` (no max_lines) returns all 20 lines with NO truncation notice
 - [ ] `read_file(path="/tmp/truncation_test.txt", max_lines="25")` returns all 20 lines with NO truncation notice (requested lines >= total)
 
-### 12.2search_files Truncation
+### 12.2 File Content Search via run_command (Issue #214)
 
 **Prepare test file:**
 ```bash
@@ -522,8 +522,10 @@ Via chat with a model that supports tools:
 for i in $(seq 1 200); do echo "UNIQUEPATTERN line $i"; done > /tmp/search_truncation_test.txt
 ```
 
-- [ ] `search_files(pattern="UNIQUEPATTERN", path="/tmp")` returns results
-- [ ] If more than 100 matches, output includes `[TRUNCATED: Showing 100 matches. Refine your search pattern for fewer results.]`
+- [ ] `run_command("rg -n UNIQUEPATTERN /tmp/search_truncation_test.txt", "50", null, null)` returns results
+- [ ] Results use `file:line: content` format (rg output style)
+- [ ] `run_command("rg -n --glob *.txt UNIQUEPATTERN /tmp", null, null, null)` filters by file pattern
+- [ ] `run_command("rg -n NONEXISTENT /tmp", null, null, null)` returns exit code 1 (no matches — not an error)
 
 ### 12.3 remember Truncation (Notes/Documents)
 
