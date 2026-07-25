@@ -88,7 +88,6 @@ sprach translate --help
 ## Requirements
 
 - **LLM Server**: Any OpenAI-compatible server must be running (Ollama, llama.cpp, LM Studio, vLLM, or cloud provider)
-- **Rust**: Built with Rust for performance and reliability
 - **Terminal**: Any modern terminal with UTF-8 support
 
 ## Support

@@ -333,8 +333,8 @@ base_url = "http://localhost:12434/v1"
 model_id = "qwen3.5-4b"
 provider = "llama-swap"
 
-[models."qwen2.5-coder-7b"]
-model_id = "qwen2.5-coder-7b"
+[models."ornith-1.0-35b"]
+model_id = "ornith-1.0-35b"
 provider = "llama-swap"
 
 [models."translategemma-4b"]

@@ -180,7 +180,7 @@ cat to-translate.txt | sprach translate :pt
 
 4. **Model selection**: Different tasks benefit from different models:
    - General queries: `qwen3.5:4b` (default)
-   - Coding: `qwen2.5-coder:7b` (code mode)
+   - Coding: `ornith-1.0-35b` (code mode)
    - Tools: `qwen3.5:4b`
    - Summarization: `qwen3.5:4b`
 

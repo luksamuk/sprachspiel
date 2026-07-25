@@ -36,7 +36,7 @@ cat document.txt | sprach translate :es
 
 ### 3. Extract Text from Images (OCR)
 
-Use GLM-OCR to extract text, tables, formulas, and figures:
+Use an OCR-capable model to extract text, tables, formulas, and figures:
 
 ```bash
 sprach ocr document.png
