@@ -13,7 +13,7 @@ Run these tests after automated tests pass, before finalizing a merge.
 ```bash
 cd /path/to/sprachspiel
 cargo build --release --features all-tools
-ollama serve  # In another terminal
+# Start your LLM server (llama-swap, ollama, llama.cpp, etc.)
 
 # Backup and reset the database for clean state
 cp ~/.local/share/sprachspiel/sprachspiel.db ~/.local/share/sprachspiel/sprachspiel.db.backup 2>/dev/null || true
@@ -40,7 +40,7 @@ After starting the application, verify the database schema version:
 
 ```bash
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
-# Expected: 12 or higher (v12 adds distance_metric=cosine to vec0 tables)
+# Expected: 14 or higher (v14 adds thinking_content column)
 ```
 
 ---
