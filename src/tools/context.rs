@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     async fn with_full_context_scopes_all_four() {
-        let dummy_provider = crate::provider::OpenAICompatibleProvider::new_local(
+        let _dummy_provider = crate::provider::OpenAICompatibleProvider::new_local(
             "http://localhost".to_string(),
             11434,
         );

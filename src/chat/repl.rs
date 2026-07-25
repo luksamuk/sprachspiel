@@ -580,19 +580,8 @@ fn resolve_session_model(
     model_override: Option<&str>,
     default_model: &str,
 ) -> ResolveModelResult {
-    // Bail-out: detect broken config before reaching resolve_model_config's
-    // process::exit(1). When models.toml fails to load (e.g., missing
-    // [provider] section commented out), get_providers() returns an empty
-    // HashMap. The provider name bail-out in run_chat_repl_tui() is too
-    // late — we abort here with a clear message instead.
-    // Per PR #206 review: failing silently with "default" masks user
-    // configuration error.
     if crate::user_models::require_providers().is_err() {
         log::error!("No providers configured in models.toml");
-        eprintln!("\x1B[31mError: No providers configured in models.toml.\x1B[0m");
-        eprintln!(
-            "\x1B[33mHint: Add a [provider.\"name\"] section or run `sprach models upgrade` to migrate.\x1B[0m"
-        );
         return ResolveModelResult::NoProviders;
     }
 
@@ -602,10 +591,6 @@ fn resolve_session_model(
             return ResolveModelResult::Ok;
         }
         log::error!("Unknown model specified: '{}'", model);
-        eprintln!(
-            "\x1B[31mUnknown model '{}'. Use --list to see available models.\x1B[0m",
-            model
-        );
         return ResolveModelResult::UnknownModel;
     }
 
@@ -711,7 +696,7 @@ pub async fn run_chat_repl(
         log::error!("Provider health check failed: {e}");
         eprintln!("\x1B[31mError: {e}\x1B[0m");
         eprintln!("\x1B[33mHint: Start your LLM server, then retry.\x1B[0m");
-        return Ok(());
+        return Err(e);
     }
 
     // Build the LLM client for the model the user actually asked for
@@ -734,12 +719,13 @@ pub async fn run_chat_repl(
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
         if db_error.is_some() {
-            // Error already printed in init_database
             log::error!("Cannot start chat session without database.");
             eprintln!("\x1B[31mCannot start chat session without database.\x1B[0m");
             eprintln!("Either fix the database issue or use --anonymous mode.");
         }
-        return Ok(());
+        return Err("Cannot start chat session without database. \
+             Either fix the database issue or use --anonymous mode."
+            .into());
     }
 
     run_startup_tasks(&db, &embedding_client, args.anonymous, settings).await;
@@ -757,7 +743,9 @@ pub async fn run_chat_repl(
     // hard error so the user knows their config is invalid.
     match resolve_session_model(&mut session, model_override, default_model) {
         ResolveModelResult::Ok => {}
-        ResolveModelResult::UnknownModel => return Ok(()),
+        ResolveModelResult::UnknownModel => {
+            return Err("Unknown model specified. Use --list to see available models.".into());
+        }
         ResolveModelResult::NoProviders => {
             return Err("Cannot start chat: models.toml is missing providers. \
                  Add a [provider.\"name\"] section or run `sprach models upgrade`."

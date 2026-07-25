@@ -1640,7 +1640,7 @@ Next step: Should ignore
 
     #[test]
     fn test_sanitizes_invalid_tool_call_arguments() {
-        use crate::provider::types::{LlmMessage, LlmRole, LlmToolCall};
+        use crate::provider::types::LlmToolCall;
 
         let calls = vec![
             LlmToolCall {

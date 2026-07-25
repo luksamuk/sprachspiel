@@ -1005,7 +1005,7 @@ mod tests {
     async fn test_build_context_single_system_message_no_retrieval() {
         // No DB / no embedding client — retrieval is skipped, so
         // the only system content is the user's system prompt.
-        let mut session = create_test_session(10);
+        let session = create_test_session(10);
         let config = RetrievalConfig {
             enabled: false,
             ..RetrievalConfig::default()
@@ -1041,7 +1041,7 @@ mod tests {
         // With retrieval disabled and no compacted summary, the
         // first message must be system and the rest must be
         // user/assistant/tool — never system.
-        let mut session = create_test_session(5);
+        let session = create_test_session(5);
         let config = RetrievalConfig {
             enabled: false,
             ..RetrievalConfig::default()
