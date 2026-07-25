@@ -749,7 +749,7 @@ loop {
 
 ### 🔴 PRIORITY: Remove search_files tool — #214 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (pending review)
 **Issue:** #214
 **Depends on:** None (independent bug fix)
 
@@ -767,15 +767,15 @@ loop {
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Remove `search_files()`, `collect_files()`, `glob_to_regex()` from `files.rs` | `src/tools/files.rs` | ❌ NOT STARTED |
-| 2 | Remove `walkdir` from Cargo.toml | `Cargo.toml` | ❌ NOT STARTED |
-| 3 | Remove tool registration from `registry.rs` | `src/tools/registry.rs` | ❌ NOT STARTED |
-| 4 | Update prompts (`tools.rs`, `builder.rs`) — add `run_command("rg ...")` guidance | `src/prompts/tools.rs`, `src/prompts/builder.rs` | ❌ NOT STARTED |
-| 5 | Remove obsolete tests (glob_to_regex + regex pattern tests) | `src/tools/files.rs` | ❌ NOT STARTED |
-| 6 | Add `rg` to `ExternalToolsConfig::with_defaults()` + install hints | `src/external/types.rs`, `src/external/config.rs` | ❌ NOT STARTED |
-| 7 | Add `rg` to `generate_default_toml()` template | `src/external/config.rs` | ❌ NOT STARTED |
-| 8 | Update SMOKE_TEST.md section 12.2 | `SMOKE_TEST.md` | ❌ NOT STARTED |
-| 9 | Quality gates (fmt, clippy, test, dead code) | — | ❌ NOT STARTED |
+| 1 | Remove `search_files()`, `collect_files()`, `glob_to_regex()` from `files.rs` | `src/tools/files.rs` | ✅ |
+| 2 | Remove `walkdir` from Cargo.toml | `Cargo.toml` | ✅ |
+| 3 | Remove tool registration from `registry.rs` | `src/tools/registry.rs` | ✅ |
+| 4 | Update prompts (`tools.rs`, `builder.rs`) — add `run_command("rg ...")` guidance | `src/prompts/tools.rs`, `src/prompts/builder.rs` | ✅ |
+| 5 | Remove obsolete tests (glob_to_regex + regex pattern tests) | `src/tools/files.rs` | ✅ |
+| 6 | Add `rg` to `ExternalToolsConfig::with_defaults()` + install hints | `src/external/types.rs`, `src/external/config.rs` | ✅ |
+| 7 | Add `rg` to `generate_default_toml()` template | `src/external/config.rs` | ✅ |
+| 8 | Update SMOKE_TEST.md section 12.2 | `SMOKE_TEST.md` | ✅ |
+| 9 | Quality gates (fmt, clippy, test, dead code) | — | ✅ |
 
 **Design Decisions:**
 1. **Remove, don't replace** — Instead of wrapping `rg` in a custom tool (Option A in the issue), remove `search_files` entirely. The LLM uses `run_command("rg -n pattern path")` which already has whitelist enforcement, Landlock sandbox, timeout, and head/tail. No wrapper code to maintain.
