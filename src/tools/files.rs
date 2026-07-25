@@ -726,15 +726,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_glob_to_regex() {
-        assert_eq!(glob_to_regex("*.rs"), "^.*\\.rs$");
-        // ? becomes . (any char), . becomes \\. (literal)
-        assert_eq!(glob_to_regex("file?.txt"), "^file.\\.txt$");
-        assert_eq!(glob_to_regex("test.{js,ts}"), "^test\\.(js|ts)$");
-        assert_eq!(glob_to_regex("*.min.js"), "^.*\\.min\\.js$");
-    }
-
-    #[test]
     fn test_validate_path_within_cwd() {
         let cwd = std::env::current_dir().unwrap();
         let relative = PathBuf::from("src/main.rs");
@@ -832,137 +823,9 @@ mod tests {
         assert!(normalized.is_none());
     }
 
-    #[test]
-    fn test_glob_to_regex_empty_pattern() {
-        // Verify that glob_to_regex("") produces "^$" which matches no filenames.
-        // This is the bug: when file_pattern="" is passed without normalization,
-        // this regex matches nothing, causing search to return 0 results.
-        let result = glob_to_regex("");
-        assert_eq!(result, "^$");
-
-        // Verify this regex doesn't match typical filenames
-        let re = Regex::new(&result).unwrap();
-        assert!(!re.is_match("main.rs"));
-        assert!(!re.is_match("file.txt"));
-        assert!(!re.is_match("README.md"));
-        // Only matches the empty string
-        assert!(re.is_match(""));
-    }
-
     // --- Tests for regex patterns used in search_files ---
 
-    #[test]
-    fn test_regex_anchor_alternation_patterns() {
-        // Test patterns like "^CHAPTER|^Chapter|^INTRODUCTION"
-        // This is a common LLM-generated pattern that should work correctly.
-
-        // Alternation with anchors on each branch
-        let pattern = "^CHAPTER|^Chapter|^INTRODUCTION";
-        let re = Regex::new(pattern).unwrap();
-
-        assert!(re.is_match("CHAPTER 1"));
-        assert!(re.is_match("Chapter 2"));
-        assert!(re.is_match("INTRODUCTION"));
-        assert!(!re.is_match("chapter 3")); // case-sensitive
-        assert!(!re.is_match("the CHAPTER")); // ^ doesn't match mid-line
-
-        // Preferred grouped alternation (shorter, less truncation risk)
-        let pattern = "^(CHAPTER|Chapter|INTRODUCTION)";
-        let re = Regex::new(pattern).unwrap();
-
-        assert!(re.is_match("CHAPTER 1"));
-        assert!(re.is_match("Chapter 2"));
-        assert!(re.is_match("INTRODUCTION"));
-        assert!(!re.is_match("chapter 3"));
-        assert!(!re.is_match("the CHAPTER"));
-    }
-
-    #[test]
-    fn test_regex_case_insensitive_pattern() {
-        // Test case-insensitive search pattern
-        let pattern = "(?i)^chapter";
-        let re = Regex::new(pattern).unwrap();
-
-        assert!(re.is_match("CHAPTER 1"));
-        assert!(re.is_match("Chapter 2"));
-        assert!(re.is_match("chapter 3"));
-        assert!(!re.is_match("the chapter"));
-    }
-
-    #[test]
-    fn test_regex_common_search_patterns() {
-        // Validate that common search patterns compile and match correctly
-        let test_cases = [
-            ("fn main", "fn main() {", true),
-            ("fn main", "fn main_() {", true), // substring match: "fn main" matches inside "fn main_"
-            ("import.*react", "import React from 'react'", true),
-            ("import.*react", "import { useState } from 'react'", true),
-            ("TODO", "// TODO: fix this", true),
-            ("TODO", "// todo: fix this", false),
-            ("error.*handler", "error in handler: missing field", true),
-            ("^pub async fn", "pub async fn search_files(", true),
-            ("^pub async fn", "  pub async fn search_files(", false),
-        ];
-
-        for (pattern, text, should_match) in test_cases {
-            let re = Regex::new(pattern).unwrap();
-            assert_eq!(
-                re.is_match(text),
-                should_match,
-                "Pattern '{}' vs text '{}': expected {}, got {}",
-                pattern,
-                text,
-                should_match,
-                !should_match
-            );
-        }
-    }
-
-    #[test]
-    fn test_regex_invalid_pattern_returns_error() {
-        // Verify that invalid regex patterns fail to compile
-        let invalid_patterns = [
-            "(",        // Unclosed paren
-            "[",        // Unclosed bracket
-            "*invalid", // Invalid quantifier
-        ];
-
-        for pattern in invalid_patterns {
-            assert!(
-                Regex::new(pattern).is_err(),
-                "Pattern '{}' should be invalid but compiled successfully",
-                pattern
-            );
-        }
-    }
-
-    #[test]
-    fn test_glob_to_regex_patterns() {
-        // Verify glob-to-regex conversion produces valid patterns
-        let test_cases = [
-            ("*.rs", "main.rs", true),
-            ("*.rs", "main.rs.bak", false),
-            ("*.rs", "README.md", false),
-            ("test.{js,ts}", "test.js", true),
-            ("test.{js,ts}", "test.ts", true),
-            ("test.{js,ts}", "test.py", false),
-            ("Makefile", "Makefile", true),
-            ("*.min.js", "app.min.js", true),
-        ];
-
-        for (glob, filename, should_match) in test_cases {
-            let regex_str = glob_to_regex(glob);
-            let re = Regex::new(&regex_str).unwrap();
-            assert_eq!(
-                re.is_match(filename),
-                should_match,
-                "Glob '{}' converted to '{}' vs filename '{}': expected {}, got {}",
-                glob,
-                regex_str,
-                filename,
-                should_match,
-                !should_match
-            );
-        }
-    }
+    // (search_files, collect_files, and glob_to_regex have been removed in #214.
+    //  Regex pattern tests and glob_to_regex tests are no longer applicable.
+    //  validate_path tests below remain — validate_path is still used by read_file, etc.)
 }
