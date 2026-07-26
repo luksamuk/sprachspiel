@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Higher Default Timeouts for Local Offloaded Models (Issue #209)** — The default `read_timeout_secs` and `stream_idle_timeout_secs` are bumped from 300s (5 min) to 900s (15 min). The previous 300s default was too aggressive for local LLM inference with CPU-offloaded models (e.g., 35B MoE on 6GB VRAM), where long reasoning tasks can exceed 5 minutes. The stream is not idle — the model is just generating slowly (1–5 tok/s). The TTFB watchdog (`ttfb_timeout_secs`, default 120s) covers startup delay separately. `connect_timeout_secs` remains 5s (TCP connect only). The `fallback_config()` stream idle timeout (previously 60s) is also bumped to 900s for consistency.
+
 ### Added
 
 - **TTFB Watchdog for SSE Streaming (Issue #123)** — New `ttfb_timeout_secs` field on `ProviderConfig` (default: 120s) implementing a time-to-first-byte watchdog in `parse_sse_stream`. If no SSE chunk arrives within the TTFB window, a `ProviderError::Timeout("SSE TTFB timeout after {ttfb}s")` is emitted and the stream aborts, instead of waiting the full `idle_timeout` (300s). After the first byte, the existing `idle_timeout` applies for inter-chunk gaps. Inspired by Hermes Agent's `HERMES_CODEX_TTFB_TIMEOUT_SECONDS=120`. Complementary to Issue #209 (which tracks per-generation slowness, not startup delay).

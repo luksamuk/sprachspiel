@@ -786,6 +786,50 @@ loop {
 
 ---
 
+### 🔴 PRIORITY: Higher Default Timeouts for Local Offloaded Models — #209 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #209
+**Branch:** `fix/209-timeout-defaults`
+**Depends on:** None (independent bug fix)
+
+**Goal:** Bump the default `read_timeout_secs` and `stream_idle_timeout_secs` from 300s (5 min) to 900s (15 min), so local LLM inference with CPU-offloaded models doesn't get killed mid-generation.
+
+**Problem Statement:**
+
+When running a 35B MoE model on a 6GB VRAM GPU with CPU offload via llama-swap/llama.cpp, inference on long prompts (especially with thinking/reasoning enabled) can easily exceed 5 minutes. The stream is not idle — the model is actively generating at 1–5 tok/s. The timeout kills the SSE stream mid-generation, producing errors like:
+
+```
+SSE stream idle timeout after 300s
+Stream timeout in ReAct loop (attempt ...)
+```
+
+All progress is lost, and the retry starts from scratch, wasting tokens.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Bump `read_timeout_secs` default: 300 → 900 | `src/provider/openai_compat.rs` or `src/provider/types.rs` | ❌ NOT STARTED |
+| 2 | Bump `stream_idle_timeout_secs` default: 300 → 900 (including `fallback_config()` which has 60) | Same | ❌ NOT STARTED |
+| 3 | Update `models_upgrade.rs` default hints if applicable | `src/user_models.rs` or `src/models_upgrade.rs` | ❌ NOT STARTED |
+| 4 | Update generated `models.toml` template comments | `src/settings.rs` or template | ❌ NOT STARTED |
+| 5 | Tests: verify new defaults, verify config override still works | Test files | ❌ NOT STARTED |
+| 6 | Documentation: config docs, CHANGELOG | `doc/src/CHANGELOG.md`, config docs | ❌ NOT STARTED |
+
+**Design Decisions:**
+
+1. **900s (15 min) not 600s** — 5 min is too tight for slow local models. 15 min gives headroom without being infinite. Cloud providers respond well within 300s, so 900s doesn't hurt them.
+2. **`connect_timeout_secs` stays 5s** — This is just TCP connect, not generation. No change needed.
+3. **TTFB watchdog (`ttfb_timeout_secs`) covers startup delay** — The 120s TTFB watchdog (from #123) already handles the case where the server hasn't started responding. This fix targets the generation phase, not startup.
+4. **`fallback_config()` stream idle timeout also bumped** — The fallback config (used when `models.toml` is missing) had `stream_idle_timeout_secs: 60`, which is even more aggressive. Bumped to 900s for consistency.
+
+**Estimated effort:** ~0.5 day (config defaults change + tests + docs)
+
+**Reference:** Issue #209
+
+---
+
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
 **Status:** ❌ NOT STARTED
