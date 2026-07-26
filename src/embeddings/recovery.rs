@@ -75,10 +75,51 @@ pub async fn recover_missing_embeddings(
     quiet: bool,
     progress_tx: Option<EmbeddingProgressTx>,
 ) -> usize {
-    // Clean up V2 orphan chunks (those with wrong item_id mapping)
+    // Phase 0: cleanup orphan chunks (those with wrong item_id mapping)
+    cleanup_orphan_chunks(db, quiet);
+
+    // Phase 1: determine context length for chunking decisions
+    let context_length = get_context_length(embedding_client, quiet).await;
+
+    // Phase 2: gather work to do
+    let items = match db.get_content_items_for_reindex() {
+        Ok(items) if !items.is_empty() => items,
+        Ok(_) => vec![],
+        Err(_) => return 0,
+    };
+    let preexisting_chunks = db
+        .get_content_chunks_for_reindex()
+        .map(|c| c.len())
+        .unwrap_or(0);
+    let total_missing = items.len() + preexisting_chunks;
+    if total_missing == 0 {
+        return 0;
+    }
+    if !quiet {
+        println!("Recovering {} missing embedding(s)...", total_missing);
+    }
+
+    // Phase 3: process items then newly-created chunks
+    let mut state = RecoveryState::new(items, total_missing, progress_tx);
+    state.report_progress();
+    process_content_items(&mut state, db, embedding_client, context_length, quiet).await;
+    process_new_chunks(&mut state, db, embedding_client, context_length, quiet).await;
+    state.signal_completion();
+
+    if state.recovered > 0 && !quiet {
+        println!("Successfully recovered {} embedding(s).", state.recovered);
+    }
+    state.recovered
+}
+
+/// Delete V2 orphan chunks (those with no parent `content_items` row).
+///
+/// Returns the number of chunks deleted. Errors are logged/eprinted per `quiet`
+/// and count as zero deleted (matching the original inline behavior).
+fn cleanup_orphan_chunks(db: &Arc<Database>, quiet: bool) -> usize {
     let orphan_deleted = match db.with_connection(|conn| {
         conn.execute(
-            "DELETE FROM content_chunks 
+            "DELETE FROM content_chunks
              WHERE item_id NOT IN (SELECT id FROM content_items)",
             [],
         )
@@ -97,9 +138,14 @@ pub async fn recover_missing_embeddings(
     if orphan_deleted > 0 && !quiet {
         println!("Cleaned {} orphan chunk(s).", orphan_deleted);
     }
+    orphan_deleted
+}
 
-    // Get dynamic context length from embedding model
-    let context_length = match embedding_client.get_context_length().await {
+/// Query the embedding model's context length, falling back to 512 on error.
+///
+/// NOTE: this is duplicated in `regenerate.rs`; convergence tracked in #227.
+async fn get_context_length(embedding_client: &Arc<EmbeddingClient>, quiet: bool) -> usize {
+    match embedding_client.get_context_length().await {
         Ok(ctx) => ctx,
         Err(e) => {
             if quiet {
@@ -113,350 +159,363 @@ pub async fn recover_missing_embeddings(
             }
             512
         }
-    };
+    }
+}
 
+/// Mutable recovery state shared by the phase functions.
+///
+/// Holds the items queue, running totals, and the optional progress channel.
+/// The `report_progress` method replaces the 7 duplicated `EmbeddingProgress::new`
+/// blocks that were inline in the original `recover_missing_embeddings`.
+struct RecoveryState {
+    items: Vec<(i64, String, String)>,
+    total_missing: usize,
+    processed: usize,
+    entities_current: usize,
+    entities_total: usize,
+    recovered: usize,
+    progress_tx: Option<EmbeddingProgressTx>,
+}
+
+impl RecoveryState {
+    fn new(
+        items: Vec<(i64, String, String)>,
+        total_missing: usize,
+        progress_tx: Option<EmbeddingProgressTx>,
+    ) -> Self {
+        let entities_total = items.len();
+        Self {
+            items,
+            total_missing,
+            processed: 0,
+            entities_current: 0,
+            entities_total,
+            recovered: 0,
+            progress_tx,
+        }
+    }
+
+    /// Emit a `Content`-phase progress tick with the current counts.
+    fn report_progress(&self) {
+        if let Some(ref tx) = self.progress_tx {
+            let _ = tx.send(EmbeddingProgress::new(
+                EmbeddingPhase::Content,
+                self.entities_current,
+                self.entities_total,
+                self.processed,
+                self.total_missing,
+            ));
+        }
+    }
+
+    /// Signal completion to the TUI status bar.
+    fn signal_completion(&self) {
+        if let Some(ref tx) = self.progress_tx {
+            let _ = tx.send(EmbeddingProgress::completed());
+        }
+    }
+}
+
+/// Process content items without embeddings, generating embeddings (and chunks
+/// for long content). Updates `state` in place. Lines 168-345 of the original.
+async fn process_content_items(
+    state: &mut RecoveryState,
+    db: &Arc<Database>,
+    embedding_client: &Arc<EmbeddingClient>,
+    context_length: usize,
+    quiet: bool,
+) {
     let chunk_config = DynamicChunkConfig::new(context_length);
     let max_chars = chunk_config.max_chars();
-
-    // Get content items without embeddings
-    let items = match db.get_content_items_for_reindex() {
-        Ok(items) if !items.is_empty() => items,
-        Ok(_) => vec![],
-        Err(_) => return 0,
-    };
-
-    // Also count pre-existing chunks without embeddings
-    let preexisting_chunks = match db.get_content_chunks_for_reindex() {
-        Ok(c) => c.len(),
-        _ => 0,
-    };
-
-    // Dynamic total: items + pre-existing chunks, grows when chunking splits items.
-    let mut total_missing = items.len() + preexisting_chunks;
-
-    if total_missing == 0 {
-        return 0;
-    }
-
-    if !quiet {
-        println!("Recovering {} missing embedding(s)...", total_missing);
-    }
-
-    // Track processed count manually for accurate progress.
-    let mut processed: usize = 0;
-
-    // Entity counts track items (documents/messages); embedding counts track
-    // individual vector index operations (may exceed entities when chunking).
-    let entities_total = items.len();
-    let mut entities_current: usize = 0;
-
-    // Report initial progress so the status bar shows total count
-    if let Some(ref tx) = progress_tx {
-        let _ = tx.send(EmbeddingProgress::new(
-            EmbeddingPhase::Content,
-            0,
-            entities_total,
-            0,
-            total_missing,
-        ));
-    }
-
-    let mut recovered = 0;
     let now = Utc::now();
 
-    // Generate embeddings for content items (and their chunks)
+    let items = std::mem::take(&mut state.items);
     for (item_id, content_type, content) in &items {
         let timestamp = now;
 
-        // Skip if content is empty or too short for meaningful embedding.
-        // The SQL query already filters by MIN_EMBED_CONTENT_LEN, but this
-        // check is a defense-in-depth in case the query changes.
         if content.trim().is_empty() || content.len() < MIN_EMBED_CONTENT_LEN {
             log::debug!(
                 "Skipping item {}: content too short for embedding ({} bytes)",
                 item_id,
                 content.len()
             );
-            processed += 1;
-            entities_current += 1;
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(EmbeddingProgress::new(
-                    EmbeddingPhase::Content,
-                    entities_current,
-                    entities_total,
-                    processed,
-                    total_missing,
-                ));
-            }
+            state.processed += 1;
+            state.entities_current += 1;
+            state.report_progress();
             continue;
         }
 
-        // Check if item already has chunks (long content that was partially processed)
-        // If so, skip item embedding - chunks are handled separately
         if db.content_item_has_chunks(*item_id).unwrap_or(false) {
-            processed += 1;
-            entities_current += 1;
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(EmbeddingProgress::new(
-                    EmbeddingPhase::Content,
-                    entities_current,
-                    entities_total,
-                    processed,
-                    total_missing,
-                ));
-            }
+            state.processed += 1;
+            state.entities_current += 1;
+            state.report_progress();
             continue;
         }
 
-        // Get item's conversation_id and project_id for embedding metadata
         let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
             Ok(Some(item)) => (item.conversation_id, item.project_id),
             _ => (None, None),
         };
 
-        // Check if content needs chunking using dynamic threshold
         if content.len() > max_chars {
-            // Long content - create chunks and embed each chunk with fallback.
-            // Each chunk is a separate unit of work, so we expand the total.
-            let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
-            let num_chunks = chunks_list.len();
-            let extra_work = num_chunks.saturating_sub(1); // item already counted as 1
-            if extra_work > 0 {
-                total_missing += extra_work;
-            }
-
-            for chunk in &chunks_list {
-                // Insert chunk into database
-                let chunk_id = match db.insert_content_chunk(
-                    *item_id,
-                    chunk.index as i32,
-                    &chunk.content,
-                    chunk.start_offset as i32,
-                    chunk.end_offset as i32,
-                    timestamp,
-                ) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        if quiet {
-                            log::warn!("Failed to insert chunk {}: {}", chunk.index, e);
-                        } else {
-                            eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
-                        }
-                        continue;
-                    }
-                };
-
-                // Embed chunk with fallback
-                let ctx = EmbedContext {
-                    content: &chunk.content,
-                    item_id: *item_id,
-                    chunk_id,
-                    content_type: content_type.as_str(),
-                    conversation_id: conv_id.as_deref(),
-                    project_id: proj_id.as_deref(),
-                    timestamp,
-                };
-
-                match embed_chunk_with_fallback(
-                    ctx,
-                    Arc::clone(db),
-                    Arc::clone(embedding_client),
-                    context_length,
-                    0,
-                )
-                .await
-                {
-                    Ok(result) => {
-                        recovered += result.chunks_created;
-                    }
-                    Err(e) => {
-                        if quiet {
-                            log::warn!("Failed to recover embedding for chunk {}: {}", chunk_id, e);
-                        } else {
-                            eprintln!(
-                                "Warning: Failed to recover embedding for chunk {}: {}",
-                                chunk_id, e
-                            );
-                        }
-                    }
-                }
-                processed += 1;
-                entities_current += 1;
-                if let Some(ref tx) = progress_tx {
-                    let _ = tx.send(EmbeddingProgress::new(
-                        EmbeddingPhase::Content,
-                        entities_current,
-                        entities_total,
-                        processed,
-                        total_missing,
-                    ));
-                }
-            }
-
-            // Mark item as having embeddings ONLY if all chunks are complete
-            // This prevents re-processing items with incomplete chunks on next startup
-            let _ = db.mark_item_embedding_if_complete(*item_id);
-        } else {
-            // Short content - embed directly with fallback
-            let ctx = EmbedItemContext::new(
+            process_long_content_item(
+                state,
+                db,
+                embedding_client,
                 content,
                 *item_id,
                 content_type.as_str(),
                 conv_id.as_deref(),
                 proj_id.as_deref(),
-            );
+                timestamp,
+                context_length,
+                &chunk_config,
+                quiet,
+            )
+            .await;
+        } else {
+            process_short_content_item(
+                state,
+                db,
+                embedding_client,
+                content,
+                *item_id,
+                content_type.as_str(),
+                conv_id.as_deref(),
+                proj_id.as_deref(),
+                context_length,
+                quiet,
+            )
+            .await;
+        }
+    }
+}
 
-            match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
-                Ok(result) => {
-                    if result.chunks_created > 0 {
-                        // Item was chunked due to fallback — each extra chunk is a unit of work
-                        recovered += result.chunks_created;
-                        let extra_work = result.chunks_created.saturating_sub(1);
-                        if extra_work > 0 {
-                            total_missing += extra_work;
-                        }
-                    } else {
-                        recovered += 1;
-                    }
+/// Embed a long item by chunking then embedding each chunk. Updates `state`.
+#[expect(clippy::too_many_arguments)] // extracted phase helper, args mirror original inline scope
+async fn process_long_content_item(
+    state: &mut RecoveryState,
+    db: &Arc<Database>,
+    embedding_client: &Arc<EmbeddingClient>,
+    content: &str,
+    item_id: i64,
+    content_type: &str,
+    conv_id: Option<&str>,
+    proj_id: Option<&str>,
+    timestamp: chrono::DateTime<Utc>,
+    context_length: usize,
+    chunk_config: &DynamicChunkConfig,
+    quiet: bool,
+) {
+    let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(chunk_config));
+    let num_chunks = chunks_list.len();
+    let extra_work = num_chunks.saturating_sub(1); // item already counted as 1
+    if extra_work > 0 {
+        state.total_missing += extra_work;
+    }
+
+    for chunk in &chunks_list {
+        let chunk_id = match db.insert_content_chunk(
+            item_id,
+            chunk.index as i32,
+            &chunk.content,
+            chunk.start_offset as i32,
+            chunk.end_offset as i32,
+            timestamp,
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                if quiet {
+                    log::warn!("Failed to insert chunk {}: {}", chunk.index, e);
+                } else {
+                    eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
                 }
-                Err(e) => {
-                    if quiet {
-                        log::warn!("Failed to recover embedding for item {}: {}", item_id, e);
-                    } else {
-                        eprintln!(
-                            "Warning: Failed to recover embedding for item {}: {}",
-                            item_id, e
-                        );
-                    }
+                continue;
+            }
+        };
+
+        let ctx = EmbedContext {
+            content: &chunk.content,
+            item_id,
+            chunk_id,
+            content_type,
+            conversation_id: conv_id,
+            project_id: proj_id,
+            timestamp,
+        };
+
+        match embed_chunk_with_fallback(
+            ctx,
+            Arc::clone(db),
+            Arc::clone(embedding_client),
+            context_length,
+            0,
+        )
+        .await
+        {
+            Ok(result) => {
+                state.recovered += result.chunks_created;
+            }
+            Err(e) => {
+                if quiet {
+                    log::warn!("Failed to recover embedding for chunk {}: {}", chunk_id, e);
+                } else {
+                    eprintln!(
+                        "Warning: Failed to recover embedding for chunk {}: {}",
+                        chunk_id, e
+                    );
                 }
             }
-            processed += 1;
-            entities_current += 1;
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(EmbeddingProgress::new(
-                    EmbeddingPhase::Content,
-                    entities_current,
-                    entities_total,
-                    processed,
-                    total_missing,
-                ));
+        }
+        state.processed += 1;
+        state.entities_current += 1;
+        state.report_progress();
+    }
+
+    // Mark item as having embeddings ONLY if all chunks are complete
+    // This prevents re-processing items with incomplete chunks on next startup
+    let _ = db.mark_item_embedding_if_complete(item_id);
+}
+
+/// Embed a short item directly with fallback. Updates `state`.
+#[expect(clippy::too_many_arguments)] // extracted phase helper, args mirror original inline scope
+async fn process_short_content_item(
+    state: &mut RecoveryState,
+    db: &Arc<Database>,
+    embedding_client: &Arc<EmbeddingClient>,
+    content: &str,
+    item_id: i64,
+    content_type: &str,
+    conv_id: Option<&str>,
+    proj_id: Option<&str>,
+    context_length: usize,
+    quiet: bool,
+) {
+    let ctx = EmbedItemContext::new(content, item_id, content_type, conv_id, proj_id);
+
+    match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
+        Ok(result) => {
+            if result.chunks_created > 0 {
+                // Item was chunked due to fallback — each extra chunk is a unit of work
+                state.recovered += result.chunks_created;
+                let extra_work = result.chunks_created.saturating_sub(1);
+                if extra_work > 0 {
+                    state.total_missing += extra_work;
+                }
+            } else {
+                state.recovered += 1;
+            }
+        }
+        Err(e) => {
+            if quiet {
+                log::warn!("Failed to recover embedding for item {}: {}", item_id, e);
+            } else {
+                eprintln!(
+                    "Warning: Failed to recover embedding for item {}: {}",
+                    item_id, e
+                );
             }
         }
     }
+    state.processed += 1;
+    state.entities_current += 1;
+    state.report_progress();
+}
 
-    // Process chunks that were created during this recovery (long items being processed)
+/// Process chunks created during this recovery (and any pre-existing chunks
+/// without embeddings). Updates `state` in place. Lines 347-448 of the original.
+async fn process_new_chunks(
+    state: &mut RecoveryState,
+    db: &Arc<Database>,
+    embedding_client: &Arc<EmbeddingClient>,
+    context_length: usize,
+    quiet: bool,
+) {
     let chunks = match db.get_content_chunks_for_reindex() {
         Ok(c) if !c.is_empty() => c,
         Ok(_) => vec![],
         Err(_) => vec![],
     };
 
-    if !chunks.is_empty() {
-        for (chunk_id, content) in &chunks {
-            // Get the item for this chunk to get metadata
-            let item_info: Option<(i64, String, Option<String>, Option<String>)> = match db
-                .with_connection(|conn| {
-                    let mut stmt = conn.prepare(
-                        "SELECT cc.item_id, ci.content_type, ci.conversation_id, ci.project_id
-                         FROM content_chunks cc
-                         JOIN content_items ci ON cc.item_id = ci.id
-                         WHERE cc.id = ?1",
-                    )?;
-                    let mut rows = stmt.query_map(rusqlite::params![chunk_id], |row| {
-                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-                    })?;
-                    rows.next().transpose()
-                }) {
-                Ok(Some(info)) => Some(info),
-                _ => None,
-            };
+    if chunks.is_empty() {
+        return;
+    }
 
-            let (parent_item_id, content_type, conv_id, proj_id) = match item_info {
-                Some((pid, ct, c, p)) => (pid, ct, c, p),
-                None => {
-                    if quiet {
-                        log::warn!("Newly created chunk {} has no parent item", chunk_id);
-                    } else {
-                        eprintln!(
-                            "Warning: Newly created chunk {} has no parent item",
-                            chunk_id
-                        );
-                    }
-                    processed += 1;
-                    entities_current += 1;
-                    if let Some(ref tx) = progress_tx {
-                        let _ = tx.send(EmbeddingProgress::new(
-                            EmbeddingPhase::Content,
-                            entities_current,
-                            entities_total,
-                            processed,
-                            total_missing,
-                        ));
-                    }
-                    continue;
+    let now = Utc::now();
+    for (chunk_id, content) in &chunks {
+        let item_info: Option<(i64, String, Option<String>, Option<String>)> = match db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT cc.item_id, ci.content_type, ci.conversation_id, ci.project_id
+                     FROM content_chunks cc
+                     JOIN content_items ci ON cc.item_id = ci.id
+                     WHERE cc.id = ?1",
+                )?;
+                let mut rows = stmt.query_map(rusqlite::params![chunk_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })?;
+                rows.next().transpose()
+            }) {
+            Ok(Some(info)) => Some(info),
+            _ => None,
+        };
+
+        let (parent_item_id, content_type, conv_id, proj_id) = match item_info {
+            Some((pid, ct, c, p)) => (pid, ct, c, p),
+            None => {
+                if quiet {
+                    log::warn!("Newly created chunk {} has no parent item", chunk_id);
+                } else {
+                    eprintln!(
+                        "Warning: Newly created chunk {} has no parent item",
+                        chunk_id
+                    );
                 }
-            };
-
-            let timestamp = now;
-
-            // Embed chunk with fallback
-            let ctx = EmbedContext {
-                content,
-                item_id: parent_item_id,
-                chunk_id: *chunk_id,
-                content_type: &content_type,
-                conversation_id: conv_id.as_deref(),
-                project_id: proj_id.as_deref(),
-                timestamp,
-            };
-
-            match embed_chunk_with_fallback(
-                ctx,
-                Arc::clone(db),
-                Arc::clone(embedding_client),
-                context_length,
-                0,
-            )
-            .await
-            {
-                Ok(result) => {
-                    recovered += result.chunks_created;
-                }
-                Err(e) => {
-                    if quiet {
-                        log::warn!("Failed to generate embedding for chunk {}: {}", chunk_id, e);
-                    } else {
-                        eprintln!(
-                            "Warning: Failed to generate embedding for chunk {}: {}",
-                            chunk_id, e
-                        );
-                    }
-                }
+                state.processed += 1;
+                state.entities_current += 1;
+                state.report_progress();
+                continue;
             }
-            processed += 1;
-            entities_current += 1;
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(EmbeddingProgress::new(
-                    EmbeddingPhase::Content,
-                    entities_current,
-                    entities_total,
-                    processed,
-                    total_missing,
-                ));
+        };
+
+        let timestamp = now;
+        let ctx = EmbedContext {
+            content,
+            item_id: parent_item_id,
+            chunk_id: *chunk_id,
+            content_type: &content_type,
+            conversation_id: conv_id.as_deref(),
+            project_id: proj_id.as_deref(),
+            timestamp,
+        };
+
+        match embed_chunk_with_fallback(
+            ctx,
+            Arc::clone(db),
+            Arc::clone(embedding_client),
+            context_length,
+            0,
+        )
+        .await
+        {
+            Ok(result) => {
+                state.recovered += result.chunks_created;
+            }
+            Err(e) => {
+                if quiet {
+                    log::warn!("Failed to generate embedding for chunk {}: {}", chunk_id, e);
+                } else {
+                    eprintln!(
+                        "Warning: Failed to generate embedding for chunk {}: {}",
+                        chunk_id, e
+                    );
+                }
             }
         }
+        state.processed += 1;
+        state.entities_current += 1;
+        state.report_progress();
     }
-
-    // Signal completion to the TUI status bar
-    if let Some(ref tx) = progress_tx {
-        let _ = tx.send(EmbeddingProgress::completed());
-    }
-
-    if recovered > 0 && !quiet {
-        println!("Successfully recovered {} embedding(s).", recovered);
-    }
-
-    recovered
 }
 
 #[cfg(test)]

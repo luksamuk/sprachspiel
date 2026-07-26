@@ -786,6 +786,59 @@ loop {
 
 ---
 
+### 🔴 PRIORITY: Complexity Reduction — Break Down Complex Functions — #130 [M1]
+
+**Status:** ✅ COMPLETED
+**Issue:** #130
+**Branch:** `refactor/130-complexity-reduction`
+**Depends on:** #129 (Function Extraction — ✅ COMPLETED, significant overlap)
+
+**Goal:** Reduce cognitive complexity in functions that exceed the clippy threshold of 15. As of v0.44.0, **36 functions** exceed the threshold (up from 20 in v0.43.0).
+
+**Current Worst Offenders (v0.44.0):**
+
+| Complexity | Location | Notes |
+|------------|----------|-------|
+| 55/15 | `src/diagnostics/display.rs:84` | 🆕 New since v0.43.0 |
+| 53/15 | `src/embeddings/recovery.rs:72` | 🆕 New since v0.43.0 |
+| 40/15 | `src/vision/error.rs:13` | Was 38/15 in v0.43.0 |
+| 32/15 | `src/chat/coordinator.rs:1359` | 🆕 New |
+| 32/15 | `src/markdown/table.rs:447` | 🆕 New |
+| 31/15 | `src/facts/recovery.rs:38` | 🆕 New |
+| 27/15 | `src/chat/core.rs:394` | |
+| 27/15 | `src/chat/tui/components/status_bar.rs:95` | |
+| 27/15 | `src/chat/tui/live_turn.rs:239` | |
+| 27/15 | `src/facts/verify.rs:61` | |
+| 26/15 | `src/chat/continuation.rs:249` | Was 26/15 in v0.43.0 |
+
+**Strategy:**
+
+This PR targets the **top 5 worst offenders** (55, 53, 40, 32, 32) — extracting helper functions to bring each below the threshold of 15. The remaining 31 functions will be addressed in follow-up PRs.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Reduce `diagnostics/display.rs:84` (55→<15) | `src/diagnostics/display.rs` | ✅ COMPLETED |
+| 2 | Reduce `embeddings/recovery.rs:72` (53→<15) | `src/embeddings/recovery.rs` | ✅ COMPLETED |
+| 3 | Reduce `vision/error.rs:13` (40→<15) | `src/vision/error.rs` | ✅ COMPLETED |
+| 4 | Reduce `chat/coordinator.rs:1359` (32→<15) | `src/chat/coordinator.rs` | ✅ COMPLETED |
+| 5 | Reduce `markdown/table.rs:447` (32→<15) | `src/markdown/table.rs` | ✅ COMPLETED |
+| 6 | Quality gates + verification | — | ✅ COMPLETED |
+
+**Design Decisions:**
+
+1. **Top 5 only** — 36 functions is too many for one PR. Targeting the worst 5 keeps the PR reviewable and reduces the most risk.
+2. **Extract helpers, not rewrite** — Same pattern as #129: extract named methods for each logical branch. Reduces complexity without changing behavior.
+3. **No `#[allow(clippy::cognitive_complexity)]`** — The project convention (AGENTS.md) is to fix root causes, not suppress. Exception: dispatch tables with trivial arms (already used in #129 for `parse_command` and `handle_command`).
+4. **Tests unchanged** — Refactoring that extracts helpers should not change behavior. Existing tests verify correctness.
+
+**Estimated effort:** ~3-5 days (5 functions × ~0.5-1 day each)
+
+**Reference:** Issue #130
+
+---
+
 ### 🔴 PRIORITY: Higher Default Timeouts for Local Offloaded Models — #209 [M1]
 
 **Status:** ✅ COMPLETED

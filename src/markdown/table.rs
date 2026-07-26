@@ -458,13 +458,35 @@ pub fn calculate_col_widths(
         return Vec::new();
     }
 
+    let available = compute_available_width(col_count, max_width);
+    let natural_widths = compute_natural_widths(headers, rows, col_count);
+
+    if natural_widths.iter().sum::<usize>() <= available {
+        return natural_widths;
+    }
+
+    let is_rigid = classify_columns(headers, rows, &natural_widths, col_count);
+    let min_col = 3;
+    let mut col_widths = allocate_widths(&natural_widths, &is_rigid, available, min_col);
+    redistribute_widths(&mut col_widths, &is_rigid, available, min_col);
+    col_widths
+}
+
+/// Compute the available content width after subtracting padding and borders.
+fn compute_available_width(col_count: usize, max_width: usize) -> usize {
     let padding_per_cell: usize = 2; // " " before + " " after content
     let border_overhead = col_count + 1; // │ borders
     let total_padding = col_count * padding_per_cell;
-    let available = max_width.saturating_sub(border_overhead + total_padding);
+    max_width.saturating_sub(border_overhead + total_padding)
+}
 
-    // Natural width: the widest content in each column
-    let natural_widths: Vec<usize> = (0..col_count)
+/// Compute the natural (widest content) width for each column.
+fn compute_natural_widths(
+    headers: &[String],
+    rows: &[Vec<String>],
+    col_count: usize,
+) -> Vec<usize> {
+    (0..col_count)
         .map(|c| {
             let hw = headers.get(c).map(|h| visual_width(h)).unwrap_or(0);
             let rw = rows
@@ -474,10 +496,17 @@ pub fn calculate_col_widths(
                 .unwrap_or(0);
             hw.max(rw)
         })
-        .collect();
+        .collect()
+}
 
-    // Classify each column as rigid or elastic
-    let is_rigid: Vec<bool> = (0..col_count)
+/// Classify each column as rigid (natural width ≤ threshold) or elastic.
+fn classify_columns(
+    headers: &[String],
+    rows: &[Vec<String>],
+    natural_widths: &[usize],
+    col_count: usize,
+) -> Vec<bool> {
+    (0..col_count)
         .map(|c| {
             let natural = natural_widths[c];
             let header_fits =
@@ -487,17 +516,20 @@ pub fn calculate_col_widths(
                 .all(|r| r.get(c).map(|cell| visual_width(cell)).unwrap_or(0) <= RIGID_THRESHOLD);
             natural <= RIGID_THRESHOLD && header_fits && data_fits
         })
-        .collect();
+        .collect()
+}
 
-    let total_natural: usize = natural_widths.iter().sum::<usize>().max(1);
-
-    if total_natural <= available {
-        // All columns fit naturally — use natural widths
-        return natural_widths;
-    }
-
-    // Need to shrink: allocate rigids first, then distribute remaining to elastics
-    let min_col = 3;
+/// Allocate widths: rigids get natural width, elastics share the remaining space.
+///
+/// If all columns are rigid or insufficient space for elastic minimums,
+/// falls back to proportional distribution.
+fn allocate_widths(
+    natural_widths: &[usize],
+    is_rigid: &[bool],
+    available: usize,
+    min_col: usize,
+) -> Vec<usize> {
+    let col_count = natural_widths.len();
     let mut col_widths = vec![0usize; col_count];
 
     // Step 1: Allocate rigid columns their natural width
@@ -512,18 +544,16 @@ pub fn calculate_col_widths(
     // Step 2: Distribute remaining space among elastic columns
     let elastic_count = is_rigid.iter().filter(|&&r| !r).count();
     if elastic_count == 0 {
-        // All columns are rigid but don't fit — shrink proportionally
-        return distribute_proportionally(&natural_widths, available, min_col, col_count);
+        return distribute_proportionally(natural_widths, available, min_col, col_count);
     }
 
     let remaining_for_elastics = available.saturating_sub(rigid_total);
     let min_elastic_total = min_col * elastic_count;
 
     if remaining_for_elastics < min_elastic_total {
-        return distribute_proportionally(&natural_widths, available, min_col, col_count);
+        return distribute_proportionally(natural_widths, available, min_col, col_count);
     }
 
-    // Distribute remaining proportionally among elastic columns
     let elastic_naturals: Vec<(usize, usize)> = is_rigid
         .iter()
         .enumerate()
@@ -541,18 +571,58 @@ pub fn calculate_col_widths(
         col_widths[i] = (remaining_for_elastics * natural / elastic_natural_total).max(min_col);
     }
 
-    // Step 3: Redistribute any unused space
+    col_widths
+}
+
+/// Redistribute widths: shrink oversized columns (deficit) or expand undersized (surplus).
+fn redistribute_widths(
+    col_widths: &mut [usize],
+    is_rigid: &[bool],
+    available: usize,
+    min_col: usize,
+) {
     let total_allocated: usize = col_widths.iter().sum();
+
+    // Step 3: Shrink if over-allocated
     if total_allocated > available {
-        let deficit = total_allocated - available;
-        let mut remaining_deficit = deficit;
-        let mut sorted_elastics: Vec<usize> = elastic_naturals
-            .iter()
-            .filter(|&&(i, _)| col_widths[i] > min_col)
-            .map(|&(i, _)| i)
+        shrink_deficit(col_widths, is_rigid, available, min_col);
+    }
+
+    // Step 4: Expand if under-allocated
+    let total_final: usize = col_widths.iter().sum();
+    if total_final < available {
+        expand_surplus(col_widths, is_rigid, available, min_col);
+    }
+}
+
+/// Shrink columns to fit within `available` width, starting with the widest elastics.
+fn shrink_deficit(col_widths: &mut [usize], is_rigid: &[bool], available: usize, min_col: usize) {
+    let total_allocated: usize = col_widths.iter().sum();
+    let deficit = total_allocated - available;
+    let mut remaining_deficit = deficit;
+
+    // Try shrinking elastic columns first (widest over min first)
+    let mut sorted_elastics: Vec<usize> = (0..col_widths.len())
+        .filter(|&i| !is_rigid[i] && col_widths[i] > min_col)
+        .collect();
+    sorted_elastics.sort_by_key(|&i| std::cmp::Reverse(col_widths[i] - min_col));
+    for idx in sorted_elastics {
+        if remaining_deficit == 0 {
+            break;
+        }
+        let shrinkable = col_widths[idx].saturating_sub(min_col);
+        let take = shrinkable.min(remaining_deficit);
+        col_widths[idx] -= take;
+        remaining_deficit -= take;
+    }
+
+    // If still over, shrink rigid columns (widest over min first)
+    if remaining_deficit > 0 {
+        let mut sorted_rigids: Vec<usize> = (0..col_widths.len())
+            .filter(|&i| is_rigid[i] && col_widths[i] > min_col)
             .collect();
-        sorted_elastics.sort_by_key(|&i| std::cmp::Reverse(col_widths[i] - min_col));
-        for idx in sorted_elastics {
+        sorted_rigids.sort_by_key(|&i| std::cmp::Reverse(col_widths[i] - min_col));
+        for idx in sorted_rigids {
             if remaining_deficit == 0 {
                 break;
             }
@@ -561,46 +631,27 @@ pub fn calculate_col_widths(
             col_widths[idx] -= take;
             remaining_deficit -= take;
         }
-        if remaining_deficit > 0 {
-            let mut sorted_rigids: Vec<usize> = is_rigid
-                .iter()
-                .enumerate()
-                .filter(|&(i, &r)| r && col_widths[i] > min_col)
-                .map(|(i, _)| i)
-                .collect();
-            sorted_rigids.sort_by_key(|&i| std::cmp::Reverse(col_widths[i] - min_col));
-            for idx in sorted_rigids {
-                if remaining_deficit == 0 {
-                    break;
-                }
-                let shrinkable = col_widths[idx].saturating_sub(min_col);
-                let take = shrinkable.min(remaining_deficit);
-                col_widths[idx] -= take;
-                remaining_deficit -= take;
-            }
-        }
     }
+}
 
-    // Step 4: Redistribute any surplus
+/// Expand elastic columns to use any surplus space, proportionally to current width.
+fn expand_surplus(col_widths: &mut [usize], is_rigid: &[bool], available: usize, _min_col: usize) {
     let total_final: usize = col_widths.iter().sum();
-    if total_final < available {
-        let surplus = available - total_final;
-        let elastic_total_current: usize = col_widths
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !is_rigid[*i])
-            .map(|(_, &w)| w)
-            .sum::<usize>()
-            .max(1);
-        for (i, &rigid) in is_rigid.iter().enumerate() {
-            if !rigid {
-                let share = surplus * col_widths[i] / elastic_total_current;
-                col_widths[i] += share;
-            }
+    let surplus = available - total_final;
+    let elastic_total_current: usize = col_widths
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !is_rigid[*i])
+        .map(|(_, &w)| w)
+        .sum::<usize>()
+        .max(1);
+
+    for (i, &rigid) in is_rigid.iter().enumerate() {
+        if !rigid {
+            let share = surplus * col_widths[i] / elastic_total_current;
+            col_widths[i] += share;
         }
     }
-
-    col_widths
 }
 
 /// Fallback: distribute available space proportionally among all columns.

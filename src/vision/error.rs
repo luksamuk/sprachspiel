@@ -1,11 +1,9 @@
-//! Vision error types
-//!
-//! Provides detailed error messages for vision operations with helpful
-//! suggestions for common issues.
+//! Error types for vision subsystem.
 
 use std::fmt;
 
-#[derive(Debug, Clone)]
+/// Errors that can occur during vision analysis.
+#[derive(Debug)]
 pub enum VisionError {
     FileNotFound(String),
     #[allow(dead_code)]
@@ -31,65 +29,68 @@ pub enum VisionError {
 
 impl fmt::Display for VisionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.format_message())
+    }
+}
+
+impl VisionError {
+    fn format_message(&self) -> String {
         match self {
-            VisionError::FileNotFound(path) => {
-                writeln!(f, "Error: File not found: {}", path)?;
-                write!(f, "Make sure the file exists and the path is correct.")
-            }
-            VisionError::InvalidExtension(ext) => {
-                writeln!(f, "Error: Invalid file extension: {}", ext)?;
-                write!(f, "Please provide a valid image file.")
-            }
+            VisionError::FileNotFound(path) => format_file_not_found(path),
+            VisionError::InvalidExtension(ext) => format_invalid_extension(ext),
             VisionError::UnsupportedFormat { found, supported } => {
-                writeln!(f, "Error: Unsupported image format: {}", found)?;
-                writeln!(f, "Supported formats: {}", supported)?;
-                writeln!(f)?;
-                write!(f, "Tip: Convert your file using ImageMagick:")
+                format_unsupported_format(found, supported)
             }
-            VisionError::ReadFailed { file, error } => {
-                writeln!(f, "Error: Failed to read file: {}", file)?;
-                write!(f, "Reason: {}", error)
-            }
-            VisionError::OllamaError { message } => {
-                writeln!(f, "Error: {}", message)?;
-                writeln!(f)?;
-                writeln!(f, "Common causes:")?;
-                writeln!(f, "  1. {}", crate::consts::app::ERR_LLM_NOT_RUNNING)?;
-                writeln!(
-                    f,
-                    "  2. Vision model not downloaded (run: ollama pull qwen3.5:4b)"
-                )?;
-                write!(
-                    f,
-                    "  3. Connection refused - check if OLLAMA_HOST is set correctly"
-                )
-            }
-            VisionError::NoImages => {
-                writeln!(f, "Error: No image files provided.")?;
-                writeln!(f)?;
-                write!(
-                    f,
-                    "Usage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information."
-                )
-            }
-            VisionError::NoVisionCapability { model } => {
-                writeln!(
-                    f,
-                    "Error: Model '{}' does not support vision capabilities.",
-                    model
-                )?;
-                writeln!(f)?;
-                writeln!(f, "Vision-capable models you can use:")?;
-                writeln!(f, "  - qwen3.5:4b    (recommended, local, multimodal)")?;
-                writeln!(f, "  - qwen3.5:cloud  (cloud, multimodal)")?;
-                writeln!(f, "  - moondream:1.8b (lightweight, local)")?;
-                writeln!(f, "  - minicpm-v:8b   (best for multi-image)")?;
-                writeln!(f)?;
-                writeln!(f, "Set a vision model in config.toml:")?;
-                write!(f, "  [model.vision]\n  model = \"qwen3.5:4b\"")
-            }
+            VisionError::ReadFailed { file, error } => format_read_failed(file, error),
+            VisionError::OllamaError { message } => format_ollama_error(message),
+            VisionError::NoImages => format_no_images(),
+            VisionError::NoVisionCapability { model } => format_no_vision_capability(model),
         }
     }
+}
+
+fn format_file_not_found(path: &str) -> String {
+    format!(
+        "Error: File not found: {}\nMake sure the file exists and the path is correct.",
+        path
+    )
+}
+
+fn format_invalid_extension(ext: &str) -> String {
+    format!(
+        "Error: Invalid file extension: {}\nPlease provide a valid image file.",
+        ext
+    )
+}
+
+fn format_unsupported_format(found: &str, supported: &str) -> String {
+    format!(
+        "Error: Unsupported image format: {}\nSupported formats: {}\n\nTip: Convert your file using ImageMagick:",
+        found, supported
+    )
+}
+
+fn format_read_failed(file: &str, error: &str) -> String {
+    format!("Error: Failed to read file: {}\nReason: {}", file, error)
+}
+
+fn format_ollama_error(message: &str) -> String {
+    format!(
+        "Error: {}\n\nCommon causes:\n  1. {}\n  2. Vision model not downloaded (run: ollama pull qwen3.5:4b)\n  3. Connection refused - check if OLLAMA_HOST is set correctly",
+        message,
+        crate::consts::app::ERR_LLM_NOT_RUNNING
+    )
+}
+
+fn format_no_images() -> String {
+    "Error: No image files provided.\n\nUsage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information.".to_string()
+}
+
+fn format_no_vision_capability(model: &str) -> String {
+    format!(
+        "Error: Model '{}' does not support vision capabilities.\n\nVision-capable models you can use:\n  - qwen3.5:4b    (recommended, local, multimodal)\n  - qwen3.5:cloud  (cloud, multimodal)\n  - moondream:1.8b (lightweight, local)\n  - minicpm-v:8b   (best for multi-image)\n\nSet a vision model in config.toml:\n  [model.vision]\n  model = \"qwen3.5:4b\"",
+        model
+    )
 }
 
 impl std::error::Error for VisionError {}

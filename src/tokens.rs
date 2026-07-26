@@ -264,6 +264,32 @@ impl ContextUsage {
         }
     }
 
+    /// Build from raw history messages when no `ChatSession` is available
+    /// (e.g., the `Coordinator` path, which only has `Vec<LlmMessage>`).
+    ///
+    /// Uses the same estimation formula as `from_session_estimate` but
+    /// operates on `&[LlmMessage]` instead of `&ChatSession`. When the
+    /// Coordinator has real API tokens, it should use `from_api_usage`
+    /// instead — this is the fallback for when no API usage was reported.
+    pub fn from_history_estimate(
+        messages: &[LlmMessage],
+        system_prompt: &str,
+        tools_tokens: usize,
+    ) -> Self {
+        let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
+        let history: usize = messages
+            .iter()
+            .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
+            .sum();
+        Self {
+            system_tokens,
+            tools_tokens,
+            history_tokens: history,
+            total_tokens: system_tokens + tools_tokens + history,
+            source: ContextSource::Estimated,
+        }
+    }
+
     /// Add `extra_messages` (new user/assistant/tool messages that will
     /// be appended in this request). Returns a new `ContextUsage` with
     /// updated `history_tokens` and `total_tokens`.

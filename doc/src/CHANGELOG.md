@@ -6,6 +6,12 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Changed
 
+- **Cognitive Complexity Reduction — Phase 1 (Issue #130)** — Reduce cognitive complexity in the worst-offender functions that exceed the clippy threshold of 15. As of v0.44.0, 36 functions exceed the threshold (up from 20 in v0.43.0). The worst offenders are 55/15 (`diagnostics/display.rs`), 53/15 (`embeddings/recovery.rs`), 40/15 (`vision/error.rs`), 32/15 (`chat/coordinator.rs`, `markdown/table.rs`). This PR targets the top offenders, extracting helper functions to bring complexity below the threshold.
+
+### Fixed
+
+- **Context overflow estimation bug in Coordinator (Issue #130, indirect)** — The `process_next_stream` fallback estimation path (when no real API tokens are available) did NOT account for compaction summaries or tool tokens. After extracting `ContextUsage::from_history_estimate`, the estimation now uses the same centralized logic as `ContextUsage::from_session_estimate`, correctly accounting for compaction. This was a latent bug discovered during the complexity reduction analysis.
+
 - **Higher Default Timeouts for Local Offloaded Models (Issue #209)** — The default `read_timeout_secs` and `stream_idle_timeout_secs` are bumped from 300s (5 min) to 900s (15 min). The previous 300s default was too aggressive for local LLM inference with CPU-offloaded models (e.g., 35B MoE on 6GB VRAM), where long reasoning tasks can exceed 5 minutes. The stream is not idle — the model is just generating slowly (1–5 tok/s). The TTFB watchdog (`ttfb_timeout_secs`, default 120s) covers startup delay separately. `connect_timeout_secs` remains 5s (TCP connect only). The `fallback_config()` stream idle timeout (previously 60s) is also bumped to 900s for consistency.
 
 ### Added
