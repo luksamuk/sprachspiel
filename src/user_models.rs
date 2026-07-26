@@ -9,8 +9,8 @@
 //! kind = "openai"             # default; "ollama" is deprecated alias
 //! base_url = "http://localhost:12434/v1"   # /v1 suffix REQUIRED
 //! connect_timeout_secs = 5
-//! read_timeout_secs = 300
-//! stream_idle_timeout_secs = 300
+//! read_timeout_secs = 900
+//! stream_idle_timeout_secs = 900
 //! max_retries = 3
 //! retry_base_delay_ms = 2000
 //! retry_max_delay_ms = 16000
@@ -114,10 +114,17 @@ fn default_connect_timeout() -> u64 {
     5
 }
 fn default_read_timeout() -> u64 {
-    300
+    // 900s (15 min) — local CPU-offloaded models (e.g. 35B MoE on 6GB VRAM)
+    // can take 5-15 min for long reasoning tasks. Cloud providers respond
+    // well within 300s, so 900s doesn't hurt them. The TTFB watchdog
+    // (120s) covers startup delay separately.
+    900
 }
 fn default_stream_idle_timeout() -> u64 {
-    300
+    // 900s — see default_read_timeout() rationale. The stream is not idle;
+    // the model is generating at 1-5 tok/s. 60s (old fallback) was too
+    // aggressive, 300s was still too tight for slow local models.
+    900
 }
 fn default_ttfb_timeout() -> u64 {
     // 120s — time-to-first-byte watchdog. If no SSE chunk arrives
