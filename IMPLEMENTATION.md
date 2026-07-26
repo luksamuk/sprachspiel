@@ -749,8 +749,9 @@ loop {
 
 ### 🔴 PRIORITY: Remove search_files tool — #214 [M1]
 
-**Status:** ✅ COMPLETED (pending review)
+**Status:** ✅ COMPLETED
 **Issue:** #214
+**PR:** #223
 **Depends on:** None (independent bug fix)
 
 **Goal:** Remove the unreliable `search_files` tool (6 root-cause bugs). The LLM uses `run_command("rg -n pattern path")` instead. `rg` (ripgrep) is added to the default external tools whitelist.
