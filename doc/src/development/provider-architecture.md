@@ -115,8 +115,8 @@ kind = "openai"
 base_url = "http://localhost:12434/v1"
 # Optional timeouts:
 # connect_timeout_secs = 5
-# read_timeout_secs = 300
-# stream_idle_timeout_secs = 300
+# read_timeout_secs = 900
+# stream_idle_timeout_secs = 900
 # ttfb_timeout_secs = 120
 # max_retries = 3
 
