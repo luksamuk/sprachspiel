@@ -8067,9 +8067,9 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Fix `poll_embedding_progress()` — track max per counter + phase reset | `src/chat/app.rs` | ❌ NOT STARTED |
-| 2 | Update existing tests + add tests for phase-reset and max-per-counter | `src/chat/app.rs` | ❌ NOT STARTED |
-| 3 | Quality gates: fmt, clippy, test | — | ❌ NOT STARTED |
+| 1 | Fix `poll_embedding_progress()` — track max per counter + phase reset | `src/chat/app.rs` | ✅ COMPLETED |
+| 2 | Update existing tests + add tests for phase-reset and max-per-counter | `src/chat/app.rs` | ✅ COMPLETED |
+| 3 | Quality gates: fmt, clippy, test | — | ✅ COMPLETED |
 
 **Design Decisions:**
 
