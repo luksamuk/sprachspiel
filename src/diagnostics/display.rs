@@ -83,13 +83,32 @@ fn blockquote(text: &str) -> String {
 /// Long blockquote paragraphs are word-wrapped to 76 columns for readability.
 pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
     let mut md = String::new();
+    md.push_str(&format_header(diag));
+    md.push_str(&format_vector_counts(diag));
+    if diag.vector_count == 0 {
+        return md;
+    }
+    md.push_str(&format_spectral_analysis(diag));
+    md.push_str(&format_cosine_distance(diag));
+    md.push_str(&format_regime_classification(diag));
+    md.push_str(&format_variance_explained(diag));
+    md.push_str(&format_threshold_recommendations(diag));
+    md.push_str(&format_corpus_warnings(diag));
+    md
+}
 
-    // Header
+/// Header section: model name and dimensions.
+fn format_header(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("# Embedding Diagnostics Report\n\n");
     md.push_str(&format!("**Model:** {}\n", diag.model_name));
     md.push_str(&format!("**Dimensions:** {}\n\n", diag.nominal_dimensions));
+    md
+}
 
-    // Vector counts
+/// Vector counts section: per-source counts and total, with zero-vector warning.
+fn format_vector_counts(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("## Vector counts\n\n");
     md.push_str("| Source | Count |\n");
     md.push_str("|--------|-------|\n");
@@ -105,17 +124,19 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
             "⚠ No embedding vectors found in the database. \
              Run the chat to generate embeddings first, or check the --db path.",
         ));
-        return md;
     }
+    md
+}
 
-    // Spectral analysis
+/// Spectral analysis section: d_eff participation ratio and interpretation.
+fn format_spectral_analysis(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("## Spectral analysis\n\n");
     md.push_str(&format!(
         "**d_eff (participation ratio):** {:.1} / {} ({:.1}%)\n\n",
         diag.d_eff, diag.nominal_dimensions, diag.d_eff_percent
     ));
 
-    // d_eff interpretation
     let d_eff_pct = diag.d_eff_percent;
     let d_eff_interp = if d_eff_pct <= 20.0 {
         "Concentrated — most dimensions are redundant. \
@@ -142,8 +163,12 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
         " — the remaining dimensions carry varying amounts of signal."
     };
     md.push_str(&blockquote(&format!("{}{}", d_eff_detail, d_eff_tail)));
+    md
+}
 
-    // Pairwise cosine distance
+/// Pairwise cosine distance section: mean/min/max and interpretation.
+fn format_cosine_distance(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("## Pairwise cosine distance\n\n");
     md.push_str("| Statistic | Value |\n");
     md.push_str("|-----------|-------|\n");
@@ -168,8 +193,12 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
          with good discriminative power."
     };
     md.push_str(&blockquote(cd_interp));
+    md
+}
 
-    // Regime classification
+/// Regime classification section: per-threshold table and tight/spread/mixed interpretation.
+fn format_regime_classification(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("## Regime classification\n\n");
     md.push_str("| Threshold (θ) | θ' | d̄ | Regime |\n");
     md.push_str("|---------------|------|--------|--------|\n");
@@ -181,7 +210,6 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
     }
     md.push('\n');
 
-    // Regime interpretation
     let tight_count = diag
         .regimes
         .iter()
@@ -217,27 +245,19 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
             tight_count, total_thresholds,
         ));
     }
+    md
+}
 
-    // Variance explained
+/// Variance explained section: PC numbers and concentrated/diffuse/balanced interpretation.
+fn format_variance_explained(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     md.push_str("## Variance explained\n\n");
     md.push_str("| Cumulative % | Principal Component |\n");
     md.push_str("|--------------|---------------------|\n");
-    md.push_str(&format!(
-        "| 50% | PC #{} |\n",
-        diag.variance_explained.pc_50
-    ));
-    md.push_str(&format!(
-        "| 90% | PC #{} |\n",
-        diag.variance_explained.pc_90
-    ));
-    md.push_str(&format!(
-        "| 95% | PC #{} |\n",
-        diag.variance_explained.pc_95
-    ));
-    md.push_str(&format!(
-        "| 99% | PC #{} |\n\n",
-        diag.variance_explained.pc_99
-    ));
+    md.push_str(&format!("| 50% | PC #{} |\n", diag.variance_explained.pc_50));
+    md.push_str(&format!("| 90% | PC #{} |\n", diag.variance_explained.pc_90));
+    md.push_str(&format!("| 95% | PC #{} |\n", diag.variance_explained.pc_95));
+    md.push_str(&format!("| 99% | PC #{} |\n\n", diag.variance_explained.pc_99));
 
     let ve = &diag.variance_explained;
     let five_pct_dims = (diag.nominal_dimensions as f64 * 0.05) as usize;
@@ -262,8 +282,12 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
             ve.pc_90, diag.nominal_dimensions,
         )));
     }
+    md
+}
 
-    // Threshold recommendations
+/// Threshold recommendations section: semantic threshold and weight adjustment.
+fn format_threshold_recommendations(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     let rec = &diag.threshold_recommendation;
     md.push_str("## Recommended configuration\n\n");
     md.push_str(&format!(
@@ -299,8 +323,12 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
          embedding geometry.",
     ));
     md.push('\n');
+    md
+}
 
-    // Small corpus warning
+/// Corpus size warnings: small corpus (unreliable) and large corpus (O(n²) note).
+fn format_corpus_warnings(diag: &EmbeddingDiagnostics) -> String {
+    let mut md = String::new();
     if diag.vector_count < 100 {
         md.push_str(&format!(
             "⚠ *Only {} vectors analyzed. d_eff estimates may be \
@@ -311,7 +339,6 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
         ));
     }
 
-    // Large corpus note
     if diag.vector_count > 5000 {
         md.push_str(&format!(
             "ℹ *Large corpus ({} vectors). Pairwise analysis is \
@@ -319,7 +346,6 @@ pub fn format_diagnostics_markdown(diag: &EmbeddingDiagnostics) -> String {
             diag.vector_count,
         ));
     }
-
     md
 }
 
