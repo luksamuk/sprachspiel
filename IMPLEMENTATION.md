@@ -788,7 +788,7 @@ loop {
 
 ### 🔴 PRIORITY: Higher Default Timeouts for Local Offloaded Models — #209 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #209
 **Branch:** `fix/209-timeout-defaults`
 **Depends on:** None (independent bug fix)
@@ -810,12 +810,12 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Bump `read_timeout_secs` default: 300 → 900 | `src/provider/openai_compat.rs` or `src/provider/types.rs` | ❌ NOT STARTED |
-| 2 | Bump `stream_idle_timeout_secs` default: 300 → 900 (including `fallback_config()` which has 60) | Same | ❌ NOT STARTED |
-| 3 | Update `models_upgrade.rs` default hints if applicable | `src/user_models.rs` or `src/models_upgrade.rs` | ❌ NOT STARTED |
-| 4 | Update generated `models.toml` template comments | `src/settings.rs` or template | ❌ NOT STARTED |
-| 5 | Tests: verify new defaults, verify config override still works | Test files | ❌ NOT STARTED |
-| 6 | Documentation: config docs, CHANGELOG | `doc/src/CHANGELOG.md`, config docs | ❌ NOT STARTED |
+| 1 | Bump `read_timeout_secs` default: 300 → 900 | `src/user_models.rs` | ✅ COMPLETED |
+| 2 | Bump `stream_idle_timeout_secs` default: 300 → 900 (including `fallback_config()` which has 60) | `src/provider/openai_compat.rs` | ✅ COMPLETED |
+| 3 | Update `models_upgrade.rs` default hints if applicable | `src/commands/models_upgrade.rs` | ✅ COMPLETED |
+| 4 | Update generated `models.toml` template comments | `src/user_models.rs` (doc comment) | ✅ COMPLETED |
+| 5 | Tests: verify new defaults, verify config override still works | `src/user_models.rs` | ✅ COMPLETED |
+| 6 | Documentation: config docs, CHANGELOG | `doc/src/models.md`, `doc/src/development/provider-architecture.md`, `doc/src/CHANGELOG.md` | ✅ COMPLETED |
 
 **Design Decisions:**
 
