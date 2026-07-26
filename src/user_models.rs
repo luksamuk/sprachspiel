@@ -833,8 +833,8 @@ provider = "my-ollama"
         let prov = parsed.provider.get("my-ollama").unwrap();
 
         assert_eq!(prov.connect_timeout_secs, 5);
-        assert_eq!(prov.read_timeout_secs, 300);
-        assert_eq!(prov.stream_idle_timeout_secs, 300);
+        assert_eq!(prov.read_timeout_secs, 900);
+        assert_eq!(prov.stream_idle_timeout_secs, 900);
         assert_eq!(prov.ttfb_timeout_secs, 120);
         assert_eq!(prov.max_retries, 3);
         assert_eq!(prov.retry_base_delay_ms, 2000);
