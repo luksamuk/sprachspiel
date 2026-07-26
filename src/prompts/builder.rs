@@ -440,7 +440,6 @@ fn build_file_tools_context(blacklist: &HashSet<&str>) -> String {
             "Count lines in a file (use before reading large files)",
         ),
         ("list_directory", "List files and directories"),
-        ("search_files", "Search file contents with regex"),
     ];
 
     for (tool, desc) in file_tools {

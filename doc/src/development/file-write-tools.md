@@ -20,7 +20,8 @@ The project has 5 file tools, all read-only:
 | `read_file_segment` | Read specific lines |
 | `count_lines` | Count lines in file |
 | `list_directory` | List directory contents |
-| `search_files` | Regex search in files |
+
+**Note:** `search_files` was removed in #214. Use `run_command("rg -n pattern path")` for regex search.
 
 **Gap:** No ability to create, modify, or append to files. The `run_command` tool explicitly blocks pipes and redirects, preventing file writing via shell.
 

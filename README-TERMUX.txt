@@ -89,7 +89,7 @@ sprach "What is the capital of France?"
 This build includes:
 
 - Weather tools (`get_current_weather`, `get_weather_forecast`, `get_air_quality`)
-- File tools (`read_file`, `list_directory`, `search_files`, `count_lines`, `read_file_segment`)
+- File tools (`read_file`, `list_directory`, `count_lines`, `read_file_segment`)
 - Calculator (`calculate`)
 - System information (`get_system_info`, `get_current_directory`)
 

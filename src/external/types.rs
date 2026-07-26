@@ -258,6 +258,17 @@ impl ExternalToolsConfig {
                 .install_hint(Platform::Termux, "pkg install imagemagick"),
         );
 
+        // Search Tools
+        config.tools.insert(
+            "rg".to_string(),
+            ExternalTool::new("rg")
+                .with_timeout(30)
+                .install_hint(Platform::Arch, "sudo pacman -S ripgrep")
+                .install_hint(Platform::Debian, "sudo apt install ripgrep")
+                .install_hint(Platform::Fedora, "sudo dnf install ripgrep")
+                .install_hint(Platform::Termux, "pkg install ripgrep"),
+        );
+
         config
     }
 
@@ -355,6 +366,7 @@ mod tests {
         assert!(config.tools.contains_key("pdftoppm"));
         assert!(config.tools.contains_key("tesseract"));
         assert!(config.tools.contains_key("exiftool"));
+        assert!(config.tools.contains_key("rg"));
     }
 
     #[test]

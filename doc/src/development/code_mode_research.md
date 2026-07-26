@@ -129,7 +129,7 @@ ABSOLUTE RULES:
 TOOL USAGE GUIDELINES:
 - Use list_directory to understand project structure
 - Use read_file to inspect configuration files
-- Use search_files to find relevant code patterns
+- Use run_command("rg -n pattern path") to find relevant code patterns
 - Call tools BEFORE generating final code if needed
 
 If the user explicitly asks for explanations, then provide them succinctly.

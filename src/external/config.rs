@@ -292,6 +292,14 @@ fn default_install_hints(tool_name: &str) -> HashMap<Platform, String> {
             hints.insert(Platform::Termux, "pkg install imagemagick".to_string());
             hints
         }
+        "rg" => {
+            let mut hints = HashMap::new();
+            hints.insert(Platform::Arch, "sudo pacman -S ripgrep".to_string());
+            hints.insert(Platform::Debian, "sudo apt install ripgrep".to_string());
+            hints.insert(Platform::Fedora, "sudo dnf install ripgrep".to_string());
+            hints.insert(Platform::Termux, "pkg install ripgrep".to_string());
+            hints
+        }
         _ => HashMap::new(),
     }
 }
@@ -455,30 +463,46 @@ timeout = 60
 binary = "magick"
 
 # =============================================================================
+# SEARCH TOOLS
+# =============================================================================
+
+[external.tools.rg]
+# Ripgrep — fast file content search (replaces the removed search_files tool)
+# USAGE: rg -n <pattern> <path>
+# EXAMPLE: rg -n "fn main" src/          (search for pattern in src/)
+# EXAMPLE: rg -n --glob "*.rs" "TODO" .  (search only .rs files)
+# NOTE: Respects .gitignore by default. Use --no-ignore to search ignored files.
+# NOTE: Use run_command head/tail to limit output:
+#       run_command("rg -n pattern src/", "50", null, null)  # First 50 lines
+enabled = true
+timeout = 30
+binary = "rg"
+
+# =============================================================================
 # INSTALLATION NOTES
 # =============================================================================
 #
 # Arch Linux:
-#   sudo pacman -S poppler tesseract perl-image-exiftool imagemagick calibre
+#   sudo pacman -S poppler tesseract perl-image-exiftool imagemagick calibre ripgrep
 #   yay -S epub2txt  # optional lightweight ePub fallback
 #
 # Debian/Ubuntu:
-#   sudo apt install poppler-utils tesseract-ocr libimage-exiftool-perl imagemagick calibre
+#   sudo apt install poppler-utils tesseract-ocr libimage-exiftool-perl imagemagick calibre ripgrep
 #   pip install epub2txt  # optional lightweight ePub fallback
 #
 # Void Linux:
-#   sudo xbps-install -S poppler tesseract exiftool imagemagick calibre epub2txt
+#   sudo xbps-install -S poppler tesseract exiftool imagemagick calibre epub2txt ripgrep
 #
 # Alpine Linux (calibre in edge/testing only):
-#   sudo apk add poppler tesseract exiftool imagemagick epub2txt
+#   sudo apk add poppler tesseract exiftool imagemagick epub2txt ripgrep
 #   sudo apk add calibre --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing
 #
 # Fedora:
-#   sudo dnf install poppler-utils tesseract perl-Image-ExifTool ImageMagick calibre
+#   sudo dnf install poppler-utils tesseract perl-Image-ExifTool ImageMagick calibre ripgrep
 #   pip install epub2txt  # optional lightweight ePub fallback
 #
 # Termux (Android):
-#   pkg install poppler tesseract exiftool imagemagick
+#   pkg install poppler tesseract exiftool imagemagick ripgrep
 #   # calibre and epub2txt not available in Termux
 "#
     .to_string()

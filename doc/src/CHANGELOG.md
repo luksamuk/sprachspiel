@@ -12,7 +12,11 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Relocated retry.rs to provider/retry.rs (Issue #123)** — The `RetryCategory` enum, `retry_delay`, and `sleep_or_cancel` functions are relocated from `src/retry.rs` to `src/provider/retry.rs` as part of the W2 closure. The old `src/retry.rs` is removed. `classify_for_retry(&OllamaError)` is removed in favor of `ProviderError::retry_category()` (already defined in `provider/types.rs`).
 
+- **ripgrep (rg) in default tools whitelist (Issue #214)** — `rg` is now a default whitelisted external tool in `tools.toml`, enabled out-of-the-box. This allows the LLM to use `run_command("rg -n pattern path")` for reliable file content search, replacing the removed `search_files` tool. Install hints provided for Arch, Debian, Fedora, and Termux.
+
 ### Removed
+
+- **search_files tool (Issue #214)** — The `search_files` tool has been removed. It had 6 fundamental limitations: (1) 100-file search cap via `MAX_RESULTS`, (2) `max_depth(5)` directory limit, (3) 1MB silent file size skip, (4) silent binary file skip via `read_to_string` failure, (5) no output priority ordering, (6) naive `glob_to_regex` with no `**` recursive globs, char classes, or escape handling. The LLM should now use `run_command("rg -n pattern path")` for file content search. The `walkdir` crate dependency is removed. The `collect_files()` and `glob_to_regex()` helper functions (~200 lines) are deleted.
 
 - **ollama-rs Dependency (Issue #123)** — The `ollama-rs` crate (v0.3.4) has been removed from `Cargo.toml`. All LLM communication now goes through the agnostic `LlmProvider` trait and `OpenAICompatibleProvider` (HTTP `/v1/chat/completions`). The 730-line compatibility shim `src/provider/ollama_shim.rs` is deleted. All `use ollama_rs` statements (17 production files + 2 test files) are migrated to `crate::provider::types` equivalents (`LlmMessage`, `LlmResponse`, `ProviderError`, `ProviderOptions`, `LlmToolCall`, `LlmRole`). This completes the W2 Provider Chain (#116 → #123). Binary size reduced.
 

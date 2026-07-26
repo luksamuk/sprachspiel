@@ -53,7 +53,7 @@ The default build includes:
 | `search-tools` | DuckDuckGo web search + web scraper | web_search, web_search_news, web_scrape | ❌ No |
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
-| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
+| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
 | `subagent-tools` | Specialized subagent delegation | spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent | ✅ Yes |
@@ -1236,32 +1236,23 @@ Example: list_directory(path: "src", recursive: "true")
 - Shows file types: [file], [dir], [symlink]
 - Displays file sizes in KB/MB (e.g., "1.5 MB", "42 KB")
 
-### search_files
+### search_files (removed in #214)
 
-Search file contents with regex pattern. Only works on text-based files (source code, config, markdown, etc.). Binary files (PDFs, images, executables) are silently skipped.
+The `search_files` tool has been removed. It had 6 fundamental limitations (100-file cap, depth-5 limit, 1MB silent skip, silent binary skip, no output priority, naive glob-to-regex). Use `run_command("rg -n pattern path")` instead:
 
 ```
-Function: search_files
-Args: pattern (string), path (string), file_pattern (string, optional)
-Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
-Example: search_files(pattern: "^(CHAPTER|INTRODUCTION)", path: "book", file_pattern: "*.md")
-Example: search_files(pattern: "fn main", path: "src/main.rs")
+Function: run_command (with rg)
+Example: run_command("rg -n TODO|FIXME src/", "50", null, null)
+Example: run_command("rg -n --glob *.md ^(CHAPTER|INTRODUCTION) book", null, null, null)
+Example: run_command("rg -n \"fn main\" src/main.rs", null, null, null)
 ```
 
-**Pattern tips:**
-- Uses full Rust regex syntax (`regex` crate)
-- `^` matches start of line, `$` matches end of line (searches line by line)
-- For alternation, prefer grouping: `"^(CHAPTER|INTRODUCTION)"` instead of `"^CHAPTER|^INTRODUCTION"` (shorter patterns are less likely to be truncated by the model)
-- Use `(?i)` for case-insensitive search: `(?i)^chapter`
-- An empty `file_pattern` searches all files (same as omitting it)
-
-**Features:**
-- Regex pattern matching (full Rust regex syntax)
-- File pattern filtering with glob syntax (`*.rs`, `*.txt`)
-- Returns matching lines with file path and line number
-- Limited to 100 results and 1MB files
-- Searches files within 5 directory levels
-- Can search a single file by passing its path instead of a directory
+**Benefits of rg over the removed search_files:**
+- No file count or depth limits
+- Respects .gitignore by default
+- Handles binary files natively (no silent skip)
+- Battle-tested regex engine and glob support (`--glob`)
+- Use head/tail to control output size
 
 ### write_file
 
@@ -1385,7 +1376,6 @@ block_list = false  # Allow listing (filenames visible)
 | `read_file_segment` | **Always enforced** | Yes (if `block_read=true`) |
 | `count_lines` | **Always enforced** | Yes (if `block_read=true`) |
 | `list_directory` | **Always enforced** | Filenames visible (not content) |
-| `search_files` | **Always enforced** | Yes (if `block_read=true`) |
 | `write_file` | **Always enforced** | **Always enforced** |
 | `edit_file` | **Always enforced** | **Always enforced** |
 | `append_file` | **Always enforced** | **Always enforced** |

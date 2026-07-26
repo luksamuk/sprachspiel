@@ -371,7 +371,6 @@ fn register_file_tools<C: ToolRegistrar>(
     );
     register_if_allowed!(coord, count, is_allowed, "count_lines", count_lines);
     register_if_allowed!(coord, count, is_allowed, "list_directory", list_directory);
-    register_if_allowed!(coord, count, is_allowed, "search_files", search_files);
 
     // file write tools
     register_if_allowed!(coord, count, is_allowed, "write_file", write_file);
@@ -593,7 +592,6 @@ fn get_file_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
         "read_file_segment",
         "count_lines",
         "list_directory",
-        "search_files",
         "write_file",
         "edit_file",
         "append_file",
