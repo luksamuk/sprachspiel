@@ -254,10 +254,22 @@ fn format_variance_explained(diag: &EmbeddingDiagnostics) -> String {
     md.push_str("## Variance explained\n\n");
     md.push_str("| Cumulative % | Principal Component |\n");
     md.push_str("|--------------|---------------------|\n");
-    md.push_str(&format!("| 50% | PC #{} |\n", diag.variance_explained.pc_50));
-    md.push_str(&format!("| 90% | PC #{} |\n", diag.variance_explained.pc_90));
-    md.push_str(&format!("| 95% | PC #{} |\n", diag.variance_explained.pc_95));
-    md.push_str(&format!("| 99% | PC #{} |\n\n", diag.variance_explained.pc_99));
+    md.push_str(&format!(
+        "| 50% | PC #{} |\n",
+        diag.variance_explained.pc_50
+    ));
+    md.push_str(&format!(
+        "| 90% | PC #{} |\n",
+        diag.variance_explained.pc_90
+    ));
+    md.push_str(&format!(
+        "| 95% | PC #{} |\n",
+        diag.variance_explained.pc_95
+    ));
+    md.push_str(&format!(
+        "| 99% | PC #{} |\n\n",
+        diag.variance_explained.pc_99
+    ));
 
     let ve = &diag.variance_explained;
     let five_pct_dims = (diag.nominal_dimensions as f64 * 0.05) as usize;

@@ -115,7 +115,7 @@ pub async fn recover_missing_embeddings(
 /// Delete V2 orphan chunks (those with no parent `content_items` row).
 ///
 /// Returns the number of chunks deleted. Errors are logged/eprinted per `quiet`
-/// and count as zero deleted (matching the original inline behavior).
+/// and count as zero deleted on error.
 fn cleanup_orphan_chunks(db: &Arc<Database>, quiet: bool) -> usize {
     let orphan_deleted = match db.with_connection(|conn| {
         conn.execute(
@@ -217,7 +217,7 @@ impl RecoveryState {
 }
 
 /// Process content items without embeddings, generating embeddings (and chunks
-/// for long content). Updates `state` in place. Lines 168-345 of the original.
+/// for long content). Updates `state` in place.
 async fn process_content_items(
     state: &mut RecoveryState,
     db: &Arc<Database>,
@@ -292,7 +292,7 @@ async fn process_content_items(
 }
 
 /// Embed a long item by chunking then embedding each chunk. Updates `state`.
-#[expect(clippy::too_many_arguments)] // extracted phase helper, args mirror original inline scope
+#[expect(clippy::too_many_arguments)] // phase helper — wide arg list from decomposition
 async fn process_long_content_item(
     state: &mut RecoveryState,
     db: &Arc<Database>,
@@ -378,7 +378,7 @@ async fn process_long_content_item(
 }
 
 /// Embed a short item directly with fallback. Updates `state`.
-#[expect(clippy::too_many_arguments)] // extracted phase helper, args mirror original inline scope
+#[expect(clippy::too_many_arguments)] // phase helper — wide arg list from decomposition
 async fn process_short_content_item(
     state: &mut RecoveryState,
     db: &Arc<Database>,
@@ -423,7 +423,7 @@ async fn process_short_content_item(
 }
 
 /// Process chunks created during this recovery (and any pre-existing chunks
-/// without embeddings). Updates `state` in place. Lines 347-448 of the original.
+/// without embeddings). Updates `state` in place.
 async fn process_new_chunks(
     state: &mut RecoveryState,
     db: &Arc<Database>,
