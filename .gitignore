@@ -16,6 +16,9 @@ doc/book/
 # Oh My OpenCode agent artifacts
 .sisyphus/
 
+# Hermes Agent plans (local workspace artifacts)
+.hermes/
+
 # Media and binary files (tracked individually in assets/)
 *.mp3
 *.mp4
