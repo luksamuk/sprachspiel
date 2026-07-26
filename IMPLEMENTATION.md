@@ -788,7 +788,7 @@ loop {
 
 ### 🔴 PRIORITY: Complexity Reduction — Break Down Complex Functions — #130 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #130
 **Branch:** `refactor/130-complexity-reduction`
 **Depends on:** #129 (Function Extraction — ✅ COMPLETED, significant overlap)
@@ -819,12 +819,12 @@ This PR targets the **top 5 worst offenders** (55, 53, 40, 32, 32) — extractin
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Reduce `diagnostics/display.rs:84` (55→<15) | `src/diagnostics/display.rs` | ❌ NOT STARTED |
-| 2 | Reduce `embeddings/recovery.rs:72` (53→<15) | `src/embeddings/recovery.rs` | ❌ NOT STARTED |
-| 3 | Reduce `vision/error.rs:13` (40→<15) | `src/vision/error.rs` | ❌ NOT STARTED |
-| 4 | Reduce `chat/coordinator.rs:1359` (32→<15) | `src/chat/coordinator.rs` | ❌ NOT STARTED |
-| 5 | Reduce `markdown/table.rs:447` (32→<15) | `src/markdown/table.rs` | ❌ NOT STARTED |
-| 6 | Quality gates + verification | — | ❌ NOT STARTED |
+| 1 | Reduce `diagnostics/display.rs:84` (55→<15) | `src/diagnostics/display.rs` | ✅ COMPLETED |
+| 2 | Reduce `embeddings/recovery.rs:72` (53→<15) | `src/embeddings/recovery.rs` | ✅ COMPLETED |
+| 3 | Reduce `vision/error.rs:13` (40→<15) | `src/vision/error.rs` | ✅ COMPLETED |
+| 4 | Reduce `chat/coordinator.rs:1359` (32→<15) | `src/chat/coordinator.rs` | ✅ COMPLETED |
+| 5 | Reduce `markdown/table.rs:447` (32→<15) | `src/markdown/table.rs` | ✅ COMPLETED |
+| 6 | Quality gates + verification | — | ✅ COMPLETED |
 
 **Design Decisions:**
 
