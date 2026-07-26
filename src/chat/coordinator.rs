@@ -1357,104 +1357,14 @@ impl Coordinator {
 
     /// Process next response after tool calls, using streaming.
     async fn process_next_stream(&mut self) -> Result<LlmResponse, ProviderError> {
-        if let Some(ref ct) = self.cancel_token
-            && ct.is_cancelled()
-        {
+        if self.is_cancelled() {
             log::debug!("process_next_stream cancelled by user");
             return Err(ProviderError::Other(CANCELLED_BY_USER.to_string()));
         }
 
-        // Context overflow check
-        if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let usage = match self.real_history_tokens {
-                Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
-                None => {
-                    log::debug!(
-                        "[process_next_stream] No real_history_tokens; falling back to estimate"
-                    );
-                    let messages = &self.history;
-                    let system = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-                    let history: usize = messages
-                        .iter()
-                        .map(|m| estimate_tokens(&m.content) + MESSAGE_OVERHEAD)
-                        .sum();
-                    ContextUsage {
-                        system_tokens: system,
-                        tools_tokens: 0,
-                        history_tokens: history,
-                        total_tokens: system + history,
-                        source: crate::tokens::ContextSource::Estimated,
-                    }
-                }
-            };
+        self.check_tool_context_overflow()?;
 
-            let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
-            let threshold = ctx_window.saturating_sub(emergency_threshold);
-
-            if usage.total_tokens > threshold {
-                let msg = format!(
-                    "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
-                    usage.total_tokens, ctx_window
-                );
-                return Err(ProviderError::Other(msg));
-            }
-        }
-
-        let response = match self.stream_turn().await {
-            Ok(resp) => resp,
-            Err(e) => match &e {
-                ProviderError::Timeout(_) => {
-                    self.react_retry_count += 1;
-                    if self.react_retry_count > 3 {
-                        log::warn!(
-                            "Stream timed out {} times in ReAct loop — \
-                                 giving up to avoid infinite loop",
-                            self.react_retry_count
-                        );
-                        return Err(e);
-                    }
-                    log::debug!(
-                        "Stream timeout in ReAct loop (attempt {}/3): {e} — retrying",
-                        self.react_retry_count
-                    );
-                    let recovery_msg = "Error: The request timed out after the provider accepted \
-                             the connection but did not produce any output. \
-                             The provider may be under load or processing a large \
-                             context. Please continue from where you left off.";
-                    self.history
-                        .push(LlmMessage::tool(recovery_msg.to_string()));
-                    self.stream_turn().await?
-                }
-                ProviderError::Api { status: 400, body }
-                    if body.contains("invalid tool call arguments") || body.contains("tool") =>
-                {
-                    self.react_retry_count += 1;
-                    if self.react_retry_count > 3 {
-                        log::warn!(
-                            "Provider rejected tool call arguments {} times — \
-                                 giving up to avoid infinite loop",
-                            self.react_retry_count
-                        );
-                        return Err(e);
-                    }
-                    log::debug!(
-                        "Provider rejected tool call arguments (attempt {}/3) — \
-                             pushing error as tool message and retrying",
-                        self.react_retry_count
-                    );
-                    let recovery_msg = format!(
-                        "Error: The provider rejected the tool call arguments \
-                             as invalid. This usually means the arguments were \
-                             malformed JSON or had missing/invalid fields. \
-                             Please try again with valid arguments.\n\n\
-                             Provider error: {e}"
-                    );
-                    self.history.push(LlmMessage::tool(recovery_msg));
-                    self.stream_turn().await?
-                }
-                _ => return Err(e),
-            },
-        };
+        let response = self.stream_turn_with_react_retry().await?;
 
         self.react_retry_count = 0;
 
@@ -1469,6 +1379,128 @@ impl Coordinator {
         } else {
             Ok(response)
         }
+    }
+
+    /// Check whether the cancel token has been triggered.
+    fn is_cancelled(&self) -> bool {
+        self.cancel_token
+            .as_ref()
+            .is_some_and(|ct| ct.is_cancelled())
+    }
+
+    /// Check for context overflow during tool execution.
+    ///
+    /// Uses real API-reported tokens when available (preferred — exact),
+    /// and falls back to `ContextUsage::from_history_estimate` when no
+    /// API usage has been reported yet (estimated — last resort).
+    fn check_tool_context_overflow(&self) -> Result<(), ProviderError> {
+        let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
+            return Ok(());
+        };
+
+        let usage = match self.real_history_tokens {
+            Some(tokens) => ContextUsage::from_api_usage(tokens as u32, prompt, 0),
+            None => {
+                log::debug!(
+                    "[process_next_stream] No real_history_tokens; falling back to estimate"
+                );
+                ContextUsage::from_history_estimate(&self.history, prompt, 0)
+            }
+        };
+
+        let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
+        let threshold = ctx_window.saturating_sub(emergency_threshold);
+
+        if usage.total_tokens > threshold {
+            let msg = format!(
+                "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
+                usage.total_tokens, ctx_window
+            );
+            return Err(ProviderError::Other(msg));
+        }
+        Ok(())
+    }
+
+    /// Stream a turn, applying ReAct retry logic for recoverable errors.
+    ///
+    /// Retries up to 3 times for:
+    /// - `ProviderError::Timeout` — server accepted connection but produced no output
+    /// - `ProviderError::Api { status: 400, body contains "tool" }` — invalid tool call arguments
+    async fn stream_turn_with_react_retry(&mut self) -> Result<LlmResponse, ProviderError> {
+        match self.stream_turn().await {
+            Ok(resp) => Ok(resp),
+            Err(e) => self.handle_stream_error(e).await,
+        }
+    }
+
+    /// Dispatch a stream error to the appropriate retry handler.
+    async fn handle_stream_error(
+        &mut self,
+        e: ProviderError,
+    ) -> Result<LlmResponse, ProviderError> {
+        match &e {
+            ProviderError::Timeout(_) => self.handle_timeout_retry(e).await,
+            ProviderError::Api { status: 400, body }
+                if body.contains("invalid tool call arguments") || body.contains("tool") =>
+            {
+                self.handle_invalid_args_retry(e).await
+            }
+            _ => Err(e),
+        }
+    }
+
+    /// Retry after a stream timeout: push a recovery message and re-stream.
+    async fn handle_timeout_retry(
+        &mut self,
+        e: ProviderError,
+    ) -> Result<LlmResponse, ProviderError> {
+        self.react_retry_count += 1;
+        if self.react_retry_count > 3 {
+            log::warn!(
+                "Stream timed out {} times in ReAct loop — giving up to avoid infinite loop",
+                self.react_retry_count
+            );
+            return Err(e);
+        }
+        log::debug!(
+            "Stream timeout in ReAct loop (attempt {}/3): {e} — retrying",
+            self.react_retry_count
+        );
+        let recovery_msg = "Error: The request timed out after the provider accepted \
+                 the connection but did not produce any output. \
+                 The provider may be under load or processing a large \
+                 context. Please continue from where you left off.";
+        self.history
+            .push(LlmMessage::tool(recovery_msg.to_string()));
+        self.stream_turn().await
+    }
+
+    /// Retry after invalid tool call arguments: push an error message and re-stream.
+    async fn handle_invalid_args_retry(
+        &mut self,
+        e: ProviderError,
+    ) -> Result<LlmResponse, ProviderError> {
+        self.react_retry_count += 1;
+        if self.react_retry_count > 3 {
+            log::warn!(
+                "Provider rejected tool call arguments {} times — giving up to avoid infinite loop",
+                self.react_retry_count
+            );
+            return Err(e);
+        }
+        log::debug!(
+            "Provider rejected tool call arguments (attempt {}/3) — pushing error as tool message and retrying",
+            self.react_retry_count
+        );
+        let recovery_msg = format!(
+            "Error: The provider rejected the tool call arguments \
+             as invalid. This usually means the arguments were \
+             malformed JSON or had missing/invalid fields. \
+             Please try again with valid arguments.\n\n\
+             Provider error: {e}"
+        );
+        self.history.push(LlmMessage::tool(recovery_msg));
+        self.stream_turn().await
     }
 }
 
