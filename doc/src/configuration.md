@@ -119,7 +119,7 @@ default = "qwen3.5-4b"
 # thinking = false
 
 # Enable tool calling in code mode. This allows the model to inspect 
-# your project files (read_file, list_directory, search_files) before 
+# your project files (read_file, list_directory) before 
 # generating code, leading to more accurate suggestions.
 # If not specified, defaults to: true for code
 # tools = true
@@ -137,7 +137,7 @@ default = "qwen3.5-4b"
 # Available tools include:
 #   - get_current_datetime, get_project_context (System information)
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
-#   - read_file, list_directory, search_files (File operations)
+#   - read_file, list_directory (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
 #   - web_search, web_search_news, web_scrape (DuckDuckGo — requires search-tools feature)
 #

@@ -837,7 +837,7 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
 | 1 | Create `src/tools/file_state.rs` with `FileSessionState`, `ReadFileEntry`, `StaleReason`, `FILE_SESSION_STATE` global | New file | ❌ NOT STARTED |
-| 2 | Add `record_read()` calls in `read_file`, `read_file_segment`, `search_files` | `src/tools/files.rs` | ❌ NOT STARTED |
+| 2 | Add `record_read()` calls in `read_file`, `read_file_segment` | `src/tools/files.rs` | ❌ NOT STARTED |
 | 3 | Add `record_edit()` calls and re-record-after-write in `write_file`, `edit_file`, `append_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
 | 4 | Must-read-before-edit check: `has_been_read()` before `edit_file` and `write_file` (overwrite) | `src/tools/files_write.rs` | ❌ NOT STARTED |
 | 5 | Staleness check: `check_stale()` before `edit_file` and `write_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
@@ -3240,7 +3240,7 @@ approaches the sum.
 
 **Safe for Parallel (read-only, no DB access):**
 - `get_weather`, `get_current_datetime`
-- `read_file`, `read_file_segment`, `count_lines`, `list_directory`, `search_files`
+- `read_file`, `read_file_segment`, `count_lines`, `list_directory`
 - `web_search`, `search_duckduckgo`
 - `calculate`
 - `get_pokemon_*` (all Pokemon tools)

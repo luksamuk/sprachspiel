@@ -342,7 +342,6 @@ level = "semi-auto"
 # Padrões sempre aprovados
 auto_approve = [
     "read_file:*",
-    "search_files:*",
     "list_directory:*",
 ]
 
