@@ -8052,8 +8052,9 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 
 ### 🔴 PRIORITY: Embedding Progress Indicators Oscillate with Concurrent Tasks — #211 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #211
+**PR:** #229
 **Branch:** `fix/211-embedding-progress-oscillation`
 **Depends on:** None (independent bug fix)
 
