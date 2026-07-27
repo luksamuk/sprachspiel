@@ -28,6 +28,10 @@ const MAX_CONTEXT: usize = 3;
 /// Maximum diff lines to show (prevents flooding context for large edits).
 const MAX_DIFF_LINES: usize = 100;
 
+/// Fence markers for inline diff blocks in tool result strings.
+pub const DIFF_FENCE_START: &str = "```diff\n";
+pub const DIFF_FENCE_END: &str = "\n```";
+
 /// Generate diff hunks from old and new content.
 ///
 /// Uses `similar::TextDiff` with line-level granularity.
@@ -94,9 +98,7 @@ pub fn generate_diff_hunks(original: &str, new: &str) -> Vec<DiffHunk> {
                 if !current_hunk.is_empty() {
                     hunks.push(std::mem::take(&mut current_hunk));
                 }
-                // Skip the long equal run entirely
-                equal_run = 0;
-                continue;
+                // Do NOT continue — fall through to push the change line
             }
             equal_run = 0;
         }
@@ -161,7 +163,7 @@ pub fn compute_diff_stats(original: &str, new: &str) -> (usize, usize) {
 /// Format diff hunks as unified diff text (for LLM tool result).
 ///
 /// Uses `+`/`-`/` ` prefixes and `@@ -a,b +c,d @@` hunk headers.
-/// Hunk separators show unchanged-line count between hunks.
+/// Hunks are separated by an empty line.
 /// Truncated at [`MAX_DIFF_LINES`] total changed lines with a summary message.
 pub fn format_diff_as_text(hunks: &[DiffHunk]) -> String {
     let mut result = Vec::new();
@@ -178,9 +180,10 @@ pub fn format_diff_as_text(hunks: &[DiffHunk]) -> String {
         }
 
         // Hunk header: @@ -start,count +start,count @@
+        // Use 1-indexed line numbers; 0 means the side has no lines (pure insert/delete)
         let first = &hunk[0];
-        let old_start = first.old_line;
-        let new_start = first.new_line;
+        let old_start = first.old_line.max(1);
+        let new_start = first.new_line.max(1);
         let old_count = hunk.iter().filter(|l| l.tag != ChangeTag::Insert).count();
         let new_count = hunk.iter().filter(|l| l.tag != ChangeTag::Delete).count();
         result.push(format!(
@@ -359,5 +362,34 @@ mod tests {
         assert!(ansi.contains("\x1b[31m"), "Should have red for deletion");
         assert!(ansi.contains("\x1b[32m"), "Should have green for insertion");
         assert!(ansi.contains("\x1b[0m"), "Should have reset codes");
+    }
+
+    #[test]
+    fn test_generate_diff_hunks_distant_changes_not_lost() {
+        // Two changes separated by more than 2*MAX_CONTEXT (6) equal lines.
+        // Bug 1 from Kimi K3 audit: the first change after the gap was
+        // discarded by a `continue` that skipped `push(line)`.
+        let original = "AAA\nline2\nline3\nline4\nline5\nline6\nline7\nBBB\nend";
+        let new = "AAA-changed\nline2\nline3\nline4\nline5\nline6\nline7\nBBB-changed\nend";
+        let hunks = generate_diff_hunks(original, new);
+        // Both changes should be present across hunks
+        let total_inserts: usize = hunks
+            .iter()
+            .map(|h| h.iter().filter(|l| l.tag == ChangeTag::Insert).count())
+            .sum();
+        let total_deletes: usize = hunks
+            .iter()
+            .map(|h| h.iter().filter(|l| l.tag == ChangeTag::Delete).count())
+            .sum();
+        assert_eq!(
+            total_inserts, 2,
+            "Should have 2 inserts (both changes): hunks={:?}",
+            hunks
+        );
+        assert_eq!(
+            total_deletes, 2,
+            "Should have 2 deletes (both changes): hunks={:?}",
+            hunks
+        );
     }
 }

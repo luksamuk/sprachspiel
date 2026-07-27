@@ -107,22 +107,18 @@ pub fn render_diff_block(
                 )]
             };
 
-            let prefix_span = Span::styled(
-                prefix.to_string(),
-                if style_enabled {
-                    Style::default().fg(diff_fg)
-                } else {
-                    Style::default().add_modifier(diff_modifier)
-                },
-            );
+            let prefix_style = if style_enabled {
+                Style::default().fg(diff_fg).add_modifier(diff_modifier)
+            } else {
+                Style::default().add_modifier(diff_modifier)
+            };
+            let prefix_span = Span::styled(prefix.to_string(), prefix_style);
 
-            lines.push(Line::from(vec![
-                prefix_span,
-                content_spans
-                    .into_iter()
-                    .next()
-                    .unwrap_or(Span::raw(content.to_string())),
-            ]));
+            lines.push(Line::from({
+                let mut all_spans = vec![prefix_span];
+                all_spans.extend(content_spans);
+                all_spans
+            }));
         }
     }
 
@@ -136,17 +132,7 @@ fn highlight_content_spans(
     diff_fg: Color,
     _theme: MarkdownTheme,
 ) -> Vec<Span<'static>> {
-    let line_to_highlight = if content.ends_with('\n') {
-        content
-    } else {
-        // syntect expects lines with endings for proper highlighting
-        // but we stripped them — add a newline for the highlighter only
-        // (it won't appear in the output)
-        // Actually HighlightLines works fine without trailing newline
-        content
-    };
-
-    match highlighter.highlight_line(line_to_highlight, &SYNTAX_SET) {
+    match highlighter.highlight_line(content, &SYNTAX_SET) {
         Ok(regions) => {
             let mut spans = Vec::new();
             for (syntect_style, text) in regions {

@@ -12,6 +12,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Fixed
 
+- **Security: quick-xml 0.39.4 → 0.41.0 (RUSTSEC-2026-0194, RUSTSEC-2026-0195)** — Upgraded `plist` from 1.9.0 to 1.10.0, which pulls `quick-xml 0.41.0` (transitive via `plist → syntect → tui-markdown`). Fixes quadratic run time on duplicate attribute names (RUSTSEC-2026-0194) and unbounded namespace-declaration allocation DoS (RUSTSEC-2026-0195).
+
 - **Embedding progress indicators oscillate with concurrent tasks (Issue #211)** — When multiple embedding generation tasks run simultaneously (e.g., Content indexing + Facts verification), the progress indicators in the status bar oscillated wildly between smaller and larger values instead of monotonically increasing. `poll_embedding_progress()` in `src/chat/app.rs` overwrote the current state with the last message received, causing interleaved messages from different phases to produce backward jumps. The fix tracks the maximum of each counter per phase and resets counters when the phase changes, ensuring the indicator only moves forward within a phase.
 
 - **Context overflow estimation bug in Coordinator (Issue #130, indirect)** — The `process_next_stream` fallback estimation path (when no real API tokens are available) did NOT account for compaction summaries or tool tokens. After extracting `ContextUsage::from_history_estimate`, the estimation now uses the same centralized logic as `ContextUsage::from_session_estimate`, correctly accounting for compaction. This was a latent bug discovered during the complexity reduction analysis.

@@ -588,7 +588,11 @@ fn build_lines(
                     || msg.content.starts_with('👎')
                     || msg.content.starts_with('✎');
 
-                if is_call_indicator && !msg.content.contains("```diff") {
+                if is_call_indicator
+                    && !msg
+                        .content
+                        .contains(crate::tools::diff_render::DIFF_FENCE_START)
+                {
                     // Tool call indicator (no diff) — render as normal (visible) markdown.
                     // No dim overlay so the user can clearly see what the tool is doing.
                     let rendered =
@@ -602,7 +606,10 @@ fn build_lines(
                             .collect();
                         lines.push(Line::from(spans));
                     }
-                } else if msg.content.contains("```diff") {
+                } else if msg
+                    .content
+                    .contains(crate::tools::diff_render::DIFF_FENCE_START)
+                {
                     // Tool result with diff — render with colored diff lines inline
                     render_tool_result_with_diff(
                         &msg.content,
@@ -688,7 +695,7 @@ fn render_tool_result_with_diff(
     available_width: usize,
     lines: &mut Vec<Line<'_>>,
 ) {
-    let diff_start = "```diff\n";
+    let diff_start = crate::tools::diff_render::DIFF_FENCE_START;
     let diff_end = "```";
 
     // Find the first ```diff block
@@ -761,6 +768,16 @@ fn render_tool_result_with_diff(
                 lines.push(Line::from(dimmed_spans));
             }
         }
+    } else {
+        // No closing fence found — treat remaining content as diff text
+        let diff_text = &content[diff_content_start..];
+        let diff_lines = super::super::diff_render::render_diff_block(
+            diff_text.trim(),
+            &file_path,
+            theme,
+            style_enabled,
+        );
+        lines.extend(diff_lines);
     }
 }
 

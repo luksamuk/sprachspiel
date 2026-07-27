@@ -885,8 +885,9 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #204
+**PR:** #230
 **Branch:** `feat/204-file-write-tools-prompt-uniqueness`
 **Depends on:** None (independent quick wins)
 

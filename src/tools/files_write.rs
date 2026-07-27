@@ -317,8 +317,16 @@ pub async fn edit_file(
         )
     } else {
         format!(
-            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}\n```diff\n{}```",
-            path, additions, removals, original_lines, new_lines, operation, diff_text
+            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}\n{}{}{}\n```",
+            path,
+            additions,
+            removals,
+            original_lines,
+            new_lines,
+            operation,
+            crate::tools::diff_render::DIFF_FENCE_START,
+            diff_text,
+            crate::tools::diff_render::DIFF_FENCE_END
         )
     };
     log_tool_result("edit_file", &result);
@@ -446,7 +454,7 @@ pub async fn append_file(
         match std::io::BufWriter::new(file).write_all(content.as_bytes()) {
             Ok(()) => format!(
                 "Successfully appended +{} lines to '{}' (total: {}).",
-                content.lines().count().max(1),
+                content.lines().count(),
                 path,
                 format_size(total_size as u64)
             ),
@@ -644,8 +652,9 @@ fn edit_replace(
             .filter(|(_, line)| line.contains(search))
             .take(3)
             .map(|(i, line)| {
-                let preview = if line.len() > 80 {
-                    format!("{}...", &line[..77])
+                let preview = if line.chars().count() > 80 {
+                    let truncated: String = line.chars().take(77).collect();
+                    format!("{}...", truncated)
                 } else {
                     line.to_string()
                 };
