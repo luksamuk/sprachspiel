@@ -508,7 +508,18 @@ impl LiveTurn {
                     args,
                     result,
                 } => {
-                    let content = format_tool_message(&tool_call_id, &name, &args, result.as_ref());
+                    let mut content =
+                        format_tool_message(&tool_call_id, &name, &args, result.as_ref());
+                    // When the tool result contains a ```diff block (file edit
+                    // operations), append the result content so the TUI can
+                    // render the colored diff inline in the chat flow.
+                    if let Some(res) = result
+                        && !res.is_error
+                        && res.content.contains("```diff")
+                    {
+                        content.push('\n');
+                        content.push_str(&res.content);
+                    }
                     let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id);
                     messages.push(msg);
@@ -554,7 +565,18 @@ impl LiveTurn {
                     args,
                     result,
                 } => {
-                    let content = format_tool_message(tool_call_id, name, args, result.as_ref());
+                    let mut content =
+                        format_tool_message(tool_call_id, name, args, result.as_ref());
+                    // When the tool result contains a ```diff block (file edit
+                    // operations), append the result content so the TUI can
+                    // render the colored diff inline in the chat flow.
+                    if let Some(res) = result
+                        && !res.is_error
+                        && res.content.contains("```diff")
+                    {
+                        content.push('\n');
+                        content.push_str(&res.content);
+                    }
                     let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id.clone());
                     messages.push(msg);
