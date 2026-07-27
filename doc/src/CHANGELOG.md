@@ -6,6 +6,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Changed
 
+- **File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format (Issue #204)** — Three improvements to file write tools identified in a competitive benchmark against Hermes, Claude Code, and OpenCode: (1) Added `### FILE WRITE TOOLS` section to the system prompt with "read before edit" guidance, edit vs write preference, and uniqueness explanation — the LLM no longer needs to "discover" write tools from the tool list. (2) Added uniqueness check in `edit_replace()`: if the search string appears multiple times, the operation is rejected with line numbers of the first 3 occurrences, asking for more context. Previously, `edit_replace()` silently replaced ALL occurrences. (3) Improved result format from `"42 lines -> 45 lines (+3)"` to `"+3/-0 lines (42→45)"` for clearer `+N/-M` diff signaling.
+
 - **Cognitive Complexity Reduction — Phase 1 (Issue #130)** — Reduce cognitive complexity in the worst-offender functions that exceed the clippy threshold of 15. As of v0.44.0, 36 functions exceed the threshold (up from 20 in v0.43.0). The worst offenders are 55/15 (`diagnostics/display.rs`), 53/15 (`embeddings/recovery.rs`), 40/15 (`vision/error.rs`), 32/15 (`chat/coordinator.rs`, `markdown/table.rs`). This PR targets the top offenders, extracting helper functions to bring complexity below the threshold.
 
 ### Fixed

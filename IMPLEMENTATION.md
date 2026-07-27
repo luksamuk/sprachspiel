@@ -885,8 +885,9 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 **Issue:** #204
+**Branch:** `feat/204-file-write-tools-prompt-uniqueness`
 **Depends on:** None (independent quick wins)
 
 **Goal:** Fix the three most critical gaps in Sprachspiel's file write tools identified in the competitive benchmark against Hermes, Claude Code, and OpenCode:
