@@ -588,8 +588,8 @@ fn build_lines(
                     || msg.content.starts_with('👎')
                     || msg.content.starts_with('✎');
 
-                if is_call_indicator {
-                    // Tool call indicator — render as normal (visible) markdown.
+                if is_call_indicator && !msg.content.contains("```diff") {
+                    // Tool call indicator (no diff) — render as normal (visible) markdown.
                     // No dim overlay so the user can clearly see what the tool is doing.
                     let rendered =
                         render_markdown(&msg.content, theme, style_enabled, available_width);
@@ -602,37 +602,35 @@ fn build_lines(
                             .collect();
                         lines.push(Line::from(spans));
                     }
+                } else if msg.content.contains("```diff") {
+                    // Tool result with diff — render with colored diff lines inline
+                    render_tool_result_with_diff(
+                        &msg.content,
+                        theme,
+                        style_enabled,
+                        available_width,
+                        &mut lines,
+                    );
                 } else {
-                    // Tool result — check for ```diff blocks for inline diff rendering
-                    if msg.content.contains("```diff") {
-                        render_tool_result_with_diff(
-                            &msg.content,
-                            theme,
-                            style_enabled,
-                            available_width,
-                            &mut lines,
-                        );
-                    } else {
-                        // Standard: render as dimmed markdown for visual distinction
-                        // from assistant content. The result is informative but not the
-                        // primary content the user is reading.
-                        let rendered =
-                            render_markdown(&msg.content, theme, style_enabled, available_width);
-                        let dim_style = styles::dim();
-                        for render_line in rendered.lines {
-                            let base_style = render_line.style;
-                            let dimmed_spans: Vec<Span<'_>> = render_line
-                                .spans
-                                .into_iter()
-                                .map(|span| {
-                                    Span::styled(
-                                        span.content,
-                                        base_style.patch(span.style).patch(dim_style),
-                                    )
-                                })
-                                .collect();
-                            lines.push(Line::from(dimmed_spans));
-                        }
+                    // Standard: render as dimmed markdown for visual distinction
+                    // from assistant content. The result is informative but not the
+                    // primary content the user is reading.
+                    let rendered =
+                        render_markdown(&msg.content, theme, style_enabled, available_width);
+                    let dim_style = styles::dim();
+                    for render_line in rendered.lines {
+                        let base_style = render_line.style;
+                        let dimmed_spans: Vec<Span<'_>> = render_line
+                            .spans
+                            .into_iter()
+                            .map(|span| {
+                                Span::styled(
+                                    span.content,
+                                    base_style.patch(span.style).patch(dim_style),
+                                )
+                            })
+                            .collect();
+                        lines.push(Line::from(dimmed_spans));
                     }
                 }
             }
@@ -718,21 +716,18 @@ fn render_tool_result_with_diff(
     // Extract file path from the result string (e.g., "Successfully edited 'src/main.rs': ...")
     let file_path = extract_file_path_from_result(content);
 
-    // Render text before the diff block as dimmed markdown
+    // Render text before the diff block as visible markdown (call indicator + summary)
     let pre_text = &content[..start_pos];
     if !pre_text.is_empty() {
         let rendered = render_markdown(pre_text, theme, style_enabled, available_width);
-        let dim_style = styles::dim();
         for render_line in rendered.lines {
             let base_style = render_line.style;
-            let dimmed_spans: Vec<Span<'_>> = render_line
+            let spans: Vec<Span<'_>> = render_line
                 .spans
                 .into_iter()
-                .map(|span| {
-                    Span::styled(span.content, base_style.patch(span.style).patch(dim_style))
-                })
+                .map(|span| Span::styled(span.content, base_style.patch(span.style)))
                 .collect();
-            lines.push(Line::from(dimmed_spans));
+            lines.push(Line::from(spans));
         }
     }
 
