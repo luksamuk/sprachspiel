@@ -23,6 +23,7 @@
 
 pub mod banner;
 pub mod components;
+pub mod diff_render;
 pub mod live_turn;
 pub mod markdown;
 pub mod styles;

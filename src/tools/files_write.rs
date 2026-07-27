@@ -128,13 +128,11 @@ pub async fn write_file(
     }
 
     let size = format_size(content.len() as u64);
-    let action = if canonical_path.exists() {
-        "overwritten"
+    let result = if canonical_path.exists() {
+        format!("Successfully overwrote '{}' ({}).", path, size)
     } else {
-        "created"
+        format!("Successfully created '{}' ({}).", path, size)
     };
-
-    let result = format!("Successfully wrote {} to '{}' ({}).", size, path, action);
     log_tool_result("write_file", &result);
     Ok(result)
 }
@@ -303,17 +301,26 @@ pub async fn edit_file(
     }
 
     // Calculate diff statistics
+    let (additions, removals) =
+        crate::tools::diff_render::compute_diff_stats(&original_content, &new_content);
     let original_lines = original_content.lines().count();
     let new_lines = new_content.lines().count();
 
-    let result = format!(
-        "Successfully edited '{}': {} lines -> {} lines ({:+}). Operation: {}",
-        path,
-        original_lines,
-        new_lines,
-        new_lines as isize - original_lines as isize,
-        operation
-    );
+    // Generate unified diff for inline TUI rendering
+    let hunks = crate::tools::diff_render::generate_diff_hunks(&original_content, &new_content);
+    let diff_text = crate::tools::diff_render::format_diff_as_text(&hunks);
+
+    let result = if diff_text.is_empty() {
+        format!(
+            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}",
+            path, additions, removals, original_lines, new_lines, operation
+        )
+    } else {
+        format!(
+            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}\n```diff\n{}```",
+            path, additions, removals, original_lines, new_lines, operation, diff_text
+        )
+    };
     log_tool_result("edit_file", &result);
     Ok(result)
 }
@@ -438,8 +445,8 @@ pub async fn append_file(
 
         match std::io::BufWriter::new(file).write_all(content.as_bytes()) {
             Ok(()) => format!(
-                "Successfully appended {} to '{}' (total: {}).",
-                format_size(content.len() as u64),
+                "Successfully appended +{} lines to '{}' (total: {}).",
+                content.lines().count().max(1),
                 path,
                 format_size(total_size as u64)
             ),
@@ -624,14 +631,39 @@ fn edit_replace(
     let count = content.matches(search).count();
     if count == 0 {
         return Err(format!(
-            "Error: Pattern '{}' not found in file. No changes made.",
+            "Error: Pattern '{}' not found in file. No changes made. \
+             Use read_file or read_file_segment to verify the file content.",
             search
         ));
     }
+    if count > 1 {
+        // Show first 3 occurrences with line numbers
+        let occurrences: Vec<String> = content
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| line.contains(search))
+            .take(3)
+            .map(|(i, line)| {
+                let preview = if line.len() > 80 {
+                    format!("{}...", &line[..77])
+                } else {
+                    line.to_string()
+                };
+                format!("  Line {}: {}", i + 1, preview)
+            })
+            .collect();
+        return Err(format!(
+            "Error: Pattern '{}' found {} times in file. \
+             Provide more surrounding context to make the search string unique. \
+             Occurrences:\n{}",
+            search,
+            count,
+            occurrences.join("\n")
+        ));
+    }
 
-    // Replace all occurrences
+    // Single match — safe to replace
     let new_content = content.replace(search, replace_text);
-
     Ok(new_content)
 }
 
@@ -791,10 +823,41 @@ mod tests {
 
     #[test]
     fn test_edit_replace_finds_and_replaces() {
-        let content = "Hello, World!\nGoodbye, World!";
+        let content = "Hello, World!\nGoodbye!";
         let result = edit_replace(content, Some("World"), Some("Universe"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Hello, Universe!\nGoodbye, Universe!");
+        assert_eq!(result.unwrap(), "Hello, Universe!\nGoodbye!");
+    }
+
+    #[test]
+    fn test_edit_replace_rejects_multiple_matches() {
+        let content = "Hello, World!\nGoodbye, World!\nHello again, World!";
+        let result = edit_replace(content, Some("World"), Some("Universe"));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("3 times"),
+            "Error should mention count: {}",
+            err
+        );
+        assert!(
+            err.contains("Line 1"),
+            "Error should show first occurrence: {}",
+            err
+        );
+        assert!(
+            err.contains("Line 2"),
+            "Error should show second occurrence: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_edit_replace_single_match_still_works() {
+        let content = "Hello, World!\nGoodbye!";
+        let result = edit_replace(content, Some("World"), Some("Universe"));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hello, Universe!\nGoodbye!");
     }
 
     #[test]
