@@ -930,16 +930,39 @@ impl App {
 
     /// Poll the embedding progress channel and update the status bar.
     ///
-    /// Drains all messages from the channel, keeping only the latest
-    /// progress update. Clears `embedding_progress` when the progress
-    /// indicates completion.
+    /// Drains all messages from the channel, keeping the maximum of each
+    /// counter when messages share the same phase. When a message arrives
+    /// with a different phase, counters reset to the new phase's values,
+    /// preventing stale max values from a completed phase from persisting.
+    /// Clears `embedding_progress` when the progress indicates completion.
     pub fn poll_embedding_progress(&mut self) {
         while let Ok(progress) = self.embedding_progress_rx.try_recv() {
-            self.status_bar.embedding_progress = if progress.is_completed() {
-                None
+            if progress.is_completed() {
+                self.status_bar.embedding_progress = None;
             } else {
-                Some(progress)
-            };
+                self.status_bar.embedding_progress =
+                    Some(match self.status_bar.embedding_progress {
+                        Some(ref existing) if existing.phase == progress.phase => {
+                            EmbeddingProgress {
+                                phase: progress.phase,
+                                entities_current: existing
+                                    .entities_current
+                                    .max(progress.entities_current),
+                                entities_total: existing
+                                    .entities_total
+                                    .max(progress.entities_total),
+                                embeddings_current: existing
+                                    .embeddings_current
+                                    .max(progress.embeddings_current),
+                                embeddings_total: existing
+                                    .embeddings_total
+                                    .max(progress.embeddings_total),
+                                completed: false,
+                            }
+                        }
+                        _ => progress,
+                    });
+            }
         }
     }
 
@@ -2524,7 +2547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_poll_embedding_progress_drains_multiple() {
+    fn test_poll_embedding_progress_same_phase_increasing() {
         let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
         let _ = tx.send(EmbeddingProgress::new(
@@ -2560,7 +2583,104 @@ mod tests {
                 8,
                 10
             )),
-            "Should keep latest progress update"
+            "Increasing same-phase messages: max == last received"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_same_phase_keeps_max() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Interleaved: 3/10 → 1/10 (backward) → 5/10 (forward)
+        // Max should be 5/10, not 1/10 (last received)
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            3,
+            10,
+            3,
+            10,
+        ));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            1,
+            10,
+            1,
+            10,
+        ));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            5,
+            10,
+            5,
+            10,
+        ));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some(EmbeddingProgress::new(
+                EmbeddingPhase::Content,
+                5,
+                10,
+                5,
+                10,
+            )),
+            "Same-phase messages should keep max per counter, not last received"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_phase_change_resets_counters() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Content phase reaches 120/120 (max)
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            120,
+            120,
+            120,
+            120,
+        ));
+        // Facts phase starts at 8/15 — should NOT inherit Content's max of 120
+        let _ = tx.send(EmbeddingProgress::new(EmbeddingPhase::Facts, 8, 15, 8, 15));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some(EmbeddingProgress::new(EmbeddingPhase::Facts, 8, 15, 8, 15,)),
+            "Phase change should reset counters to new phase values, not keep old max"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_completion_clears_after_max() {
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Build up max to 100/100
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            50,
+            100,
+            50,
+            100,
+        ));
+        let _ = tx.send(EmbeddingProgress::new(
+            EmbeddingPhase::Content,
+            100,
+            100,
+            100,
+            100,
+        ));
+        // Completion arrives — should clear despite high max
+        let _ = tx.send(EmbeddingProgress::completed());
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress, None,
+            "Completion should clear indicator regardless of prior max"
         );
     }
 

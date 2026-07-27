@@ -8048,4 +8048,42 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 | `doc/src/CHANGELOG.md` | All 6 entries documented. |
 | `doc/src/development/context-anatomy.md` | User message deduplication note, staleness label note, User Facts format updated. |
 
+---
+
+### 🔴 PRIORITY: Embedding Progress Indicators Oscillate with Concurrent Tasks — #211 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #211
+**Branch:** `fix/211-embedding-progress-oscillation`
+**Depends on:** None (independent bug fix)
+
+**Goal:** Fix the status bar progress indicator that oscillates wildly when multiple embedding generation tasks run concurrently (e.g., Content indexing + Facts verification). The indicator should monotonically increase within a phase, never moving backward unless a phase completes.
+
+**Problem Statement:**
+
+`poll_embedding_progress()` in `src/chat/app.rs:936` drains an `mpsc::UnboundedReceiver<EmbeddingProgress>` and overwrites the current state with the last message received. When two tasks run concurrently, their messages interleave in the channel, so the TUI alternates between showing `45/120` (Content) and `8/15` (Facts) — appearing to oscillate backward.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | Fix `poll_embedding_progress()` — track max per counter + phase reset | `src/chat/app.rs` | ✅ COMPLETED |
+| 2 | Update existing tests + add tests for phase-reset and max-per-counter | `src/chat/app.rs` | ✅ COMPLETED |
+| 3 | Quality gates: fmt, clippy, test | — | ✅ COMPLETED |
+
+**Design Decisions:**
+
+1. **Max per counter within same phase** — When a new progress message arrives with the same `phase` as the current state, keep the maximum of each counter (`entities_current`, `entities_total`, `embeddings_current`, `embeddings_total`). This prevents backward jumps within a single task.
+2. **Reset counters on phase change** — When a new message arrives with a different `phase`, replace the state with the new message's values (not max). This prevents stale max values from a completed phase persisting when a new phase starts.
+3. **`completed: true` clears state** — Unchanged: a completion message clears the indicator to `None`.
+4. **No HashMap needed** — The display only shows one phase at a time. A `HashMap<EmbeddingPhase, EmbeddingProgress>` (Option B in the issue) would be cleaner but is over-engineering for a single-slot display. The per-phase reset in Option A is sufficient.
+5. **`set_embedding_progress()` unchanged** — The direct-set path (used for initial `0/1` values in `repl_tui.rs:182`) does not need phase-aware logic. It is a synchronous set, not a poll from a shared channel.
+
+**Files to Modify:**
+
+- `src/chat/app.rs` — `poll_embedding_progress()` logic + tests
+- `doc/src/CHANGELOG.md` — Fixed section entry
+
+**Estimated effort:** ~1-2 hours
+
 2026-05-07 - #126 created: Rename ask-ai → Sprachspiel (priority:critical). Full codebase audit: ~60 source files + 82 doc files + config/data directory paths + man page + DB filename. 2-4 days estimated.
