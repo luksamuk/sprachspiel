@@ -508,7 +508,8 @@ impl LiveTurn {
                     args,
                     result,
                 } => {
-                    let content = format_tool_message(&tool_call_id, &name, &args, result.as_ref());
+                    let content =
+                        build_tool_call_message(&tool_call_id, &name, &args, result.as_ref());
                     let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id);
                     messages.push(msg);
@@ -554,7 +555,8 @@ impl LiveTurn {
                     args,
                     result,
                 } => {
-                    let content = format_tool_message(tool_call_id, name, args, result.as_ref());
+                    let content =
+                        build_tool_call_message(tool_call_id, name, args, result.as_ref());
                     let mut msg = ChatMessage::tool(content).with_round_index(self.round_index);
                     msg.tool_call_id = Some(tool_call_id.clone());
                     messages.push(msg);
@@ -583,6 +585,30 @@ impl LiveTurn {
 
 /// Format a finalized tool-call message.
 ///
+/// Build the display content for a tool call block, including diff result if present.
+///
+/// Renders the compact tool-call line, then appends the result content when
+/// it contains a diff block (file edit operations) so the TUI can render the
+/// colored diff inline in the chat flow.
+fn build_tool_call_message(
+    tool_call_id: &str,
+    name: &str,
+    args: &serde_json::Value,
+    result: Option<&ToolResult>,
+) -> String {
+    let mut content = format_tool_message(tool_call_id, name, args, result);
+    if let Some(res) = result
+        && !res.is_error
+        && res
+            .content
+            .contains(crate::tools::diff_render::DIFF_FENCE_START)
+    {
+        content.push('\n');
+        content.push_str(&res.content);
+    }
+    content
+}
+
 /// Renders as a single compact line showing the tool name and its arguments.
 /// Uses `✗` prefix when the tool returned an error (instead of `🔧`).
 /// Tool result content is intentionally **not** displayed in the chat area —

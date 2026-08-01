@@ -126,6 +126,33 @@ Note: For large files, use count_lines first, then read_file_segment with start_
     )
 }
 
+/// File write tools section
+#[cfg(feature = "file-tools")]
+fn file_write_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = ["write_file", "edit_file", "append_file"];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
+    }
+    Some(
+        r#"### FILE WRITE TOOLS
+Use for creating, editing, and appending to files.
+Available: write_file, edit_file, append_file
+
+**Prefer edit_file** for making targeted changes to existing files. Use write_file only for
+creating new files or complete rewrites.
+
+**Uniqueness:** edit_file's replace operation requires a unique search string. If the search
+string appears multiple times, the operation is rejected with the line numbers of the first
+3 occurrences. Provide more surrounding context to make the search string unique.
+
+**Operations:** edit_file supports "replace" (find+replace), "insert" (after line N), and
+"delete_lines" (range). Use "replace" for targeted text changes, "insert" for adding code,
+"delete_lines" for removing lines by number."#
+            .to_string(),
+    )
+}
+
 /// System tools section
 #[cfg(feature = "system-tools")]
 fn system_section(blacklist: &HashSet<&str>) -> Option<String> {
@@ -481,6 +508,11 @@ pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
         sections.push(s);
     }
 
+    #[cfg(feature = "file-tools")]
+    if let Some(s) = file_write_section(blacklist) {
+        sections.push(s);
+    }
+
     #[cfg(feature = "system-tools")]
     if let Some(s) = system_section(blacklist) {
         sections.push(s);
@@ -561,5 +593,19 @@ mod tests {
                 assert!(!context.contains("WEB SEARCH"));
             }
         }
+    }
+
+    #[cfg(feature = "file-tools")]
+    #[test]
+    fn test_file_write_section_present() {
+        let blacklist = HashSet::new();
+        let section = file_write_section(&blacklist);
+        assert!(section.is_some());
+        let s = section.unwrap();
+        assert!(s.contains("### FILE WRITE TOOLS"));
+        assert!(s.contains("write_file"));
+        assert!(s.contains("edit_file"));
+        assert!(s.contains("append_file"));
+        assert!(s.contains("Uniqueness"));
     }
 }

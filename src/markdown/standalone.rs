@@ -194,6 +194,7 @@ fn render_markdown_inline(content: &str, width: usize) -> String {
     let mut output = String::new();
     let mut in_code_block = false;
     let mut code_block_lines: Vec<String> = Vec::new();
+    let mut code_block_lang = String::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -203,18 +204,26 @@ fn render_markdown_inline(content: &str, width: usize) -> String {
             if in_code_block {
                 // End code block
                 in_code_block = false;
+                let is_diff = code_block_lang == "diff";
                 for code_line in &code_block_lines {
-                    output.push_str("    ");
-                    output.push_str(code_line);
-                    output.push('\n');
+                    if is_diff {
+                        // Render diff lines with ANSI colors
+                        output.push_str(&crate::tools::diff_render::render_diff_ansi(code_line));
+                    } else {
+                        output.push_str("    ");
+                        output.push_str(code_line);
+                        output.push('\n');
+                    }
                 }
                 code_block_lines.clear();
+                code_block_lang.clear();
                 output.push('\n');
             } else {
                 // Start code block
                 in_code_block = true;
                 // Print the language tag if present
                 let lang = trimmed.trim_start_matches('`').trim();
+                code_block_lang = lang.to_string();
                 if !lang.is_empty() {
                     output.push_str(&format!("\x1B[2m{}\x1B[0m\n", lang));
                 }

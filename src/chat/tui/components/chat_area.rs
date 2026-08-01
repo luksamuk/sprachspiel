@@ -588,8 +588,12 @@ fn build_lines(
                     || msg.content.starts_with('👎')
                     || msg.content.starts_with('✎');
 
-                if is_call_indicator {
-                    // Tool call indicator — render as normal (visible) markdown.
+                if is_call_indicator
+                    && !msg
+                        .content
+                        .contains(crate::tools::diff_render::DIFF_FENCE_START)
+                {
+                    // Tool call indicator (no diff) — render as normal (visible) markdown.
                     // No dim overlay so the user can clearly see what the tool is doing.
                     let rendered =
                         render_markdown(&msg.content, theme, style_enabled, available_width);
@@ -602,8 +606,20 @@ fn build_lines(
                             .collect();
                         lines.push(Line::from(spans));
                     }
+                } else if msg
+                    .content
+                    .contains(crate::tools::diff_render::DIFF_FENCE_START)
+                {
+                    // Tool result with diff — render with colored diff lines inline
+                    render_tool_result_with_diff(
+                        &msg.content,
+                        theme,
+                        style_enabled,
+                        available_width,
+                        &mut lines,
+                    );
                 } else {
-                    // Tool result — render as dimmed markdown for visual distinction
+                    // Standard: render as dimmed markdown for visual distinction
                     // from assistant content. The result is informative but not the
                     // primary content the user is reading.
                     let rendered =
@@ -665,6 +681,133 @@ fn build_lines(
     }
 
     lines
+}
+
+/// Render a tool result that contains ```diff blocks.
+///
+/// Splits the content into segments: text before the diff, the diff block
+/// itself (rendered with colored diff lines), and text after the diff.
+/// Non-diff segments are rendered as dimmed markdown.
+fn render_tool_result_with_diff(
+    content: &str,
+    theme: MarkdownTheme,
+    style_enabled: bool,
+    available_width: usize,
+    lines: &mut Vec<Line<'_>>,
+) {
+    let diff_start = crate::tools::diff_render::DIFF_FENCE_START;
+    let diff_end = "```";
+
+    // Find the first ```diff block
+    let start_pos = match content.find(diff_start) {
+        Some(pos) => pos,
+        None => {
+            // No diff block found — fall back to standard rendering
+            let rendered = render_markdown(content, theme, style_enabled, available_width);
+            let dim_style = styles::dim();
+            for render_line in rendered.lines {
+                let base_style = render_line.style;
+                let dimmed_spans: Vec<Span<'_>> = render_line
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        Span::styled(span.content, base_style.patch(span.style).patch(dim_style))
+                    })
+                    .collect();
+                lines.push(Line::from(dimmed_spans));
+            }
+            return;
+        }
+    };
+
+    // Extract file path from the result string (e.g., "Successfully edited 'src/main.rs': ...")
+    let file_path = extract_file_path_from_result(content);
+
+    // Render text before the diff block as visible markdown (call indicator + summary)
+    let pre_text = &content[..start_pos];
+    if !pre_text.is_empty() {
+        let rendered = render_markdown(pre_text, theme, style_enabled, available_width);
+        for render_line in rendered.lines {
+            let base_style = render_line.style;
+            let spans: Vec<Span<'_>> = render_line
+                .spans
+                .into_iter()
+                .map(|span| Span::styled(span.content, base_style.patch(span.style)))
+                .collect();
+            lines.push(Line::from(spans));
+        }
+    }
+
+    // Add top margin before diff block
+    lines.push(Line::from(""));
+
+    // Extract and render the diff block
+    let diff_content_start = start_pos + diff_start.len();
+    if let Some(end_pos) = content[diff_content_start..].find(diff_end) {
+        let diff_text = &content[diff_content_start..diff_content_start + end_pos];
+        let diff_lines = super::super::diff_render::render_diff_block(
+            diff_text.trim(),
+            &file_path,
+            theme,
+            style_enabled,
+        );
+        lines.extend(diff_lines);
+        // Add bottom margin after diff block
+        lines.push(Line::from(""));
+
+        // Render any text after the diff block
+        let post_start = diff_content_start + end_pos + diff_end.len();
+        let post_text = &content[post_start..];
+        if !post_text.is_empty() {
+            let rendered = render_markdown(post_text, theme, style_enabled, available_width);
+            let dim_style = styles::dim();
+            for render_line in rendered.lines {
+                let base_style = render_line.style;
+                let dimmed_spans: Vec<Span<'_>> = render_line
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        Span::styled(span.content, base_style.patch(span.style).patch(dim_style))
+                    })
+                    .collect();
+                lines.push(Line::from(dimmed_spans));
+            }
+        }
+    } else {
+        // No closing fence found — treat remaining content as diff text
+        let diff_text = &content[diff_content_start..];
+        let diff_lines = super::super::diff_render::render_diff_block(
+            diff_text.trim(),
+            &file_path,
+            theme,
+            style_enabled,
+        );
+        lines.extend(diff_lines);
+        // Add bottom margin after diff block
+        lines.push(Line::from(""));
+    }
+}
+
+/// Extract the file path from a tool result string.
+///
+/// Looks for patterns like `"Successfully edited 'path': ..."` and returns
+/// the path. Falls back to empty string if not found.
+fn extract_file_path_from_result(content: &str) -> String {
+    // Look for 'Successfully edited \'path\':' pattern
+    if let Some(start) = content.find("edited '") {
+        let path_start = start + "edited '".len();
+        if let Some(end) = content[path_start..].find('\'') {
+            return content[path_start..path_start + end].to_string();
+        }
+    }
+    // Look for 'Successfully created \'path\':' pattern
+    if let Some(start) = content.find("created '") {
+        let path_start = start + "created '".len();
+        if let Some(end) = content[path_start..].find('\'') {
+            return content[path_start..path_start + end].to_string();
+        }
+    }
+    String::new()
 }
 
 /// Apply selection highlight to a vector of `Line`s.

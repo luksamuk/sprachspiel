@@ -885,8 +885,10 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED
 **Issue:** #204
+**PR:** #230
+**Branch:** `feat/204-file-write-tools-prompt-uniqueness`
 **Depends on:** None (independent quick wins)
 
 **Goal:** Fix the three most critical gaps in Sprachspiel's file write tools identified in the competitive benchmark against Hermes, Claude Code, and OpenCode:
@@ -907,10 +909,18 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Add `### FILE WRITE TOOLS` section to system prompt with "read before edit" guidance, edit vs write preference, uniqueness explanation | `src/prompts/tools.rs` | ❌ NOT STARTED |
-| 2 | Add uniqueness check in `edit_replace()`: if `search` appears >1x, reject with error showing line numbers of first 3 occurrences | `src/tools/files_write.rs` | ❌ NOT STARTED |
-| 3 | Improve result format: `"+N/-M lines (X→Y). Operation: Z"` instead of `"X lines -> Y lines (+Z). Operation: W"` | `src/tools/files_write.rs` | ❌ NOT STARTED |
-| 4 | Tests for uniqueness check (multi-match rejection, single-match pass, zero-match error) | `src/tools/files_write.rs` | ❌ NOT STARTED |
+| 1 | Add `### FILE WRITE TOOLS` section to system prompt with "read before edit" guidance, edit vs write preference, uniqueness explanation | `src/prompts/tools.rs` | ✅ COMPLETED |
+| 2 | Add uniqueness check in `edit_replace()`: if `search` appears >1x, reject with error showing line numbers of first 3 occurrences | `src/tools/files_write.rs` | ✅ COMPLETED |
+| 3 | Improve result format: `"+N/-M lines (X→Y). Operation: Z"` instead of `"X lines -> Y lines (+Z). Operation: W"` | `src/tools/files_write.rs` | ✅ COMPLETED |
+| 4 | Tests for uniqueness check (multi-match rejection, single-match pass, zero-match error) | `src/tools/files_write.rs` | ✅ COMPLETED |
+| 5 | Unified diff generation via `similar` crate — `DiffLine`, `generate_diff_hunks()`, `compute_diff_stats()`, `format_diff_as_text()` | `src/tools/diff_render.rs` (new) | ✅ COMPLETED |
+| 6 | TUI inline diff rendering with syntect syntax highlighting + line numbers — `render_diff_block()` | `src/chat/tui/diff_render.rs` (new) | ✅ COMPLETED |
+| 7 | Wire diff rendering into `chat_area.rs` — detect `​```diff` blocks in tool results | `src/chat/tui/components/chat_area.rs` | ✅ COMPLETED |
+| 8 | ANSI diff for query/code mode — `render_diff_ansi()` wired into `standalone.rs` | `src/tools/diff_render.rs`, `src/markdown/standalone.rs` | ✅ COMPLETED |
+| 9 | Tests for diff generation, TUI rendering, ANSI rendering | `src/tools/diff_render.rs`, `src/chat/tui/diff_render.rs` | ✅ COMPLETED |
+| 10 | Quality gates: fmt, clippy, test, dead code | — | ✅ COMPLETED |
+
+**M2 Note:** Collapsible/expandable diffs in timeline (Pi-style) — deferred to M2, depends on TUI panel system (#16).
 
 **Cross-refs:** R-34 (file I/O benchmark), #205 (file session state + staleness), #13, #50
 

@@ -26,6 +26,7 @@ use serde::Deserialize;
 #[cfg(feature = "calc-tools")]
 pub mod calc;
 pub mod context;
+pub mod diff_render;
 pub mod files;
 pub mod files_blocklist;
 #[cfg(feature = "file-tools")]
