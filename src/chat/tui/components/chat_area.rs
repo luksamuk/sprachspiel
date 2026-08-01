@@ -738,6 +738,9 @@ fn render_tool_result_with_diff(
         }
     }
 
+    // Add top margin before diff block
+    lines.push(Line::from(""));
+
     // Extract and render the diff block
     let diff_content_start = start_pos + diff_start.len();
     if let Some(end_pos) = content[diff_content_start..].find(diff_end) {
@@ -749,6 +752,8 @@ fn render_tool_result_with_diff(
             style_enabled,
         );
         lines.extend(diff_lines);
+        // Add bottom margin after diff block
+        lines.push(Line::from(""));
 
         // Render any text after the diff block
         let post_start = diff_content_start + end_pos + diff_end.len();
@@ -778,6 +783,8 @@ fn render_tool_result_with_diff(
             style_enabled,
         );
         lines.extend(diff_lines);
+        // Add bottom margin after diff block
+        lines.push(Line::from(""));
     }
 }
 

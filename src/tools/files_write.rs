@@ -317,7 +317,7 @@ pub async fn edit_file(
         )
     } else {
         format!(
-            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}\n{}{}{}\n```",
+            "Successfully edited '{}': +{}/-{} lines ({}→{}). Operation: {}\n{}{}{}",
             path,
             additions,
             removals,
