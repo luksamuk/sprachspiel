@@ -146,6 +146,14 @@ creating new files or complete rewrites.
 string appears multiple times, the operation is rejected with the line numbers of the first
 3 occurrences. Provide more surrounding context to make the search string unique.
 
+**Must read before edit:** You cannot edit a file you have not read in this session. Use
+read_file or read_file_segment first. The file is tracked with its content snapshot; if the
+file is modified externally since your last read, the edit will be rejected. Re-read the file
+to get the latest content before editing.
+
+**Append is exempt:** append_file does NOT require a prior read or staleness check — appending
+is additive and safe.
+
 **Operations:** edit_file supports "replace" (find+replace), "insert" (after line N), and
 "delete_lines" (range). Use "replace" for targeted text changes, "insert" for adding code,
 "delete_lines" for removing lines by number."#
