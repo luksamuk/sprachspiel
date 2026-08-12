@@ -202,4 +202,54 @@ mod tests {
         assert!(state.check_stale(Path::new("/tmp/x"), t0(), 100).is_err());
         assert!(state.check_stale(Path::new("/tmp/x"), t1(), 200).is_ok());
     }
+
+    #[test]
+    fn write_then_readless_edit_does_not_stale_positive() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("sprach_205_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("x.txt");
+        let path_buf = path.clone();
+
+        let mut file = std::fs::File::create(&path).expect("create file");
+        file.write_all(b"initial").expect("write initial");
+        drop(file);
+
+        // First read: capture state.
+        let meta1 = std::fs::metadata(&path).expect("meta");
+        let mtime1 = meta1.modified().expect("mtime");
+        file_session_state().record_read(path_buf.clone(), mtime1, meta1.len());
+
+        // Write (bypasses atomic_write; we just want on-disk mtime to advance).
+        // Sleep 2ms to ensure mtime resolution differs on filesystems with
+        // coarse-grained mtimes (some filesystems only have second resolution).
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let mut file = std::fs::File::create(&path).expect("re-create file");
+        file.write_all(b"modified").expect("write modified");
+        drop(file);
+
+        // Without refresh_after_write: stale (mtime differs, size differs).
+        let meta2 = std::fs::metadata(&path).expect("meta2");
+        let mtime2 = meta2.modified().expect("mtime2");
+        assert!(
+            file_session_state()
+                .check_stale(&path_buf, mtime2, meta2.len())
+                .is_err(),
+            "expected ModifiedExternally before refresh"
+        );
+
+        // After refresh_after_write: not stale.
+        refresh_after_write(&path_buf);
+        let meta3 = std::fs::metadata(&path).expect("meta3");
+        let mtime3 = meta3.modified().expect("mtime3");
+        assert!(
+            file_session_state()
+                .check_stale(&path_buf, mtime3, meta3.len())
+                .is_ok(),
+            "expected Ok after refresh"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        file_session_state().clear();
+    }
 }
