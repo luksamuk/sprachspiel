@@ -965,6 +965,7 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 7. **YAGNI: `edited_files` counter removed.** Issue sketch had a `record_edit()` counter with no consumer. Removed.
 8. **Sandbox gates run BEFORE staleness/must-read.** `validate_write_path()` is a hard gate — no `canonical_path` → no staleness or must-read check. Reversing the order would require `std::fs::metadata()` on unvalidated paths (information side-channel).
 9. **mtime resolution caveat documented** in the integration test: filesystems with second-resolution mtimes (some ext4 mounts, HFS+) can produce identical mtimes across two writes within a second. Test uses a 2ms sleep. If CI flakes, bump to 10ms.
+10. **`make lint` aligned with AGENTS.md lint command.** The bare `cargo clippy -- -D warnings` previously disagreed with project conventions (115 `allow_attributes` false positives + default `cognitive_complexity=15` vs `clippy.toml` threshold of 25 + `too_many_lines=100` vs 160+). Now: `cargo clippy --all-features -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity`.
 
 **Cross-refs:** R-34 (file I/O benchmark), #204 (quick wins — prompt guidance prerequisite), #13, #50, #118 (Tool Trait — CLOSED)
 
