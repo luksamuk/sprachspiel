@@ -24,6 +24,7 @@ pub static FILE_SESSION_STATE: Lazy<Arc<Mutex<FileSessionState>>> =
 /// holding the lock). This is intentional: a poisoned file-state mutex
 /// indicates a programming bug, and failing loudly is safer than silently
 /// continuing with inconsistent tracking.
+#[expect(clippy::expect_used)] // Mutex poisoning is a programming bug — panic is intentional.
 pub fn file_session_state() -> MutexGuard<'static, FileSessionState> {
     FILE_SESSION_STATE
         .lock()
