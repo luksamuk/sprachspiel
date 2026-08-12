@@ -928,8 +928,9 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 
 ### 🔴 PRIORITY: File Session State + Staleness Detection — #205 [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 **Issue:** #205
+**Branch:** `feat/205-file-session-state`
 **Supersedes:** #13 (File Session State) and #50 (Staleness Detection)
 **Depends on:** #204 (Phase 1 — prompt guidance prepares the LLM for staleness errors)
 

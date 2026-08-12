@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **File Session State + Staleness Detection (Issue #205)** — Track which files have been read in the current session and detect when a file has been modified externally before editing, preventing the LLM from operating on stale content. New `src/tools/file_state.rs` module (`FileSessionState`, `ReadFileEntry`, `StaleReason`, global `FILE_SESSION_STATE`) with must-read-before-edit enforcement and mtime+size staleness check on `edit_file` and `write_file` (overwrite path). Tools now reject edits with a clear error message (\"File 'foo.rs' has not been read in this session. Use read_file first.\" / \"File has been modified since it was last read. Re-read the file before editing.\") instead of silently overwriting stale content. After any successful write, the recorded state is refreshed so the next edit of the same file does not produce a false stale positive. Supersedes #13 (File Session State) and #50 (Staleness Detection). **Note:** file read tracking (Phase 2) and edit/write tracking (Phase 3) are the visible behavior changes; phases 1, 4-7 are internal wiring and tests.
+
 ### Changed
 
 - **File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format (Issue #204)** — Three improvements to file write tools identified in a competitive benchmark against Hermes, Claude Code, and OpenCode: (1) Added `### FILE WRITE TOOLS` section to the system prompt with "read before edit" guidance, edit vs write preference, and uniqueness explanation — the LLM no longer needs to "discover" write tools from the tool list. (2) Added uniqueness check in `edit_replace()`: if the search string appears multiple times, the operation is rejected with line numbers of the first 3 occurrences, asking for more context. Previously, `edit_replace()` silently replaced ALL occurrences. (3) Improved result format from `"42 lines -> 45 lines (+3)"` to `"+3/-0 lines (42→45)"` for clearer `+N/-M` diff signaling.
