@@ -6638,6 +6638,9 @@ PR 4: Cleanup
 
 **Depends on:** Responsive Chat Rebuild (M1, W6) — the Ratatui rendering engine, event loop, and CrosstermInput from the Rebuild are prerequisites for this milestone.
 
+**M2 Design Notes (deferred from #205):**
+- **Staleness diff rendering** — when a file is modified externally, the error message could optionally include a diff of what changed (not just THAT it changed). Deferred from #205 because it requires diff generation + display plumbing (panel system). Add as sub-item when designing TUI panels.
+
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 
 **Milestone:** M2 — full design + implementation. TUI is the pre-launch product experience.
