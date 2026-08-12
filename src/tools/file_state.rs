@@ -129,3 +129,77 @@ pub fn refresh_after_write(path: &Path) {
         file_session_state().record_read(path.to_path_buf(), mtime, meta.len());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    fn t0() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_000_000)
+    }
+
+    fn t1() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_000_001)
+    }
+
+    #[test]
+    fn has_been_read_is_false_initially() {
+        let mut state = FileSessionState::default();
+        state.clear(); // idempotent — also exercises clear()
+        assert!(!state.has_been_read(Path::new("/tmp/x")));
+    }
+
+    #[test]
+    fn record_read_marks_file_as_read() {
+        let mut state = FileSessionState::default();
+        state.record_read(PathBuf::from("/tmp/x"), t0(), 100);
+        assert!(state.has_been_read(Path::new("/tmp/x")));
+        assert!(!state.has_been_read(Path::new("/tmp/y")));
+    }
+
+    #[test]
+    fn check_stale_ok_when_never_read() {
+        // Caller is expected to enforce must-read-first; check_stale on
+        // unknown path is Ok (no staleness info available).
+        let state = FileSessionState::default();
+        assert!(state.check_stale(Path::new("/tmp/x"), t0(), 100).is_ok());
+    }
+
+    #[test]
+    fn check_stale_ok_when_mtime_and_size_match() {
+        let mut state = FileSessionState::default();
+        state.record_read(PathBuf::from("/tmp/x"), t0(), 100);
+        assert!(state.check_stale(Path::new("/tmp/x"), t0(), 100).is_ok());
+    }
+
+    #[test]
+    fn check_stale_err_when_mtime_changed() {
+        let mut state = FileSessionState::default();
+        state.record_read(PathBuf::from("/tmp/x"), t0(), 100);
+        assert_eq!(
+            state.check_stale(Path::new("/tmp/x"), t1(), 100),
+            Err(StaleReason::ModifiedExternally)
+        );
+    }
+
+    #[test]
+    fn check_stale_err_when_size_changed() {
+        let mut state = FileSessionState::default();
+        state.record_read(PathBuf::from("/tmp/x"), t0(), 100);
+        assert_eq!(
+            state.check_stale(Path::new("/tmp/x"), t0(), 101),
+            Err(StaleReason::ModifiedExternally)
+        );
+    }
+
+    #[test]
+    fn record_read_overwrites_previous_entry() {
+        let mut state = FileSessionState::default();
+        state.record_read(PathBuf::from("/tmp/x"), t0(), 100);
+        state.record_read(PathBuf::from("/tmp/x"), t1(), 200);
+        // Newest entry: t1 + 200 — neither t0 nor 100 should still match.
+        assert!(state.check_stale(Path::new("/tmp/x"), t0(), 100).is_err());
+        assert!(state.check_stale(Path::new("/tmp/x"), t1(), 200).is_ok());
+    }
+}
