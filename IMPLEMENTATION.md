@@ -928,8 +928,9 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 
 ### 🔴 PRIORITY: File Session State + Staleness Detection — #205 [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (PR #231)
 **Issue:** #205
+**Branch:** `feat/205-file-session-state`
 **Supersedes:** #13 (File Session State) and #50 (Staleness Detection)
 **Depends on:** #204 (Phase 1 — prompt guidance prepares the LLM for staleness errors)
 
@@ -944,20 +945,28 @@ Sprachspiel currently has: zero diff, zero fuzziness, zero uniqueness check, zer
 
 | Phase | Description | Files | Status |
 |-------|-------------|-------|--------|
-| 1 | Create `src/tools/file_state.rs` with `FileSessionState`, `ReadFileEntry`, `StaleReason`, `FILE_SESSION_STATE` global | New file | ❌ NOT STARTED |
-| 2 | Add `record_read()` calls in `read_file`, `read_file_segment` | `src/tools/files.rs` | ❌ NOT STARTED |
-| 3 | Add `record_edit()` calls and re-record-after-write in `write_file`, `edit_file`, `append_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
-| 4 | Must-read-before-edit check: `has_been_read()` before `edit_file` and `write_file` (overwrite) | `src/tools/files_write.rs` | ❌ NOT STARTED |
-| 5 | Staleness check: `check_stale()` before `edit_file` and `write_file` | `src/tools/files_write.rs` | ❌ NOT STARTED |
-| 6 | Module export in `src/tools/mod.rs` | `src/tools/mod.rs` | ❌ NOT STARTED |
-| 7 | Unit tests for `record_read`, `record_edit`, `check_stale`, `has_been_read` | `src/tools/file_state.rs` | ❌ NOT STARTED |
+| 1 | Create `src/tools/file_state.rs` with `FileSessionState`, `ReadFileEntry`, `StaleReason`, `FILE_SESSION_STATE` global | New file | ✅ COMPLETED |
+| 2 | Add `record_read()` calls in `read_file`, `read_file_segment` | `src/tools/files.rs` | ✅ COMPLETED |
+| 3 | Add refresh-after-write in `write_file`, `edit_file`, `append_file` (replaces issue's `record_edit` — `edited_files` counter was YAGNI, removed) | `src/tools/files_write.rs`, `src/tools/file_state.rs` | ✅ COMPLETED |
+| 4 | Must-read-before-edit check: `has_been_read()` before `edit_file` and `write_file` (overwrite) | `src/tools/files_write.rs` | ✅ COMPLETED |
+| 5 | Staleness check: `check_stale()` before `edit_file` and `write_file` | `src/tools/files_write.rs` | ✅ COMPLETED |
+| 6 | Module export in `src/tools/mod.rs` | `src/tools/mod.rs` | ✅ COMPLETED |
+| 7 | Unit tests for `record_read`, `check_stale`, `has_been_read`, `refresh_after_write` integration | `src/tools/file_state.rs` | ✅ COMPLETED |
+| 4.5 | System prompt: `### FILE WRITE TOOLS` gains must-read + staleness + append-exempt rules | `src/prompts/tools.rs` | ✅ COMPLETED |
 
 **Design Decisions:**
 
 1. **mtime+size without hash.** Claude Code and OpenCode both use mtime-only or mtime+size. If mtime and size match, content is almost certainly the same. Hash (seahash) adds a dependency for minimal benefit. Can be added later as defense-in-depth.
 2. **Must-read-before-edit for `edit_file` AND `write_file` (overwrite of existing file).** Claude Code enforces read-before-write too. Creating new files does not require a prior read.
-3. **Re-record-after-write.** After a write, record the new mtime+size as the known state. Without this, the next edit of the same file fails with stale false-positive.
-4. **Clear LLM error messages.** "File 'foo.rs' has not been read in this session. Use read_file first." and "File 'foo.rs' has been modified since it was last read. Re-read the file before editing."
+3. **`append_file` is exempt from must-read and staleness checks.** Appending is semantically additive and does not depend on prior content.
+4. **Re-record-after-write.** After a write, record the new mtime+size as the known state. Without this, the next edit of the same file fails with stale false-positive.
+5. **Clear LLM error messages.** "File 'foo.rs' has not been read in this session. Use read_file first." and "File 'foo.rs' has been modified since it was last read. Re-read the file before editing."
+6. **System prompt updated with the new rules** (`### FILE WRITE TOOLS`) so the LLM learns them without needing to fail first.
+7. **YAGNI: `edited_files` counter removed.** Issue sketch had a `record_edit()` counter with no consumer. Removed.
+8. **Sandbox gates run BEFORE staleness/must-read.** `validate_write_path()` is a hard gate — no `canonical_path` → no staleness or must-read check. Reversing the order would require `std::fs::metadata()` on unvalidated paths (information side-channel).
+9. **mtime resolution caveat documented** in the integration test: filesystems with second-resolution mtimes (some ext4 mounts, HFS+) can produce identical mtimes across two writes within a second. Test uses a 2ms sleep. If CI flakes, bump to 10ms.
+10. **`make lint` aligned with AGENTS.md lint command.** The bare `cargo clippy -- -D warnings` previously disagreed with project conventions (115 `allow_attributes` false positives + default `cognitive_complexity=15` vs `clippy.toml` threshold of 25 + `too_many_lines=100` vs 160+). Now: `cargo clippy --all-features -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity`.
+11. **`StaleReason` is a single-variant enum kept as an extension point.** Today it has only `ModifiedExternally`. Kept (not collapsed to `bool`) because M3+ may add variants: `ModifiedExternallyByAnotherAgent` (multi-agent), `ContentDrift { mtime_changed, hash_matches }` (if seahash is adopted), `DeletedAndRecreated` (atomic-replace patterns), `LockedByAnotherProcess` (flock tracking). Re-evaluate this design when: (a) Approach B lands post-#121 (state injection may change error surfacing), (b) cross-session file state is considered (currently session-scoped by design), (c) multi-agent file coordination becomes a feature (#212 model routing, or a future coordination layer), (d) hash-based comparison is adopted (production flake evidence). If none of these ever land and the enum remains single-variant, collapse to `bool` then.
 
 **Cross-refs:** R-34 (file I/O benchmark), #204 (quick wins — prompt guidance prerequisite), #13, #50, #118 (Tool Trait — CLOSED)
 
@@ -6636,6 +6645,9 @@ PR 4: Cleanup
 **Goal:** Build the full TUI experience: sidebars, /queue, /steer, multi-pane layout, and complete UX design on top of the Responsive Chat Rebuild infrastructure.
 
 **Depends on:** Responsive Chat Rebuild (M1, W6) — the Ratatui rendering engine, event loop, and CrosstermInput from the Rebuild are prerequisites for this milestone.
+
+**M2 Design Notes (deferred from #205):**
+- **Staleness diff rendering** — when a file is modified externally, the error message could optionally include a diff of what changed (not just THAT it changed). Deferred from #205 because it requires diff generation + display plumbing (panel system). Add as sub-item when designing TUI panels.
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 

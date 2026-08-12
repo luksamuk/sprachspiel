@@ -17,6 +17,7 @@
 //! - `edit_file` - Surgical edits (replace/insert/delete lines)
 //! - `append_file` - Append content to end of file
 
+use super::file_state::{self, file_session_state};
 use super::files_blocklist::{BlocklistConfig, is_blocked_for_write};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool};
@@ -106,6 +107,28 @@ pub async fn write_file(
         return Ok(err_msg);
     }
 
+    // Must-read-before-edit: overwriting an existing file requires a prior
+    // read in this session. Creating a new file does not.
+    if canonical_path.exists() && !file_session_state().has_been_read(&canonical_path) {
+        let msg = file_state::must_read_first_error(&path);
+        log_tool_result("write_file", &msg);
+        return Ok(msg);
+    }
+
+    // Staleness: if the file changed on disk since our last read, refuse to
+    // overwrite until the LLM re-reads (refreshes the snapshot).
+    if canonical_path.exists()
+        && let Ok(meta) = std::fs::metadata(&canonical_path)
+        && let Ok(mtime) = meta.modified()
+        && file_session_state()
+            .check_stale(&canonical_path, mtime, meta.len())
+            .is_err()
+    {
+        let msg = file_state::stale_error(&path);
+        log_tool_result("write_file", &msg);
+        return Ok(msg);
+    }
+
     // Validate content size
     if content.len() > MAX_WRITE_SIZE {
         let size_mb = content.len() as f64 / 1_048_576.0;
@@ -126,6 +149,9 @@ pub async fn write_file(
         log_tool_result("write_file", &err_msg);
         return Ok(err_msg);
     }
+
+    // Refresh the session snapshot so the next edit doesn't false-positive.
+    file_state::refresh_after_write(&canonical_path);
 
     let size = format_size(content.len() as u64);
     let result = if canonical_path.exists() {
@@ -227,6 +253,26 @@ pub async fn edit_file(
         return Ok(err_msg);
     }
 
+    // Must-read-before-edit: reject edits to files never read in this session.
+    if !file_session_state().has_been_read(&canonical_path) {
+        let msg = file_state::must_read_first_error(&path);
+        log_tool_result("edit_file", &msg);
+        return Ok(msg);
+    }
+
+    // Staleness: if the file changed on disk since our last read, refuse to
+    // edit until the LLM re-reads (refreshes the snapshot).
+    if let Ok(meta) = std::fs::metadata(&canonical_path)
+        && let Ok(mtime) = meta.modified()
+        && file_session_state()
+            .check_stale(&canonical_path, mtime, meta.len())
+            .is_err()
+    {
+        let msg = file_state::stale_error(&path);
+        log_tool_result("edit_file", &msg);
+        return Ok(msg);
+    }
+
     // Read current content
     let original_content = match std::fs::read_to_string(&canonical_path) {
         Ok(c) => c,
@@ -299,6 +345,9 @@ pub async fn edit_file(
         log_tool_result("edit_file", &err_msg);
         return Ok(err_msg);
     }
+
+    // Refresh the session snapshot so the next edit doesn't false-positive.
+    file_state::refresh_after_write(&canonical_path);
 
     // Calculate diff statistics
     let (additions, removals) =
@@ -452,12 +501,17 @@ pub async fn append_file(
         };
 
         match std::io::BufWriter::new(file).write_all(content.as_bytes()) {
-            Ok(()) => format!(
-                "Successfully appended +{} lines to '{}' (total: {}).",
-                content.lines().count(),
-                path,
-                format_size(total_size as u64)
-            ),
+            Ok(()) => {
+                // Refresh the session snapshot so any subsequent edit doesn't
+                // false-positive on our own write.
+                file_state::refresh_after_write(&canonical_path);
+                format!(
+                    "Successfully appended +{} lines to '{}' (total: {}).",
+                    content.lines().count(),
+                    path,
+                    format_size(total_size as u64)
+                )
+            }
             Err(e) => {
                 let err_msg = format!("Error: Failed to append to '{}': {}", path, e);
                 log_tool_result("append_file", &err_msg);
@@ -471,6 +525,8 @@ pub async fn append_file(
             log_tool_result("append_file", &err_msg);
             return Ok(err_msg);
         }
+        // Refresh the session snapshot.
+        file_state::refresh_after_write(&canonical_path);
         format!(
             "Successfully created '{}' with {}.",
             path,

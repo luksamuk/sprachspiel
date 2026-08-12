@@ -1,3 +1,4 @@
+use super::file_state::file_session_state;
 use super::files_blocklist::{BlocklistConfig, is_blocked_for_list, is_blocked_for_read};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool, parse_u32};
@@ -110,6 +111,12 @@ pub async fn read_file(
             return Ok(err_msg);
         }
     };
+
+    // Record that this session has read the file, with the mtime+size at
+    // read time. Subsequent edits compare against this snapshot.
+    if let Ok(mtime) = metadata.modified() {
+        file_session_state().record_read(canonical_path.clone(), mtime, metadata.len());
+    }
 
     // Apply max_lines limit if specified
     let result = if let Some(lines) = max_lines_parsed {
@@ -274,6 +281,12 @@ pub async fn read_file_segment(
             return Ok(err_msg);
         }
     };
+
+    // Record that this session has read the file, with the mtime+size at
+    // read time. Subsequent edits compare against this snapshot.
+    if let Ok(mtime) = metadata.modified() {
+        file_session_state().record_read(canonical_path.clone(), mtime, metadata.len());
+    }
 
     // Extract segment
     let start = start_line_parsed as usize;

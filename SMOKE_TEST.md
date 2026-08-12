@@ -384,6 +384,9 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
 echo "test content" > /tmp/file_test.txt
 # File for tilde expansion test (Bug #1 related)
 echo "file tools test" > ~/file_test.txt
+# Delete write-test target so the write creates a NEW file (must-read-before-edit,
+# #205, only applies when overwriting an existing file)
+rm -f /tmp/write_test.txt
 ```
 
 Via chat with a model that supports tools:
@@ -391,7 +394,7 @@ Via chat with a model that supports tools:
 - [ ] `read_file(path="/tmp/file_test.txt")` works
 - [ ] `read_file(path="~/file_test.txt")` works (with ~) ← **Bug #1 related**
 - [ ] `list_directory(path="~")` works
-- [ ] `write_file(path="/tmp/write_test.txt", content="test")` works
+- [ ] `write_file(path="/tmp/write_test.txt", content="test")` works (creates new file — must-read does not apply to creation, see #205)
 
 ---
 
@@ -1895,6 +1898,65 @@ Verify that streaming works normally (TTFB watchdog doesn't fire spuriously):
 - [ ] Streaming tokens appear within a few seconds (no 120s timeout)
 - [ ] Response completes normally
 - [ ] `/exit`
+
+---
+
+## 29. File Session State + Staleness Detection (Issue #205, PR #231)
+
+**Objective:** Verify must-read-before-edit and staleness detection work end-to-end in chat.
+
+**Prepare:**
+```bash
+mkdir -p /tmp/sprach_smoke_205
+echo "alpha beta gamma" > /tmp/sprach_smoke_205/watched.txt
+echo "scratch" > /tmp/sprach_smoke_205/scratch.txt
+rm -f /tmp/sprach_smoke_205/created.txt
+```
+
+Via chat with a model that supports tools:
+
+### 29.1 Must-read rejects edit on never-read file
+- [ ] Ask LLM to edit `/tmp/sprach_smoke_205/watched.txt` WITHOUT calling read_file first (e.g., "Replace 'beta' with 'BETA' in /tmp/sprach_smoke_205/watched.txt using edit_file.")
+- [ ] Tool error contains "has not been read in this session"
+- [ ] File on disk UNCHANGED: `grep 'beta' /tmp/sprach_smoke_205/watched.txt` still matches
+
+### 29.2 Must-read rejects write_file overwrite on never-read file
+- [ ] Ask LLM to overwrite `/tmp/sprach_smoke_205/watched.txt` with new content (write_file, overwrite=true)
+- [ ] Tool error contains "has not been read in this session"
+- [ ] File unchanged
+
+### 29.3 write_file creating a NEW file is allowed without read
+- [ ] Ask LLM to create `/tmp/sprach_smoke_205/created.txt` with any content
+- [ ] Tool succeeds (no must-read error)
+- [ ] File exists with expected content
+
+### 29.4 Read-then-edit happy path
+- [ ] Ask LLM to read `/tmp/sprach_smoke_205/watched.txt`, then edit it
+- [ ] Edit succeeds; result shows unified diff block (#204)
+
+### 29.5 External modification triggers staleness
+- [ ] Ask LLM to read `/tmp/sprach_smoke_205/watched.txt`
+- [ ] **In another terminal**, modify externally: `echo "external" >> /tmp/sprach_smoke_205/watched.txt`
+- [ ] Ask LLM to edit that file again (without re-reading)
+- [ ] Tool error contains "has been modified since it was last read"
+- [ ] External change still on disk (`tail -1` shows `external`)
+
+### 29.6 Re-read clears staleness
+- [ ] Ask LLM to re-read `/tmp/sprach_smoke_205/watched.txt`, then edit
+- [ ] Edit succeeds
+
+### 29.7 append_file is exempt
+- [ ] Ask LLM to append to `/tmp/sprach_smoke_205/scratch.txt` WITHOUT reading it first
+- [ ] Tool succeeds — no must-read error
+
+### 29.8 Sandbox still wins over staleness/must-read
+- [ ] Ask LLM to edit a file outside sandbox (e.g., `/etc/hostname` or `/root/x`)
+- [ ] Error is a sandbox error (path outside allowed directory), NOT a must-read error
+
+**Cleanup:**
+```bash
+rm -rf /tmp/sprach_smoke_205
+```
 
 ---
 

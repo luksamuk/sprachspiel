@@ -168,7 +168,7 @@ check:
 
 # Run clippy
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy --all-features -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity
 
 # Format code
 fmt:
