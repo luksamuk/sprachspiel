@@ -83,16 +83,17 @@ impl FileSessionState {
         current_mtime: SystemTime,
         current_size: u64,
     ) -> Result<(), StaleReason> {
-        match self.read_files.get(path) {
-            None => Ok(()), // Caller handles the never-read case separately.
-            Some(entry) => {
-                if entry.mtime != current_mtime || entry.size != current_size {
-                    Err(StaleReason::ModifiedExternally)
-                } else {
-                    Ok(())
-                }
-            }
+        // Never read in this session — nothing to compare against. The
+        // must-read-before-edit guard handles this case upstream.
+        let Some(entry) = self.read_files.get(path) else {
+            return Ok(());
+        };
+
+        if entry.mtime != current_mtime || entry.size != current_size {
+            return Err(StaleReason::ModifiedExternally);
         }
+
+        Ok(())
     }
 
     /// Clear all state. Used by tests to isolate cases.
