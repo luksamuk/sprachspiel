@@ -47,6 +47,11 @@ pub struct ReadFileEntry {
 pub enum StaleReason {
     /// File mtime or size differs from the recorded read-time values.
     ModifiedExternally,
+    // NOTE: Single-variant enum kept as an extension point. Possible future
+    // variants (M3+): ModifiedExternallyByAnotherAgent, ContentDrift (if
+    // seahash hash comparison is adopted), DeletedAndRecreated,
+    // LockedByAnotherProcess. Re-evaluate collapsing to `bool` if none of
+    // these ever land. See IMPLEMENTATION.md #205 Design Decision 11.
 }
 
 impl FileSessionState {
