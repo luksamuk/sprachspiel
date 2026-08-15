@@ -332,6 +332,10 @@ fn default_semantic_weight() -> f32 {
     DEFAULT_SEMANTIC_WEIGHT
 }
 
+fn default_embedding_prefix() -> String {
+    "search_document: ".to_string()
+}
+
 /// Thinking Trace Transform configuration.
 ///
 /// Controls whether reasoning traces from LLM responses are included in
@@ -423,6 +427,14 @@ pub struct IndexingSettings {
     /// overlap). Moved from the old `[retrieval]` section.
     #[serde(default = "default_semantic_weight")]
     pub semantic_weight: f32,
+
+    /// Prefix prepended to each text before embedding (e.g.
+    /// `"search_document: "` for nomic-embed-text models). Some
+    /// models (BGE, GTE, mxbai) do not require a prefix — set to
+    /// `""` for those. Default: `"search_document: "` (matches
+    /// nomic-embed-text-v2-moe, the current default model).
+    #[serde(default = "default_embedding_prefix")]
+    pub prefix: String,
 }
 
 impl Default for IndexingSettings {
@@ -437,6 +449,7 @@ impl Default for IndexingSettings {
             probe: true,
             keyword_weight: DEFAULT_KEYWORD_WEIGHT,
             semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
+            prefix: default_embedding_prefix(),
         }
     }
 }
@@ -835,6 +848,13 @@ model = "nomic"
 # Default: 0.6 (embeddings capture meaning better than keyword
 # overlap). Moved from the old [retrieval] section.
 # semantic_weight = 0.6
+
+# Prefix prepended to each text before embedding.
+# nomic-embed-text models use "search_document: " (the default).
+# Models that do not require a prefix (BGE, GTE, mxbai) should
+# set this to "" (empty string).
+# Default: "search_document: "
+# prefix = "search_document: "
 "#;
 
 fn default_led_port() -> u16 {
@@ -1510,6 +1530,7 @@ semantic_threshold = 0.80
         let settings = Settings::default();
         assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
+        assert_eq!(settings.indexing.prefix, "search_document: ");
     }
 
     #[test]
@@ -1583,12 +1604,14 @@ model = "bge"
 probe = false
 keyword_weight = 0.3
 semantic_weight = 0.7
+prefix = ""
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
         assert_eq!(settings.indexing.model, "bge");
         assert!(!settings.indexing.probe);
         assert!((settings.indexing.keyword_weight - 0.3).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.7).abs() < f32::EPSILON);
+        assert_eq!(settings.indexing.prefix, "");
     }
 
     #[test]
