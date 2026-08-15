@@ -1,5 +1,3 @@
-#![expect(clippy::print_stderr)] // Embedding truncation output
-
 //! Matryoshka embedding truncation
 //!
 //! Truncates 768-dimensional embeddings to 256 dimensions with normalization.

@@ -144,6 +144,8 @@ impl Database {
     /// * `dimensions` - The configured embedding dimensions (from the
     ///   model alias's `dimensions` field in `models.toml`).
     pub fn ensure_vec0_dimensions(&self, dimensions: u32) -> Result<()> {
+        #[expect(clippy::expect_used)]
+        // Mutex poison — same pattern as all other db methods
         let conn = self.conn.lock().expect("lock poisoned: db connection");
 
         // Read stored dimensions
