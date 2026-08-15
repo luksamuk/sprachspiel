@@ -192,32 +192,16 @@ impl EmbeddingClient {
             });
         }
 
-        // If the model returns more than the storage format
-        // (TRUNCATED_DIMENSIONS = 256), apply Matryoshka
-        // truncation for compact storage with norm correction.
-        // If the alias's dimensions are <= TRUNCATED_DIMENSIONS,
-        // store the full vector (no truncation needed).
-        if (self.dimensions as usize) > TRUNCATED_DIMENSIONS {
-            Ok(truncate_and_normalize_with_correction(&embedding))
-        } else {
-            // No truncation; just L2-normalize and compute norm
-            // correction.
-            use super::truncate::TruncateResult;
-            let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-            if norm < f32::EPSILON {
-                Ok(TruncateResult {
-                    vector: vec![0.0; embedding.len()],
-                    norm_correction: 1.0,
-                })
-            } else {
-                let vector: Vec<f32> = embedding.iter().map(|x| x / norm).collect();
-                let norm_correction = 1.0 / (norm * norm);
-                Ok(TruncateResult {
-                    vector,
-                    norm_correction,
-                })
-            }
-        }
+        // Truncate (if needed) and normalize with norm correction.
+        // When the server returns exactly self.dimensions dims
+        // (normal case with server-side Matryoshka), truncation is
+        // identity — just normalizes. When the server returns more
+        // dims (fallback for non-Matryoshka servers), truncates to
+        // self.dimensions.
+        Ok(truncate_and_normalize_with_correction(
+            &embedding,
+            self.dimensions as usize,
+        ))
     }
 
     /// Generate embeddings for multiple texts in batch
