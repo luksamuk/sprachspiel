@@ -6,6 +6,14 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Added
 
+- **Configurable Embedding Prefix (Issue #106)** — The embedding prefix (`"search_document: "`) is no longer hardcoded. It is now configurable via `[indexing].prefix` in `config.toml` (default: `"search_document: "` for nomic-embed-text-v2-moe compatibility). Models that do not require a prefix (e.g., BGE, GTE) can set `prefix = ""`. The prefix is applied consistently in single-embed and batch-embed paths.
+
+- **Auto-Detected Embedding Context Length (Issue #106)** — The embedding context length is no longer hardcoded at 512 tokens. It is auto-detected from the model's `context_length` field in `models.toml` (the same field used for chat models). Fallback: `DEFAULT_CONTEXT_LENGTH` (512) when model info is unavailable. This enables long-context embedding models (e.g., 8192 tokens) without manual configuration.
+
+### Changed
+
+- **Dynamic vec0 Dimensions (Issue #106)** — The `content_embeddings`, `chunk_embeddings_v2`, and `fact_embeddings` vec0 tables now use `FLOAT[<configured_dimensions>]` instead of the hardcoded `FLOAT[256]`. The dimensions are read from the embedding model alias's `dimensions` field in `models.toml` at DB initialization. A schema migration recreates the vec0 tables when dimensions change, resetting `has_embedding` flags so the background recovery pipeline regenerates all embeddings at the new dimensionality. The client-side Matryoshka truncation (`truncate_and_normalize_with_correction`) now truncates to the configured dimensions (not the hardcoded 256), and is only applied when the server returns more dims than configured (fallback for providers that don't support server-side `dimensions`).
+
 - **File Session State + Staleness Detection (Issue #205)** — Track which files have been read in the current session and detect when a file has been modified externally before editing, preventing the LLM from operating on stale content. New `src/tools/file_state.rs` module (`FileSessionState`, `ReadFileEntry`, `StaleReason`, global `FILE_SESSION_STATE`) with must-read-before-edit enforcement and mtime+size staleness check on `edit_file` and `write_file` (overwrite path). Tools now reject edits with a clear error message (\"File 'foo.rs' has not been read in this session. Use read_file first.\" / \"File has been modified since it was last read. Re-read the file before editing.\") instead of silently overwriting stale content. After any successful write, the recorded state is refreshed so the next edit of the same file does not produce a false stale positive. Supersedes #13 (File Session State) and #50 (Staleness Detection). **Note:** file read tracking (Phase 2) and edit/write tracking (Phase 3) are the visible behavior changes; phases 1, 4-7 are internal wiring and tests.
 
 ### Changed
