@@ -115,12 +115,14 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            // EmbeddingClient::with_model now takes (provider,
-            // model_name, dimensions). dimensions is sourced from
-            // the alias in models.toml and propagated through
-            // IndexingInit; the EmbeddingClient is just a thin
-            // holder for now. The probe (Commit 6) uses the
-            // dimensions for strict-verify.
+            // Ensure vec0 tables match the configured embedding dimensions.
+            // For 256-dim (default), this is a no-op. For other dims, it
+            // recreates the vec0 tables and resets has_embedding flags.
+            if let Err(e) = db.ensure_vec0_dimensions(indexing_init.dimensions) {
+                log::error!("Failed to ensure vec0 dimensions: {e}");
+                // Non-fatal: the DB still works, but embeddings may fail
+                // if the vec0 dims don't match. Log and continue.
+            }
             let embedding = Arc::new(EmbeddingClient::with_model(
                 indexing_init.provider.clone(),
                 indexing_init.model_id.clone(),

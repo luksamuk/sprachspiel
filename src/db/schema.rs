@@ -9,7 +9,7 @@
 //! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 14;
+pub const SCHEMA_VERSION: i32 = 15;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -254,6 +254,12 @@ CREATE TABLE IF NOT EXISTS feedback_signals (
 CREATE INDEX IF NOT EXISTS idx_feedback_signals_item_id ON feedback_signals(item_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_signals_session_id ON feedback_signals(session_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_signals_created_at ON feedback_signals(created_at);
+
+-- Schema metadata (v15: tracks embedding dimensions for dynamic vec0)
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 "#;
 
 /// Version check query

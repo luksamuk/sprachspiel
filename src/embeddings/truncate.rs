@@ -15,7 +15,8 @@
 //! For nomic-embed-text-v2-moe with d_eff≈7, this correction can shift
 //! similarity scores by 10-30%, making semantic search thresholds more accurate.
 
-/// Full embedding dimensions from nomic-embed-text-v2-moe
+/// Full embedding dimensions from nomic-embed-text-v2-moe (test reference)
+#[cfg(test)]
 pub const FULL_DIMENSIONS: usize = 768;
 /// Truncated dimensions (Matryoshka)
 pub const TRUNCATED_DIMENSIONS: usize = 256;
