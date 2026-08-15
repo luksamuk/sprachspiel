@@ -105,10 +105,10 @@ impl EmbeddingClient {
         if let Some(&ctx) = self.cached_context_length.get() {
             return Ok(ctx);
         }
-        // Derive from capability detection. For now, use the
-        // conservative default; can be enhanced to read from
-        // /v1/models response metadata.
-        let context_length = DEFAULT_CONTEXT_LENGTH;
+        let context_length = self
+            .context_length
+            .map(|c| c as usize)
+            .unwrap_or(DEFAULT_CONTEXT_LENGTH);
         let _ = self.cached_context_length.set(context_length);
         Ok(context_length)
     }
@@ -128,9 +128,8 @@ impl EmbeddingClient {
     /// Generate embedding for a single text
     pub async fn embed(&self, text: &str) -> Result<TruncateResult, EmbeddingError> {
         let context_length = self
-            .cached_context_length
-            .get()
-            .copied()
+            .context_length
+            .map(|c| c as usize)
             .unwrap_or(DEFAULT_CONTEXT_LENGTH);
 
         if Self::is_likely_context_exceeded(text, context_length) {
@@ -151,7 +150,11 @@ impl EmbeddingClient {
             .await
             .map_err(|_| EmbeddingError::ApiError("Semaphore closed".to_string()))?;
 
-        let prefixed_text = format!("search_document: {}", text);
+        let prefixed_text = if self.prefix.is_empty() {
+            text.to_string()
+        } else {
+            format!("{}{}", self.prefix, text)
+        };
 
         // Pass the alias's declared `dimensions` (not the hardcoded
         // TRUNCATED_DIMENSIONS constant). The startup probe already
