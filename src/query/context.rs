@@ -165,9 +165,9 @@ impl QueryContextBuilder {
         // misconfigured, the resolver returns an error and we
         // pass an empty model_id to init_database_core which
         // bails with a clear error message.
-        let (model_id, dimensions) = match settings.resolve_indexing_model() {
-            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-            Err(_) => (String::new(), 768), // triggers the empty-model_id error
+        let (model_id, dimensions, context_length) = match settings.resolve_indexing_model() {
+            Ok((mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims, mcfg.num_ctx),
+            Err(_) => (String::new(), 768, None), // triggers the empty-model_id error
         };
         let result = crate::db::init_database_core(
             crate::db::IndexingInit {
@@ -175,6 +175,8 @@ impl QueryContextBuilder {
                 model_id,
                 dimensions,
                 probe: false, // query subcommand skips the probe (one-shot)
+                prefix: settings.indexing.prefix.clone(),
+                context_length,
             },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),

@@ -43,6 +43,14 @@ pub struct EmbeddingClient {
     /// `dimensions = N` in models.toml). Used for vector store
     /// sizing and probe verification.
     dimensions: u32,
+    /// Prefix prepended to each text before embedding (from
+    /// `[indexing].prefix` in `config.toml`). Empty string = no
+    /// prefix.
+    prefix: String,
+    /// Context length for the embedding model (from `num_ctx` on
+    /// the model alias in `models.toml`). `None` = fallback to
+    /// `DEFAULT_CONTEXT_LENGTH` (512).
+    context_length: Option<u32>,
     /// Cached context length to avoid repeated API calls.
     cached_context_length: OnceCell<usize>,
     semaphore: Semaphore,
@@ -61,11 +69,15 @@ impl EmbeddingClient {
         provider: crate::provider::OpenAICompatibleProvider,
         model: String,
         dimensions: u32,
+        prefix: String,
+        context_length: Option<u32>,
     ) -> Self {
         Self {
             provider,
             model,
             dimensions,
+            prefix,
+            context_length,
             cached_context_length: OnceCell::new(),
             semaphore: Semaphore::new(1),
         }
@@ -350,11 +362,12 @@ mod tests {
 
     #[test]
     fn test_with_model_constructor() {
-        // with_model also takes `dimensions`.
         let _client = EmbeddingClient::with_model(
             make_dummy_provider(),
             "nomic-embed-text-v2-moe".to_string(),
             768,
+            "search_document: ".to_string(),
+            None,
         );
     }
 
@@ -364,8 +377,36 @@ mod tests {
             make_dummy_provider(),
             "bge-small-en-v1.5".to_string(),
             768,
+            "search_document: ".to_string(),
+            None,
         );
         assert_eq!(client.model(), "bge-small-en-v1.5");
         assert_eq!(client.dimensions, 768);
+    }
+
+    #[test]
+    fn test_with_model_stores_prefix_and_context() {
+        let client = EmbeddingClient::with_model(
+            make_dummy_provider(),
+            "bge-small-en-v1.5".to_string(),
+            768,
+            "".to_string(),
+            Some(8192),
+        );
+        assert_eq!(client.prefix, "");
+        assert_eq!(client.context_length, Some(8192));
+    }
+
+    #[test]
+    fn test_with_model_default_prefix() {
+        let client = EmbeddingClient::with_model(
+            make_dummy_provider(),
+            "nomic-embed-text-v2-moe".to_string(),
+            256,
+            "search_document: ".to_string(),
+            None,
+        );
+        assert_eq!(client.prefix, "search_document: ");
+        assert_eq!(client.context_length, None);
     }
 }

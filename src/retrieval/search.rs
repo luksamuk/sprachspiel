@@ -162,6 +162,8 @@ pub async fn run_search(
     provider: &crate::provider::OpenAICompatibleProvider,
     embedding_model_id: &str,
     embedding_dimensions: u32,
+    embedding_prefix: &str,
+    embedding_context_length: Option<u32>,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,
@@ -179,6 +181,8 @@ pub async fn run_search(
         provider.clone(),
         embedding_model_id.to_string(),
         embedding_dimensions,
+        embedding_prefix.to_string(),
+        embedding_context_length,
     );
 
     log::debug!("Generating embedding for query...");
