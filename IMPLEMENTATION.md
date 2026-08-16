@@ -3462,7 +3462,8 @@ Recent context (47 messages):
 | 3 | Dynamic vec0 dimensions | `FLOAT[256]` in schema.rs is hardcoded. Read configured dimensions at DB init and create vec0 tables with `FLOAT[<N>]`. Migration detects dimension change → DROP+reCREATE vec0 tables + reset `has_embedding`. | `src/db/schema.rs`, `src/db/connection.rs` |
 | 4 | Truncation respects configured dims | `truncate_and_normalize_with_correction()` always truncates to `TRUNCATED_DIMENSIONS = 256`. Make it truncate to the configured dimensions. When dims ≤ configured, store full vector (no truncation). | `src/embeddings/truncate.rs`, `src/embeddings/client.rs` |
 | 5 | Tests | Prefix config, context_length detection, dimension change migration, truncation at non-256 dims | test modules |
-| 6 | Docs | Update `[indexing]` sample config, user docs, man page | `doc/src/`, `man/sprach.1` |
+| 6 | Docs | Update `[indexing]` sample config, user docs, man page, embedding model guide with ranking | `doc/src/`, `man/sprach.1` |
+| 7 | Embedding retry with backoff | `embed()` in `OpenAICompatibleProvider` had no retry — a single HTTP 500 failed immediately. Added retry loop using existing `classify_retry_response` + `backoff_delay` (same pattern as `chat_with_retry`). | `src/provider/openai_compat.rs` |
 
 ### Matryoshka-Capable Embedding Models (Ollama)
 
