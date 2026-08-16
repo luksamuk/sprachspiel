@@ -12,6 +12,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Embedding Retry with Backoff (Issue #106)** — The `embed()` method in `OpenAICompatibleProvider` now retries on transient HTTP errors (429, 5xx) and network errors, using the same `classify_retry_response` and `backoff_delay` infrastructure as the chat path. Previously, a single HTTP 500 from the embedding server would fail the operation immediately with no retry, causing background recovery and `/search` to fail on transient errors.
 
+### Fixed
+
+- **Embedding provider resolution in /search and /reindex (Issue #106)** — The `/search` and `/reindex` commands were using `state.provider` (the chat model's provider) to generate embeddings, instead of the embedding model's own provider resolved from `models.toml`. This caused failures when the chat model and embedding model were on different providers (e.g., chat on Ollama, embeddings on llama-swap). The `query` subcommand had the same issue. All three call sites now resolve the embedding-specific provider via `resolve_indexing_model()` and create a separate `OpenAICompatibleProvider` for embedding calls, matching the pattern already used in `repl.rs` (chat startup).
+
 ### Changed
 
 - **Dynamic vec0 Dimensions (Issue #106)** — The `content_embeddings`, `chunk_embeddings_v2`, and `fact_embeddings` vec0 tables now use `FLOAT[<configured_dimensions>]` instead of the hardcoded `FLOAT[256]`. The dimensions are read from the embedding model alias's `dimensions` field in `models.toml` at DB initialization. A schema migration recreates the vec0 tables when dimensions change, resetting `has_embedding` flags so the background recovery pipeline regenerates all embeddings at the new dimensionality. The client-side Matryoshka truncation (`truncate_and_normalize_with_correction`) now truncates to the configured dimensions (not the hardcoded 256), and is only applied when the server returns more dims than configured (fallback for providers that don't support server-side `dimensions`).

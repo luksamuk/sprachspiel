@@ -3464,6 +3464,7 @@ Recent context (47 messages):
 | 5 | Tests | Prefix config, context_length detection, dimension change migration, truncation at non-256 dims | test modules |
 | 6 | Docs | Update `[indexing]` sample config, user docs, man page, embedding model guide with ranking | `doc/src/`, `man/sprach.1` |
 | 7 | Embedding retry with backoff | `embed()` in `OpenAICompatibleProvider` had no retry — a single HTTP 500 failed immediately. Added retry loop using existing `classify_retry_response` + `backoff_delay` (same pattern as `chat_with_retry`). | `src/provider/openai_compat.rs` |
+| 8 | Fix embedding provider resolution | `/search`, `/reindex`, and `query` subcommand used `state.provider` (chat provider) for embeddings instead of the embedding model's own provider. Fixed all 3 call sites to use `resolve_indexing_model()`'s `provider_cfg` (same pattern as `repl.rs`). | `src/chat/command_handlers.rs`, `src/query/context.rs` |
 
 ### Matryoshka-Capable Embedding Models (Ollama)
 

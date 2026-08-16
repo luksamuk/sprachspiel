@@ -873,13 +873,17 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
-    // Resolve the indexing alias to get the upstream model_id and
-    // dimensions. The search function takes both — the model_id is the
-    // name passed to /v1/embeddings and the dimensions size the vector
-    // store.
-    let (embedding_model_id, embedding_dimensions, embedding_context_length) =
+    // Resolve the indexing alias to get the upstream model_id,
+    // dimensions, and the embedding-specific provider. The embedding
+    // provider may differ from the chat provider (state.provider) —
+    // e.g., chat on ollama, embeddings on llama-swap.
+    let (embedding_model_id, embedding_dimensions, embedding_context_length, embedding_provider) =
         match state.settings.resolve_indexing_model() {
-            Ok((mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims, mcfg.num_ctx),
+            Ok((mcfg, pcfg, mid, dims)) => {
+                let provider =
+                    crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
+                (mid.to_string(), dims, mcfg.num_ctx, provider)
+            }
             Err(e) => {
                 return vec![CommandOutput::error(format!(
                     "Cannot run /search without a valid [indexing] config: {e}"
@@ -889,7 +893,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     match crate::retrieval::run_search(
         &db,
-        &state.provider,
+        &embedding_provider,
         &embedding_model_id,
         embedding_dimensions,
         &state.settings.indexing.prefix,
@@ -987,11 +991,16 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
-    // Resolve the indexing alias to get the upstream model_id and
-    // dimensions.
-    let (embedding_model_id, embedding_dimensions, embedding_context_length) =
+    // Resolve the indexing alias to get the upstream model_id,
+    // dimensions, and the embedding-specific provider. The embedding
+    // provider may differ from the chat provider (state.provider).
+    let (embedding_model_id, embedding_dimensions, embedding_context_length, embedding_provider) =
         match state.settings.resolve_indexing_model() {
-            Ok((mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims, mcfg.num_ctx),
+            Ok((mcfg, pcfg, mid, dims)) => {
+                let provider =
+                    crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
+                (mid.to_string(), dims, mcfg.num_ctx, provider)
+            }
             Err(e) => {
                 return vec![CommandOutput::error(format!(
                     "Cannot run /reindex without a valid [indexing] config: {e}"
@@ -1000,7 +1009,7 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         };
 
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
-        state.provider.clone(),
+        embedding_provider,
         embedding_model_id,
         embedding_dimensions,
         state.settings.indexing.prefix.clone(),
