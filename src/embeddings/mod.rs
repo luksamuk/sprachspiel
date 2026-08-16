@@ -33,7 +33,7 @@ pub const MIN_EMBED_CONTENT_LEN: usize = 10;
 
 pub use chunk_config::DynamicChunkConfig;
 pub use chunker::{ChunkConfig, chunk_text, chunk_text_with_config, needs_chunking};
-pub use client::{DEFAULT_CONTEXT_LENGTH, EmbeddingClient, EmbeddingError};
+pub use client::{EmbeddingClient, EmbeddingError};
 pub use fallback::{
     EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
 };

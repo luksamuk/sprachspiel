@@ -17,7 +17,7 @@
 use crate::content::document::{Document, MAX_DOCUMENT_SIZE, detect_file_type};
 use crate::content::types::ContentScope;
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
-use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
+use crate::embeddings::{EmbedItemContext, embed_item_with_fallback};
 use crate::project::get_project_id;
 use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
@@ -285,8 +285,13 @@ pub async fn import_document(
         // Use block_in_place for synchronous embedding in async context
         let embed_result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                embed_item_with_fallback(ctx, &db_clone, &embedding_client, DEFAULT_CONTEXT_LENGTH)
-                    .await
+                embed_item_with_fallback(
+                    ctx,
+                    &db_clone,
+                    &embedding_client,
+                    embedding_client.context_length(),
+                )
+                .await
             })
         });
 

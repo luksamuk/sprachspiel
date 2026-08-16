@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use super::chunk_config::DynamicChunkConfig;
 use super::chunker::{ChunkConfig, chunk_text_with_config};
-use super::client::{CHARS_PER_TOKEN, EmbeddingClient, EmbeddingError};
+use super::client::{EmbeddingClient, EmbeddingError};
 use crate::db::Database;
 
 /// Maximum recursive divisions (512→256→128→64→32 tokens).
@@ -44,6 +44,12 @@ const MAX_CHUNKS_PER_ITEM: usize = 64;
 
 /// Minimum chunk tokens before aborting.
 const MIN_CHUNK_TOKENS: usize = 32;
+
+/// Characters per token ratio for the minimum-size floor check.
+/// This is a rough heuristic used only to decide if a chunk is too
+/// small to bother dividing further (32 tokens). It does NOT affect
+/// context-length decisions — those are left to the server.
+const CHARS_PER_TOKEN: f32 = 2.0;
 
 /// Context for embedding content with fallback support.
 #[derive(Debug, Clone)]

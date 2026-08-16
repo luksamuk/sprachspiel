@@ -38,7 +38,7 @@ use super::session::ToolOutputLevel;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
+use crate::embeddings::{EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
 use crate::tokens::{TOKENS_PER_TOOL, calculate_context_metrics, estimate_tokens};
 
@@ -2521,7 +2521,7 @@ pub fn handle_note_add(
                     let ctx =
                         EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref());
                     if let Err(e) =
-                        embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
+                        embed_item_with_fallback(ctx, &db_clone, &client, client.context_length())
                             .await
                     {
                         log::warn!("Failed to generate embedding for note: {}", e);
@@ -3002,7 +3002,7 @@ pub fn handle_document_import(
                             ctx,
                             &db_clone,
                             &client,
-                            DEFAULT_CONTEXT_LENGTH,
+                            client.context_length(),
                         )
                         .await
                         {
@@ -3027,7 +3027,7 @@ pub fn handle_document_import(
                                 ctx,
                                 &db,
                                 embedding_client,
-                                DEFAULT_CONTEXT_LENGTH,
+                                embedding_client.context_length(),
                             )
                             .await
                         })

@@ -750,7 +750,7 @@ impl Database {
     /// Get all content embedding vectors from the vec0 table
     ///
     /// Returns (item_id, embedding) pairs for all content items that have
-    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// embeddings. Embeddings are stored as FLOAT[<configured_dims>] BLOBs and are
     /// deserialized into Vec<f32>.
     pub fn get_all_content_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
         self.with_connection(|conn| {
@@ -770,7 +770,7 @@ impl Database {
     /// Get all chunk embedding vectors from the vec0 table
     ///
     /// Returns (chunk_id, embedding) pairs for all content chunks that have
-    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// embeddings. Embeddings are stored as FLOAT[<configured_dims>] BLOBs and are
     /// deserialized into Vec<f32>.
     pub fn get_all_chunk_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
         self.with_connection(|conn| {
