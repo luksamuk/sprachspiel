@@ -42,6 +42,15 @@ pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.4;
 /// Default semantic weight for hybrid RRF retrieval (vector similarity).
 pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.6;
 
+/// Default embedding dimensions for Matryoshka truncation.
+///
+/// Used as a fallback when the configured embedding model dimensions
+/// cannot be resolved (e.g., misconfigured `models.toml` on a DB-only
+/// inspection path such as `sprach diagnostics` without a valid config).
+/// The primary source of truth is the alias's `dimensions` field in
+/// `models.toml`, resolved via `Settings::resolve_indexing_model()`.
+pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 256;
+
 /// Application settings loaded from config file
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
