@@ -1969,6 +1969,37 @@ rm -rf /tmp/sprach_smoke_205
 
 ---
 
+## 28. Known False Alarms
+
+These behaviors may appear as bugs during testing but are NOT Sprachspiel issues.
+
+### 28.1 Thinking Blocks Despite /think off
+
+**Symptom:** After `/think off`, thinking blocks (🧠) still appear in responses.
+**Cause:** When using llama-swap model aliases with `:think` suffix (e.g., `qwen3.5-4b:think`), the backend always generates thinking content server-side, regardless of `reasoning_effort`. Sprachspiel correctly omits `reasoning_effort` from the request, but the model sends thinking anyway.
+**Verification:** Check debug logs with `RUST_LOG=debug` — `reasoning_effort` should NOT be in the request JSON when `/think off` is active. If it IS present, that's a real bug.
+**Workaround:** Use a model alias without `:think` suffix if you want to control thinking via Sprachspiel.
+
+### 28.2 Model Loading Timeout on First Request
+
+**Symptom:** First request to a subcommand (OCR, Vision, Summarize) or `/model` switch times out or takes very long.
+**Cause:** llama-swap needs to load (or swap) the model into VRAM. The `read_timeout_secs` (default 300s, configurable in `models.toml [provider.*]`) controls the HTTP timeout. If the model takes longer to load than `read_timeout_secs`, the request fails with a timeout error.
+**Verification:** Retry the same request — the second attempt should be fast (model already loaded). If it consistently times out even on retry, check that `read_timeout_secs` is high enough for your hardware.
+**Configuration:** Increase `read_timeout_secs` in `models.toml [provider.*]` section (e.g., 900s for slow hardware with model offloading). All timeout fields are per-provider:
+- `connect_timeout_secs` (default 5s) — TCP connection establishment
+- `read_timeout_secs` (default 300s) — HTTP response timeout (non-streaming)
+- `stream_idle_timeout_secs` (default 300s) — Max gap between SSE chunks in streaming
+- `ttfb_timeout_secs` (default 120s) — Time to first byte in streaming
+
+### 28.3 read_file with Relative Path Fails
+
+**Symptom:** `read_file("Cargo.toml")` fails with "file not found" when chat is started without `--cwd`.
+**Cause:** `read_file` uses the current working directory (CWD). When `sprach chat` is started from `~`, the CWD is the home directory, not the project.
+**Verification:** Use `--cwd /path/to/project` when starting chat, or use absolute paths in tool calls. The model typically recovers via ReAct (calls `list_directory` to discover the correct path).
+**Not a bug:** This is expected CWD-dependent behavior.
+
+---
+
 ## 30. Configurable Embedding Model — Prefix, Context Length, Dynamic vec0 (Issue #106, PR #232)
 
 **Objective:** Verify that embedding prefix, context_length, and vec0 storage dimensions are configurable and that switching embedding models works end-to-end.
@@ -2014,37 +2045,6 @@ rm -rf /tmp/sprach_smoke_205
 
 - [ ] With LFM2.5 (32K context via `num_ctx`), a 2000-char text does NOT trigger "context exceeded"
 - [ ] With nomic (8K or fallback 512), the same text may or may not trigger (depends on `num_ctx`)
-
----
-
-## 28. Known False Alarms
-
-These behaviors may appear as bugs during testing but are NOT Sprachspiel issues.
-
-### 28.1 Thinking Blocks Despite /think off
-
-**Symptom:** After `/think off`, thinking blocks (🧠) still appear in responses.
-**Cause:** When using llama-swap model aliases with `:think` suffix (e.g., `qwen3.5-4b:think`), the backend always generates thinking content server-side, regardless of `reasoning_effort`. Sprachspiel correctly omits `reasoning_effort` from the request, but the model sends thinking anyway.
-**Verification:** Check debug logs with `RUST_LOG=debug` — `reasoning_effort` should NOT be in the request JSON when `/think off` is active. If it IS present, that's a real bug.
-**Workaround:** Use a model alias without `:think` suffix if you want to control thinking via Sprachspiel.
-
-### 28.2 Model Loading Timeout on First Request
-
-**Symptom:** First request to a subcommand (OCR, Vision, Summarize) or `/model` switch times out or takes very long.
-**Cause:** llama-swap needs to load (or swap) the model into VRAM. The `read_timeout_secs` (default 300s, configurable in `models.toml [provider.*]`) controls the HTTP timeout. If the model takes longer to load than `read_timeout_secs`, the request fails with a timeout error.
-**Verification:** Retry the same request — the second attempt should be fast (model already loaded). If it consistently times out even on retry, check that `read_timeout_secs` is high enough for your hardware.
-**Configuration:** Increase `read_timeout_secs` in `models.toml [provider.*]` section (e.g., 900s for slow hardware with model offloading). All timeout fields are per-provider:
-- `connect_timeout_secs` (default 5s) — TCP connection establishment
-- `read_timeout_secs` (default 300s) — HTTP response timeout (non-streaming)
-- `stream_idle_timeout_secs` (default 300s) — Max gap between SSE chunks in streaming
-- `ttfb_timeout_secs` (default 120s) — Time to first byte in streaming
-
-### 28.3 read_file with Relative Path Fails
-
-**Symptom:** `read_file("Cargo.toml")` fails with "file not found" when chat is started without `--cwd`.
-**Cause:** `read_file` uses the current working directory (CWD). When `sprach chat` is started from `~`, the CWD is the home directory, not the project.
-**Verification:** Use `--cwd /path/to/project` when starting chat, or use absolute paths in tool calls. The model typically recovers via ReAct (calls `list_directory` to discover the correct path).
-**Not a bug:** This is expected CWD-dependent behavior.
 
 ---
 
@@ -2132,6 +2132,7 @@ The script above runs automated tests. The following tests must be run manually:
 24. **Section 25.5**: Recommended Configuration Output (threshold and weight suggestions from diagnostics)
 25. **Section 25.6**: Config.toml Settings (semantic_threshold, keyword_weight, semantic_weight)
 26. **Section 26**: TUI Tool Call Display & ReAct Resilience (PR #207 — tool call format, ✗ error indicator, context count, tool calls don't disappear, pre-tool text preservation, error ordering, ReAct resilience)
-27. **Section 29**: File Session State + Staleness Detection (Issue #205 — must-read, staleness, append exempt, sandbox priority)
-28. **Section 30**: Configurable Embedding Model (Issue #106 — prefix config, context_length from num_ctx, dynamic vec0 dimensions, model switch 256→1024 and back, config upgrade detects prefix)
+27. **Section 27**: W2 Provider Chain Closure (#123 — ollama-rs removed, feature-matrix clippy clean, tool calling, reasoning_effort, provider-agnostic config, TTFB watchdog)
+28. **Section 29**: File Session State + Staleness Detection (Issue #205 — must-read, staleness, append exempt, sandbox priority)
+29. **Section 30**: Configurable Embedding Model (Issue #106 — prefix config, context_length from num_ctx, dynamic vec0 dimensions, model switch 256→1024 and back, config upgrade detects prefix)
 These tests require chat interaction and visual verification of results.
