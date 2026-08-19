@@ -922,6 +922,16 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
     use crate::embeddings::TRUNCATED_DIMENSIONS;
     use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
 
+    // Resolve the configured embedding dimensions from the indexing alias
+    // in models.toml. The nominal dimensions reported by diagnostics must
+    // match what is actually stored, not a hardcoded constant. We fall back
+    // to TRUNCATED_DIMENSIONS only if the config is unresolvable (e.g.,
+    // misconfigured models.toml on a DB-only inspection path).
+    let configured_dims = settings
+        .resolve_indexing_model()
+        .map(|(_, _, _, dims)| dims as usize)
+        .unwrap_or(TRUNCATED_DIMENSIONS);
+
     // Phase 1: Open database and collect vectors (fast — spinner only)
     let spinner = create_spinner("Loading embeddings...");
 
@@ -996,10 +1006,19 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
         pb
     };
 
+    // Use the actual vector dimensionality when vectors are present — this
+    // reflects what is truly stored in the DB. When the DB is empty, fall
+    // back to the configured dimensions so the report still shows the
+    // expected nominal size for the active embedding model.
+    let nominal_dimensions = all_vectors
+        .first()
+        .map(|v| v.len())
+        .unwrap_or(configured_dims);
+
     let progress_clone = progress.clone();
     let diagnostics = analyze_embeddings_with_progress(
         &vectors_f64,
-        TRUNCATED_DIMENSIONS,
+        nominal_dimensions,
         settings.indexing_model_alias(),
         source_counts,
         &move |phase, frac| {
