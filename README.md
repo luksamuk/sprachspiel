@@ -1,6 +1,5 @@
 # Sprachspiel
 
-[![CI](https://github.com/luksamuk/sprachspiel/actions/workflows/ci.yml/badge.svg)](https://github.com/luksamuk/sprachspiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.txt)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 
