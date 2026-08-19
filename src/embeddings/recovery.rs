@@ -114,15 +114,60 @@ pub async fn recover_missing_embeddings(
 
 /// Delete V2 orphan chunks (those with no parent `content_items` row).
 ///
+/// Also deletes the corresponding vec0 rows from `chunk_embeddings_v2` **before**
+/// deleting the chunk rows, preventing orphan embedding vectors from accumulating.
+///
 /// Returns the number of chunks deleted. Errors are logged/eprinted per `quiet`
 /// and count as zero deleted on error.
 fn cleanup_orphan_chunks(db: &Arc<Database>, quiet: bool) -> usize {
     let orphan_deleted = match db.with_connection(|conn| {
-        conn.execute(
+        // 1. Find orphan chunk IDs (chunks with no parent content item).
+        //    We collect IDs first because vec0 virtual tables have limited
+        //    SQL support and may not handle IN subqueries correctly.
+        let orphan_chunk_ids: Vec<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT id FROM content_chunks
+                 WHERE item_id NOT IN (SELECT id FROM content_items)",
+            )?;
+            let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        // 2. Delete orphan chunk embeddings from vec0 first (before removing
+        //    the chunk rows). vec0 doesn't support IN subqueries, so we
+        //    build a parameterized IN clause from the collected IDs.
+        let orphan_embeddings: usize = if orphan_chunk_ids.is_empty() {
+            0
+        } else {
+            let placeholders = orphan_chunk_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("DELETE FROM chunk_embeddings_v2 WHERE chunk_id IN ({placeholders})");
+            let params: Vec<&dyn rusqlite::ToSql> = orphan_chunk_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::ToSql)
+                .collect();
+            conn.execute(&sql, params.as_slice())?
+        };
+
+        // 3. Delete orphan chunk rows.
+        let orphan_chunks: usize = conn.execute(
             "DELETE FROM content_chunks
              WHERE item_id NOT IN (SELECT id FROM content_items)",
             [],
-        )
+        )?;
+
+        if orphan_embeddings > 0 {
+            log::info!(
+                "cleanup_orphan_chunks: removed {} orphan chunk embedding(s), {} orphan chunk(s)",
+                orphan_embeddings,
+                orphan_chunks
+            );
+        }
+
+        Ok(orphan_chunks)
     }) {
         Ok(count) => count,
         Err(e) => {
@@ -520,9 +565,133 @@ async fn process_new_chunks(
 
 #[cfg(test)]
 mod tests {
+    use super::cleanup_orphan_chunks;
+    use crate::db::Database;
+
+    /// Create an in-memory database with the full schema for testing.
+    fn test_db() -> Database {
+        let db = Database::in_memory().expect("Failed to create in-memory DB");
+        db
+    }
+
+    /// Insert a content item and return its ID.
+    fn insert_item(db: &Database, content: &str) -> i64 {
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_items (content_type, content, role, importance, decay_score, created_at, updated_at, last_accessed)
+                 VALUES ('message', ?1, 'user', 0.5, 1.0, 1713600000, 1713600000, 1713600000)",
+                rusqlite::params![content],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+        .expect("insert item")
+    }
+
+    /// Insert a content chunk for an item and return its ID.
+    fn insert_chunk(db: &Database, item_id: i64) -> i64 {
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_chunks (item_id, chunk_index, content, start_offset, end_offset, has_embedding, created_at)
+                 VALUES (?1, 0, 'chunk content', 0, 10, 1, 1713600000)",
+                rusqlite::params![item_id],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+        .expect("insert chunk")
+    }
+
+    /// Insert a chunk embedding into the vec0 table.
+    fn insert_chunk_embedding(db: &Database, chunk_id: i64) {
+        db.with_connection(|conn| {
+            let embedding = vec![0.1_f32; 256];
+            let bytes = crate::db::embedding_to_le_bytes(&embedding);
+            conn.execute(
+                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp, norm_correction)
+                 VALUES (?1, ?2, 'message', NULL, NULL, 1713600000, 1.0)",
+                rusqlite::params![chunk_id, bytes],
+            )?;
+            Ok(())
+        })
+        .expect("insert chunk embedding")
+    }
+
+    /// Insert an orphan chunk directly (bypassing FK) and return its ID.
+    /// This simulates the crash scenario where a chunk row exists without
+    /// a parent item (e.g., item insertion failed or was rolled back).
+    fn insert_orphan_chunk(db: &Database, fake_item_id: i64) -> i64 {
+        db.with_connection(|conn| {
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+            conn.execute(
+                "INSERT INTO content_chunks (item_id, chunk_index, content, start_offset, end_offset, has_embedding, created_at)
+                 VALUES (?1, 0, 'orphan chunk content', 0, 10, 1, 1713600000)",
+                rusqlite::params![fake_item_id],
+            )?;
+            conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+            Ok(conn.last_insert_rowid())
+        })
+        .expect("insert orphan chunk")
+    }
+
+    /// Count rows in chunk_embeddings_v2.
+    fn count_chunk_embeddings(db: &Database) -> i64 {
+        db.with_connection(|conn| {
+            let count: i64 =
+                conn.query_row("SELECT COUNT(*) FROM chunk_embeddings_v2", [], |row| {
+                    row.get(0)
+                })?;
+            Ok(count)
+        })
+        .expect("count chunk embeddings")
+    }
+
     #[test]
     fn test_recovery_structure() {
         // Verify recovery function exists and compiles
         assert!(true);
+    }
+
+    /// Verify that `cleanup_orphan_chunks` removes both the orphan chunk row
+    /// AND its corresponding vec0 embedding, preventing orphan vector buildup.
+    #[test]
+    fn test_cleanup_orphan_chunks_removes_embeddings() {
+        let db = std::sync::Arc::new(test_db());
+
+        // Insert a valid item with a chunk + embedding (should NOT be removed)
+        let valid_item = insert_item(&db, "This is valid content for embedding");
+        let valid_chunk = insert_chunk(&db, valid_item);
+        insert_chunk_embedding(&db, valid_chunk);
+
+        // Insert an orphan chunk directly (no parent item) with an embedding.
+        // This simulates the real-world scenario: item insertion failed or was
+        // rolled back, leaving a chunk row with a dangling item_id.
+        let orphan_chunk = insert_orphan_chunk(&db, 999_999);
+        insert_chunk_embedding(&db, orphan_chunk);
+
+        // Verify we have 2 chunk embeddings before cleanup
+        assert_eq!(count_chunk_embeddings(&db), 2);
+
+        // Run cleanup_orphan_chunks (quiet = true for test)
+        let removed = cleanup_orphan_chunks(&db, true);
+
+        // Should have removed 1 orphan chunk
+        assert_eq!(removed, 1);
+
+        // Should have 1 chunk embedding remaining (the valid one).
+        // The orphan's vec0 row should have been deleted before the chunk row.
+        assert_eq!(count_chunk_embeddings(&db), 1);
+    }
+
+    /// Verify that `cleanup_orphan_chunks` is a no-op when there are no orphans.
+    #[test]
+    fn test_cleanup_orphan_chunks_no_op_when_clean() {
+        let db = std::sync::Arc::new(test_db());
+
+        let item = insert_item(&db, "Valid content");
+        let chunk = insert_chunk(&db, item);
+        insert_chunk_embedding(&db, chunk);
+
+        let removed = cleanup_orphan_chunks(&db, true);
+        assert_eq!(removed, 0);
+        assert_eq!(count_chunk_embeddings(&db), 1);
     }
 }
