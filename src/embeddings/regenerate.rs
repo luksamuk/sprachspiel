@@ -532,6 +532,35 @@ pub async fn regenerate_all_embeddings(
         let _ = tx.send(EmbeddingProgress::completed());
     }
 
+    // Run garbage collection to remove any orphan embeddings that may have
+    // accumulated from interrupted processes, dimension changes, or items
+    // deleted during regeneration. This prevents the orphan vector buildup
+    // reported in the 5593-row incident.
+    match db.garbage_collect() {
+        Ok(gc_stats) => {
+            let total_orphans = gc_stats.orphan_chunks_removed
+                + gc_stats.orphan_item_embeddings_removed
+                + gc_stats.orphan_chunk_embeddings_removed
+                + gc_stats.orphan_fact_embeddings_removed;
+            if total_orphans > 0 {
+                log::info!(
+                    "Post-reindex GC: {} orphan chunk(s), {} orphan item embedding(s), \
+                     {} orphan chunk embedding(s), {} orphan fact embedding(s)",
+                    gc_stats.orphan_chunks_removed,
+                    gc_stats.orphan_item_embeddings_removed,
+                    gc_stats.orphan_chunk_embeddings_removed,
+                    gc_stats.orphan_fact_embeddings_removed,
+                );
+                if !quiet {
+                    println!("Cleaned {} orphan vector(s) during reindex.", total_orphans);
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Post-reindex garbage collection failed: {}", e);
+        }
+    }
+
     // Report any failures
     if stats.total_failed() > 0 {
         if quiet {
