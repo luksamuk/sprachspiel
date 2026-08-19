@@ -173,7 +173,19 @@ impl QueryContextBuilder {
                         crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
                     (mid.to_string(), dims, mcfg.num_ctx, provider)
                 }
-                Err(_) => (String::new(), 768, None, provider.clone()), // triggers the empty-model_id error
+                // The error path intentionally passes an empty model_id so
+                // init_database_core bails with the clear "missing embedding
+                // model" error. Dimensions here are a placeholder and never
+                // used by the DB (the empty model_id short-circuits first);
+                // DEFAULT_EMBEDDING_DIMENSIONS is used as the fallback value
+                // for consistency with the rest of the codebase (e.g. the
+                // `diag` subcommand's resolve_indexing_model fallback).
+                Err(_) => (
+                    String::new(),
+                    crate::settings::DEFAULT_EMBEDDING_DIMENSIONS as u32,
+                    None,
+                    provider.clone(),
+                ), // triggers the empty-model_id error
             };
         let result = crate::db::init_database_core(
             crate::db::IndexingInit {
