@@ -4,6 +4,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-08-19
+
 ### Added
 
 - **Configurable Embedding Prefix (Issue #106)** — The embedding prefix (`"search_document: "`) is no longer hardcoded. It is now configurable via `[indexing].prefix` in `config.toml` (default: `"search_document: "` for nomic-embed-text-v2-moe compatibility). Models that do not require a prefix (e.g., BGE, GTE) can set `prefix = ""`. The prefix is applied consistently in single-embed and batch-embed paths.
