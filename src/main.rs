@@ -919,18 +919,18 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
     use crate::diagnostics::embeddings::{
         EmbeddingSource, analyze_embeddings_with_progress, vectors_f32_to_f64,
     };
-    use crate::embeddings::TRUNCATED_DIMENSIONS;
+    use crate::settings::DEFAULT_EMBEDDING_DIMENSIONS;
     use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
 
     // Resolve the configured embedding dimensions from the indexing alias
     // in models.toml. The nominal dimensions reported by diagnostics must
     // match what is actually stored, not a hardcoded constant. We fall back
-    // to TRUNCATED_DIMENSIONS only if the config is unresolvable (e.g.,
+    // to DEFAULT_EMBEDDING_DIMENSIONS only if the config is unresolvable (e.g.,
     // misconfigured models.toml on a DB-only inspection path).
     let configured_dims = settings
         .resolve_indexing_model()
         .map(|(_, _, _, dims)| dims as usize)
-        .unwrap_or(TRUNCATED_DIMENSIONS);
+        .unwrap_or(DEFAULT_EMBEDDING_DIMENSIONS);
 
     // Phase 1: Open database and collect vectors (fast — spinner only)
     let spinner = create_spinner("Loading embeddings...");
