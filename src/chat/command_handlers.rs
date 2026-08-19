@@ -38,7 +38,7 @@ use super::session::ToolOutputLevel;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
+use crate::embeddings::{EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
 use crate::tokens::{TOKENS_PER_TOOL, calculate_context_metrics, estimate_tokens};
 
@@ -873,24 +873,31 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     use crate::retrieval::{SearchOutcome, format_results};
 
-    // Resolve the indexing alias to get the upstream model_id and
-    // dimensions. The search function takes both — the model_id is the
-    // name passed to /v1/embeddings and the dimensions size the vector
-    // store.
-    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
-        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-        Err(e) => {
-            return vec![CommandOutput::error(format!(
-                "Cannot run /search without a valid [indexing] config: {e}"
-            ))];
-        }
-    };
+    // Resolve the indexing alias to get the upstream model_id,
+    // dimensions, and the embedding-specific provider. The embedding
+    // provider may differ from the chat provider (state.provider) —
+    // e.g., chat on ollama, embeddings on llama-swap.
+    let (embedding_model_id, embedding_dimensions, embedding_context_length, embedding_provider) =
+        match state.settings.resolve_indexing_model() {
+            Ok((mcfg, pcfg, mid, dims)) => {
+                let provider =
+                    crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
+                (mid.to_string(), dims, mcfg.num_ctx, provider)
+            }
+            Err(e) => {
+                return vec![CommandOutput::error(format!(
+                    "Cannot run /search without a valid [indexing] config: {e}"
+                ))];
+            }
+        };
 
     match crate::retrieval::run_search(
         &db,
-        &state.provider,
+        &embedding_provider,
         &embedding_model_id,
         embedding_dimensions,
+        &state.settings.indexing.prefix,
+        embedding_context_length,
         &query,
         Some(&conversation_id),
         limit,
@@ -984,21 +991,29 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
-    // Resolve the indexing alias to get the upstream model_id and
-    // dimensions.
-    let (embedding_model_id, embedding_dimensions) = match state.settings.resolve_indexing_model() {
-        Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-        Err(e) => {
-            return vec![CommandOutput::error(format!(
-                "Cannot run /reindex without a valid [indexing] config: {e}"
-            ))];
-        }
-    };
+    // Resolve the indexing alias to get the upstream model_id,
+    // dimensions, and the embedding-specific provider. The embedding
+    // provider may differ from the chat provider (state.provider).
+    let (embedding_model_id, embedding_dimensions, embedding_context_length, embedding_provider) =
+        match state.settings.resolve_indexing_model() {
+            Ok((mcfg, pcfg, mid, dims)) => {
+                let provider =
+                    crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
+                (mid.to_string(), dims, mcfg.num_ctx, provider)
+            }
+            Err(e) => {
+                return vec![CommandOutput::error(format!(
+                    "Cannot run /reindex without a valid [indexing] config: {e}"
+                ))];
+            }
+        };
 
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
-        state.provider.clone(),
+        embedding_provider,
         embedding_model_id,
         embedding_dimensions,
+        state.settings.indexing.prefix.clone(),
+        embedding_context_length,
     );
     let embedding_client = Arc::new(embedding_client);
     let progress_tx = state.session.embedding_tx.clone();
@@ -2506,7 +2521,7 @@ pub fn handle_note_add(
                     let ctx =
                         EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref());
                     if let Err(e) =
-                        embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
+                        embed_item_with_fallback(ctx, &db_clone, &client, client.context_length())
                             .await
                     {
                         log::warn!("Failed to generate embedding for note: {}", e);
@@ -2987,7 +3002,7 @@ pub fn handle_document_import(
                             ctx,
                             &db_clone,
                             &client,
-                            DEFAULT_CONTEXT_LENGTH,
+                            client.context_length(),
                         )
                         .await
                         {
@@ -3012,7 +3027,7 @@ pub fn handle_document_import(
                                 ctx,
                                 &db,
                                 embedding_client,
-                                DEFAULT_CONTEXT_LENGTH,
+                                embedding_client.context_length(),
                             )
                             .await
                         })

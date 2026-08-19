@@ -124,12 +124,92 @@ tools = false
 
 ### Embedding
 
-| Model | Size | Dimensions | Best For |
-|-------|------|------------|----------|
-| [Nomic Embed v2](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe) | ~1 GB | 768 | General-purpose embeddings, MoE, supports Matryoshka truncation **(recommended)** |
-| [LFM2.5-Embed-350M](https://huggingface.co/LiquidAI/LFM2.5-Embedding-350M) | ~0.4 GB | 1024 | Dense bi-encoder, fast multilingual retrieval, 11 languages |
+Embedding models generate vector representations of text for semantic search (`/search`), fact matching, and conversation enrichment. They are declared with `embeddings = true` and `dimensions` in `models.toml`, and selected via `[indexing].model` in `config.toml`. They cannot be used for chat (the `-m` and `/model` commands reject them).
 
-> Embedding models are declared with `embeddings = true` and `dimensions` in `models.toml`. They cannot be used for chat (the `-m` and `/model` commands reject them).
+| Model | Size | Dims | Context | Languages | Prefix | Best For |
+|-------|------|------|---------|-----------|--------|----------|
+| [Nomic Embed v2](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe) | ~1 GB | 768 | 8192 | 100+ | `search_document: ` | **Default** — general-purpose, MoE (305M active), Matryoshka 64-768 |
+| [Snowflake Arctic Embed M v2](https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0) | ~200 MB | 768 | 8192 | 74 (pt-BR) | `query: ` / none | **Recommended alternative** — 5× smaller, multilingual with Portuguese, d_eff ~4% |
+| [Qwen3 Embedding 0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | ~400 MB | 4096 | 8192 | Multilingual | instruction-aware | High d_eff potential, but 4096d = more storage |
+| [mxbai-embed-large](https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1) | ~670 MB | 1024 | **512** | English | `Represent this sentence...` | Best MTEB (64.68) but 512-token context is a hard blocker for RAG |
+| [LFM2.5-Embedding-350M](https://huggingface.co/LiquidAI/LFM2.5-Embedding-350M) | ~230 MB | 1024 | 32768 | 11 (pt) | `query: ` / `document: ` | Half nomic's size, 32K context, hybrid conv+attn, efficient on CPU |
+| [Nemotron-3-Embed-1B](https://huggingface.co/nvidia/Nemotron-3-Embed-1B-BF16) | ~700 MB Q4 | 2048 | 32768 | 34 (pt) | `query: ` / `document: ` | **#1 RTEB at 1B scale** (72.4%), agent memory, multilingual cross-lingual, GGUF available |
+
+#### Model Ranking
+
+The following ranking is weighted for Sprachspiel's use case: local inference on consumer hardware (6GB VRAM), Portuguese language support, RAG with 512+ character chunks, and hybrid BM25+vector retrieval.
+
+| Rank | Model | Retrieval | Size | Context | Languages | d_eff (est.) | Matryoshka | Why this rank |
+|------|-------|-----------|------|---------|-----------|--------------|------------|---------------|
+| 🥇 1 | [Nemotron-3-Embed-1B](https://huggingface.co/nvidia/Nemotron-3-Embed-1B-BF16) | 72.4 RTEB | ~700 MB Q4 | 32K | 34 (pt) | TBD | ✅ | #1 RTEB at 1B scale, 34 langs incl pt, 32K context, agent memory, GGUF available |
+| 🥈 2 | [Nomic Embed v2](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe) | ~62 MTEB | ~1 GB | 8K | 100+ | 2.74% (measured) | ✅ 64-768 | Current default, well-tested, MoE (305M active), low d_eff but BM25 compensates |
+| 🥉 3 | [Snowflake Arctic Embed M v2](https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0) | ~57 MTEB | ~200 MB | 8K | 74 (pt-BR) | ~4% (est.) | ✅ 256 | 5× smaller, higher estimated d_eff, 74 langs incl pt-BR, but lower MTEB |
+| 4 | [LFM2.5-Embedding-350M](https://huggingface.co/LiquidAI/LFM2.5-Embedding-350M) | TBD | ~230 MB | 32K | 11 (pt) | TBD | TBD | 32K context, half nomic's size, CPU-efficient, but no known MTEB score |
+| 5 | [Qwen3 Embedding 0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | ~60 MTEB | ~400 MB | 8K | Multilingual | ~1-3% (est.) | ✅ 32-4096 | Potentially high d_eff, but 4096d = significantly more storage |
+| 6 | [mxbai-embed-large](https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1) | 64.68 MTEB | ~670 MB | **512** | English | ~3-6% (est.) | ✅ 64-1024 | Best local MTEB, but 512-token context is a hard blocker for RAG chunks |
+
+**Ranking weights:**
+
+- **Retrieval quality (RTEB/MTEB)** — 30%. The primary purpose of the embedding model.
+- **Context length** — 20%. 512 tokens blocks RAG; 8K is acceptable; 32K is ideal.
+- **Local viability** — 20%. Size, GGUF availability, llama.cpp compatibility.
+- **Multilingual / pt-BR** — 15%. Sprachspiel is Brazilian; Portuguese support matters.
+- **d_eff** — 10%. Vector discrimination (estimated for untested models).
+- **Matryoshka** — 5%. Nice-to-have for server-side truncation.
+
+**Caveats:**
+
+- d_eff is **estimated** for all models except Nomic (measured at 7/256 = 2.74%). Run `sprach diagnostics` after switching models to measure actual d_eff — the ranking may shift.
+- Nemotron-3-Embed-1B is #1 by RTEB + context + languages, but d_eff is unknown. If d_eff turns out very low, Snowflake (#3) may overtake it.
+- Nomic is #2 by stability, not by quality — it's the current default, already integrated and tested. After #106 lands and benchmarks run, it may drop.
+- mxbai is last despite the highest local MTEB — 512-token context makes it unusable for Sprachspiel's 512+ character chunks.
+- Nemotron-3-Embed-8B (RTEB 78.5%, #1 overall) is excluded from this ranking — at 8B BF16 it's too heavy for local consumer hardware. The 1B variant brings most of the quality at a fraction of the footprint.
+
+#### Prefix Configuration
+
+Each embedding model expects a specific text prefix. Configure it via `[indexing].prefix` in `config.toml`:
+
+```toml
+[indexing]
+model = "nomic"                    # alias from models.toml
+prefix = "search_document: "       # nomic prefix (default)
+# prefix = ""                       # for models that don't need a prefix (BGE, GTE)
+# prefix = "query: "                # for snowflake-arctic-embed queries
+```
+
+| Model | Prefix | Notes |
+|-------|--------|-------|
+| nomic-embed-text-v2-moe | `search_document: ` | Default; also supports `search_query: ` for queries |
+| snowflake-arctic-embed-m-v2.0 | `query: ` for queries, none for passages | Asymmetric |
+| qwen3-embedding | instruction-aware | Follows `Instruct: ...\nQuery: ` format |
+| mxbai-embed-large | `Represent this sentence for searching relevant passages: ` | Long prefix |
+| LFM2.5-Embedding-350M | `query: ` / `document: ` | Asymmetric, similar to nomic |
+| Nemotron-3-Embed-1B | `query: ` / `document: ` | Asymmetric, same as LFM2.5; 34 languages including pt |
+| BGE / GTE / embeddinggemma | `""` (none) | No prefix needed |
+
+#### Dimensions and Matryoshka Truncation
+
+Embedding models output vectors at their **nominal dimensions** (e.g., 768 for Nomic). Sprachspiel can store the full vector or truncate it to a smaller dimension via **Matryoshka Representation Learning (MRL)** — the model aligns the most important information in the first N dimensions, so truncating to 256 retains most quality with 3× storage savings.
+
+Configure the storage dimension via the model alias's `dimensions` field in `models.toml`:
+
+```toml
+[models."nomic"]
+model_id = "nomic-embed-text-v2-moe"
+dimensions = 256          # Matryoshka-truncated (recommended: 3× less storage, ~2-3% quality loss)
+# dimensions = 768        # Full dimensions (no truncation, maximum quality)
+```
+
+When you change `dimensions`, Sprachspiel automatically recreates the vec0 tables and regenerates all embeddings on the next startup via the background recovery pipeline.
+
+#### Embedding Geometry (d_eff)
+
+Sprachspiel's `sprach diagnostics` subcommand measures **effective dimensionality (d_eff)** — the number of dimensions that actually carry signal, as opposed to the nominal storage dimensions. Low d_eff means vector search is weak and BM25 compensates silently.
+
+- **Current (Nomic v2, 256d):** d_eff ≈ 7 (2.74%) — SPREAD regime, BM25 compensates
+- **Snowflake Arctic M v2 (estimated):** d_eff ≈ 20-35 (~4%) — potentially better discrimination
+- **Nemotron-3-Embed-1B:** d_eff unknown — needs measurement via `sprach diagnostics`; RTEB 72.4% suggests strong retrieval but geometry is model-dependent
+- **Recommended:** Run `sprach diagnostics` after changing models to verify d_eff and adjust RRF weights if needed
 
 ## Quick Recommendations
 
@@ -145,6 +225,8 @@ tools = false
 | Translation (quality) | TranslateGemma-4B | 50+ languages, better nuance |
 | Translation (fast) | Hy-MT2-1.8B | 33+ languages, lightweight |
 | Embedding | Nomic Embed v2 | 768d, Matryoshka, general-purpose |
+| Embedding (best retrieval) | Nemotron-3-Embed-1B | #1 RTEB 1B (72.4%), 34 languages, 32K context |
+| Embedding (small + pt-BR) | Snowflake Arctic M v2 | 200MB, 74 languages, d_eff ~4% |
 
 ## Choosing a Model
 

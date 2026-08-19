@@ -542,7 +542,7 @@ impl Database {
     /// Get all fact embedding vectors from the vec0 table
     ///
     /// Returns (fact_id, embedding) pairs for all facts that have
-    /// embeddings. Embeddings are stored as FLOAT[256] BLOBs and are
+    /// embeddings. Embeddings are stored as FLOAT[<configured_dims>] BLOBs and are
     /// deserialized into Vec<f32>.
     pub fn get_all_fact_embedding_vectors(&self) -> Result<Vec<(i64, Vec<f32>)>> {
         self.with_connection(|conn| {

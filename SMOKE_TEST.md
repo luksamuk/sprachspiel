@@ -301,12 +301,21 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (14 or higher)
+- [ ] Schema version correct (15 or higher)
 
 **Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 14 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 14"
+[ "$SCHEMA_VER" -ge 15 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 15"
+```
+
+**Verify v15 additions (schema_meta — PR #232, Issue #106):**
+
+```bash
+# Verify schema_meta table exists with embedding_dims key
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db ".tables" | grep -q "schema_meta" && echo "✓ schema_meta table" || echo "✗ schema_meta table missing"
+# Verify embedding_dims value is set
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT value FROM schema_meta WHERE key = 'embedding_dims';" && echo "✓ embedding_dims recorded" || echo "✗ embedding_dims missing"
 ```
 
 **Verify v14 additions (thinking_content — PR #189):**
@@ -1991,6 +2000,54 @@ These behaviors may appear as bugs during testing but are NOT Sprachspiel issues
 
 ---
 
+## 30. Configurable Embedding Model — Prefix, Context Length, Dynamic vec0 (Issue #106, PR #232)
+
+**Objective:** Verify that embedding prefix, context_length, and vec0 storage dimensions are configurable and that switching embedding models works end-to-end.
+
+**Prerequisites:** At least 2 embedding models available on the LLM server (e.g., `nomic-embed-text-v2-moe` at 256/768d and `lfm2.5-embedding-350m` at 1024d).
+
+### 30.1 Default Config — No Regression
+
+- [ ] `[indexing]` section with `model = "nomic"` (no explicit `prefix`) starts without error
+- [ ] `schema_meta` table exists with `embedding_dims` = `256` (or `768` if no Matryoshka)
+- [ ] `/search <query>` returns results without error
+
+### 30.2 Configurable Prefix
+
+- [ ] `[indexing].prefix = ""` (empty) is accepted — no prefix prepended
+- [ ] `[indexing].prefix = "query: "` is accepted — prefix prepended to each text
+- [ ] Search works with both empty and non-empty prefix (results may differ in quality, but no crash)
+
+### 30.3 Dynamic vec0 Dimensions — Model Switch
+
+- [ ] Start with nomic (256d): `schema_meta.embedding_dims` = `256`
+- [ ] Import a document and verify `has_embedding = 1` for the content item
+- [ ] Switch `[indexing].model` to `lfm2.5-embedding-350m` (1024d)
+- [ ] Start chat — logs show "Embedding dimensions changed (256 → 1024)"
+- [ ] `schema_meta.embedding_dims` = `1024`
+- [ ] vec0 tables recreated: `SELECT sql FROM sqlite_master WHERE name = 'content_embeddings'` shows `FLOAT[1024]`
+- [ ] All `has_embedding` flags reset to 0 (background recovery will regenerate)
+- [ ] `/search <query>` works at 1024d after regeneration
+
+### 30.4 Switching Back (1024 → 256)
+
+- [ ] Switch `[indexing].model` back to nomic (256d)
+- [ ] Start chat — vec0 recreated at `FLOAT[256]`
+- [ ] `schema_meta.embedding_dims` = `256`
+- [ ] All `has_embedding` flags reset to 0
+
+### 30.5 Config Upgrade Detects New `prefix` Field
+
+- [ ] `sprach config upgrade --dry-run` lists `indexing.prefix` as a new field
+- [ ] Suggested default is `"search_document: "`
+
+### 30.6 Context Length from Model Config
+
+- [ ] With LFM2.5 (32K context via `num_ctx`), a 2000-char text does NOT trigger "context exceeded"
+- [ ] With nomic (8K or fallback 512), the same text may or may not trigger (depends on `num_ctx`)
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -2075,4 +2132,7 @@ The script above runs automated tests. The following tests must be run manually:
 24. **Section 25.5**: Recommended Configuration Output (threshold and weight suggestions from diagnostics)
 25. **Section 25.6**: Config.toml Settings (semantic_threshold, keyword_weight, semantic_weight)
 26. **Section 26**: TUI Tool Call Display & ReAct Resilience (PR #207 — tool call format, ✗ error indicator, context count, tool calls don't disappear, pre-tool text preservation, error ordering, ReAct resilience)
+27. **Section 27**: W2 Provider Chain Closure (#123 — ollama-rs removed, feature-matrix clippy clean, tool calling, reasoning_effort, provider-agnostic config, TTFB watchdog)
+28. **Section 29**: File Session State + Staleness Detection (Issue #205 — must-read, staleness, append exempt, sandbox priority)
+29. **Section 30**: Configurable Embedding Model (Issue #106 — prefix config, context_length from num_ctx, dynamic vec0 dimensions, model switch 256→1024 and back, config upgrade detects prefix)
 These tests require chat interaction and visual verification of results.

@@ -682,6 +682,34 @@ impl OpenAICompatibleProvider {
         }
 
         if status.is_server_error() {
+            // Read the body first — we need it for context-exceeded detection.
+            let body = resp.text().await.unwrap_or_default();
+
+            // If the server says "input too large" or "context exceeded",
+            // this is NOT a transient error — retrying won't help.
+            // Fail immediately so the fallback chunking pipeline can handle it.
+            let body_lower = body.to_lowercase();
+            if body_lower.contains("too large to process")
+                || body_lower.contains("context_length")
+                || body_lower.contains("context length")
+                || body_lower.contains("too long")
+            {
+                log::info!(
+                    "[{tag}] {} — context exceeded, not retrying",
+                    status.as_u16()
+                );
+                return RetryAction::Fail {
+                    error: ProviderError::Api {
+                        status: status.as_u16(),
+                        body,
+                    },
+                    event: (attempt > 1).then_some(LlmStreamEvent::ProviderRetryFinished {
+                        success: false,
+                        attempt,
+                    }),
+                };
+            }
+
             if attempt < max_attempts {
                 let delay = self.backoff_delay(attempt);
                 log::info!(
@@ -1096,34 +1124,69 @@ impl LlmProvider for OpenAICompatibleProvider {
             encoding_format: "float".to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .headers(self.headers())
-            .json(&request)
-            .send()
-            .await
-            .map_err(classify_reqwest_error)?;
+        let max_attempts = self.config.max_retries.max(1);
+        let mut last_error: Option<ProviderError> = None;
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Api {
-                status: status.as_u16(),
-                body,
-            });
+        for attempt in 1..=max_attempts {
+            let response = self
+                .client
+                .post(&url)
+                .headers(self.headers())
+                .json(&request)
+                .send()
+                .await;
+
+            match response {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        let emb_resp: EmbeddingsResponse = resp.json().await.map_err(|e| {
+                            ProviderError::Other(format!(
+                                "Failed to parse embeddings response: {e}"
+                            ))
+                        })?;
+                        return emb_resp
+                            .data
+                            .into_iter()
+                            .next()
+                            .map(|e| e.embedding)
+                            .ok_or_else(|| {
+                                ProviderError::Other("Empty embeddings response".to_string())
+                            });
+                    }
+
+                    let action = self
+                        .classify_retry_response(status, resp, attempt, max_attempts, "embed")
+                        .await;
+                    match action {
+                        RetryAction::Retry { delay, error, .. } => {
+                            last_error = Some(error);
+                            tokio::time::sleep(delay).await;
+                        }
+                        RetryAction::Fail { error, .. } => {
+                            return Err(error);
+                        }
+                    }
+                }
+                Err(e) => {
+                    let err = classify_reqwest_error(e);
+                    last_error = Some(err.clone());
+                    if attempt < max_attempts {
+                        let delay = self.backoff_delay(attempt);
+                        log::info!(
+                            "[embed] network error, retrying in {}ms (attempt {}/{})",
+                            delay.as_millis(),
+                            attempt,
+                            max_attempts
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
         }
 
-        let emb_resp: EmbeddingsResponse = response.json().await.map_err(|e| {
-            ProviderError::Other(format!("Failed to parse embeddings response: {e}"))
-        })?;
-
-        emb_resp
-            .data
-            .into_iter()
-            .next()
-            .map(|e| e.embedding)
-            .ok_or_else(|| ProviderError::Other("Empty embeddings response".to_string()))
+        Err(last_error
+            .unwrap_or_else(|| ProviderError::Other("Unknown embedding error".to_string())))
     }
 
     async fn detect_capabilities(

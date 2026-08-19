@@ -1,5 +1,8 @@
 # Sprachspiel
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.txt)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
+
 <img src="assets/sprachspiel-banner.png" alt="sprachspiel banner" width="100%">
 
 A Rust CLI harness for research, interaction, and cognitive evolution with local and cloud LLMs.
@@ -380,8 +383,8 @@ Developed with assistance from:
 - **Nemotron 3 Super** (NVIDIA) — Bugfixes
 
 Agent harnesses used:
-- **OpenCode** — Primary development harness
-- **Hermes Agent** — Orchestration, asset creation, and project management
+- **Hermes Agent** (Nous Research) — Primary development harness with custom profiles (Hermes for orchestration, Hefesto for implementation), multi-agent Kanban task routing, and RAG-assisted context
+- **OpenCode** — Earlier development and code generation
 
 Human oversight for architecture decisions and quality assurance.
 

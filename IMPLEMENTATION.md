@@ -3435,53 +3435,36 @@ Recent context (47 messages):
 
 ---
 
-## 🟡 Configurable Embedding Model + Server-Side Matryoshka — #106 [M1]
+## 🔄 Configurable Embedding Model + Server-Side Matryoshka — #106 [M1]
 
-**Status:** 📋 READY  
-**Depends on:** None  
-**Estimated effort:** 1 week (4 phases)  
-**Issue:** #106
+**Status:** 🔄 IN PROGRESS  
+**Depends on:** #133 ✅ COMPLETED, #134 ✅ COMPLETED  
+**Estimated effort:** ~3-4 days (residual scope after #121 delivered Phases 1-2)  
+**Issue:** #106  
+**Branch:** `feat/106-configurable-embedding-model`
 
-**Goal:** Make the embedding model configurable in `models.toml` and use Ollama's `dimensions` parameter for server-side Matryoshka truncation instead of client-side truncation.
+**Goal:** Complete the remaining hardcoded embedding constants — prefix, context_length, and dynamic vec0 dimensions — after #121 (W2 extension) delivered the configurable model, provider, and server-side `dimensions` parameter.
 
-**Prerequisite for:** #107 (Embedding Provider Abstraction) → #72 (Multi-Provider)
+**What #121 Already Delivered (supersedes original Phases 1-2):**
+- ✅ Configurable embedding model via `[indexing].model` alias (not hardcoded)
+- ✅ Configurable dimensions via `models.toml [models.*].dimensions`
+- ✅ Server-side `dimensions` parameter passed to `/v1/embeddings`
+- ✅ Decoupled embedding provider from chat provider
+- ✅ Startup probe verifies dimension match
+- ✅ Client-side truncation only when server returns more dims than configured
 
-**Background:** Currently, the embedding model (`nomic-embed-text-v2-moe:latest`), dimensions (768→256), context length (512), and prefix (`"search_document: "`) are all hardcoded in `src/embeddings/client.rs` and `src/embeddings/truncate.rs`. Additionally, `truncate_and_normalize()` does client-side Matryoshka truncation, which is redundant since Ollama v0.11.11 (Sept 2025) supports the `dimensions` parameter on `/api/embed` for server-side truncation with L2 normalization.
+**Residual Scope (this PR):**
 
-### Current Hardcoded Constants
-
-| Constant | Value | File |
-|---|---|---|
-| `DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v2-moe:latest` | `client.rs:16` |
-| `FULL_DIMENSIONS` | 768 | `truncate.rs:7` |
-| `TRUNCATED_DIMENSIONS` | 256 | `truncate.rs:9` |
-| `DEFAULT_CONTEXT_LENGTH` | 512 | `client.rs:21` |
-| `"search_document: "` prefix | Hardcoded | `client.rs:214,266` |
-| `EMBEDDING_PREFIX_TOKENS` | 30 | `client.rs:43` |
-| DB vec0 tables | `FLOAT[256]` | `schema.rs:177,187`; `connection.rs:343,352` |
-
-### Key Discovery: Ollama `dimensions` Parameter
-
-Since Ollama v0.11.11 (Sept 2025), the `/api/embed` endpoint supports a `dimensions` parameter for server-side Matryoshka truncation. The parameter truncates the output embedding vector before L2 normalization. llama.cpp also supports this on its `/v1/embeddings` endpoint.
-
-### Proposed Config (`models.toml`)
-
-```toml
-[embedding]
-model = "nomic-embed-text-v2-moe:latest"
-dimensions = 256        # Matryoshka truncated dims (via Ollama API "dimensions")
-context_length = 8192   # Auto-detected from Ollama model info
-prefix = "search_document: "  # Model-specific prefix, empty string if none
-```
-
-### Implementation Phases
-
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 1. Config | Add `[embedding]` section to `Settings` / `config.toml`; replace hardcoded constants with config reads (defaults matching current behavior); auto-detect `context_length` from Ollama model info | 2-3 days |
-| 2. Server-side truncation | Add `dimensions` field to Ollama embed API request; remove or bypass `truncate_and_normalize()` when `dimensions` is set; keep client-side truncation as fallback for older Ollama | 1-2 days |
-| 3. DB migration | Migration that recreates `vec0` tables with dynamic `FLOAT[N]` from config; warn user and require reindex when dimensions change; `regenerate_all_embeddings()` already exists via `/reindex` | 2-3 days |
-| 4. Validation | Test alternative models (nomic-embed-text v1.5, mxbai-embed-large, qwen3-embedding:0.6b); verify no regression with current model | 1-2 days |
+| # | Item | Description | Files |
+|---|------|-------------|-------|
+| 1 | Configurable prefix | `"search_document: "` is still hardcoded in `client.rs:142`. Add `[indexing].prefix` to `IndexingSettings` (default: `"search_document: "`). Apply in `embed()` and `embed_batch()`. | `src/settings.rs`, `src/embeddings/client.rs` |
+| 2 | Auto-detect context_length | `DEFAULT_CONTEXT_LENGTH = 512` is still hardcoded. Read `context_length` from the model alias in `models.toml` (same field as chat models). Fallback to 512 when unavailable. | `src/embeddings/client.rs`, `src/settings.rs` |
+| 3 | Dynamic vec0 dimensions | `FLOAT[256]` in schema.rs is hardcoded. Read configured dimensions at DB init and create vec0 tables with `FLOAT[<N>]`. Migration detects dimension change → DROP+reCREATE vec0 tables + reset `has_embedding`. | `src/db/schema.rs`, `src/db/connection.rs` |
+| 4 | Truncation respects configured dims | `truncate_and_normalize_with_correction()` always truncates to `TRUNCATED_DIMENSIONS = 256`. Make it truncate to the configured dimensions. When dims ≤ configured, store full vector (no truncation). | `src/embeddings/truncate.rs`, `src/embeddings/client.rs` |
+| 5 | Tests | Prefix config, context_length detection, dimension change migration, truncation at non-256 dims | test modules |
+| 6 | Docs | Update `[indexing]` sample config, user docs, man page, embedding model guide with ranking | `doc/src/`, `man/sprach.1` |
+| 7 | Embedding retry with backoff | `embed()` in `OpenAICompatibleProvider` had no retry — a single HTTP 500 failed immediately. Added retry loop using existing `classify_retry_response` + `backoff_delay` (same pattern as `chat_with_retry`). | `src/provider/openai_compat.rs` |
+| 8 | Fix embedding provider resolution | `/search`, `/reindex`, and `query` subcommand used `state.provider` (chat provider) for embeddings instead of the embedding model's own provider. Fixed all 3 call sites to use `resolve_indexing_model()`'s `provider_cfg` (same pattern as `repl.rs`). | `src/chat/command_handlers.rs`, `src/query/context.rs` |
 
 ### Matryoshka-Capable Embedding Models (Ollama)
 

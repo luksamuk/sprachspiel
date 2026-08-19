@@ -49,6 +49,13 @@ pub struct IndexingInit {
     #[allow(dead_code)]
     // Config flag — passed to run_indexing_probe(), not read via field access
     pub probe: bool,
+    /// Prefix prepended to each text before embedding (from
+    /// `[indexing].prefix` in `config.toml`).
+    pub prefix: String,
+    /// Context length for the embedding model (from `num_ctx` on
+    /// the model alias in `models.toml`). `None` = use
+    /// `DEFAULT_CONTEXT_LENGTH` (512).
+    pub context_length: Option<u32>,
 }
 
 /// Core database initialization logic shared between modes.
@@ -108,16 +115,20 @@ pub fn init_database_core(
     match db {
         Ok(db) => {
             log::info!("Database initialized for message persistence");
-            // EmbeddingClient::with_model now takes (provider,
-            // model_name, dimensions). dimensions is sourced from
-            // the alias in models.toml and propagated through
-            // IndexingInit; the EmbeddingClient is just a thin
-            // holder for now. The probe (Commit 6) uses the
-            // dimensions for strict-verify.
+            // Ensure vec0 tables match the configured embedding dimensions.
+            // For 256-dim (default), this is a no-op. For other dims, it
+            // recreates the vec0 tables and resets has_embedding flags.
+            if let Err(e) = db.ensure_vec0_dimensions(indexing_init.dimensions) {
+                log::error!("Failed to ensure vec0 dimensions: {e}");
+                // Non-fatal: the DB still works, but embeddings may fail
+                // if the vec0 dims don't match. Log and continue.
+            }
             let embedding = Arc::new(EmbeddingClient::with_model(
                 indexing_init.provider.clone(),
                 indexing_init.model_id.clone(),
                 indexing_init.dimensions,
+                indexing_init.prefix.clone(),
+                indexing_init.context_length,
             ));
             DatabaseInitResult {
                 db: Some(Arc::new(db)),
@@ -246,6 +257,8 @@ mod tests {
             model_id: "nomic-embed-text-v2-moe".to_string(),
             dimensions: 768,
             probe: true,
+            prefix: "search_document: ".to_string(),
+            context_length: None,
         };
         assert_eq!(init.model_id, "nomic-embed-text-v2-moe");
         assert_eq!(init.dimensions, 768);
@@ -262,6 +275,8 @@ mod tests {
                 model_id: "test".to_string(),
                 dimensions: 768,
                 probe: false,
+                prefix: "search_document: ".to_string(),
+                context_length: None,
             },
             true, // skip_persistence
             false,
@@ -282,6 +297,8 @@ mod tests {
                 model_id: "".to_string(),
                 dimensions: 768,
                 probe: false,
+                prefix: "search_document: ".to_string(),
+                context_length: None,
             },
             false,
             false,
@@ -303,6 +320,8 @@ mod tests {
                 model_id: "   ".to_string(),
                 dimensions: 768,
                 probe: false,
+                prefix: "search_document: ".to_string(),
+                context_length: None,
             },
             false,
             false,

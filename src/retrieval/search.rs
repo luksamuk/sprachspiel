@@ -157,11 +157,17 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 ///
 /// Returns a `SearchOutcome` enum instead of printing directly.
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
+#[allow(clippy::too_many_arguments)]
+// 9 args — all required for the search pipeline (db, provider, model
+// config, query context). Grouping into a struct would add ceremony
+// for a single call site.
 pub async fn run_search(
     db: &Database,
     provider: &crate::provider::OpenAICompatibleProvider,
     embedding_model_id: &str,
     embedding_dimensions: u32,
+    embedding_prefix: &str,
+    embedding_context_length: Option<u32>,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,
@@ -179,6 +185,8 @@ pub async fn run_search(
         provider.clone(),
         embedding_model_id.to_string(),
         embedding_dimensions,
+        embedding_prefix.to_string(),
+        embedding_context_length,
     );
 
     log::debug!("Generating embedding for query...");

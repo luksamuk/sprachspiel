@@ -13,8 +13,8 @@ use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
 use crate::embeddings::{
-    DEFAULT_CONTEXT_LENGTH, EmbedContext, EmbedItemContext, EmbeddingClient,
-    embed_chunk_with_fallback, embed_item_with_fallback,
+    EmbedContext, EmbedItemContext, EmbeddingClient, embed_chunk_with_fallback,
+    embed_item_with_fallback,
 };
 
 /// Tool output verbosity level
@@ -444,7 +444,7 @@ impl ChatSession {
                                         ctx,
                                         Arc::clone(&db),
                                         Arc::clone(&client),
-                                        DEFAULT_CONTEXT_LENGTH,
+                                        client.context_length(),
                                         0,
                                     )
                                     .await;
@@ -462,7 +462,7 @@ impl ChatSession {
                                     ctx,
                                     &db,
                                     &client,
-                                    DEFAULT_CONTEXT_LENGTH,
+                                    client.context_length(),
                                 )
                                 .await;
                             }
@@ -615,7 +615,7 @@ impl ChatSession {
                                         ctx,
                                         Arc::clone(&db),
                                         Arc::clone(&client),
-                                        DEFAULT_CONTEXT_LENGTH,
+                                        client.context_length(),
                                         0,
                                     )
                                     .await;
@@ -633,7 +633,7 @@ impl ChatSession {
                                     ctx,
                                     &db,
                                     &client,
-                                    DEFAULT_CONTEXT_LENGTH,
+                                    client.context_length(),
                                 )
                                 .await;
                             }
@@ -744,7 +744,7 @@ impl ChatSession {
                                         ctx,
                                         Arc::clone(&db),
                                         Arc::clone(&client),
-                                        DEFAULT_CONTEXT_LENGTH,
+                                        client.context_length(),
                                         0,
                                     )
                                     .await;
@@ -759,9 +759,13 @@ impl ChatSession {
                                 Some(&conv_id),
                                 project_id.as_deref(),
                             );
-                            let _ =
-                                embed_item_with_fallback(ctx, &db, &client, DEFAULT_CONTEXT_LENGTH)
-                                    .await;
+                            let _ = embed_item_with_fallback(
+                                ctx,
+                                &db,
+                                &client,
+                                client.context_length(),
+                            )
+                            .await;
                         }
                         // Signal completion to the TUI status bar
                         if let Some(ref tx) = progress_tx {

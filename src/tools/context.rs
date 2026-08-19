@@ -127,6 +127,8 @@ mod tests {
             ),
             dummy_settings.indexing_model_alias().to_string(),
             768, // TRANSITIONAL: placeholder
+            "search_document: ".to_string(),
+            None,
         ));
         let dummy_provider_for_test = crate::provider::OpenAICompatibleProvider::new_local(
             "http://localhost".to_string(),

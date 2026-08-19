@@ -161,20 +161,40 @@ impl QueryContextBuilder {
         let skip_persistence = self.cli_code;
         // The query subcommand's wiring uses
         // Settings::resolve_indexing_model to get the upstream
-        // model_id and dimensions. If the alias is missing or
-        // misconfigured, the resolver returns an error and we
-        // pass an empty model_id to init_database_core which
-        // bails with a clear error message.
-        let (model_id, dimensions) = match settings.resolve_indexing_model() {
-            Ok((_mcfg, _pcfg, mid, dims)) => (mid.to_string(), dims),
-            Err(_) => (String::new(), 768), // triggers the empty-model_id error
-        };
+        // model_id, dimensions, and the embedding-specific provider.
+        // The embedding provider may differ from the chat provider.
+        // If the alias is missing or misconfigured, the resolver
+        // returns an error and we pass an empty model_id to
+        // init_database_core which bails with a clear error message.
+        let (model_id, dimensions, context_length, embedding_provider) =
+            match settings.resolve_indexing_model() {
+                Ok((mcfg, pcfg, mid, dims)) => {
+                    let provider =
+                        crate::provider::OpenAICompatibleProvider::from_provider_config(pcfg);
+                    (mid.to_string(), dims, mcfg.num_ctx, provider)
+                }
+                // The error path intentionally passes an empty model_id so
+                // init_database_core bails with the clear "missing embedding
+                // model" error. Dimensions here are a placeholder and never
+                // used by the DB (the empty model_id short-circuits first);
+                // DEFAULT_EMBEDDING_DIMENSIONS is used as the fallback value
+                // for consistency with the rest of the codebase (e.g. the
+                // `diag` subcommand's resolve_indexing_model fallback).
+                Err(_) => (
+                    String::new(),
+                    crate::settings::DEFAULT_EMBEDDING_DIMENSIONS as u32,
+                    None,
+                    provider.clone(),
+                ), // triggers the empty-model_id error
+            };
         let result = crate::db::init_database_core(
             crate::db::IndexingInit {
-                provider: provider.clone(),
+                provider: embedding_provider,
                 model_id,
                 dimensions,
                 probe: false, // query subcommand skips the probe (one-shot)
+                prefix: settings.indexing.prefix.clone(),
+                context_length,
             },
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
