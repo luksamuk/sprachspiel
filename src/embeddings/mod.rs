@@ -2,7 +2,7 @@
 //!
 //! Provides:
 //! - LLM server embedding client
-//! - Matryoshka truncation (768d → 256d)
+//! - Matryoshka truncation (configurable target dimensions)
 //! - Text chunking for long messages
 //! - Embedding recovery for interrupted processes
 //! - Embedding regeneration after schema migration
@@ -15,7 +15,7 @@ mod client;
 mod fallback;
 mod recovery;
 mod regenerate;
-mod truncate;
+mod vector;
 
 /// Minimum content length (in bytes) for meaningful embedding generation.
 ///
@@ -39,4 +39,4 @@ pub use fallback::{
 };
 pub use recovery::recover_missing_embeddings;
 pub use regenerate::regenerate_all_embeddings;
-pub use truncate::{TRUNCATED_DIMENSIONS, TruncateResult, cosine_similarity};
+pub use vector::{TruncateResult, cosine_similarity};

@@ -1,31 +1,33 @@
 //! Matryoshka embedding truncation
 //!
-//! Truncates 768-dimensional embeddings to 256 dimensions with normalization.
-//! This reduces storage by 3x with only 2-3% quality loss.
+//! Truncates high-dimensional embeddings to a target dimensionality with
+//! normalization. The target dimensions are supplied by the caller (from the
+//! model alias's `dimensions` field in `models.toml`), so this module is
+//! model-agnostic.
 //!
 //! # Norm Correction
 //!
-//! When truncating from 768 to 256 dimensions, the L2 norm of the truncated
-//! vector differs from 1.0 even after normalization. The `norm_correction`
-//! factor (computed as `1/(norm²)`) allows correcting cosine similarity
-//! scores at query time: `true_cosine ≈ measured_cosine * sqrt(nc_query * nc_result)`.
+//! When truncating from a higher to a lower dimensionality, the L2 norm of
+//! the truncated vector differs from 1.0 even after normalization. The
+//! `norm_correction` factor (computed as `1/(norm²)`) allows correcting
+//! cosine similarity scores at query time:
+//! `true_cosine ≈ measured_cosine * sqrt(nc_query * nc_result)`.
 //!
 //! For nomic-embed-text-v2-moe with d_eff≈7, this correction can shift
-//! similarity scores by 10-30%, making semantic search thresholds more accurate.
+//! similarity scores by 10-30%, making semantic search thresholds more
+//! accurate.
 
 /// Full embedding dimensions from nomic-embed-text-v2-moe (test reference)
 #[cfg(test)]
 pub const FULL_DIMENSIONS: usize = 768;
-/// Truncated dimensions (Matryoshka)
-pub const TRUNCATED_DIMENSIONS: usize = 256;
 
 /// Result of Matryoshka truncation with norm correction.
 ///
-/// Contains the normalized 256-dim vector and a correction factor
+/// Contains the normalized truncated vector and a correction factor
 /// that compensates for norm loss during truncation.
 #[derive(Debug, Clone)]
 pub struct TruncateResult {
-    /// L2-normalized truncated 256-dim vector
+    /// L2-normalized truncated vector
     pub vector: Vec<f32>,
     /// Norm correction factor: `1 / (L2_norm_of_truncated_dims²)`.
     ///
@@ -35,7 +37,7 @@ pub struct TruncateResult {
     pub norm_correction: f32,
 }
 
-/// Truncate and normalize a 768-dimensional embedding to 256 dimensions.
+/// Truncate and normalize an embedding to a target dimensionality.
 ///
 /// Convenience wrapper around [`truncate_and_normalize_with_correction`] that
 /// discards the norm correction factor. Production code should use the
@@ -43,13 +45,14 @@ pub struct TruncateResult {
 /// cosine similarity at query time.
 ///
 /// # Arguments
-/// * `embedding` - Full 768-dimensional embedding
+/// * `embedding` - Full embedding vector (must have >= `target_dims` elements)
+/// * `target_dims` - Number of dimensions to truncate to
 ///
 /// # Returns
-/// * Truncated and L2-normalized 256-dimensional vector
+/// * Truncated and L2-normalized vector
 ///
 /// # Panics
-/// * If embedding has fewer than 256 dimensions
+/// * If embedding has fewer than `target_dims` dimensions
 #[cfg(test)]
 pub fn truncate_and_normalize(embedding: &[f32], target_dims: usize) -> Vec<f32> {
     truncate_and_normalize_with_correction(embedding, target_dims).vector
@@ -131,14 +134,18 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 mod tests {
     use super::*;
 
+    /// Target dimensions for tests (matches the legacy Matryoshka truncation
+    /// size used by nomic-embed-text-v2-moe).
+    const TEST_TARGET_DIMS: usize = 256;
+
     #[test]
     fn test_truncate_and_normalize() {
         // Create a 768-dimensional embedding
         let embedding: Vec<f32> = (0..768).map(|i| (i % 10) as f32 / 10.0).collect();
 
-        let truncated = truncate_and_normalize(&embedding, TRUNCATED_DIMENSIONS);
+        let truncated = truncate_and_normalize(&embedding, TEST_TARGET_DIMS);
 
-        assert_eq!(truncated.len(), TRUNCATED_DIMENSIONS);
+        assert_eq!(truncated.len(), TEST_TARGET_DIMS);
 
         // Check L2 normalization
         let norm: f32 = truncated.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -180,7 +187,7 @@ mod tests {
     #[should_panic(expected = "Embedding too short")]
     fn test_truncate_too_short() {
         let embedding = vec![1.0, 2.0, 3.0]; // Only 3 dimensions
-        truncate_and_normalize(&embedding, TRUNCATED_DIMENSIONS);
+        truncate_and_normalize(&embedding, TEST_TARGET_DIMS);
     }
 
     #[test]
@@ -188,9 +195,9 @@ mod tests {
         // Create a 768-dimensional embedding with known norm
         let embedding: Vec<f32> = (0..768).map(|i| (i % 10) as f32 / 10.0).collect();
 
-        let result = truncate_and_normalize_with_correction(&embedding, TRUNCATED_DIMENSIONS);
+        let result = truncate_and_normalize_with_correction(&embedding, TEST_TARGET_DIMS);
 
-        assert_eq!(result.vector.len(), TRUNCATED_DIMENSIONS);
+        assert_eq!(result.vector.len(), TEST_TARGET_DIMS);
 
         // Check L2 normalization of the vector
         let norm: f32 = result.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -214,7 +221,7 @@ mod tests {
         let mut embedding = vec![0.0f32; 768];
         embedding[0] = 1.0; // Unit vector along first dimension
 
-        let result = truncate_and_normalize_with_correction(&embedding, TRUNCATED_DIMENSIONS);
+        let result = truncate_and_normalize_with_correction(&embedding, TEST_TARGET_DIMS);
 
         // For a unit vector, truncated norm = 1.0, so norm_correction = 1/(1²) = 1.0
         assert!(
@@ -229,9 +236,9 @@ mod tests {
         // Zero vector should return norm_correction = 1.0 (no correction)
         let embedding = vec![0.0f32; 768];
 
-        let result = truncate_and_normalize_with_correction(&embedding, TRUNCATED_DIMENSIONS);
+        let result = truncate_and_normalize_with_correction(&embedding, TEST_TARGET_DIMS);
 
-        assert_eq!(result.vector.len(), TRUNCATED_DIMENSIONS);
+        assert_eq!(result.vector.len(), TEST_TARGET_DIMS);
         assert!(
             (result.norm_correction - 1.0).abs() < f32::EPSILON,
             "Degenerate vector should have norm_correction=1.0, got {}",
@@ -254,7 +261,7 @@ mod tests {
         // Truncated norm = sqrt(0.36 + 0.64) = sqrt(1.0) = 1.0
         // norm_correction = 1/1.0 = 1.0
 
-        let result = truncate_and_normalize_with_correction(&embedding, TRUNCATED_DIMENSIONS);
+        let result = truncate_and_normalize_with_correction(&embedding, TEST_TARGET_DIMS);
         assert!(
             (result.norm_correction - 1.0).abs() < 0.0001,
             "Expected norm_correction ≈ 1.0, got {}",
