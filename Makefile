@@ -241,7 +241,9 @@ tarball-linux-all-tools: build-all-tools
 	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools.tar.gz"
 
 # Create Termux tarball with installation scripts
-tarball-termux: termux
+# Does NOT depend on `termux` — run `make termux` first if the binary is not built.
+tarball-termux:
+	@test -f $(TERMUX_BUILD_DIR)/$(BINARY) || { echo "ERROR: $(TERMUX_BUILD_DIR)/$(BINARY) not found. Run 'make termux' first." >&2; exit 1; }
 	@echo "Creating Termux tarball..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY)
@@ -257,7 +259,9 @@ tarball-termux: termux
 	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET).tar.gz"
 
 # Create Termux tarball with all tools
-tarball-termux-all-tools: termux-all-tools
+# Does NOT depend on `termux-all-tools` — run `make termux-all-tools` first if the binary is not built.
+tarball-termux-all-tools:
+	@test -f $(TERMUX_BUILD_DIR)/$(BINARY) || { echo "ERROR: $(TERMUX_BUILD_DIR)/$(BINARY) not found. Run 'make termux-all-tools' first." >&2; exit 1; }
 	@echo "Creating Termux tarball (all tools)..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY)
