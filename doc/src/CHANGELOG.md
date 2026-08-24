@@ -4,6 +4,12 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Security: h2 0.4.13 → 0.4.16+ (RUSTSEC-2026-0258)** — Upgraded `reqwest` to pull in `h2 >=0.4.16`, fixing unbounded empty DATA frames vulnerability. `h2` arrives transitively via `reqwest → h2` and `reqwest → hyper → h2`.
+
+- **Security: quinn-proto 0.11.14 → 0.11.15+ (RUSTSEC-2026-0185)** — Upgraded `reqwest` to pull in `quinn-proto >=0.11.15`, fixing remote memory exhaustion from unbounded out-of-order stream reassembly (CVSS 7.5 high). `quinn-proto` arrives transitively via `reqwest → quinn → quinn-proto`.
+
 ## [0.45.0] - 2026-08-19
 
 ### Added
