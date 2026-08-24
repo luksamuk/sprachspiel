@@ -8093,3 +8093,8 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 **Estimated effort:** ~1-2 hours
 
 2026-05-07 - #126 created: Rename ask-ai → Sprachspiel (priority:critical). Full codebase audit: ~60 source files + 82 doc files + config/data directory paths + man page + DB filename. 2-4 days estimated.
+
+2026-08-24 - Security fix: `cargo audit` found two vulnerabilities in transitive dependencies via `reqwest 0.12.28`:
+1. **RUSTSEC-2026-0258** — `h2 0.4.13` (unbounded empty DATA frames) → fix: upgrade to `h2 >=0.4.16`
+2. **RUSTSEC-2026-0185** — `quinn-proto 0.11.14` (remote memory exhaustion, CVSS 7.5 high) → fix: upgrade to `quinn-proto >=0.11.15`
+Both resolved by `cargo update -p reqwest` to pull patched versions. `cargo build --all-features` and `cargo audit` pass clean (no vulnerabilities).
