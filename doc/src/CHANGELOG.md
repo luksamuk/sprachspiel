@@ -10,6 +10,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Fixed
 
+- **Pruned content leaked into search results (LUC-73 residual)** — `/content prune` was only filtering pruned items from decay stats, not from actual searches. Keyword, semantic-item, semantic-chunk, and note-FTS query templates now filter `pruned = 0`. Closes the loop where each access on a leaked result was re-boosting its importance and resurrecting pruned items.
+
 - **Security: h2 0.4.13 → 0.4.16+ (RUSTSEC-2026-0258)** — Upgraded `reqwest` to pull in `h2 >=0.4.16`, fixing unbounded empty DATA frames vulnerability. `h2` arrives transitively via `reqwest → h2` and `reqwest → hyper → h2`.
 
 - **Security: quinn-proto 0.11.14 → 0.11.15+ (RUSTSEC-2026-0185)** — Upgraded `reqwest` to pull in `quinn-proto >=0.11.15`, fixing remote memory exhaustion from unbounded out-of-order stream reassembly (CVSS 7.5 high). `quinn-proto` arrives transitively via `reqwest → quinn → quinn-proto`.
