@@ -34,7 +34,7 @@ const SEARCH_NOTES_FTS_SQL: &str = "
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
            ci.project_id, ci.thinking_content, bm25(content_fts) as score
     FROM content_fts fts
-    JOIN content_items ci ON fts.rowid = ci.id";
+    JOIN content_items ci ON fts.rowid = ci.id AND ci.pruned = 0";
 
 const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
     SELECT ce.item_id, ce.distance, ce.norm_correction, ci.id, ci.content_type, ci.conversation_id,
@@ -44,7 +44,7 @@ const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
            ci.thinking_content
     FROM content_embeddings ce
     JOIN content_items ci ON ce.item_id = ci.id
-    WHERE ce.embedding MATCH ? AND ce.k = ?";
+    WHERE ce.embedding MATCH ? AND ce.k = ? AND ci.pruned = 0";
 
 const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     SELECT cc.id, ce.distance, ce.norm_correction, cc.item_id, cc.chunk_index, cc.content, 
@@ -56,7 +56,7 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     FROM chunk_embeddings_v2 ce
     JOIN content_chunks cc ON ce.chunk_id = cc.id
     JOIN content_items ci ON cc.item_id = ci.id
-    WHERE ce.embedding MATCH ? AND ce.k = ?";
+    WHERE ce.embedding MATCH ? AND ce.k = ? AND ci.pruned = 0";
 
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
@@ -855,6 +855,7 @@ impl Database {
 
             let mut conditions = Vec::new();
             conditions.push("content_fts MATCH ?".to_string());
+            conditions.push("ci.pruned = 0".to_string());
 
             if let Some(ct) = &content_type {
                 conditions.push(format!("ci.content_type = '{}'", ct));
