@@ -342,7 +342,7 @@ Context Map (PEEK) gradually replaces AGENTS.md. Dynamic SOUL.md (S2.5 + NLP-His
 
 **Synergy 7: Empathy ≠ Failure × Curatorial Transparency (NLP-Historical §10)**
 
-The "empathy ≠ failure" reframing establishes: behavioral shifts are not bugs, but opacity is. The goal is not to suppress shifts, but make them visible. This orients all of S2.meta1-3 (#99/#100/#101). Flow:
+The "empathy ≠ failure" reframing establishes: behavioral shifts are not bugs, but opacity is. The goal is not to suppress shifts, but make them visible. This orients all of S2.meta1-3 (#99/#100/#101). Formalized as **ADR-010 (Empathy ≠ Failure — Meta-cognition Reframing)** — see `IMPLEMENTATION.md` ADR table and Linear LUC-103 for the full record. Flow:
 
 ```
 S2.meta2: detects behavioral change (not failure)

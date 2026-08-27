@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **ADR-010: Empathy ≠ Failure — Meta-cognition Reframing (LUC-103, ex gh#159)** — Documents the reframing principle for S2.meta1-3: behavioral shifts are not bugs, but opacity is. Detector targets unannounced system drift (not user-initiated changes), telemetry records neutral observations (TTR shift, topic avoidance, register drift), and recalibration always requires human approval. One-line record added to the ADR table in `IMPLEMENTATION.md`; cross-reference in `unified-vision.md` Synergy 7. Full ADR body lives in Linear LUC-103.
+
 ### Fixed
 
 - **Security: h2 0.4.13 → 0.4.16+ (RUSTSEC-2026-0258)** — Upgraded `reqwest` to pull in `h2 >=0.4.16`, fixing unbounded empty DATA frames vulnerability. `h2` arrives transitively via `reqwest → h2` and `reqwest → hyper → h2`.
