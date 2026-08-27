@@ -2327,4 +2327,56 @@ mod tests {
             "Should count 3 messages, no embeddings, no todos"
         );
     }
+
+    #[test]
+    fn test_pruned_items_excluded_from_search() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let item_id = db
+            .insert_content_item(
+                "message",
+                Some("test-conv"),
+                Some(ROLE_USER),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"),
+                None,
+                "Hello world unique prune marker",
+                None,
+                0.5,
+                Some("project-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert content item");
+
+        // Sanity: item appears in keyword search while unpruned
+        let results = db
+            .search_content_keyword("Hello world", None, None, None, None, 10)
+            .expect("keyword search must succeed");
+        assert!(
+            results.iter().any(|r| r.item.id == item_id),
+            "unpruned item should appear in keyword search"
+        );
+
+        // Prune the item directly (soft-delete, as run_content_decay_cycle does)
+        db.with_connection(|conn| {
+            conn.execute(
+                "UPDATE content_items SET pruned = 1 WHERE id = ?1",
+                params![item_id],
+            )
+            .map(|_| ())
+        })
+        .expect("Failed to prune item");
+
+        // After pruning, item must NOT appear in keyword search
+        let results = db
+            .search_content_keyword("Hello world", None, None, None, None, 10)
+            .expect("keyword search must succeed after prune");
+        assert!(
+            !results.iter().any(|r| r.item.id == item_id),
+            "pruned item leaked into keyword search results"
+        );
+    }
 }
