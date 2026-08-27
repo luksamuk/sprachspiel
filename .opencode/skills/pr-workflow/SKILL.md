@@ -12,6 +12,8 @@ metadata:
 
 I guide the complete PR workflow for the sprachspiel project, from branch creation through merge. I cover every phase with exact commands and decision points.
 
+**Issue tracking is Linear (since 2026-08-19); PRs/reviews stay on GitHub.** Issues are `LUC-N` (ex gh#N — the Linear description carries `Ref: gh#N`). Access Linear via `mcp__linear__*` tools when the MCP is connected, else the `linear` skill (GraphQL + `LINEAR_API_KEY`). The Linear GitHub integration auto-links branches/PRs named with `LUC-N` and moves issue status on PR open/merge; magic words (`Fixes LUC-NNN`) in commit messages/PR body also close issues.
+
 **If the selected card has `🟡 RESEARCH NEEDED` status, Phase 0 (Research) is MANDATORY before any branch creation.**
 
 ## When to use me
@@ -92,14 +94,10 @@ Write a Research Summary document (as an issue comment) with:
 
 ### Step 0.4: Update Documentation
 
-1. **Post Research Summary** as a comment on the GitHub issue:
-   ```bash
-   gh issue comment <issue_number> --body "$(cat <<'EOF'
-   ## Research Summary
-
-   [paste Research Summary here]
-   EOF
-   )"
+1. **Post Research Summary** as a comment on the Linear issue:
+   ```
+   mcp__linear__save_comment(issueId: LUC-N, body: "## Research Summary\n\n...")
+   # HTTP fallback: mutation commentCreate(input: { issueId, body })
    ```
 
 2. **Update IMPLEMENTATION.md** — replace `🟡 RESEARCH NEEDED` with `📋 PLANNED`:
@@ -107,21 +105,7 @@ Write a Research Summary document (as an issue comment) with:
    - Update effort estimate if revised
    - Add architecture proposal section if produced
 
-3. **Update Scrum Status** on the board: `Backlog → Ready`
-   ```bash
-   ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
-   gh api graphql -f query='
-   mutation {
-     updateProjectV2ItemFieldValue(
-       input: {
-         projectId: "PVT_kwHOADplIc4BRnZ9"
-         itemId: "'"$ITEM_ID"'"
-         fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
-         value: { singleSelectOptionId: "70e88e2e" }
-       }
-     ) { projectV2Item { id } }
-   }'
-   ```
+3. **Update issue state** in Linear: `Backlog → Todo` (or the team's planned state) via `mcp__linear__save_issue` / `issueUpdate` with `stateId` (resolve the UUID from `mcp__linear__list_issue_statuses` — names are discoverable, never hardcoded).
 
 ### Step 0.5: ⛔ WAIT for User Approval
 
@@ -161,64 +145,29 @@ git branch --show-current
 Before creating a branch, verify the issue is not a duplicate:
 
 ```bash
-# Search for issues with similar titles
-gh issue list --state all --limit 100 | grep -i "<keyword from title>"
-
-# For each match, read the full description
-gh issue view <number>
+# Search Linear for issues with similar titles (MCP-first):
+#   mcp__linear__list_issues(query: "<keyword from title>")   → project == "Sprachspiel"
+# HTTP fallback: GraphQL issueSearch(query: "...")
+# Pre-migration archaeology: gh issue list --state closed | grep -i "<keyword>"
+# For each match, read the full description: mcp__linear__get_issue LUC-N
 ```
 
 If a duplicate is found:
 1. **Identify the canonical issue** — the one that was created first, or the one with more context
-2. **If canonical is CLOSED with a merged PR** — check whether the PR fully addressed the issue. If not, note residual work on the canonical issue.
-3. **Close the duplicate** with a comment: `"Closing as duplicate of #<canonical> — both issues describe the same problem."`
+2. **If canonical is DONE (closed via merged PR)** — check whether the PR fully addressed the issue. If not, note residual work on the canonical issue.
+3. **Mark the duplicate** in Linear with state "Duplicate" + a comment `Closing as duplicate of LUC-<canonical> — both issues describe the same problem.`
 4. **Reference the canonical issue** in your branch name, PR title, and PR body (not the duplicate)
-5. **Update IMPLEMENTATION.md** to reference the canonical issue number
+5. **Update IMPLEMENTATION.md** to reference the canonical issue
 
-### Move Card to In Progress
+### Move Issue to In Progress
 
-Move the GitHub Project card to "In Progress" (project number 4 = Sprachspiel Roadmap):
+The Linear GitHub integration moves the issue automatically when you open the PR — but when *starting* implementation, update the issue state explicitly:
 
-```bash
-# Find the item ID by issue number (use CANONICAL issue number)
-ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
-
-# If item is NOT on the board, add it:
-gh project item-add 4 --owner luksamuk --url https://github.com/luksamuk/sprachspiel/issues/<issue_number>
-
-# Update Status field to "In Progress"
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "'"$ITEM_ID"'"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
-      value: { singleSelectOptionId: "47fc9ee4" }
-    }
-  ) { projectV2Item { id } }
-}'
-
-# Update Scrum Status field to "In Progress"
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "'"$ITEM_ID"'"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
-      value: { singleSelectOptionId: "c2eae8ae" }
-    }
-  ) { projectV2Item { id } }
-}'
+```
+mcp__linear__save_issue(LUC-N, state: "In Progress")   # stateId via list_issue_statuses
 ```
 
-**Card management rules:**
-- Move card to **In Progress** when starting implementation (Phase 1)
-- Move card to **In Review** when PR is ready for review (Phase 4)
-- Card moves to **Done** automatically when PR merges (via "Closes #N")
-- If the issue is not on the board, **add it** before moving
-- Always use the **canonical issue** for board cards (not duplicates)
+Use the issue's `gitBranchName` (`luc-NNN-slug`) for the branch — that's what the integration matches.
 
 ## Phase 2: Documentation FIRST
 
@@ -247,7 +196,7 @@ mutation {
 # Push branch
 git push -u origin <branch>
 
-# Create PR as DRAFT with issue reference
+# Create PR as DRAFT with Linear magic word (auto-links + auto-closes the LUC issue on merge)
 gh pr create --draft --title "<type>: <description>" --body "$(cat <<'EOF'
 ## Summary
 
@@ -267,12 +216,12 @@ Brief description of changes.
 
 ## Related
 
-Closes #<issue_number>
+Fixes LUC-<N>
 EOF
 )"
 
-# Link PR to issue
-gh issue comment <issue_number> --body "PR #<pr_number> criado para resolver esta issue."
+# Optional extra ping on the Linear issue (integration already auto-links by branch/PR):
+# mcp__linear__save_comment(LUC-N, body: "Draft PR #<pr_number> aberto.")
 ```
 
 **STOP AND WAIT for user authorization.** The user will enter "planning mode."
@@ -362,53 +311,21 @@ cargo clippy -- -D warnings
 gh pr ready <pr_number>
 ```
 
-### Update Project Board Card
+### Update Issue State in Linear
 
-Move the card to "In Review":
+Move the issue to "In Review" (the Linear GitHub integration usually does this when the PR goes ready-for-review — verify, and set explicitly if it didn't):
 
-```bash
-# Find item ID (use CANONICAL issue number)
-ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
-
-# Status → "In Review"
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "'"$ITEM_ID"'"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
-      value: { singleSelectOptionId: "77520bb7" }
-    }
-  ) { projectV2Item { id } }
-}'
-
-# Scrum Status → "In Review"
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "'"$ITEM_ID"'"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
-      value: { singleSelectOptionId: "d242b7c7" }
-    }
-  ) { projectV2Item { id } }
-}'
+```
+mcp__linear__save_issue(LUC-N, state: "In Review")   # stateId via list_issue_statuses
 ```
 
 ### Cross-Reference Related Issues
 
-If the PR complements a previously merged PR on the same issue:
+If the PR complements a previously merged PR on the same issue, comment on the Linear issue:
 
-```bash
-# Comment on the original issue about the supplementing PR
-gh issue comment <issue_number> --body "PR #<pr_number> complements this fix with additional robustness: [list residual fixes]."
 ```
-
-```bash
-# Comment on the issue about PR being ready for review
-gh issue comment <issue_number> --body "PR #<pr_number> ready for review"
+mcp__linear__save_comment(LUC-N, body: "PR #<pr_number> complements this fix with additional robustness: [...]")
+mcp__linear__save_comment(LUC-N, body: "PR #<pr_number> ready for review")
 ```
 
 ## Phase 5: Review & Iteration
@@ -561,8 +478,8 @@ When addressing multiple related issues in a single PR:
 
 1. **Both issues must be related** — don't combine unrelated work
 2. **PR title describes both** — e.g., `feat: memory staleness warnings and truncation notices`
-3. **PR body references all issues** — use `Closes #A, Closes #B` for auto-close
-4. **Both cards follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
+3. **PR body references all issues** — use `Fixes LUC-A, Fixes LUC-B` (magic words) for auto-close
+4. **Both issues follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
 
 ### Quality Gates
 
@@ -603,74 +520,39 @@ gh pr merge PR_NUMBER --merge --delete-branch
 # Update IMPLEMENTATION.md — mark task as ✅ COMPLETED
 # Find the section and update status markers
 
-# Verify card moved to "Done" automatically (via "Closes #N" in PR body)
-# If the issue was CLOSED but card didn't move, manually update:
-ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "'"$ITEM_ID"'"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
-      value: { singleSelectOptionId: "98236657" }
-    }
-  ) { projectV2Item { id } }
-}'
+# Verify the Linear issue moved to "Done" automatically (via "Fixes LUC-N" in PR body + the GitHub integration).
+# If it didn't, set explicitly: mcp__linear__save_issue(LUC-N, state: "Done")
 ```
 
 ### Duplicate Issue Resolution (if applicable)
 
 If the PR addresses a canonical issue that had duplicates:
 
-1. **Verify all duplicates are closed** — check that duplicate issues have been closed with cross-reference comments
-2. **Remove duplicate cards from board** — if duplicate issues had their own cards, remove them:
-   ```bash
-   gh project item-delete <project-number> --id <duplicate-item-id>
-   ```
-3. **Verify board state** — only the canonical issue card should remain, in "Done"
+1. **Verify all duplicates are closed** — Linear state "Duplicate" with cross-reference comments
+2. **Verify only the canonical issue tracks the work** — duplicates carry no milestone/priority
 
 ## Key Rules
 
 1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
 2. **NEVER skip Phase 0** — if a card is `🟡 RESEARCH NEEDED`, research MUST complete before creating a branch
-3. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
+3. **NEVER close issues before PR merge** — they auto-close via the Linear GitHub integration when the PR with `Fixes LUC-N` merges
 4. **NEVER merge without explicit user authorization** — "All green" is NOT authorization. The user must say "merge it" / "pode mergear" / "pronto para merge". Ask if unsure.
 5. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
 6. **ALWAYS check for duplicate issues** before creating a branch — use the duplicate check in Phase 1
-7. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies, board cards should all reference the canonical issue (not a duplicate)
-8. **ALWAYS move project board cards** — at every phase transition:
-   - Phase 0 (Research): Scrum → `Ready` (when research complete)
-   - Phase 1 (Setup): → "In Progress"
-   - Phase 4 (Ready for Review): → "In Review"
-   - Phase 7 (Merge): → "Done" (automatic via "Closes #N", verify manually)
-9. **ALWAYS cross-reference related issues** — comment on the canonical issue about the PR, close duplicates with explanation
+7. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies all reference the canonical Linear issue (not a duplicate)
+8. **ALWAYS move the Linear issue state** — at every phase transition:
+   - Phase 0 (Research): Backlog → `Todo` (when research complete)
+   - Phase 1 (Setup): → `In Progress`
+   - Phase 4 (Ready for Review): → `In Review` (integration usually does this on PR ready; verify)
+   - Phase 7 (Merge): → `Done` (automatic via `Fixes LUC-N` + integration; verify, fix if missed)
+9. **ALWAYS cross-reference related issues** — comment on the canonical Linear issue about the PR, close duplicates with explanation
 10. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
 11. **ALWAYS wait for authorization** between phases — no autonomous progression
 12. **ALWAYS run quality gates** before commits and PRs — load `quality-gates` skill for the complete sensor hierarchy
 
 ## Project Information
 
-- **Project Name**: Sprachspiel Roadmap
-- **Project URL**: https://github.com/users/luksamuk/projects/4/views/4
-- **Project Number**: 4
-- **Project ID**: `PVT_kwHOADplIc4BRnZ9`
-- **Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg`
-- **Scrum Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY`
-
-**Status Options:**
-| Name | ID |
-|------|-----|
-| Todo | `f75ad846` |
-| In Progress | `47fc9ee4` |
-| In Review | `77520bb7` |
-| Done | `98236657` |
-
-**Scrum Status Options:**
-| Name | ID |
-|------|-----|
-| Backlog | `94ed2e0f` |
-| Ready | `70e88e2e` |
-| In Progress | `c2eae8ae` |
-| In Review | `d242b7c7` |
-| Done | `a456e7a8` |
+- **Issue tracking:** Linear — project "Sprachspiel" (milestones M1–M4)
+- **GitHub:** `luksamuk/sprachspiel` — PRs, reviews, CI only
+- **Old GitHub Project board #4:** retired 2026-08-19 (its `PVT_*` IDs and option hashes were scrubbed; see git history if ever needed for archaeology)
+- **Linear workflow states** (team-level, resolve at runtime via `mcp__linear__list_issue_statuses`): Backlog, Todo, In Progress, In Review, Done, Canceled, Duplicate

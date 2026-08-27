@@ -246,8 +246,11 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 
 ### Issue Management
 
-- **Creating:** Use `[P#] Feature Name` titles with priority labels
-- **Closing:** Reference resolving commit (`Fixes #123`) → update roadmap → ensure docs updated
+**Issue tracking lives in Linear (migrated 2026-08-19).** GitHub keeps PRs, reviews, and CI only; the 166 old GitHub issues are closed history with a migration comment. Access Linear via `mcp__linear__*` tools when the MCP is connected, else load the `linear` skill.
+
+- **Creating:** Issues are created in Linear (project "Sprachspiel"); priority via the Linear `priority` int (1=Urgent…4=Low), never title prefixes
+- **Branch naming:** use the issue's `gitBranchName` (`luc-NNN-slug`) — the Linear GitHub integration auto-links branches/PRs and moves issue status on PR open/merge
+- **Closing:** magic words (`Fixes LUC-NNN`) in the PR body or commit message auto-close the Linear issue on merge → update roadmap → ensure docs updated
 
 ## Pull Request Review
 
