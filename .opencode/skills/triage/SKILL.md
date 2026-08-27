@@ -52,18 +52,21 @@ Every new item falls into one of these categories:
 | **Benchmark** | `B1.X` | M2 | Test | Benchmark item |
 | **Research** | `[Draft]` + `research` label | M3-M4 | No | Research investigation |
 
-### Label Assignment
+### Label Assignment (Linear labels — migrated 2026-08-19; old lowercase GH names for archaeology only)
 
-| Label | When to use |
-|-------|-------------|
-| `enhancement` | New feature or capability |
-| `research` | Pure investigation with no code deliverable |
-| `bug` | Fix for existing broken behavior |
-| `documentation` | Doc-only change |
-| `priority:critical` | Must fix now (data loss, security) |
-| `priority:high` | Important, next sprint |
-| `priority:medium` | Nice to have, planned |
-| `priority:low` | Backlog, future |
+| Linear Label | When to use | Old GH label |
+|-------|-------------|--------------|
+| `Enhancement` | New feature or capability | `enhancement` |
+| `Research` | Pure investigation with no code deliverable | `research` |
+| `Bug` | Fix for existing broken behavior | `bug` |
+| `Documentation` | Doc-only change | `documentation` |
+| `Feature` / `Improvement` | Fine-grained feature/improvement tagging | — |
+
+**Priority is the Linear `priority` int, not a label:** 1=Urgent (old `priority:critical`), 2=High, 3=Medium, 4=Low, 0=unrefined.
+
+**Status is the Linear workflow state** (Backlog/Todo/In Progress/In Review/Done/Canceled) — old `status:*` labels retired.
+
+**Blocking is a Linear issue relation** (`blocks`/`blocked_by`), never a label.
 
 ## Step 2: Assign Milestone
 
@@ -107,49 +110,33 @@ Is it needed for M1 (Core Evolution)?
 
 ### Position Rules (within each milestone)
 
-1. **P0-CRITICAL** items first (no matter what)
-2. **P0** and **P0-HIGH** items next (unblock other work)
-3. **Dependency chains** in order (if A depends on B, B comes first)
-4. **High** priority items by dependency order
-5. **Medium** priority items by dependency order
-6. **Low** priority items
-7. **Draft/Research** items last (they haven't been validated yet)
+1. **Urgent (priority 1)** items first (no matter what)
+2. **High (2)** items next (unblock other work)
+3. **Dependency chains** in order — enforced by Linear `blocks`/`blocked_by` relations (if A depends on B, B comes first)
+4. **High/Medium** items by dependency order
+5. **Low** priority items
+6. **Draft/Research** items last (unrefined)
 
-### Positioning Commands
+### Positioning in Linear
 
-```bash
-# Get current board order with milestones
-gh issue list --repo luksamuk/sprachspiel --state open --limit 200 \
-  --json number,title,milestone --jq '.[] | "\(.number)\t\(.milestone.title // "NO MILESTONE")\t\(.title)"'
+The GitHub Projects board (`PVT_*` field mutations, `updateProjectV2ItemPosition`) is **retired** — issues live in Linear now. Ordering is expressed as:
 
-# Move item to position in board (after a specific item)
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemPosition(input: {
-    projectId: "PVT_kwHOADplIc4BRnZ9",
-    itemId: "<ITEM_ID>",
-    afterId: "<AFTER_ITEM_ID>"   # omit for top position
-  }) {
-    clientMutationId
-  }
-}'
+- **Milestone** = `projectMilestone` on the Linear issue (M1–M4)
+- **Priority** = `priority` int (1-4; 0 = unrefined)
+- **Execution sequence within a milestone** = the Linear triage/board view order (drag in the Linear UI; there is no position field to set via the public GraphQL `issueUpdate`)
+- **Hard dependencies** = issue relations, not positions
 
-# Get item IDs from board
-gh project item-list 4 --owner "@me" --limit 200 --format json | \
-  python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for item in data['items']:
-    content = item.get('content') or {}
-    if isinstance(content, dict):
-        print(f'#{content.get(\"number\", \"??\")}: {item[\"id\"]}')"
+To inspect current order with milestones (read-side):
+
+```
+mcp__linear__list_issues → group by projectMilestone, sort by priority.value
 ```
 
 ## Step 4: Create Issues (if needed)
 
 ### For new research findings:
 
-1. **Check for duplicates** — search existing issues: `gh issue list --state all | grep -i "<keyword>"`
+1. **Check for duplicates** — search Linear by title keyword (`mcp__linear__list_issues` with `query`, or GraphQL `issueSearch`); for pre-migration archaeology: `gh issue list --state closed | grep -i "<keyword>"`
 2. **Use sanitized terminology** — never reference private research directories (`~/papers/`, `~/macro-attention/`, author PII). Describe ideas generically (e.g., "information routing abstraction" not "Macro-Attention framework")
 3. **Add to research-icebox.md** as R-XX before or alongside the issue
 4. **Add BibTeX** to `papers-reference.md` for any cited papers
@@ -171,37 +158,14 @@ Prefixes that ARE allowed in titles:
 - `Draft:` — Research items (add `research` label) — indicates this is an investigation, not implementation
 - `ADR:` — Architecture Decision Records — indicates this is a decision document, not code
 
-**Set priority via labels, not titles:**
+**Set priority via the Linear `priority` int, not titles:**
 
-```bash
-# Priority labels (use these, not title prefixes)
-gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:critical"
-gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:high"
-gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:medium"
-gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:low"
+```
+mcp__linear__save_issue (update) → priority = 1|2|3|4
+# HTTP fallback: mutation issueUpdate(id:, input: { priority: 2 })
 ```
 
-**Set priority via project board fields:**
-
-```bash
-# Using gh project item-edit (field IDs from project #4)
-gh project item-edit --id <ITEM_ID> --project-id PVT_kwHOADplIc4BRnZ9 \
-  --field-id PVTSSF_lAHOADplIc4BRnZ9zg_ZHWU \
-  --single-select-option-id <OPTION_ID>
-# Critical=63eaf02a, High=02a9e1dd, Medium=44f71207, Low=8efef8c9
-```
-
-**When triaging existing issues with priority tags in titles, remove the tags:**
-
-If an existing issue has `[P0-CRITICAL]`, `[P0]`, `[P0-HIGH]`, or `[P2]` in its title, remove the prefix and set the priority via label/board field instead:
-
-```bash
-# Remove priority prefix from title
-gh issue edit <N> --repo luksamuk/sprachspiel --title "New title without prefix"
-
-# Set priority via label
-gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:high"
-```
+Milestone and status likewise: `projectMilestoneId` (resolve via `mcp__linear__list_milestones` on project Sprachspiel) and `stateId` (`mcp__linear__list_issue_statuses`).
 
 ### Issue body template for research items:
 
@@ -234,13 +198,11 @@ gh issue edit <N> --repo luksamuk/sprachspiel --label "priority:high"
 4. **ALWAYS add BibTeX** — when citing a published paper, add it to `papers-reference.md`.
 5. **ALWAYS add R-XX** — when adding a research finding, add it to `research-icebox.md` with full context.
 
-## Step 5: Board Reordering
+## Step 5: Ordering — milestone view (Linear)
 
-After creating issues and setting milestones, reorder the board so that:
+The old GitHub board reordering machinery (`updateProjectV2ItemPosition`, field IDs, `gh project item-list`) is **retired** — see Step 3 for how order is expressed in Linear (milestone + priority + relations + triage view).
 
-```
-Board order = M1 items (execution order) → M2 items (execution order) → M3 items → M4 items
-```
+The milestone-grouped execution tables below are the **doctrine** (what should be worked on first, and why); issue numbers are pre-migration GitHub numbers (`gh#N`). Their Linear counterparts are discoverable via each issue's `Ref: gh#N` description (e.g. gh#233 → LUC-141).
 
 ### Execution order within M1:
 
@@ -278,69 +240,14 @@ Board order = M1 items (execution order) → M2 items (execution order) → M3 i
 | Cultural Grounding | #156, #164 | Phase 1 (doc only) |
 | Drafts | #167-#178 | Need M3 validation first |
 
-### Reordering Script Pattern
+### Reordering: legacy pattern (retired)
 
-```bash
-# Define order as array of issue numbers (execution order)
-DESIRED_ORDER=(151 157 152 153 148 105 116 118 133 134 135 136 137 138 106 107 139 140 119 120 121 122 123 72 ...)
+<details>
+<summary>Historical GitHub Projects script (kept for archaeology — do NOT run)</summary>
 
-# Get item IDs
-gh project item-list 4 --owner "@me" --limit 200 --format json > /tmp/board.json
+The old flow moved items on GitHub Project board #4 via `updateProjectV2ItemPosition` GraphQL mutations with `PVT_*` project/field IDs. Superseded by Linear ordering (Step 3) as of the 2026-08-19 migration.
 
-# Move each item to position (using GraphQL updateProjectV2ItemPosition)
-# First item: afterId omitted (top position)
-# Subsequent items: afterId = previous item's ID
-```
-
-### Full reordering procedure (Python):
-
-```python
-import subprocess, json, time
-
-PROJECT_ID = "PVT_kwHOADplIc4BRnZ9"
-DESIRED_ORDER = [151, 157, ...]  # Issue numbers in execution order
-
-# Get item IDs from board
-result = subprocess.run(
-    ["gh", "project", "item-list", "4", "--owner", "@me", "--limit", "200", "--format", "json"],
-    capture_output=True, text=True
-)
-data = json.loads(result.stdout)
-
-num_to_id = {}
-for item in data["items"]:
-    content = item.get("content") or {}
-    if isinstance(content, dict) and content.get("number"):
-        num_to_id[content["number"]] = item["id"]
-
-# Move items into position
-for i, num in enumerate(DESIRED_ORDER):
-    item_id = num_to_id[num]
-    if i == 0:
-        # Move to top (no afterId)
-        mutation = f'''
-        mutation {{
-          updateProjectV2ItemPosition(input: {{
-            projectId: "{PROJECT_ID}",
-            itemId: "{item_id}"
-          }}) {{ clientMutationId }}
-        }}'''
-    else:
-        # Move after previous item
-        after_id = num_to_id[DESIRED_ORDER[i-1]]
-        mutation = f'''
-        mutation {{
-          updateProjectV2ItemPosition(input: {{
-            projectId: "{PROJECT_ID}",
-            itemId: "{item_id}",
-            afterId: "{after_id}"
-          }}) {{ clientMutationId }}
-        }}'''
-
-    subprocess.run(["gh", "api", "graphql", "-f", f"query={mutation}"], capture_output=True)
-    if (i + 1) % 20 == 0:
-        time.sleep(1)  # Rate limiting
-```
+</details>
 
 ## Step 6: Update Documentation
 
@@ -400,30 +307,28 @@ These lessons come from actual triage sessions and the mistakes made during them
 
 **Rule:** Group by milestone first (M1→M2→M3→M4), then by execution order within each milestone.
 
-## Lesson 2: Set Milestones BEFORE Reordering
+## Lesson 2: Set Milestones BEFORE Ordering
 
 **What happened:** Created and reordered issues on the board before setting their milestones. This resulted in M3 items mixed into the M1 section, M2 items in M3, etc. The reorder had to be done twice.
 
-**Correct approach:**
-1. **First:** Set milestones on all issues (`gh issue edit <N> --milestone "M1 - Core Evolution"`)
-2. **Then:** Verify all milestones are correct (`gh issue list --json number,milestone`)
-3. **Then:** Reorder the board by position within milestone groups
+**Correct approach (Linear):**
+1. **First:** Set milestones on all issues (`save_issue` / `issueUpdate` with `projectMilestoneId`)
+2. **Then:** Verify all milestones are correct (group-by check)
+3. **Then:** Order within each milestone group (priority + relations + triage view)
 
-**Rule:** Milestones first, positions second. Never the other way around.
+**Rule:** Milestones first, ordering second. Never the other way around.
 
-## Lesson 3: Create Issues, Then Comments, Then Board
+## Lesson 3: Create Issues, Then Fields, Then Relations
 
 **What happened:** Tried to create issues and add them to the board in the same command, but the GraphQL ID was needed for position updates. Also wrote issue comments before verifying the issue was created.
 
-**Correct approach:**
-1. Create all issues with `gh issue create` (collects issue numbers)
-2. Add issues to board with `gh project item-add`
-3. Set milestones with `gh issue edit`
-4. Set Priority and Scrum Status fields
-5. Add research synthesis comments to existing issues
-6. **Last:** Reorder the board by position
+**Correct approach (Linear):**
+1. Create all issues (`mcp__linear__save_issue` / `issueCreate`; collects LUC-N identifiers)
+2. Set milestone + priority + labels on each
+3. Add `blocks`/`blocked_by` relations for dependency chains
+4. Add research synthesis comments to related issues
 
-**Rule:** Create → Board → Milestone → Priority → Comments → Reorder
+**Rule:** Create → Milestone → Priority → Relations → Comments
 
 ## Lesson 4: Compaction Quality Metric — Tiny Scope Goes Into Existing Issue
 
@@ -467,35 +372,11 @@ These lessons come from actual triage sessions and the mistakes made during them
 
 **Rule:** Every new entry must have an explicit "Related" or "Cross-refs" section listing the issues, R-XX items, and unified-vision sections it connects to.
 
-## Lesson 8: Verify Board Position with Milestone Check
+## Lesson 8: Verify Milestone Grouping After Changes
 
-**What happened:** After reordering the board, the verification showed items from different milestones interleaved (M3 items between M2 items, M4 items between M3 items). This happened because position updates don't check milestone consistency.
+**What happened:** After reordering the old GitHub board, verification showed items from different milestones interleaved, because position updates don't check milestone consistency.
 
-**Correct approach:** After reordering, always verify with a milestone-grouped listing:
-
-```bash
-gh issue list --repo luksamuk/sprachspiel --state open --limit 200 \
-  --json number,title,milestone | python3 -c "
-import json, sys
-data = json.loads(sys.stdin.read())
-by_ms = {}
-for i in data:
-    ms = i.get('milestone', {}) or {}
-    title = ms.get('title', 'NO MILESTONE') if ms else 'NO MILESTONE'
-    by_ms.setdefault(title, []).append((i['number'], i['title'][:70]))
-for ms in ['M1 - Core Evolution', 'M2 - Sprach 2.0',
-           'M3 - Sprach 2.0 Extensions', 'M4 - Future & Cultural Grounding',
-           'NO MILESTONE']:
-    if ms in by_ms:
-        print(f'\n=== {ms} ({len(by_ms[ms])} issues) ===')
-        for num, t in sorted(by_ms[ms]):
-            print(f'  #{num:>3d} | {t}')
-"
-```
-
-If items from different milestones are interleaved on the board, re-move them.
-
-**Rule:** After reordering, verify that board positions match milestone groups. The board should read M1 block → M2 block → M3 block → M4 block without interleaving.
+**Correct approach (Linear):** After modifying milestones/priorities, verify with a milestone-grouped listing — `mcp__linear__list_issues` on project Sprachspiel, group by `projectMilestone`, and confirm each group is coherent (no M3 items sitting at High priority while M1 urgent items are Backlog, etc.). The doctrine tables in Step 5 are the reference ordering.
 
 ## Lesson 9: Priority Tags Belong in Labels, Not Titles
 
@@ -505,20 +386,20 @@ If items from different milestones are interleaved on the board, re-move them.
 3. Duplicate information that's already in labels and board priority fields
 4. Leak internal priority language into user-facing issue titles
 
-**Correct approach:** Use GitHub labels and project board fields for priority. Keep titles descriptive and permanent.
+**Correct approach:** Use the Linear `priority` int and workflow states. Keep titles descriptive and permanent.
 
 | Aspect | Wrong | Right |
 |--------|-------|-------|
 | Title | `[P0-CRITICAL] T3-Phase0: Preserve Thinking Content` | `T3-Phase0: Preserve Thinking Content + Schema Foundation` |
 | Title | `[P2] B1.5 — Context Strategy Comparison` | `B1.5 — Context Strategy Comparison Benchmark` |
-| Priority | `[P0-HIGH]` in title | `priority:high` label + board Priority field |
-| Status | `📋 READY` in title | Scrum Status field on project board |
+| Priority | `[P0-HIGH]` in title | Linear `priority = 2` |
+| Status | `📋 READY` in title | Linear workflow state (Backlog → Todo) |
 
 The only prefixes allowed in titles are type indicators: `Draft:` for research items and `ADR:` for architecture decisions. These indicate the *nature* of the issue, not its priority.
 
-**When creating new issues:** Set priority via `--label "priority:high"` and board fields, never via title prefix.
+**When creating new issues:** Set priority via `save_issue`/`issueUpdate` (`priority` int) — never via title prefix.
 
-**When triaging existing issues:** Remove `[P0-CRITICAL]`, `[P0]`, `[P0-HIGH]`, `[P2]`, `[Draft]` prefixes from titles and replace with labels. `Draft:` is the only title prefix allowed because it indicates the issue's nature (investigation vs implementation), not its priority.
+**When triaging existing issues:** Remove `[P0-CRITICAL]`, `[P0]`, `[P0-HIGH]`, `[P2]`, `[Draft]` prefixes from titles and replace with Linear priority/labels. `Draft:` is the only title prefix allowed because it indicates the issue's nature (investigation vs implementation), not its priority.
 
 ## Step 8: Commit and Push
 
@@ -535,13 +416,13 @@ git add doc/src/development/research-icebox.md \
 git diff --cached --stat
 
 # Commit with descriptive message
-git commit -m "docs: add R-XX, §X.Y, and board reordering
+git commit -m "docs: add R-XX, §X.Y, and Linear reorganization
 
 - Add R-XX (Title) to research-icebox.md
 - Add §X.Y (Section) to unified-vision.md
 - Add BibTeX for Paper (arXiv:XXXX) to papers-reference.md
-- Reordered GitHub project board by execution priority (M1→M2→M3→M4)
-- Set milestones on N issues"
+- Reordered Linear issues by execution priority (milestones M1→M2→M3→M4)
+- Set milestones on N Linear issues"
 
 # Push
 git push
@@ -552,13 +433,9 @@ mdbook build doc/
 
 ## Project Info
 
-- **GitHub:** `luksamuk/ask-ollama-rs` (sprachspiel repository)
-- **Project Board:** Number 4 (Sprachspiel Roadmap)
-- **Board ID:** `PVT_kwHOADplIc4BRnZ9`
-- **Priority within milestones:** determined by board position (top = highest priority, work first)
-- **Items referenced by issue number** (e.g., #72, #116) — P-code prefixes retired
-- **Milestone field IDs:**
-  - Priority: `PVTSSF_lAHOADplIc4BRnZ9zg_ZHWU` (Critical/High/Medium/Low)
-  - Scrum Status: `PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY` (Backlog/Ready/In Progress/In Review/Done)
-  - Estimate: `PVTF_lAHOADplIc4BRnZ9zg_ZHWY` (number)
-- **Milestone IDs:** M1 = `#1`, M2 = `#2`, M3 = `#3`, M4 = `#4`
+- **Issue tracking:** Linear — project "Sprachspiel"; milestones "M1 - Core Evolution" … "M4 - Future & Cultural Grounding"
+- **GitHub:** `luksamuk/ask-ollama-rs` (sprachspiel repository) — PRs, reviews, CI, and closed-issue history only
+- **Access:** `mcp__linear__*` tools when the Linear MCP is connected; otherwise the `linear` skill (GraphQL + `LINEAR_API_KEY`)
+- **Priority within milestones:** Linear `priority` int (top of triage view = work first)
+- **Pre-migration issue numbers** (`gh#N`) map to Linear via `Ref: gh#N` in each issue's description
+- **Old GitHub board #4 and its `PVT_*` IDs:** retired — never reference them in new work

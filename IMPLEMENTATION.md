@@ -2600,6 +2600,7 @@ Context Assembly:
 | ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative scores (bug: `1.0 + (-2.0) = -1.0 → max(-1.0, -0.9) = -0.9`). New clamp: min 0.1 (90% max suppression), max 3.0 (3× amplification cap). |
 | ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. `decay_score` is persisted by `run_content_decay_cycle()`, enabling accurate "items at risk" queries in `/context`. |
 | ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval — increments `access_count`, updates `last_accessed`. Same pattern as facts system. RRF (immediate ranking) and access_count (future retention) are separate signals — not double-counting. |
+| ADR-010 | Empathy ≠ Failure — Meta-cognition Reframing | Behavioral shifts are not bugs; opacity is. S2.meta1-3 (LUC-81/82/83) detect change (not failure), measure drift as neutral observation, make shifts visible with human approval — never auto-suppress. Source: NLP-Historical §10 (Diógenes et al. 2026). See Linear LUC-103 for full ADR body. |
 
 #### Key Corrections from Original Plan
 

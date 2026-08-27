@@ -375,9 +375,11 @@ Developed with assistance from:
 - **GLM 4.7 Flash** (Z.ai) — Project inception and initial scaffolding
 - **GLM 5** (Z.ai) — Plan, research, and implementation
 - **GLM 5.1** (Z.ai) — Development and refinement
-- **GLM 5.2** (Z.ai) — Ongoing development, refinement and testing
+- **GLM 5.2** (Z.ai) — Development, refinement and testing
+- **GLM 5.3 Flash** (Z.ai) — Development and testing
 - **Kimi K2.5** (Moonshot AI) — Architecture design
 - **Kimi K2.7 Code** (Moonshot AI) — Bugfixes
+- **Kimi K3** (Moonshot AI) — Skill and workflow management, planning and refinement
 - **MiniMax M2.7** (MiniMax) — Code review and testing
 - **MiniMax M3** (MiniMax) — Code review
 - **Nemotron 3 Super** (NVIDIA) — Bugfixes
