@@ -72,7 +72,7 @@ fn escape_sql_literal(s: &str) -> String {
 /// - (Some(conv), Some(proj)): item is in conversation `conv`, OR is
 ///   project-scoped (conversation_id NULL) in project `proj`.
 /// - (Some(conv), None): conversation-only (legacy behavior — never widens
-///   scope for project-less callers; review finding C1/R1).
+///   scope for project-less callers).
 /// - (None, Some(proj)): project-only.
 /// - (None, None): everything.
 fn content_item_in_scope(
@@ -2470,7 +2470,8 @@ mod tests {
             Some("c1"),
             Some("p1")
         ));
-        // (Some, None): conv-only, never widens (C1/R1)
+        // (Some, None): conv-only, never widens — session-filtered search
+        // without a project constraint must not surface project-scoped rows.
         assert!(content_item_in_scope(Some("c1"), None, Some("c1"), None));
         assert!(!content_item_in_scope(None, Some("p1"), Some("c1"), None));
         assert!(!content_item_in_scope(None, None, Some("c1"), None));
@@ -2553,8 +2554,8 @@ mod tests {
     fn test_semantic_search_includes_project_scoped_document() {
         let db = Database::in_memory().expect("Failed to create database");
         // In-memory DBs create vec0 tables at FLOAT[256] — shrink to 8 for tests.
-        // NOTE (architect review): do NOT "fix" fetch_limit — vec0 MATCH is
-        // scope-blind by design and limit*3 absorbs retain shrinkage.
+        // Do NOT "fix" fetch_limit: vec0 MATCH is scope-blind by design and
+        // limit*3 absorbs retain shrinkage.
         db.ensure_vec0_dimensions(8)
             .expect("Failed to set vec0 dimensions");
 
@@ -2766,7 +2767,7 @@ mod tests {
 
     #[test]
     fn test_search_conv_filter_without_project_never_widens() {
-        // C1/R1 pin: (Some(conv), None) keeps legacy conv-only semantics.
+        // Pin: (Some(conv), None) keeps legacy conv-only semantics.
         let db = Database::in_memory().expect("Failed to create database");
 
         db.insert_content_item(
@@ -2792,7 +2793,7 @@ mod tests {
             .expect("keyword search must succeed");
         assert!(
             results.is_empty(),
-            "project-scoped docs must NOT leak when no project filter is present (C1/R1)"
+            "project-scoped docs must NOT leak when no project filter is present"
         );
     }
 
@@ -2877,11 +2878,11 @@ mod tests {
 
     #[test]
     fn test_semantic_search_includes_chunked_project_scoped_document() {
-        // Review B minor finding: chunk rows inherit the parent item's
-        // conversation_id/project_id (SEMANTIC_SEARCH_CHUNKS_SQL joins the
-        // parent). This pins the chunk-level scope mapping (cols 10/26)
-        // against future SQL reshuffles — real imported docs are chunked
-        // (>1024 chars), so this is the path /search actually exercises.
+        // Chunk rows inherit the parent item's conversation_id/project_id
+        // (SEMANTIC_SEARCH_CHUNKS_SQL joins the parent). This pins the
+        // chunk-level scope mapping (cols 10/26) against future SQL
+        // reshuffles — real imported docs are chunked (>1024 chars), so
+        // this is the path /search actually exercises.
         let db = Database::in_memory().expect("Failed to create database");
         db.ensure_vec0_dimensions(8)
             .expect("Failed to set vec0 dimensions");

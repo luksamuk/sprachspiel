@@ -226,7 +226,7 @@ pub async fn run_search(
     // plus same-project project-scoped content (coupled filter in db layer).
     // feedback_settings stays None: no feedback boost and no on_content_access
     // from /search — keep None unless ADR-008/009 doc-side reinforcement is
-    // designed (review I2).
+    // designed.
     let params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
