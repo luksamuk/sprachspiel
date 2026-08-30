@@ -59,8 +59,8 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     WHERE ce.embedding MATCH ? AND ce.k = ? AND ci.pruned = 0";
 
 /// Escape a value for interpolation into a single-quoted SQL literal
-/// (doubles single quotes). Precedent: facts/db.rs. Full parameter
-/// binding for search SQL is a tracked fast-follow (plan Risks).
+/// (doubles single quotes). Full parameter binding for search SQL is a
+/// tracked fast-follow (plan Risks).
 fn escape_sql_literal(s: &str) -> String {
     s.replace('\'', "''")
 }
@@ -75,7 +75,7 @@ fn escape_sql_literal(s: &str) -> String {
 ///   scope for project-less callers; review finding C1/R1).
 /// - (None, Some(proj)): project-only.
 /// - (None, None): everything.
-#[expect(dead_code)] // Temporary: Task 3 wires this into search_content_semantic retains (LUC-141)
+#[cfg_attr(not(test), expect(dead_code))] // Temporary: Task 3 wires this into search_content_semantic retains (LUC-141)
 fn content_item_in_scope(
     item_conversation_id: Option<&str>,
     item_project_id: Option<&str>,
