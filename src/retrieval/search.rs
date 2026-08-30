@@ -157,10 +157,9 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 ///
 /// Returns a `SearchOutcome` enum instead of printing directly.
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
-#[allow(clippy::too_many_arguments)]
-// 9 args — all required for the search pipeline (db, provider, model
-// config, query context). Grouping into a struct would add ceremony
-// for a single call site.
+#[expect(clippy::too_many_arguments)] // 10 args — search pipeline context (db, provider,
+// model config, query scoping). Existing callers pass them positionally; grouping
+// into a struct is deferred until a second call site exists.
 pub async fn run_search(
     db: &Database,
     provider: &crate::provider::OpenAICompatibleProvider,
@@ -170,6 +169,7 @@ pub async fn run_search(
     embedding_context_length: Option<u32>,
     query: &str,
     conversation_id: Option<&str>,
+    project_id: Option<&str>,
     limit: usize,
 ) -> SearchOutcome {
     // Debug: Show search parameters
@@ -207,16 +207,26 @@ pub async fn run_search(
     let settings = crate::settings::Settings::load();
     let keyword_weight = settings.indexing.keyword_weight;
     let semantic_weight = settings.indexing.semantic_weight;
-    let results = match db.search_messages_hybrid(
+    // LUC-141: search ALL content types (messages, notes, documents) —
+    // not just messages. Scoping: session messages (conversation_id filter)
+    // plus same-project project-scoped content (coupled filter in db layer).
+    // feedback_settings stays None: no feedback boost and no on_content_access
+    // from /search — keep None unless ADR-008/009 doc-side reinforcement is
+    // designed (review I2).
+    let params = crate::content::ContentSearchParams {
         query,
-        &embedding,
+        embedding: &embedding,
         query_norm_correction,
+        content_type: None,
         conversation_id,
-        None,
-        limit * 2,
+        project_id,
+        scope: None,
+        limit: limit * 2,
         keyword_weight,
         semantic_weight,
-    ) {
+        feedback_settings: None,
+    };
+    let results = match db.search_content_hybrid(&params) {
         Ok(r) => {
             log::debug!("Hybrid search found {} results", r.len());
             r

@@ -854,9 +854,16 @@ pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
 
 /// Handle search command (async)
 ///
-/// Searches conversation history for matching messages.
+/// Searches session messages plus project-scoped content (imported
+/// documents, notes) of the session's project for matching text (LUC-141).
+/// Anonymous sessions are rejected with a clear error (sibling idiom of /save).
 /// Returns `SearchOutcome` data, which is converted to `CommandOutput` here.
 pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {
+    if state.session.anonymous {
+        return vec![CommandOutput::error(
+            "Search is not available in anonymous sessions. Restart chat without --anonymous.",
+        )];
+    }
     let db = match crate::db::Database::new() {
         Ok(db) => db,
         Err(e) => {
@@ -891,6 +898,8 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
             }
         };
 
+    let project_id = state.session.project_id.clone();
+
     match crate::retrieval::run_search(
         &db,
         &embedding_provider,
@@ -900,6 +909,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
         embedding_context_length,
         &query,
         Some(&conversation_id),
+        project_id.as_deref(),
         limit,
     )
     .await
