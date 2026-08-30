@@ -11,6 +11,7 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::consts::roles::format_role_label;
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
 
@@ -20,6 +21,7 @@ use crate::embeddings::EmbeddingClient;
 pub struct FormattedResult {
     pub item_id: i64,
     pub conversation_id: Option<String>,
+    pub content_type: String,
     pub role: Option<String>,
     pub content: String,
     pub chunk_content: Option<String>,
@@ -35,6 +37,7 @@ impl From<ContentSearchResult> for FormattedResult {
         FormattedResult {
             item_id: result.item.id,
             conversation_id: result.item.conversation_id,
+            content_type: result.item.content_type.to_string(),
             role: result.item.role,
             content: result.item.content,
             chunk_content: result.chunk_content,
@@ -65,6 +68,21 @@ pub enum SearchOutcome {
     },
 }
 
+/// Human label for a search result row, by content type (LUC-141).
+///
+/// Messages delegate to the centralized role labels (`consts/roles.rs`) —
+/// do NOT hardcode role labels here again (AGENTS.md string-duplication
+/// rule). Documents and notes get their own type labels. Unknown content
+/// types are passed through as-is.
+pub fn subject_label(content_type: &str, role: Option<&str>) -> String {
+    match content_type {
+        "message" => format_role_label(role.unwrap_or("unknown")),
+        "document" => "📄 Document".to_string(),
+        "note" => "📝 Note".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Format search results as a markdown string.
 ///
 /// Returns a formatted markdown string suitable for rendering via
@@ -85,23 +103,19 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
             ContentSearchType::Hybrid => "🔗 Hybrid",
         };
 
-        let role_str = result.role.as_deref().unwrap_or("unknown");
-        let role_label = match role_str {
-            "user" => "👤 User",
-            "assistant" => "🤖 Assistant",
-            "system" => "⚙️ System",
-            "tool" => "🔧 Tool",
-            _ => role_str,
-        };
+        let label = subject_label(&result.content_type, result.role.as_deref());
 
-        let conv_id = result.conversation_id.as_deref().unwrap_or("unknown");
+        let conv_id = result
+            .conversation_id
+            .as_deref()
+            .unwrap_or("project-scoped");
 
         output.push_str(&format!(
             "{}. [id={}] {} — {} (score: {:.4})\n",
             i + 1,
             result.item_id,
             type_str,
-            role_label,
+            label,
             result.score
         ));
 
@@ -258,4 +272,18 @@ pub async fn run_search(
     let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|r| r.into()).collect();
 
     SearchOutcome::Results(formatted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subject_label;
+
+    #[test]
+    fn test_subject_label_by_content_type() {
+        assert_eq!(subject_label("message", Some("user")), "👤 User");
+        assert_eq!(subject_label("message", Some("assistant")), "🤖 Assistant");
+        assert_eq!(subject_label("message", None), "unknown");
+        assert_eq!(subject_label("document", None), "📄 Document");
+        assert_eq!(subject_label("note", None), "📝 Note");
+    }
 }
