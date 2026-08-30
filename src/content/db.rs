@@ -2874,4 +2874,71 @@ mod tests {
             "search_messages_hybrid must remain message-only (auto-retrieval semantics)"
         );
     }
+
+    #[test]
+    fn test_semantic_search_includes_chunked_project_scoped_document() {
+        // Review B minor finding: chunk rows inherit the parent item's
+        // conversation_id/project_id (SEMANTIC_SEARCH_CHUNKS_SQL joins the
+        // parent). This pins the chunk-level scope mapping (cols 10/26)
+        // against future SQL reshuffles — real imported docs are chunked
+        // (>1024 chars), so this is the path /search actually exercises.
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document body — chunks carry the retrieval signal",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let chunk_id = db
+            .insert_content_chunk(
+                doc_id,
+                0,
+                "chunk about platypus electroreception mechanics",
+                0,
+                46,
+                Utc::now(),
+            )
+            .expect("Failed to insert chunk");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_chunk_embedding(
+            chunk_id,
+            &vector,
+            "document",
+            None,
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert chunk embedding");
+
+        let results = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+
+        let found = results
+            .iter()
+            .find(|r| r.item.id == doc_id)
+            .expect("chunked project-scoped document must survive the scope retain (LUC-141)");
+        assert!(
+            found.chunk_content.is_some(),
+            "chunk row must carry its chunk_content through the retain"
+        );
+    }
 }
