@@ -61,7 +61,6 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
 /// Escape a value for interpolation into a single-quoted SQL literal
 /// (doubles single quotes). Precedent: facts/db.rs. Full parameter
 /// binding for search SQL is a tracked fast-follow (plan Risks).
-#[expect(dead_code)] // Temporary: Task 2 wires this into search_content_keyword (LUC-141)
 fn escape_sql_literal(s: &str) -> String {
     s.replace('\'', "''")
 }
@@ -896,11 +895,26 @@ impl Database {
             if let Some(ct) = &content_type {
                 conditions.push(format!("ci.content_type = '{}'", ct));
             }
-            if let Some(conv_id) = conversation_id {
-                conditions.push(format!("ci.conversation_id = '{}'", conv_id));
-            }
-            if let Some(proj_id) = project_id {
-                conditions.push(format!("ci.project_id = '{}'", proj_id));
+            // LUC-141: scope filtering mirrors content_item_in_scope (module-level
+            // predicate). Project constraint applies ONLY to the NULL-conversation
+            // branch so legacy session messages with NULL project_id are never
+            // excluded. A conversation filter WITHOUT a project filter keeps
+            // legacy conv-only semantics — project-less callers never widen scope.
+            match (conversation_id, project_id) {
+                (Some(conv_id), Some(proj_id)) => conditions.push(format!(
+                    "(ci.conversation_id = '{}' OR (ci.conversation_id IS NULL AND ci.project_id = '{}'))",
+                    escape_sql_literal(conv_id),
+                    escape_sql_literal(proj_id)
+                )),
+                (Some(conv_id), None) => conditions.push(format!(
+                    "ci.conversation_id = '{}'",
+                    escape_sql_literal(conv_id)
+                )),
+                (None, Some(proj_id)) => conditions.push(format!(
+                    "ci.project_id = '{}'",
+                    escape_sql_literal(proj_id)
+                )),
+                (None, None) => {}
             }
             if let Some(s) = &scope {
                 conditions.push(format!("ci.scope = '{}'", s));
@@ -2467,5 +2481,66 @@ mod tests {
         assert_eq!(escape_sql_literal("plain"), "plain");
         assert_eq!(escape_sql_literal("alchemist's repo"), "alchemist''s repo");
         assert_eq!(escape_sql_literal("''"), "''''");
+    }
+
+    #[test]
+    fn test_project_scoped_document_found_with_conversation_filter() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Session-scoped message (current conversation)
+        db.insert_content_item(
+            "message",
+            Some("conv-1"),
+            Some(ROLE_USER),
+            Some("regular"),
+            None,
+            Some(10),
+            Some("project"),
+            Some("user"),
+            None,
+            "session message about quarterly zebra report",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("Failed to insert session message");
+
+        // Project-scoped document (conversation_id NULL — as /doc import does)
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about quarterly zebra metrics",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let results = db
+            .search_content_keyword("zebra", None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("keyword search must succeed");
+
+        // Regression guard: session message still found
+        assert!(
+            results
+                .iter()
+                .any(|r| r.item.conversation_id.as_deref() == Some("conv-1")),
+            "session messages must still be found (regression guard)"
+        );
+        // LUC-141: project-scoped document must now be visible
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "project-scoped document must be visible to conversation-filtered search (LUC-141)"
+        );
     }
 }
