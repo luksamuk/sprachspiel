@@ -75,7 +75,6 @@ fn escape_sql_literal(s: &str) -> String {
 ///   scope for project-less callers; review finding C1/R1).
 /// - (None, Some(proj)): project-only.
 /// - (None, None): everything.
-#[cfg_attr(not(test), expect(dead_code))] // Temporary: Task 3 wires this into search_content_semantic retains (LUC-141)
 fn content_item_in_scope(
     item_conversation_id: Option<&str>,
     item_project_id: Option<&str>,
@@ -1153,11 +1152,17 @@ impl Database {
             if let Some(ct) = &content_type {
                 results.retain(|r| &r.item.content_type == ct);
             }
-            if let Some(conv_id) = conversation_id {
-                results.retain(|r| r.item.conversation_id.as_deref() == Some(conv_id));
-            }
-            if let Some(proj_id) = project_id {
-                results.retain(|r| r.item.project_id.as_deref() == Some(proj_id));
+            // LUC-141: scope filtering via the shared predicate — same semantics
+            // as the keyword SQL condition (see content_item_in_scope).
+            if conversation_id.is_some() || project_id.is_some() {
+                results.retain(|r| {
+                    content_item_in_scope(
+                        r.item.conversation_id.as_deref(),
+                        r.item.project_id.as_deref(),
+                        conversation_id,
+                        project_id,
+                    )
+                });
             }
             if let Some(s) = &scope {
                 results.retain(|r| r.item.scope.as_ref() == Some(s));
@@ -2541,6 +2546,82 @@ mod tests {
         assert!(
             results.iter().any(|r| r.item.id == doc_id),
             "project-scoped document must be visible to conversation-filtered search (LUC-141)"
+        );
+    }
+
+    #[test]
+    fn test_semantic_search_includes_project_scoped_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+        // In-memory DBs create vec0 tables at FLOAT[256] — shrink to 8 for tests.
+        // NOTE (architect review): do NOT "fix" fetch_limit — vec0 MATCH is
+        // scope-blind by design and limit*3 absorbs retain shrinkage.
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        // Control row: session message with embedding (pins the conv branch)
+        let msg_id = db
+            .insert_content_item(
+                "message",
+                Some("conv-1"),
+                Some(ROLE_USER),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"),
+                None,
+                "session message about quantum flubber alloys",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert message");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about quantum flubber alloys",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        for id in [msg_id, doc_id] {
+            db.update_content_item_embedding(
+                id,
+                &vector,
+                if id == doc_id { "document" } else { "message" },
+                if id == doc_id { None } else { Some("conv-1") },
+                Some("proj-1"),
+                Utc::now(),
+                1.0,
+            )
+            .expect("Failed to insert embedding");
+        }
+
+        let results = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+
+        assert!(
+            results.iter().any(|r| r.item.id == msg_id),
+            "session message control row must still be found (regression guard)"
+        );
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "semantic search must include project-scoped documents (LUC-141)"
         );
     }
 }
