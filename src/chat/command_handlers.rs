@@ -860,8 +860,9 @@ pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Returns `SearchOutcome` data, which is converted to `CommandOutput` here.
 pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {
     if state.session.anonymous {
+        log::warn!("Cannot run /search in anonymous session — no persisted content to search");
         return vec![CommandOutput::error(
-            "Search is not available in anonymous sessions. Restart chat without --anonymous.",
+            "Cannot search in anonymous sessions. Restart chat without --anonymous.",
         )];
     }
     let db = match crate::db::Database::new() {
