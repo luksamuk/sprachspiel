@@ -2624,4 +2624,64 @@ mod tests {
             "semantic search must include project-scoped documents (LUC-141)"
         );
     }
+
+    #[test]
+    fn test_hybrid_search_includes_project_scoped_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about sasquatch telemetry data",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            doc_id,
+            &vector,
+            "document",
+            None,
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+
+        let params = crate::content::ContentSearchParams {
+            query: "sasquatch",
+            embedding: &vector,
+            query_norm_correction: 1.0,
+            content_type: None,
+            conversation_id: Some("conv-1"),
+            project_id: Some("proj-1"),
+            scope: None,
+            limit: 10,
+            keyword_weight: 0.5,
+            semantic_weight: 0.5,
+            feedback_settings: None,
+        };
+        let results = db
+            .search_content_hybrid(&params)
+            .expect("hybrid search must succeed");
+
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "hybrid search must include project-scoped documents (LUC-141)"
+        );
+    }
 }
