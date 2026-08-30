@@ -8099,3 +8099,54 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 1. **RUSTSEC-2026-0258** — `h2 0.4.13` (unbounded empty DATA frames) → fix: upgrade to `h2 >=0.4.16`
 2. **RUSTSEC-2026-0185** — `quinn-proto 0.11.14` (remote memory exhaustion, CVSS 7.5 high) → fix: upgrade to `quinn-proto >=0.11.15`
 Both resolved by `cargo update -p reqwest` to pull patched versions. `cargo build --all-features` and `cargo audit` pass clean (no vulnerabilities).
+
+2026-08-30 - Bug fix: /search scope mismatch — imported documents invisible (LUC-141, ex gh#233).
+
+## Bug Fix: /search Scope Mismatch — Imported Documents Invisible (LUC-141, ex gh#233) [M1] — 🔄 IN PROGRESS
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** LUC-141 (ex gh#233)
+**Branch:** `fix/141-search-scope`
+**Depends on:** None (independent bug fix)
+
+**Goal:** Make project-scoped content (imported documents, notes) visible to `/search`. Today "import document → search for it" — the core RAG workflow — silently returns "No results found" because of a session-vs-project scope mismatch.
+
+**Problem Statement:**
+
+Documents imported via `/doc import` are stored with `conversation_id = NULL` (project-scoped by design: documents belong to the project, not the session). But `/search` passes `Some(&conversation_id)` down to the hybrid search, which filters results to `conversation_id == Some(conv_id)` — project-scoped rows (NULL) never match. The search silently returns "No results found" with no indication the document exists in the DB.
+
+**Root Cause Analysis (verified 2026-08-30):**
+
+| Component | Location | Behavior |
+|-----------|----------|----------|
+| `/search` handler | `src/chat/command_handlers.rs` (`handle_search` → `run_search(..., Some(&conversation_id), ...)`) | Passes current session's conversation_id |
+| Hybrid search filter | `src/content/db.rs` `search_content_hybrid` post-filter | `results.retain(|r| r.item.conversation_id.as_deref() == Some(conv_id))` — NULL never matches |
+| Keyword search filter | `src/content/db.rs` `search_content_keyword` | `ci.conversation_id = '{conv_id}'` condition — NULL never matches |
+| Document insert | `src/content/db.rs` `insert_document` | Inserts with `conversation_id = NULL` (project-scoped by design) |
+| `remember` tool | `src/tools/remember.rs` `remember_by_query` | **NOT affected** — searches with `conversation_id: None` already |
+
+**Design Decision:** Option A from the issue (recommended): include project-scoped content (`conversation_id IS NULL`) in `/search` results, alongside session-scoped content. Option B (`--scope` flag) adds UI surface for marginal value at this stage. Option C (setting conversation_id on import) would break the project-scoping design.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | TDD: failing test — project-scoped doc (conversation_id NULL) invisible to keyword+hybrid search with conversation_id filter | `src/content/db.rs` (tests) | ⏳ |
+| 2 | Fix `search_content_keyword` — `conversation_id` condition becomes `(ci.conversation_id = ? OR ci.conversation_id IS NULL)` | `src/content/db.rs` | ⏳ |
+| 3 | Fix `search_content_hybrid` post-filter retain — accept both `Some(conv_id)` and `None` | `src/content/db.rs` | ⏳ |
+| 4 | Verify semantic search path has the same filter behavior and align if needed | `src/content/db.rs` | ⏳ |
+| 5 | Quality gates: fmt, clippy, test | — | ⏳ |
+| 6 | Smoke test section 4 — verify it now checks for actual search results (currently passes vacuously) | `SMOKE_TEST.md` | ⏳ |
+
+**Files to Modify:**
+
+- `src/content/db.rs` — keyword SQL condition + hybrid post-filter + tests
+- `doc/src/CHANGELOG.md` — Fixed section entry
+- `SMOKE_TEST.md` — section 4 verification strengthening (may be separate commit)
+
+**Estimated effort:** ~0.5 day
+
+**Verification notes (from issue):**
+
+1. `remember` tool verified NOT affected (searches with `conversation_id: None` — LLM can find imported docs)
+2. Notes are also project-scoped — same fix covers them (notes search via `/search` uses the same `search_content_hybrid` path)

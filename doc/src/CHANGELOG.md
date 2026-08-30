@@ -10,6 +10,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Fixed
 
+- **Imported documents invisible to `/search` (LUC-141, ex gh#233)** — Documents imported via `/doc import` are stored project-scoped (`conversation_id = NULL`, by design — documents belong to the project, not the session), but `/search` filtered results to the current session's `conversation_id`, so imported documents (and project-scoped notes) silently returned "No results found". The keyword and hybrid search paths in `src/content/db.rs` now include project-scoped content (`conversation_id IS NULL`) alongside session-scoped content, matching user expectations for the "import → search" RAG workflow. The `remember` tool was already unaffected (it searches with `conversation_id: None`). Also strengthens SMOKE_TEST.md section 4, which passed vacuously (checked "no crash" rather than actual search results).
+
 - **Pruned content leaked into search results (LUC-73 residual)** — `/content prune` was only filtering pruned items from decay stats, not from actual searches. Keyword, semantic-item, semantic-chunk, and note-FTS query templates now filter `pruned = 0`. Closes the loop where each access on a leaked result was re-boosting its importance and resurrecting pruned items.
 
 - **Security: h2 0.4.13 → 0.4.16+ (RUSTSEC-2026-0258)** — Upgraded `reqwest` to pull in `h2 >=0.4.16`, fixing unbounded empty DATA frames vulnerability. `h2` arrives transitively via `reqwest → h2` and `reqwest → hyper → h2`.
