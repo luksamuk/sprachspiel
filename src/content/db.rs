@@ -58,6 +58,40 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     JOIN content_items ci ON cc.item_id = ci.id
     WHERE ce.embedding MATCH ? AND ce.k = ? AND ci.pruned = 0";
 
+/// Escape a value for interpolation into a single-quoted SQL literal
+/// (doubles single quotes). Full parameter binding for search SQL is a
+/// tracked fast-follow (plan Risks).
+fn escape_sql_literal(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Pure scope predicate for search filtering (LUC-141).
+///
+/// Single source of truth for scope semantics — the keyword SQL condition
+/// built in `search_content_keyword` mirrors this predicate exactly:
+/// - (Some(conv), Some(proj)): item is in conversation `conv`, OR is
+///   project-scoped (conversation_id NULL) in project `proj`.
+/// - (Some(conv), None): conversation-only (legacy behavior — never widens
+///   scope for project-less callers).
+/// - (None, Some(proj)): project-only.
+/// - (None, None): everything.
+fn content_item_in_scope(
+    item_conversation_id: Option<&str>,
+    item_project_id: Option<&str>,
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+) -> bool {
+    match (conversation_id, project_id) {
+        (Some(conv), Some(proj)) => {
+            item_conversation_id == Some(conv)
+                || (item_conversation_id.is_none() && item_project_id == Some(proj))
+        }
+        (Some(conv), None) => item_conversation_id == Some(conv),
+        (None, Some(proj)) => item_project_id == Some(proj),
+        (None, None) => true,
+    }
+}
+
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
 pub struct ContentSearchParams<'a> {
@@ -860,11 +894,26 @@ impl Database {
             if let Some(ct) = &content_type {
                 conditions.push(format!("ci.content_type = '{}'", ct));
             }
-            if let Some(conv_id) = conversation_id {
-                conditions.push(format!("ci.conversation_id = '{}'", conv_id));
-            }
-            if let Some(proj_id) = project_id {
-                conditions.push(format!("ci.project_id = '{}'", proj_id));
+            // LUC-141: scope filtering mirrors content_item_in_scope (module-level
+            // predicate). Project constraint applies ONLY to the NULL-conversation
+            // branch so legacy session messages with NULL project_id are never
+            // excluded. A conversation filter WITHOUT a project filter keeps
+            // legacy conv-only semantics — project-less callers never widen scope.
+            match (conversation_id, project_id) {
+                (Some(conv_id), Some(proj_id)) => conditions.push(format!(
+                    "(ci.conversation_id = '{}' OR (ci.conversation_id IS NULL AND ci.project_id = '{}'))",
+                    escape_sql_literal(conv_id),
+                    escape_sql_literal(proj_id)
+                )),
+                (Some(conv_id), None) => conditions.push(format!(
+                    "ci.conversation_id = '{}'",
+                    escape_sql_literal(conv_id)
+                )),
+                (None, Some(proj_id)) => conditions.push(format!(
+                    "ci.project_id = '{}'",
+                    escape_sql_literal(proj_id)
+                )),
+                (None, None) => {}
             }
             if let Some(s) = &scope {
                 conditions.push(format!("ci.scope = '{}'", s));
@@ -1103,11 +1152,17 @@ impl Database {
             if let Some(ct) = &content_type {
                 results.retain(|r| &r.item.content_type == ct);
             }
-            if let Some(conv_id) = conversation_id {
-                results.retain(|r| r.item.conversation_id.as_deref() == Some(conv_id));
-            }
-            if let Some(proj_id) = project_id {
-                results.retain(|r| r.item.project_id.as_deref() == Some(proj_id));
+            // LUC-141: scope filtering via the shared predicate — same semantics
+            // as the keyword SQL condition (see content_item_in_scope).
+            if conversation_id.is_some() || project_id.is_some() {
+                results.retain(|r| {
+                    content_item_in_scope(
+                        r.item.conversation_id.as_deref(),
+                        r.item.project_id.as_deref(),
+                        conversation_id,
+                        project_id,
+                    )
+                });
             }
             if let Some(s) = &scope {
                 results.retain(|r| r.item.scope.as_ref() == Some(s));
@@ -2378,6 +2433,513 @@ mod tests {
         assert!(
             !results.iter().any(|r| r.item.id == item_id),
             "pruned item leaked into keyword search results"
+        );
+    }
+
+    #[test]
+    fn test_content_item_in_scope_matrix() {
+        // (Some, Some): session message, same-project doc, other-project doc, other-session message
+        assert!(content_item_in_scope(
+            Some("c1"),
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(content_item_in_scope(
+            None,
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(!content_item_in_scope(
+            None,
+            Some("p2"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(!content_item_in_scope(
+            Some("c2"),
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        // legacy message with NULL project
+        assert!(content_item_in_scope(
+            Some("c1"),
+            None,
+            Some("c1"),
+            Some("p1")
+        ));
+        // (Some, None): conv-only, never widens — session-filtered search
+        // without a project constraint must not surface project-scoped rows.
+        assert!(content_item_in_scope(Some("c1"), None, Some("c1"), None));
+        assert!(!content_item_in_scope(None, Some("p1"), Some("c1"), None));
+        assert!(!content_item_in_scope(None, None, Some("c1"), None));
+        // (None, Some): project-only
+        assert!(content_item_in_scope(None, Some("p1"), None, Some("p1")));
+        assert!(!content_item_in_scope(None, Some("p2"), None, Some("p1")));
+        // (None, None): all
+        assert!(content_item_in_scope(None, None, None, None));
+    }
+
+    #[test]
+    fn test_escape_sql_literal() {
+        assert_eq!(escape_sql_literal("plain"), "plain");
+        assert_eq!(escape_sql_literal("alchemist's repo"), "alchemist''s repo");
+        assert_eq!(escape_sql_literal("''"), "''''");
+    }
+
+    #[test]
+    fn test_project_scoped_document_found_with_conversation_filter() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Session-scoped message (current conversation)
+        db.insert_content_item(
+            "message",
+            Some("conv-1"),
+            Some(ROLE_USER),
+            Some("regular"),
+            None,
+            Some(10),
+            Some("project"),
+            Some("user"),
+            None,
+            "session message about quarterly zebra report",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("Failed to insert session message");
+
+        // Project-scoped document (conversation_id NULL — as /doc import does)
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about quarterly zebra metrics",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let results = db
+            .search_content_keyword("zebra", None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("keyword search must succeed");
+
+        // Regression guard: session message still found
+        assert!(
+            results
+                .iter()
+                .any(|r| r.item.conversation_id.as_deref() == Some("conv-1")),
+            "session messages must still be found (regression guard)"
+        );
+        // LUC-141: project-scoped document must now be visible
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "project-scoped document must be visible to conversation-filtered search (LUC-141)"
+        );
+    }
+
+    #[test]
+    fn test_semantic_search_includes_project_scoped_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+        // In-memory DBs create vec0 tables at FLOAT[256] — shrink to 8 for tests.
+        // Do NOT "fix" fetch_limit: vec0 MATCH is scope-blind by design and
+        // limit*3 absorbs retain shrinkage.
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        // Control row: session message with embedding (pins the conv branch)
+        let msg_id = db
+            .insert_content_item(
+                "message",
+                Some("conv-1"),
+                Some(ROLE_USER),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"),
+                None,
+                "session message about quantum flubber alloys",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert message");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about quantum flubber alloys",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        for id in [msg_id, doc_id] {
+            db.update_content_item_embedding(
+                id,
+                &vector,
+                if id == doc_id { "document" } else { "message" },
+                if id == doc_id { None } else { Some("conv-1") },
+                Some("proj-1"),
+                Utc::now(),
+                1.0,
+            )
+            .expect("Failed to insert embedding");
+        }
+
+        let results = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+
+        assert!(
+            results.iter().any(|r| r.item.id == msg_id),
+            "session message control row must still be found (regression guard)"
+        );
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "semantic search must include project-scoped documents (LUC-141)"
+        );
+    }
+
+    #[test]
+    fn test_hybrid_search_includes_project_scoped_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document about sasquatch telemetry data",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            doc_id,
+            &vector,
+            "document",
+            None,
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+
+        let params = crate::content::ContentSearchParams {
+            query: "sasquatch",
+            embedding: &vector,
+            query_norm_correction: 1.0,
+            content_type: None,
+            conversation_id: Some("conv-1"),
+            project_id: Some("proj-1"),
+            scope: None,
+            limit: 10,
+            keyword_weight: 0.5,
+            semantic_weight: 0.5,
+            feedback_settings: None,
+        };
+        let results = db
+            .search_content_hybrid(&params)
+            .expect("hybrid search must succeed");
+
+        assert!(
+            results.iter().any(|r| r.item.id == doc_id),
+            "hybrid search must include project-scoped documents (LUC-141)"
+        );
+    }
+
+    #[test]
+    fn test_search_excludes_other_project_and_other_session() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let other_project_doc = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "walrus migration patterns study",
+                None,
+                0.5,
+                Some("proj-2"),
+                Utc::now(),
+            )
+            .expect("insert doc proj-2");
+
+        db.insert_content_item(
+            "message",
+            Some("conv-2"),
+            Some(ROLE_USER),
+            Some("regular"),
+            None,
+            Some(10),
+            Some("project"),
+            Some("user"),
+            None,
+            "walrus notes from another session",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert message conv-2");
+
+        // Keyword arm
+        let results = db
+            .search_content_keyword("walrus", None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("keyword search must succeed");
+        assert!(
+            !results.iter().any(|r| r.item.id == other_project_doc),
+            "documents from other projects must be excluded (keyword)"
+        );
+        assert!(
+            !results
+                .iter()
+                .any(|r| r.item.conversation_id.as_deref() == Some("conv-2")),
+            "messages from other sessions must be excluded (keyword)"
+        );
+
+        // Semantic arm (I1): same exclusion through the post-fetch retain
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            other_project_doc,
+            &vector,
+            "document",
+            None,
+            Some("proj-2"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+        let semantic = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+        assert!(
+            !semantic.iter().any(|r| r.item.id == other_project_doc),
+            "documents from other projects must be excluded (semantic)"
+        );
+    }
+
+    #[test]
+    fn test_search_conv_filter_without_project_never_widens() {
+        // Pin: (Some(conv), None) keeps legacy conv-only semantics.
+        let db = Database::in_memory().expect("Failed to create database");
+
+        db.insert_content_item(
+            "document",
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("project"),
+            Some("user"),
+            Some("Report"),
+            "narwhal sonar analysis",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert document");
+
+        let results = db
+            .search_content_keyword("narwhal", None, Some("conv-1"), None, None, 10)
+            .expect("keyword search must succeed");
+        assert!(
+            results.is_empty(),
+            "project-scoped docs must NOT leak when no project filter is present"
+        );
+    }
+
+    #[test]
+    fn test_search_messages_hybrid_stays_message_only() {
+        // Pins auto-retrieval behavior (context_builder): project-scoped docs must
+        // NOT leak into message-scoped hybrid search. Real embedding required —
+        // sqlite-vec rejects zero-length query vectors.
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        db.insert_content_item(
+            "document",
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("project"),
+            Some("user"),
+            Some("Report"),
+            "axolotl regeneration protocol notes",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert document");
+
+        let msg_id = db
+            .insert_content_item(
+                "message",
+                Some("conv-1"),
+                Some(ROLE_USER),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"),
+                None,
+                "axolotl discussion in session",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("insert message");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            msg_id,
+            &vector,
+            "message",
+            Some("conv-1"),
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+
+        let results = db
+            .search_messages_hybrid(
+                "axolotl",
+                &vector,
+                1.0,
+                Some("conv-1"),
+                Some("proj-1"),
+                10,
+                0.5,
+                0.5,
+            )
+            .expect("hybrid message search must succeed");
+
+        assert!(
+            results
+                .iter()
+                .all(|r| r.item.content_type == ContentType::Message),
+            "search_messages_hybrid must remain message-only (auto-retrieval semantics)"
+        );
+    }
+
+    #[test]
+    fn test_semantic_search_includes_chunked_project_scoped_document() {
+        // Chunk rows inherit the parent item's conversation_id/project_id
+        // (SEMANTIC_SEARCH_CHUNKS_SQL joins the parent). This pins the
+        // chunk-level scope mapping (cols 10/26) against future SQL
+        // reshuffles — real imported docs are chunked (>1024 chars), so
+        // this is the path /search actually exercises.
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        let doc_id = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "imported document body — chunks carry the retrieval signal",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("Failed to insert document");
+
+        let chunk_id = db
+            .insert_content_chunk(
+                doc_id,
+                0,
+                "chunk about platypus electroreception mechanics",
+                0,
+                46,
+                Utc::now(),
+            )
+            .expect("Failed to insert chunk");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_chunk_embedding(
+            chunk_id,
+            &vector,
+            "document",
+            None,
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert chunk embedding");
+
+        let results = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+
+        let found = results
+            .iter()
+            .find(|r| r.item.id == doc_id)
+            .expect("chunked project-scoped document must survive the scope retain (LUC-141)");
+        assert!(
+            found.chunk_content.is_some(),
+            "chunk row must carry its chunk_content through the retain"
         );
     }
 }

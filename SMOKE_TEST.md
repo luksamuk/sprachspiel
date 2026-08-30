@@ -118,13 +118,17 @@ echo "tilde expansion test" > ~/test.txt
 
 ---
 
-## 4. Synchronous Embedding (New Feature)
+## 4. Synchronous Embedding + /search Scope (LUC-141)
 
 - [ ] After `/doc import /tmp/test.txt`, search immediately:
   ```
   Use remember to search for "test"
   ```
 - [ ] Result includes the recently imported document (synchronous indexing works)
+- [ ] `/search test` → results include the imported document (project-scoped content visible to /search — LUC-141)
+- [ ] `/search <term unique to the imported doc>` → returns the document with a 📄 Document label, not "No results found"
+- [ ] Result footer shows `project-scoped` instead of `unknown` for the document
+- [ ] `/search` in an anonymous session (`sprach chat --anonymous`) → clear error, not silent "No results found"
 
 ### 4.1 import_document Tool (via LLM) - Bug #54
 
