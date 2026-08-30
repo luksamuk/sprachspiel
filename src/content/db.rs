@@ -58,6 +58,42 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     JOIN content_items ci ON cc.item_id = ci.id
     WHERE ce.embedding MATCH ? AND ce.k = ? AND ci.pruned = 0";
 
+/// Escape a value for interpolation into a single-quoted SQL literal
+/// (doubles single quotes). Precedent: facts/db.rs. Full parameter
+/// binding for search SQL is a tracked fast-follow (plan Risks).
+#[expect(dead_code)] // Temporary: Task 2 wires this into search_content_keyword (LUC-141)
+fn escape_sql_literal(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Pure scope predicate for search filtering (LUC-141).
+///
+/// Single source of truth for scope semantics — the keyword SQL condition
+/// built in `search_content_keyword` mirrors this predicate exactly:
+/// - (Some(conv), Some(proj)): item is in conversation `conv`, OR is
+///   project-scoped (conversation_id NULL) in project `proj`.
+/// - (Some(conv), None): conversation-only (legacy behavior — never widens
+///   scope for project-less callers; review finding C1/R1).
+/// - (None, Some(proj)): project-only.
+/// - (None, None): everything.
+#[expect(dead_code)] // Temporary: Task 3 wires this into search_content_semantic retains (LUC-141)
+fn content_item_in_scope(
+    item_conversation_id: Option<&str>,
+    item_project_id: Option<&str>,
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+) -> bool {
+    match (conversation_id, project_id) {
+        (Some(conv), Some(proj)) => {
+            item_conversation_id == Some(conv)
+                || (item_conversation_id.is_none() && item_project_id == Some(proj))
+        }
+        (Some(conv), None) => item_conversation_id == Some(conv),
+        (None, Some(proj)) => item_project_id == Some(proj),
+        (None, None) => true,
+    }
+}
+
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
 pub struct ContentSearchParams<'a> {
@@ -2379,5 +2415,57 @@ mod tests {
             !results.iter().any(|r| r.item.id == item_id),
             "pruned item leaked into keyword search results"
         );
+    }
+
+    #[test]
+    fn test_content_item_in_scope_matrix() {
+        // (Some, Some): session message, same-project doc, other-project doc, other-session message
+        assert!(content_item_in_scope(
+            Some("c1"),
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(content_item_in_scope(
+            None,
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(!content_item_in_scope(
+            None,
+            Some("p2"),
+            Some("c1"),
+            Some("p1")
+        ));
+        assert!(!content_item_in_scope(
+            Some("c2"),
+            Some("p1"),
+            Some("c1"),
+            Some("p1")
+        ));
+        // legacy message with NULL project
+        assert!(content_item_in_scope(
+            Some("c1"),
+            None,
+            Some("c1"),
+            Some("p1")
+        ));
+        // (Some, None): conv-only, never widens (C1/R1)
+        assert!(content_item_in_scope(Some("c1"), None, Some("c1"), None));
+        assert!(!content_item_in_scope(None, Some("p1"), Some("c1"), None));
+        assert!(!content_item_in_scope(None, None, Some("c1"), None));
+        // (None, Some): project-only
+        assert!(content_item_in_scope(None, Some("p1"), None, Some("p1")));
+        assert!(!content_item_in_scope(None, Some("p2"), None, Some("p1")));
+        // (None, None): all
+        assert!(content_item_in_scope(None, None, None, None));
+    }
+
+    #[test]
+    fn test_escape_sql_literal() {
+        assert_eq!(escape_sql_literal("plain"), "plain");
+        assert_eq!(escape_sql_literal("alchemist's repo"), "alchemist''s repo");
+        assert_eq!(escape_sql_literal("''"), "''''");
     }
 }
