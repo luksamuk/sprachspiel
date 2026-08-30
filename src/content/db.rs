@@ -2684,4 +2684,194 @@ mod tests {
             "hybrid search must include project-scoped documents (LUC-141)"
         );
     }
+
+    #[test]
+    fn test_search_excludes_other_project_and_other_session() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let other_project_doc = db
+            .insert_content_item(
+                "document",
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("project"),
+                Some("user"),
+                Some("Report"),
+                "walrus migration patterns study",
+                None,
+                0.5,
+                Some("proj-2"),
+                Utc::now(),
+            )
+            .expect("insert doc proj-2");
+
+        db.insert_content_item(
+            "message",
+            Some("conv-2"),
+            Some(ROLE_USER),
+            Some("regular"),
+            None,
+            Some(10),
+            Some("project"),
+            Some("user"),
+            None,
+            "walrus notes from another session",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert message conv-2");
+
+        // Keyword arm
+        let results = db
+            .search_content_keyword("walrus", None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("keyword search must succeed");
+        assert!(
+            !results.iter().any(|r| r.item.id == other_project_doc),
+            "documents from other projects must be excluded (keyword)"
+        );
+        assert!(
+            !results
+                .iter()
+                .any(|r| r.item.conversation_id.as_deref() == Some("conv-2")),
+            "messages from other sessions must be excluded (keyword)"
+        );
+
+        // Semantic arm (I1): same exclusion through the post-fetch retain
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            other_project_doc,
+            &vector,
+            "document",
+            None,
+            Some("proj-2"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+        let semantic = db
+            .search_content_semantic(&vector, 1.0, None, Some("conv-1"), Some("proj-1"), None, 10)
+            .expect("semantic search must succeed");
+        assert!(
+            !semantic.iter().any(|r| r.item.id == other_project_doc),
+            "documents from other projects must be excluded (semantic)"
+        );
+    }
+
+    #[test]
+    fn test_search_conv_filter_without_project_never_widens() {
+        // C1/R1 pin: (Some(conv), None) keeps legacy conv-only semantics.
+        let db = Database::in_memory().expect("Failed to create database");
+
+        db.insert_content_item(
+            "document",
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("project"),
+            Some("user"),
+            Some("Report"),
+            "narwhal sonar analysis",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert document");
+
+        let results = db
+            .search_content_keyword("narwhal", None, Some("conv-1"), None, None, 10)
+            .expect("keyword search must succeed");
+        assert!(
+            results.is_empty(),
+            "project-scoped docs must NOT leak when no project filter is present (C1/R1)"
+        );
+    }
+
+    #[test]
+    fn test_search_messages_hybrid_stays_message_only() {
+        // Pins auto-retrieval behavior (context_builder): project-scoped docs must
+        // NOT leak into message-scoped hybrid search. Real embedding required —
+        // sqlite-vec rejects zero-length query vectors.
+        let db = Database::in_memory().expect("Failed to create database");
+        db.ensure_vec0_dimensions(8)
+            .expect("Failed to set vec0 dimensions");
+
+        db.insert_content_item(
+            "document",
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("project"),
+            Some("user"),
+            Some("Report"),
+            "axolotl regeneration protocol notes",
+            None,
+            0.5,
+            Some("proj-1"),
+            Utc::now(),
+        )
+        .expect("insert document");
+
+        let msg_id = db
+            .insert_content_item(
+                "message",
+                Some("conv-1"),
+                Some(ROLE_USER),
+                Some("regular"),
+                None,
+                Some(10),
+                Some("project"),
+                Some("user"),
+                None,
+                "axolotl discussion in session",
+                None,
+                0.5,
+                Some("proj-1"),
+                Utc::now(),
+            )
+            .expect("insert message");
+
+        let vector = [1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        db.update_content_item_embedding(
+            msg_id,
+            &vector,
+            "message",
+            Some("conv-1"),
+            Some("proj-1"),
+            Utc::now(),
+            1.0,
+        )
+        .expect("Failed to insert embedding");
+
+        let results = db
+            .search_messages_hybrid(
+                "axolotl",
+                &vector,
+                1.0,
+                Some("conv-1"),
+                Some("proj-1"),
+                10,
+                0.5,
+                0.5,
+            )
+            .expect("hybrid message search must succeed");
+
+        assert!(
+            results
+                .iter()
+                .all(|r| r.item.content_type == ContentType::Message),
+            "search_messages_hybrid must remain message-only (auto-retrieval semantics)"
+        );
+    }
 }
