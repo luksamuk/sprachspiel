@@ -22,7 +22,9 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Collect every `.md` file under `doc/src` (the user-facing mdBook sources).
+/// Collect every `.md` file under `doc/src` (the user-facing mdBook sources),
+/// plus `SMOKE_TEST.md` at the repo root — it carries the same version/schema
+/// markers and drifted the same way in LUC-140.
 fn doc_sources() -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -39,6 +41,10 @@ fn doc_sources() -> Vec<PathBuf> {
     }
     let mut out = Vec::new();
     walk(&repo_root().join("doc/src"), &mut out);
+    let smoke = repo_root().join("SMOKE_TEST.md");
+    if smoke.exists() {
+        out.push(smoke);
+    }
     out
 }
 
@@ -113,12 +119,7 @@ fn docs_do_not_use_nonexistent_debug_flag() {
                 continue;
             }
             if line_uses_debug_flag(line) {
-                offenders.push(format!(
-                    "{}:{} — `{}`",
-                    rel(&path),
-                    lineno + 1,
-                    line.trim()
-                ));
+                offenders.push(format!("{}:{} — `{}`", rel(&path), lineno + 1, line.trim()));
             }
         }
     }
@@ -162,8 +163,8 @@ fn vision_examples_separate_prompt_with_double_dash() {
             };
             // A prompt is a quoted string containing a space that is not a
             // shell variable (`"$img"`) and not a redirect target.
-            let has_real_prompt = extract_quoted(cmd)
-                .is_some_and(|q| q.contains(' ') && !q.starts_with('$'));
+            let has_real_prompt =
+                extract_quoted(cmd).is_some_and(|q| q.contains(' ') && !q.starts_with('$'));
             let has_image = cmd.contains(".png")
                 || cmd.contains(".jpg")
                 || cmd.contains(".jpeg")
@@ -236,6 +237,87 @@ fn help_output_uses_current_binary_name() {
     assert!(
         offenders.is_empty(),
         "--help output still uses the pre-rename binary name `ask` (LUC-142):\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+/// Version and schema-version markers in docs must match the crate and the
+/// database. This drifted four separate times in LUC-140 (IMPLEMENTATION.md,
+/// roadmap.md, implementation-status.md, SMOKE_TEST.md), which is why it gets
+/// a sensor rather than another manual sweep.
+#[test]
+fn docs_version_and_schema_markers_match_code() {
+    let manifest = repo_root();
+
+    // Cargo.toml is the source of truth for the version.
+    let cargo =
+        std::fs::read_to_string(manifest.join("Cargo.toml")).expect("Cargo.toml must be readable");
+    let version = cargo
+        .lines()
+        .find_map(|l| l.strip_prefix("version = "))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .expect("Cargo.toml must declare a version");
+
+    // schema.rs is the source of truth for the schema version.
+    let schema = std::fs::read_to_string(manifest.join("src/db/schema.rs"))
+        .expect("src/db/schema.rs must be readable");
+    let schema_version = schema
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("pub const SCHEMA_VERSION: i32 = "))
+        .map(|v| v.trim_end_matches(';').to_string())
+        .expect("schema.rs must declare SCHEMA_VERSION");
+
+    let mut offenders = Vec::new();
+
+    // `schema vN` must always name the live version.
+    let stale_schema = format!("schema v{}", schema_version.parse::<i32>().unwrap_or(0) - 1);
+    for path in doc_sources() {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (lineno, line) in content.lines().enumerate() {
+            if is_explanatory(line) {
+                continue;
+            }
+            if line.contains(&stale_schema) {
+                offenders.push(format!(
+                    "{}:{} says `{stale_schema}` but SCHEMA_VERSION is {schema_version}",
+                    rel(&path),
+                    lineno + 1
+                ));
+            }
+        }
+    }
+
+    // The "Current Version" marker in the trackers must be the crate version.
+    for name in [
+        "IMPLEMENTATION.md",
+        "doc/src/development/implementation-status.md",
+    ] {
+        let path = manifest.join(name);
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(idx) = content.find("## Current Version") else {
+            continue;
+        };
+        // Look at the few lines following the heading.
+        let window: String = content[idx..]
+            .lines()
+            .take(6)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !window.contains(&format!("v{version}")) {
+            offenders.push(format!(
+                "{name}: \"Current Version\" does not mention v{version} (Cargo.toml)"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "documentation version/schema markers drifted from the code:\n  {}\n\n\
+         Cargo.toml version = {version}; SCHEMA_VERSION = {schema_version}.",
         offenders.join("\n  ")
     );
 }

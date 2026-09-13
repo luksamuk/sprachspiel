@@ -631,7 +631,11 @@ impl WelcomeInfo {
 /// Status bar information for display above prompt
 ///
 /// Contains context usage, model name, and toggle indicators.
-/// Rendered as a fixed-width (80 columns) bar above the prompt.
+///
+/// Note: this type is only exercised by tests — the live TUI status bar is
+/// `chat::tui::components::status_bar`, which lays out to the current terminal
+/// width. The fixed 80-column rendering below (`format_status_bar`) is
+/// therefore test-only; do not reuse it for user-facing output.
 pub struct StatusBarInfo {
     pub model_name: String,
     pub used_tokens: usize,

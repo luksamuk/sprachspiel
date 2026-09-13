@@ -44,8 +44,8 @@ Sprachspiel looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: sprach --list
-# Default: "qwen3.5-4b"
-default = "qwen3.5-4b"
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.

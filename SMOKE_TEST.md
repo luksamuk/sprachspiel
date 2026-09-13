@@ -2115,7 +2115,7 @@ The script above runs automated tests. The following tests must be run manually:
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
 6. **Section 6.6**: Command Safety ( /session forget, /search, skills)
-7. **Section 9**: Database (schema v14, norm_correction FLOAT verification)
+7. **Section 9**: Database (schema v15, norm_correction FLOAT verification)
 8. **Section 10**: File Tools (via LLM)
 9. **Section 10.5**: run_command Error Messages
 10. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
@@ -2128,7 +2128,7 @@ The script above runs automated tests. The following tests must be run manually:
 16. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 17. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 18. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-19. **Section 21**: Fact Embedding & Semantic Dedup (schema v14, norm_correction FLOAT, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, semantic threshold, end-to-end verification)
+19. **Section 21**: Fact Embedding & Semantic Dedup (schema v15, norm_correction FLOAT, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, semantic threshold, end-to-end verification)
 20. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
 21. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
 22. **Section 23**: TUI Event Loop & Rendering (multi-line rendering, embedding exit hint, provider-agnostic errors, event loop regression)
