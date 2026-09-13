@@ -249,7 +249,7 @@ sprach ocr doc.png | tee /dev/tty | sprach summarize
 time sprach ocr doc.png | time sprach summarize
 
 # Full debug
-sprach ocr -v doc.png 2> debug.log | sprach summarize -v 2> summary.log
+sprach -v ocr doc.png 2> debug.log | sprach -v summarize 2> summary.log
 ```
 
 ## Creating Scripts

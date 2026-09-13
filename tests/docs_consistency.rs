@@ -132,11 +132,22 @@ fn docs_do_not_use_nonexistent_debug_flag() {
     );
 }
 
-/// True when `-d` appears as a standalone token in a `sprach ...` invocation.
+/// True when `-d` is presented as a CLI flag anywhere on the line.
 ///
-/// Token-exact matching keeps unrelated `-d` uses (`curl -d '{}'`,
-/// `exiftool -d "%Y"`) out of the results.
+/// Broader than a `sprach ...` prefix scan on purpose: the first version of
+/// this sensor only matched lines starting with `sprach `, so prose like
+/// "Use `-d` to troubleshoot problems" (query.md) and "Enable debug mode with
+/// `-d`" (introduction.md) slipped through — a structural false negative.
+///
+/// Now matches either a `sprach` invocation token or a backtick-quoted `-d`,
+/// while still ignoring unrelated flags: `curl -d`, `exiftool -d`, and
+/// hyphenated words (`-debug`, `--dry-run`).
 fn line_uses_debug_flag(line: &str) -> bool {
+    // Backtick-quoted flag in prose: `-d`
+    if line.contains("`-d`") {
+        return true;
+    }
+    // Standalone token in a sprach invocation.
     let Some(rest) = line.trim().strip_prefix("sprach ") else {
         return false;
     };
@@ -192,9 +203,14 @@ fn extract_quoted(s: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-/// Every subcommand's `--help` must print the current binary name. The project
-/// was renamed from `ask-ai` to `sprachspiel` (short binary `sprach`), and the
-/// rename missed the help strings in several CLI modules (LUC-142).
+/// Every subcommand's `--help` must print the current binary name, and no
+/// `--help` may name a model that does not exist. The project was renamed from
+/// `ask-ai` to `sprachspiel` (short binary `sprach`), and the rename missed the
+/// help strings in several CLI modules (LUC-142).
+///
+/// Also guards the model-example class: `sprach --help` advertised
+/// `-m lfm` as "the default" while `DEFAULT_MODEL` is `qwen3.5:4b` and `lfm` is
+/// not a valid model at all.
 #[test]
 fn help_output_uses_current_binary_name() {
     let manifest = repo_root();
@@ -222,6 +238,20 @@ fn help_output_uses_current_binary_name() {
     ];
 
     let mut offenders = Vec::new();
+
+    // The `--list` output carries the examples (not `--help`), and it used to
+    // advertise `-m lfm` as the default model long after `lfm` stopped
+    // existing — `sprach -m lfm "x"` → "Unknown model 'lfm'".
+    if let Ok(out) = Command::new(&bin).arg("--list").output() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("-m lfm") {
+                offenders.push(format!("`sprach --list` prints: {trimmed}"));
+            }
+        }
+    }
+
     for sub in subcommands {
         let Ok(out) = Command::new(&bin).args([sub, "--help"]).output() else {
             continue;
@@ -236,7 +266,77 @@ fn help_output_uses_current_binary_name() {
     }
     assert!(
         offenders.is_empty(),
-        "--help output still uses the pre-rename binary name `ask` (LUC-142):\n  {}",
+        "--help output uses the pre-rename binary name `ask` or a nonexistent \
+         model example (LUC-142 / LUC-140):\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+/// No documented `sprach <sub> -v` — verbosity is declared only on the top-level
+/// `Cli`, so the flag must precede the subcommand. Five command pages listed
+/// `-v`/`-vv` in their per-subcommand option tables (LUC-140 residual).
+#[test]
+fn verbosity_is_not_documented_as_a_subcommand_flag() {
+    let manifest = repo_root();
+    let candidates = [
+        manifest.join("target/debug/sprach"),
+        manifest.join("target/release/sprach"),
+    ];
+    let Some(bin) = candidates.into_iter().find(|p| p.exists()) else {
+        return;
+    };
+
+    let subcommands = ["translate", "query", "ocr", "summarize", "chat", "vision"];
+
+    // Only assert the ones that actually reject it, so the test cannot produce
+    // a false positive if a subcommand later gains its own verbosity flag.
+    let rejects: Vec<&str> = subcommands
+        .into_iter()
+        .filter(|sub| {
+            Command::new(&bin)
+                .args([sub, "-v"])
+                .output()
+                .map(|o| {
+                    let err = String::from_utf8_lossy(&o.stderr);
+                    err.contains("unexpected argument")
+                })
+                .unwrap_or(false)
+        })
+        .collect();
+
+    let mut offenders = Vec::new();
+    for path in doc_sources() {
+        if is_changelog(&path) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (lineno, line) in content.lines().enumerate() {
+            // A line may chain several invocations with pipes; check each.
+            for segment in line.split('|') {
+                let trimmed = segment.trim();
+                let Some(rest) = trimmed.strip_prefix("sprach ") else {
+                    continue;
+                };
+                let toks: Vec<&str> = rest.split_whitespace().collect();
+                let Some(pos) = toks.iter().position(|t| rejects.contains(t)) else {
+                    continue;
+                };
+                if toks[pos + 1..].iter().any(|t| *t == "-v" || *t == "-vv") {
+                    offenders.push(format!(
+                        "{}:{} — `{trimmed}` (verbosity must precede the subcommand)",
+                        rel(&path),
+                        lineno + 1
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "docs show `-v` after a subcommand that rejects it (LUC-140):\n  {}\n\n\
+         Correct form: `sprach -v <sub> ...`.",
         offenders.join("\n  ")
     );
 }

@@ -84,7 +84,7 @@ struct Cli {
     #[arg(value_name = "QUERY")]
     query: Option<String>,
 
-    /// Model preset to use (lfm is the default)
+    /// Model preset to use (defaults to [model].default in config.toml)
     #[arg(short, long, value_name = "MODEL")]
     model: Option<String>,
 
@@ -500,7 +500,7 @@ fn print_available_options() {
     println!("Examples:");
     println!("  sprach \"What is Rust?\"");
     println!("  sprach translate en:pt \"Hello world\"");
-    println!("  sprach -m lfm \"Explain async/await\"");
+    println!("  sprach -m qwen3.5:4b \"Explain async/await\"");
     println!("  sprach translate --list");
     println!("  sprach translate --list port");
 }

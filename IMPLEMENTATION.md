@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.45.0** - 2026-08-19 (Embedding Configurability + Multi-Backend Positioning)
+**v0.45.0** - 2026-08-19 (Embedding Configurability)
 
 ## Current Implementation Status
 

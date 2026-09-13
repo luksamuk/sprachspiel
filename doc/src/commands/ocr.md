@@ -25,8 +25,7 @@ OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a mult
 
 | Option | Description |
 |--------|-------------|
-| `-v` | Verbose logging |
-| `-vv` | Trace logging |
+| `--help` | Show help (verbosity `-v`/`-vv` is a **global** flag — put it before the subcommand) |
 | `--help` | Show help |
 
 ## Subcommand Options
@@ -125,7 +124,7 @@ sprach ocr --max-tokens 4096 simple.png
 
 ```bash
 # See processing details
-sprach ocr -v document.png
+sprach -v ocr document.png
 #
 # Shows:
 # - Model being used
