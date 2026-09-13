@@ -159,10 +159,10 @@ sprach -m qwen3.5-4b -p default "Question"
 sprach -p code -t "Complex algorithm"
 
 # Tool user with debug
-sprach -p tool_user -d "Debug this"
+sprach -p tool_user -v "Debug this"
 
 # Code with specific model and debug
-sprach -m ornith-1.0-35b -p code -d "Debug code generation"
+sprach -m ornith-1.0-35b -p code -v "Debug code generation"
 ```
 
 ## Mode Selection Guide
