@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.43.0** - 2026-05-08 (Sprachspiel Rename + Multi-Backend Positioning)
+**v0.45.0** - 2026-08-19 (Embedding Configurability + Multi-Backend Positioning)
 
 ## Current Implementation Status
 
