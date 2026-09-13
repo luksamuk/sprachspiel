@@ -35,11 +35,11 @@ Start an interactive chat session with an LLM. Conversations are automatically s
 | `--tools-output <LEVEL>` | Tool output verbosity: `compact` (default), `full`, `hidden` |
 
 > **Flag ordering:** most flags are declared **both** at the top level and on the
-> `chat` subcommand, so both `sprach --plain chat` and `sprach chat -m lfm` are
+> `chat` subcommand, so `sprach chat -m lfm` and `sprach chat --soulless` are
 > valid. The flags that exist **only** at the top level and therefore must come
 > *before* `chat` are: `--plain`, `--code`, `-q/--quiet`, `--db`, `--list`,
-> `--init-config` and `-p/--prompt`. Writing one of those after the subcommand
-> (`sprach chat --plain`) is rejected by the CLI parser.
+> `--init-config`, `--force` and `-p/--prompt`. Writing one of those after the
+> subcommand (`sprach chat --plain`) is rejected by the CLI parser.
 
 ## Output Format
 

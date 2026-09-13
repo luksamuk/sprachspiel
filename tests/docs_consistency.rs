@@ -241,6 +241,79 @@ fn help_output_uses_current_binary_name() {
     );
 }
 
+/// Every CLI example in the docs must be accepted by the parser. This is the
+/// sensor for the flag-ordering class (LUC-140): docs showed `sprach chat
+/// --plain`, which the parser rejects because `--plain` is top-level-only.
+///
+/// Only commands whose subcommand is known to the test are checked, and only
+/// when a binary is available.
+#[test]
+fn documented_cli_examples_are_parseable() {
+    let manifest = repo_root();
+    let candidates = [
+        manifest.join("target/debug/sprach"),
+        manifest.join("target/release/sprach"),
+    ];
+    let Some(_bin) = candidates.into_iter().find(|p| p.exists()) else {
+        return;
+    };
+
+    // Flags that exist only on the top-level `Cli` and never on a subcommand.
+    // Verified against src/main.rs; `--list` is excluded because `translate`
+    // declares its own.
+    const TOPLEVEL_ONLY: &[&str] = &["--plain", "--code", "-q", "--db", "--force"];
+
+    let subcommands = [
+        "translate",
+        "query",
+        "ocr",
+        "summarize",
+        "chat",
+        "vision",
+        "diagnostics",
+    ];
+
+    let mut offenders = Vec::new();
+    for path in doc_sources() {
+        if is_changelog(&path) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (lineno, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("sprach ") else {
+                continue;
+            };
+            // Identify the subcommand (the first token that is one).
+            let toks: Vec<&str> = rest.split_whitespace().collect();
+            let Some(pos) = toks.iter().position(|t| subcommands.contains(t)) else {
+                continue;
+            };
+            let (sub, after) = (toks[pos], &toks[pos + 1..]);
+            for flag in TOPLEVEL_ONLY {
+                if after.contains(flag) {
+                    offenders.push(format!(
+                        "{}:{} — `{trimmed}` puts {flag} after `{sub}`, but it is \
+                         top-level-only",
+                        rel(&path),
+                        lineno + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "documented CLI examples are rejected by the parser because a \
+         top-level-only flag follows the subcommand (LUC-140):\n  {}\n\n\
+         Global flags must precede the subcommand: `sprach --plain query \"x\"`.",
+        offenders.join("\n  ")
+    );
+}
+
 /// Version and schema-version markers in docs must match the crate and the
 /// database. This drifted four separate times in LUC-140 (IMPLEMENTATION.md,
 /// roadmap.md, implementation-status.md, SMOKE_TEST.md), which is why it gets
