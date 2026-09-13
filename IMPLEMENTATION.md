@@ -7687,16 +7687,47 @@ timeout_ms = 2000
 
 ### Attention Priming (Chunk Reordering) [M4]
 
-**Status:** 📋 DRAFT — Quick Win
+**Status:** ⚠️ DRAFT — JUSTIFICATION INVALIDATED, decision pending (see LUC-144)
 **Depends on:** None
 **Estimated effort:** ~1 day
-**Priority within M4:** First (quick win opener)
+**Priority within M4:** on hold until the justification is rebuilt or the item is dropped
 
-**Goal:** Reorder retrieved chunks to position top-2 at the beginning and next 2 at the end of context. Mitigates "Lost in the Middle" effect (Liu et al. 2023, Cuconasu et al. 2025) with zero architecture change — only reordering in `format_retrieved_context()`.
+**Goal:** Reorder retrieved chunks to position top-2 at the beginning and next 2 at the end of context. Mitigates "Lost in the Middle" effect (Liu et al. **2024**, TACL 12:157–173) with zero architecture change — only reordering in `format_retrieved_context()`.
 
 **Implementation:** `[best, 2nd_best, ...middle..., 3rd_best, 4th_best]`
 
 **Source:** RAG improvement research (internal analysis, Section 5)
+
+> ### ⚠️ CONTRARY EVIDENCE — the citation that was here was hallucinated
+>
+> This section previously cited **`Cuconasu et al. 2025`** as *support*. That was wrong: the
+> citation was written from the paper's title, not from reading it (same defect class as the
+> bibliographic audit, LUC-143). Reading the source shows it says the **opposite**.
+>
+> **arXiv:2505.15561** — *Do RAG Systems Really Suffer From Positional Bias?*
+> (Cuconasu, Filice, Horowitz, Maarek, Silvestri):
+>
+> > **Abstract:** "sophisticated strategies that attempt to rearrange the passages based on LLM
+> > positional preferences **do not perform better than random shuffling**."
+>
+> > **Conclusion:** "random ordering of retrieved passages yields **statistically equivalent
+> > accuracy** to more sophisticated reordering strategies."
+>
+> > "attempting to place relevant passages in LLMs' favorable positions may **inadvertently
+> > prioritize hard distractors over relevant content**."
+>
+> The paper tests this exact strategy (`MaxRelevance`) against a `Shuffle` baseline and finds no
+> statistically significant difference (Wilcoxon, p=0.05). It also frames the original "lost in
+> the middle" result as an artifact of a controlled setting — rotating a single relevant passage
+> among irrelevant ones — an "artificial configuration" that "amplifies the impact of the
+> positional bias". The paper Cuconasu et al. name as *proposing* reordering is **Jin et al. 2025**;
+> Cuconasu et al. are the ones who test and reject it.
+>
+> **Consequence:** the feature may still be worth building — ordering problems are demonstrably
+> real in this codebase (see the two-buffer redesign in TUI). But it must not be justified with
+> this reference. Either rebuild the argument (and address the *hard distractor* mechanism the
+> paper identifies), or drop the item. **Tracked in LUC-144 — do not implement before that
+> decision.**
 
 ---
 
