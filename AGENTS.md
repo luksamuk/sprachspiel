@@ -2,7 +2,7 @@
 
 This is a Rust project that uses the `LlmProvider` trait with `OpenAICompatibleProvider` to interact with LLM models via OpenAI-compatible APIs (Ollama, llama.cpp, vLLM, LM Studio, llama-swap, etc.).
 
-**IMPORTANT: See `IMPLEMENTATION.md` for the detailed feature roadmap and implementation phases.**
+**IMPORTANT: Issue tracking lives in Linear (project "Sprachspiel") — see the `linear` skill or the `next-demand` skill. `IMPLEMENTATION.md` is only an index of links; it does NOT track status.**
 
 ## ⚠️ BEFORE IMPLEMENTING ANYTHING
 
@@ -164,7 +164,7 @@ extract them into named methods.
 Current TUI abstractions (active, in production):
 - `src/chat/input/mod.rs` — `InputBackend` trait
 - `src/chat/view/mod.rs` — `ChatView` trait
-- `src/chat/input/crossterm.rs` — `CrosstermInput` (in use)
+- `src/chat/input/crossterm_input.rs` — `CrosstermInput` (in use)
 - `src/chat/view/ratatui_view.rs` — `RatatuiView` (in use)
 
 Removed in PR2/PR3 (do NOT re-add):
@@ -227,7 +227,7 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 ### GitHub Project Board
 
 - **Starting a task:** Find issue → update status to "In Progress" → assign yourself
-- **Completing a task:** Update status to "Done" → close with commit reference → update `IMPLEMENTATION.md`
+- **Completing a task:** Update status to "Done" → close with commit reference → add a CHANGELOG entry. Do **not** add a section to `IMPLEMENTATION.md` (it is an index, guarded by `tests/repo_references.rs`).
 - **Blocked task:** Update status → add comment → add `status:blocked` label
 
 ### Board Columns
@@ -242,7 +242,7 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 
 ### Updating Roadmap
 
-**CRITICAL:** After completing ANY roadmap item, update `IMPLEMENTATION.md`: `❌ NOT STARTED` → `✅ COMPLETED` or `📋 IN PROGRESS`, with implementation summary.
+**CRITICAL:** After completing ANY roadmap item, move the issue to Done in Linear and add the release note to `doc/src/CHANGELOG.md`. `IMPLEMENTATION.md` no longer carries per-issue status — status has exactly one home (Linear), which is what stopped the two from contradicting each other. A test enforces that `IMPLEMENTATION.md` stays under 400 lines.
 
 ### Issue Management
 
@@ -268,7 +268,7 @@ Critical rules for reviews:
 **CRITICAL RULE:** If you cannot complete something now, you MUST document it.
 
 1. **Todo list** — Use the todowrite tool for immediate tasks
-2. **Roadmap** — Update `IMPLEMENTATION.md` for larger features
+2. **Roadmap** — update the Linear project/milestone for larger features (not `IMPLEMENTATION.md`)
 3. **Code comments** — If leaving TODO/FIXME, add issue reference or context
 4. **Changelog** — Note incomplete work in version notes
 5. **GitHub Issue** — Create/update issue on the Project board
