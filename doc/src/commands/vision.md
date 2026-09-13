@@ -25,7 +25,7 @@ Vision provides general image understanding capabilities. It can describe images
 
 | Option | Description |
 |--------|-------------|
-| `-m, --model <MODEL>` | Model to use (default: `moondream`) |
+| `-m, --model <MODEL>` | Model to use. Defaults to the global `[model].default` from `config.toml`. |
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -210,7 +210,10 @@ tools = false
 
 1. CLI flag `-m` → use specified model
 2. Config file `[model.vision].model` → use configured model
-3. Default → `qwen3.5-4b`
+3. Global default → `[model].default` from `config.toml`
+
+The model must report vision capability, otherwise `vision` aborts with an
+actionable error (use `--force` to override the capability check).
 
 ## Pipelines
 

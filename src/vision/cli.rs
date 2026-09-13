@@ -33,10 +33,13 @@ EXAMPLES:
   sprach vision --json *.png > output.jsonl       # Batch with JSON output
 
 MODELS:
-  - qwen3.5:4b (default) - Multimodal, good quality, 128K context
+  - qwen3.5:4b (recommended) - Multimodal, good quality, 128K context
   - moondream:1.8b - Lightweight alternative, 2K context
   - llava:7b - Better quality, good OCR
   - minicpm-v:8b - Best for multi-image tasks
+
+MODEL SELECTION ORDER:
+  -m/--model  >  [model.vision] in config.toml  >  global [model].default
 
 REQUIREMENTS:
   - Ollama must be running locally or accessible remotely
@@ -65,7 +68,7 @@ pub struct VisionArgs {
     #[arg(long)]
     pub json: bool,
 
-    /// Model to use (default: moondream)
+    /// Model to use (default: the global `[model].default` from config.toml)
     #[arg(short, long, value_name = "MODEL")]
     pub model: Option<String>,
 
