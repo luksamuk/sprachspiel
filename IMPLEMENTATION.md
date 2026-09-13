@@ -8099,3 +8099,73 @@ Six fixes targeting LLM prompt construction bugs and system prompt clarity issue
 1. **RUSTSEC-2026-0258** — `h2 0.4.13` (unbounded empty DATA frames) → fix: upgrade to `h2 >=0.4.16`
 2. **RUSTSEC-2026-0185** — `quinn-proto 0.11.14` (remote memory exhaustion, CVSS 7.5 high) → fix: upgrade to `quinn-proto >=0.11.15`
 Both resolved by `cargo update -p reqwest` to pull patched versions. `cargo build --all-features` and `cargo audit` pass clean (no vulnerabilities).
+
+2026-08-30 - Bug fix: /search scope mismatch — imported documents invisible (LUC-141, ex gh#233).
+
+## Bug Fix: /search Scope Mismatch — Imported Documents Invisible (LUC-141, ex gh#233) [M1] — ✅ COMPLETED
+
+**Status:** ✅ COMPLETED
+**Issue:** LUC-141 (ex gh#233)
+**Branch:** `fix/141-search-scope`
+**Depends on:** None (independent bug fix)
+
+**Goal:** Make project-scoped content (imported documents, notes) visible to `/search`. Today "import document → search for it" — the core RAG workflow — silently returns "No results found" because of a session-vs-project scope mismatch.
+
+**Problem Statement:**
+
+Documents imported via `/doc import` are stored with `conversation_id = NULL` (project-scoped by design: documents belong to the project, not the session). But `/search` passes `Some(&conversation_id)` down to the hybrid search, which filters results to `conversation_id == Some(conv_id)` — project-scoped rows (NULL) never match. The search silently returns "No results found" with no indication the document exists in the DB.
+
+**Root Cause Analysis (verified 2026-08-30) — TWO filters, not one:**
+
+Code tracing found the issue's Option A analysis captured only half the problem:
+
+1. **`conversation_id` filter** (issue knew): `/search` → `run_search(Some(&conversation_id))` filters `conversation_id == Some(conv)`; docs have `conversation_id = NULL` → never match.
+2. **`content_type` filter** (issue MISSED): `run_search()` called `search_messages_hybrid()`, which hardcoded `content_type: Some(ContentType::Message)` — docs are `content_type = 'document'` → never matched even with filter #1 fixed.
+
+**Root Cause Trace (verified 2026-08-30):**
+
+| Component | Location | Behavior |
+|-----------|----------|----------|
+| `/search` handler | `src/chat/command_handlers.rs` (`handle_search` → `run_search(..., Some(&conversation_id), ...)`) | Passed current session's conversation_id; now also passes the session's `project_id` |
+| Hybrid search filter | `src/content/db.rs` conversation/project conditions + post-filter | Now a coupled conversation/project scope (shared predicate `content_item_in_scope`) instead of independent conv = / proj = filters |
+| Content-type restriction | `src/retrieval/search.rs` (`run_search` → `search_messages_hybrid`) | Removed — `run_search` now calls `search_content_hybrid` with `content_type: None` (all content types) |
+| Keyword search filter | `src/content/db.rs` `search_content_keyword` | Coupled scope condition mirrors the shared predicate, quote-escaped via `escape_sql_literal` |
+| Anonymous sessions | `src/chat/command_handlers.rs` `handle_search` | Guard added: clear error instead of misleading "No results found" (sibling idiom of `/save`, `/prune`) |
+| Document insert | `src/content/db.rs` `insert_document` | Unchanged — inserts with `conversation_id = NULL` (project-scoped by design) |
+| `remember` tool | `src/tools/remember.rs` | **NOT affected** — searches with `conversation_id: None` already |
+
+**Design Decision:** Option A from the issue, amended with a same-project guard (MoA review C1/R1): scope = session messages + project-scoped content of the **current** project. A conversation filter **without** a project filter keeps legacy conversation-only semantics (project-less callers never widen scope); anonymous sessions are blocked at the handler instead of silently widening to all projects. `fetch_limit` untouched — scope-blind vec0 MATCH + `limit*3` is the existing starvation-absorbing design.
+
+**Implemented summary (2026-08-30, commits 2c72100..8568155):**
+
+- Shared scope predicate `content_item_in_scope` + `escape_sql_literal` helper (`src/content/db.rs`) — single source of truth, unit-tested against the full (conversation, project) matrix.
+- Coupled conversation/project filter in `search_content_keyword` (SQL, mirroring the predicate) and in `search_content_semantic` (post-fetch retain, using the predicate directly).
+- `run_search` lifts the message-only restriction: `search_content_hybrid` with `content_type: None`; `handle_search` threads `project_id` and rejects anonymous sessions with a clear error (+ `log::warn!` companion).
+- Result labels via centralized role labels (`format_role_label`): documents show 📄 Document, notes show 📝 Note; footer shows `project-scoped` for NULL-conversation rows (no third copy of role strings).
+- Auto-retrieval (context_builder) unchanged — message-only pinned by test; `remember` tool path untouched.
+- 10 new tests: shared-predicate matrix + SQL escape unit tests, keyword/semantic/hybrid inclusion of project-scoped docs, exclusion guards (other project / other session, keyword + semantic), conv-only never-widens pin, message-only auto-retrieval pin, chunked-document scope retain, `subject_label` unit test. Two MoA review rounds (reviews B and C) — findings fixed in-tree.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | TDD: failing test — project-scoped doc (conversation_id NULL) invisible to search with conversation_id filter | `src/content/db.rs` (tests) | ✅ COMPLETED |
+| 2 | Fix `search_content_keyword` — coupled conversation/project scope condition (predicate-mirrored, quote-escaped) | `src/content/db.rs` | ✅ COMPLETED |
+| 3 | Fix `search_content_semantic` post-filter retain — shared predicate `content_item_in_scope` | `src/content/db.rs` | ✅ COMPLETED |
+| 4 | Verification: hybrid integration + exclusion/never-widen/auto-retrieval regression guards | `src/content/db.rs` (tests) | ✅ COMPLETED |
+| 5 | Quality gates: fmt, check, clippy, full test suite | — | ✅ COMPLETED |
+| 6 | Smoke test section 4 — now checks actual `/search` results (was passing vacuously) | `SMOKE_TEST.md`, `doc/src/commands/chat.md`, `man/sprach.1` | ✅ COMPLETED |
+
+**Files Modified:**
+
+- `src/content/db.rs` — shared scope predicate + SQL escape helper, keyword/semantic coupled filters, tests
+- `src/retrieval/search.rs` — content-type lift in `run_search`, content-type labels, `project-scoped` footer
+- `src/chat/command_handlers.rs` — anonymous guard + `project_id` threading in `handle_search`
+- `doc/src/CHANGELOG.md` — Unreleased → Fixed entry
+- `SMOKE_TEST.md` — section 4 verification strengthening
+- `doc/src/commands/chat.md`, `man/sprach.1` — `/search` scope documentation
+
+**Verification notes (from issue):**
+
+1. `remember` tool verified NOT affected (searches with `conversation_id: None` — LLM can find imported docs)
+2. Notes are also project-scoped — same fix covers them (notes search via `/search` uses the same `search_content_hybrid` path)

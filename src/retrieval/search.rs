@@ -11,6 +11,7 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::consts::roles::format_role_label;
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
 
@@ -20,6 +21,7 @@ use crate::embeddings::EmbeddingClient;
 pub struct FormattedResult {
     pub item_id: i64,
     pub conversation_id: Option<String>,
+    pub content_type: String,
     pub role: Option<String>,
     pub content: String,
     pub chunk_content: Option<String>,
@@ -35,6 +37,7 @@ impl From<ContentSearchResult> for FormattedResult {
         FormattedResult {
             item_id: result.item.id,
             conversation_id: result.item.conversation_id,
+            content_type: result.item.content_type.to_string(),
             role: result.item.role,
             content: result.item.content,
             chunk_content: result.chunk_content,
@@ -65,6 +68,21 @@ pub enum SearchOutcome {
     },
 }
 
+/// Human label for a search result row, by content type (LUC-141).
+///
+/// Messages delegate to the centralized role labels (`consts/roles.rs`) —
+/// do NOT hardcode role labels here again (AGENTS.md string-duplication
+/// rule). Documents and notes get their own type labels. Unknown content
+/// types are passed through as-is.
+pub fn subject_label(content_type: &str, role: Option<&str>) -> String {
+    match content_type {
+        "message" => format_role_label(role.unwrap_or("unknown")),
+        "document" => "📄 Document".to_string(),
+        "note" => "📝 Note".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Format search results as a markdown string.
 ///
 /// Returns a formatted markdown string suitable for rendering via
@@ -85,23 +103,19 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
             ContentSearchType::Hybrid => "🔗 Hybrid",
         };
 
-        let role_str = result.role.as_deref().unwrap_or("unknown");
-        let role_label = match role_str {
-            "user" => "👤 User",
-            "assistant" => "🤖 Assistant",
-            "system" => "⚙️ System",
-            "tool" => "🔧 Tool",
-            _ => role_str,
-        };
+        let label = subject_label(&result.content_type, result.role.as_deref());
 
-        let conv_id = result.conversation_id.as_deref().unwrap_or("unknown");
+        let conv_id = result
+            .conversation_id
+            .as_deref()
+            .unwrap_or("project-scoped");
 
         output.push_str(&format!(
             "{}. [id={}] {} — {} (score: {:.4})\n",
             i + 1,
             result.item_id,
             type_str,
-            role_label,
+            label,
             result.score
         ));
 
@@ -157,10 +171,9 @@ pub fn format_results(results: &[FormattedResult]) -> Option<String> {
 ///
 /// Returns a `SearchOutcome` enum instead of printing directly.
 /// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
-#[allow(clippy::too_many_arguments)]
-// 9 args — all required for the search pipeline (db, provider, model
-// config, query context). Grouping into a struct would add ceremony
-// for a single call site.
+#[expect(clippy::too_many_arguments)] // 10 args — search pipeline context (db, provider,
+// model config, query scoping). Existing callers pass them positionally; grouping
+// into a struct is deferred until a second call site exists.
 pub async fn run_search(
     db: &Database,
     provider: &crate::provider::OpenAICompatibleProvider,
@@ -170,6 +183,7 @@ pub async fn run_search(
     embedding_context_length: Option<u32>,
     query: &str,
     conversation_id: Option<&str>,
+    project_id: Option<&str>,
     limit: usize,
 ) -> SearchOutcome {
     // Debug: Show search parameters
@@ -207,16 +221,26 @@ pub async fn run_search(
     let settings = crate::settings::Settings::load();
     let keyword_weight = settings.indexing.keyword_weight;
     let semantic_weight = settings.indexing.semantic_weight;
-    let results = match db.search_messages_hybrid(
+    // LUC-141: search ALL content types (messages, notes, documents) —
+    // not just messages. Scoping: session messages (conversation_id filter)
+    // plus same-project project-scoped content (coupled filter in db layer).
+    // feedback_settings stays None: no feedback boost and no on_content_access
+    // from /search — keep None unless ADR-008/009 doc-side reinforcement is
+    // designed.
+    let params = crate::content::ContentSearchParams {
         query,
-        &embedding,
+        embedding: &embedding,
         query_norm_correction,
+        content_type: None,
         conversation_id,
-        None,
-        limit * 2,
+        project_id,
+        scope: None,
+        limit: limit * 2,
         keyword_weight,
         semantic_weight,
-    ) {
+        feedback_settings: None,
+    };
+    let results = match db.search_content_hybrid(&params) {
         Ok(r) => {
             log::debug!("Hybrid search found {} results", r.len());
             r
@@ -248,4 +272,18 @@ pub async fn run_search(
     let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|r| r.into()).collect();
 
     SearchOutcome::Results(formatted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subject_label;
+
+    #[test]
+    fn test_subject_label_by_content_type() {
+        assert_eq!(subject_label("message", Some("user")), "👤 User");
+        assert_eq!(subject_label("message", Some("assistant")), "🤖 Assistant");
+        assert_eq!(subject_label("message", None), "unknown");
+        assert_eq!(subject_label("document", None), "📄 Document");
+        assert_eq!(subject_label("note", None), "📝 Note");
+    }
 }

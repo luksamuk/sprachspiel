@@ -113,7 +113,7 @@ The `/session` command provides session management, including deletion:
 | Command | Description |
 |---------|-------------|
 | `/context` | Show context metrics, token usage, and memory stats |
-| `/search <query>` | Search conversation history (semantic search) |
+| `/search <query>` | Search session + project-scoped content (hybrid search) |
 | `/reindex [--yes]` | Regenerate all embeddings from scratch (requires `--yes`) |
 | `/retrieval <query>` | Test retrieval pipeline (debugging) |
 
@@ -388,12 +388,25 @@ Actual token usage may vary depending on the model's tokenizer.
 
 ## /search - Semantic Search
 
-Search conversation history using hybrid search (keyword + semantic):
+Search using hybrid search (keyword + semantic) across **all content types**:
 
 ```bash
 /search authentication           # Basic search
 /search "error handling" 5      # Limit to 5 results
 ```
+
+### Search Scope
+
+`/search` covers:
+
+- **Messages** from the current session
+- **Project-scoped content** of the current project — imported documents and notes
+
+Notes:
+
+- Globally-imported documents (`/doc import --global`) are **not** returned inside a project session — use the `remember` tool to search global content.
+- Messages keep their role labels (👤 User, 🤖 Assistant); documents show as 📄 Document and notes as 📝 Note.
+- Anonymous sessions: `/search` is unavailable ("Cannot search in anonymous sessions. Restart chat without --anonymous.").
 
 ### How It Works
 
