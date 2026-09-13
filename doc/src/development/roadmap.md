@@ -68,13 +68,26 @@ See the [Linear project "Sprachspiel"](https://linear.app/luksamuk/project/sprac
 ### Open work in the same defect class as the LUC-140 doc audit
 
 - **LUC-142** (created during the LUC-140 audit; no GitHub equivalent — the
-  GitHub tracker is closed history) — the `--help` output of `translate`, `ocr`,
-  `summarize` and `chat` still prints the pre-rename binary name
-  `ask <subcommand>` in examples and usage errors (~50 occurrences across
-  `src/translate/cli.rs`, `src/ocr/cli.rs`, `src/summarize/cli.rs`,
-  `src/chat/cli.rs`). The `vision` instances were fixed in PR #238. Needs a
-  feedforward guard (build the strings from `APP_NAME`) so a future rename
-  cannot drift again, plus a sensor.
+  GitHub tracker is closed history) — the `translate`, `ocr`, `summarize` and
+  `chat` CLI source still contains ~37 `ask <subcommand>` strings from before
+  the rename (~50 counting all forms), in `src/translate/cli.rs`,
+  `src/ocr/cli.rs`, `src/summarize/cli.rs`, `src/chat/cli.rs`. The `vision`
+  instances were fixed in PR #238.
+
+  **Verified finding (see the Linear issue for the full evidence):** those
+  strings live inside `long_about` blocks that clap **never prints** — the
+  `Commands` enum doc-comments supply the short `about` instead. Grepping every
+  subcommand's `-h`, `--help`, `help` and `help <sub>` output yields **zero**
+  occurrences. So this is unreachable code, not a user-facing defect: nobody
+  can copy a broken `ask` example from the help today.
+
+  Two options, and the choice is a UX decision: **(a)** rewrite the `long_about`
+  blocks, wire them up properly (drop the redundant enum doc-comments) and fix
+  the strings with an `APP_NAME` guard — which makes the richer help text live
+  again and gives the existing sensor real work to do; or **(b)** delete the
+  `long_about` blocks as YAGNI, in which case only removal is needed. Option (b)
+  keeps the current sensor passing forever; option (a) is where it starts
+  catching regressions.
 
 ## Sprach 2.0: CAS Research [M3]
 
