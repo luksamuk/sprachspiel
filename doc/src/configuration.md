@@ -744,8 +744,8 @@ ls -la ~/.config/sprachspiel/config.toml
 Test with debug mode to see active configuration:
 
 ```bash
-sprach -d --init-config  # Shows where config was created
-sprach -d "test query"   # Shows active settings
+sprach -v --init-config  # Shows where config was created
+sprach -v "test query"   # Shows active settings
 ```
 
 ### Changes not taking effect

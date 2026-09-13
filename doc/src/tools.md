@@ -1824,7 +1824,7 @@ None currently.
 See tool calls in debug mode:
 
 ```bash
-sprach -d "Tell me about Pikachu"
+sprach -v "Tell me about Pikachu"
 
 # Output includes:
 # - Tool calls with arguments (detailed format)

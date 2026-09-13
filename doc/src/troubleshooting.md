@@ -86,7 +86,7 @@ sprach --list
 sprach -m qwen3.5-4b -t "Question"
 
 # Check capabilities
-sprach -d "Test query"
+sprach -v "Test query"
 ```
 
 ### "Tools not working"
@@ -103,7 +103,7 @@ sprach -m qwen3.5-4b "Tell me about Pikachu"
 sprach --tools "Tell me about Pikachu"
 
 # Check debug output
-sprach -d "Query"
+sprach -v "Query"
 ```
 
 **Problem:** `invalid character '\u003c'` error
@@ -160,7 +160,7 @@ sprach translate --list pt
 sprach translate -m translategemma-4b en:pt "Text"
 
 # Debug mode
-sprach translate -d en:pt "Text"
+sprach -v translate en:pt "Text"
 ```
 
 ## OCR Issues
@@ -279,10 +279,10 @@ Use debug mode to diagnose issues:
 
 ```bash
 # Enable debug
-sprach -d "Query"
-sprach translate -d en:pt "Text"
-sprach ocr -d image.png
-sprach summarize -d "Text"
+sprach -v "Query"
+sprach -v translate en:pt "Text"
+sprach -v ocr image.png
+sprach -v summarize "Text"
 ```
 
 ## Getting Help
