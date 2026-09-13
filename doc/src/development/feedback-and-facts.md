@@ -11,7 +11,7 @@ Decaimento de feedback, o pipeline de dedup em seis camadas, e a extração auto
 
 **Status:** ✅ COMPLETED (merged PR #98)
 **Related Issue:** #23
-**Detailed Plan:** [`doc/src/development/feedback-architecture.md`](./doc/src/development/feedback-architecture.md) — feedback-driven memory with active forgetting (architecture, formulas, and data model)
+**Detailed Plan:** [Feedback Architecture](./feedback-architecture.md) — feedback-driven memory with active forgetting (architecture, formulas, and data model)
 
 **Goal:** Implement a complete feedback-driven memory system: capture explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion for retrieval ranking, activate content item decay (ghost fields become functional), and connect feedback to forgetting speed. Feedback is harness-only (no fine-tuning) — signals affect RRF fusion scoring AND content importance/decay, not model weights.
 
