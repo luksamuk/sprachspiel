@@ -493,7 +493,7 @@ pub const SAMPLE_CONFIG: &str = r#"# Sprachspiel Configuration File
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: sprach --list-models
+# See all available models with: sprach --list
 # Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"

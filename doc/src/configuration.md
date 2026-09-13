@@ -43,9 +43,9 @@ Sprachspiel looks for the config file in this order:
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: sprach --list-models
-# Default: "qwen3.5-4b"
-default = "qwen3.5-4b"
+# See all available models with: sprach --list
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.
@@ -744,8 +744,8 @@ ls -la ~/.config/sprachspiel/config.toml
 Test with debug mode to see active configuration:
 
 ```bash
-sprach -d --init-config  # Shows where config was created
-sprach -d "test query"   # Shows active settings
+sprach -v --init-config  # Shows where config was created
+sprach -v "test query"   # Shows active settings
 ```
 
 ### Changes not taking effect

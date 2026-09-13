@@ -50,17 +50,20 @@ See [Completed Features](./completed-features.md) for the full list.
 
 ## Upcoming Release
 
-### v0.45.0 (Planned)
+### v0.45.0 — Released 2026-08-19
 
 **Infrastructure:**
 - Config Upgrade Command (#105) — `sprach config upgrade` merges missing default fields into existing config.toml — ✅ Complete
 - Retry Threshold with Backoff (#116) — Recoverable server errors with exponential backoff — ✅ Complete
 - Tool Trait + Proc Macro (#118) — `#[sprachspiel::tool]` replacing `#[ollama_rs::function]` — ✅ Complete
 - Provider-agnostic types (#119–#123) — Full `ollama-rs` removal — ✅ Complete
+- Configurable Embedding Model + Server-Side Matryoshka (#106) — `[indexing].prefix`, auto-detected embedding `context_length`, dynamic vec0 dimensions — ✅ Complete
+
+**See the [Changelog](../CHANGELOG.md) for the full release notes.**
 
 ## Known Issues
 
-No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk/sprachspiel/issues) for the latest status.
+See the [Linear project "Sprachspiel"](https://linear.app/luksamuk/project/sprachspiel-05bb6fb1a5fd) for the live issue tracker (issues migrated from GitHub on 2026-08-19; GitHub retains PRs, reviews and CI only).
 
 ## Sprach 2.0: CAS Research [M3]
 

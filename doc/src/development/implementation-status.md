@@ -4,7 +4,7 @@
 
 ## Current Version
 
-**v0.44.0** — Responsive Chat Rebuild (W6, PR #155)
+**v0.45.0** — Embedding Configurability (PR #232) + `/search` project scope (LUC-141)
 
 ## Milestones
 
@@ -38,7 +38,7 @@
 - ✅ Feedback-Driven Memory (good/bad/correction signals with RRF fusion)
 - ✅ Context Continuity with Graceful Interruption
 - ✅ 3-Layer Compaction Strategy (pre-prune → chunked recursive → fallback truncation)
-- ✅ SQLite storage with sqlite-vec (schema v14, cosine distance)
+- ✅ SQLite storage with sqlite-vec (schema v15, cosine distance)
 - ✅ Embedding generation with Matryoshka truncation (768d → 256d)
 - ✅ Responsive chat rendering at any terminal width (Ratatui)
 - ✅ Thinking content preservation (T3-Phase0, #151)

@@ -26,17 +26,20 @@ MULTI-IMAGE:
   For best multi-image results, use minicpm-v:8b model with -m flag.
 
 EXAMPLES:
-  ask vision photo.png                        # Brief description
-  ask vision --detailed photo.png             # Detailed analysis
-  ask vision screenshot.png "What UI elements are visible?"
-  ask vision img1.png img2.png -m minicpm-v   # Compare images
-  ask vision --json *.png > output.jsonl     # Batch with JSON output
+  sprach vision photo.png                         # Brief description
+  sprach vision --detailed photo.png              # Detailed analysis
+  sprach vision screenshot.png -- "What UI elements are visible?"
+  sprach vision img1.png img2.png -m minicpm-v    # Compare images
+  sprach vision --json *.png > output.jsonl       # Batch with JSON output
 
 MODELS:
-  - qwen3.5:4b (default) - Multimodal, good quality, 128K context
+  - qwen3.5:4b (recommended) - Multimodal, good quality, 128K context
   - moondream:1.8b - Lightweight alternative, 2K context
   - llava:7b - Better quality, good OCR
   - minicpm-v:8b - Best for multi-image tasks
+
+MODEL SELECTION ORDER:
+  -m/--model  >  [model.vision] in config.toml  >  global [model].default
 
 REQUIREMENTS:
   - Ollama must be running locally or accessible remotely
@@ -65,7 +68,7 @@ pub struct VisionArgs {
     #[arg(long)]
     pub json: bool,
 
-    /// Model to use (default: moondream)
+    /// Model to use (default: the global `[model].default` from config.toml)
     #[arg(short, long, value_name = "MODEL")]
     pub model: Option<String>,
 
@@ -78,8 +81,8 @@ impl VisionArgs {
     pub fn validate(&self) -> Result<(), String> {
         if self.files.is_empty() {
             return Err("No image files provided.\n\
-                Usage: ask vision [OPTIONS] <FILE>...\n\
-                Try 'ask vision --help' for more information."
+                Usage: sprach vision [OPTIONS] <FILE>...\n\
+                Try 'sprach vision --help' for more information."
                 .to_string());
         }
         Ok(())

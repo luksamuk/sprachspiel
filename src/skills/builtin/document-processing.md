@@ -67,7 +67,7 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
    ```
 2. For tables, formulas, or scanned text — use **spawn_ocr_agent**:
    ```
-   spawn_ocr_agent("Extract the table structure", "output-3.png", "table")
+   spawn_ocr_agent("output-3.png", "table")
    ```
 3. For charts, graphs, diagrams, or visual figures — use **spawn_vision_agent**:
    ```
@@ -78,9 +78,10 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
 **Important: tool access depends on context:**
 - **In chat mode (with tools)**: Call `spawn_ocr_agent` and `spawn_vision_agent` directly.
   - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to spawn_ocr_agent.
-  - Example: `spawn_ocr_agent("Extract tables", "page-3.png", "table")`
+  - `spawn_ocr_agent` takes `(file_path, ocr_mode)` — no prompt argument; `ocr_mode` accepts `"text"`, `"table"`, or `"formula"`.
+  - Example: `spawn_ocr_agent("page-3.png", "table")`
   - Example: `spawn_vision_agent("Analyze charts in this diagram", "page-5.png")`
-- **In CLI mode (standalone)**: Use `sprach ocr <image.png>` or `sprach vision <file.pdf>`.
+- **In CLI mode (standalone)**: Use `sprach ocr <image.png>` for text extraction, or `sprach vision <image.png>` for image understanding. Neither accepts PDFs directly — convert pages to PNG with `pdftoppm` first.
 
 **Quick reference:**
 | Content type | Primary tool | When to escalate |
@@ -338,13 +339,13 @@ pdfinfo document.pdf | grep Pages
 # Convert pages to images first:
 pdftoppm -png -f 1 -l 5 -r 150 document.pdf output
 # Then analyze the resulting image(s):
-sprach vision output-1.png "Describe the table in this image"
+sprach vision output-1.png -- "Describe the table in this image"
 
 # Chat mode — the LLM orchestrates the pipeline automatically:
 # 1. Convert pages to images:
 #    run_command("pdftoppm", ["-png", "-f", "1", "-l", "5", "-r", "150", "document.pdf", "output"])
 # 2. Then use agent spawning tools:
-#    spawn_ocr_agent("Extract tables", "output-1.png", "table")
+#    spawn_ocr_agent("output-1.png", "table")
 #    spawn_vision_agent("Analyze charts", "output-3.png")
 ```
 
@@ -367,5 +368,5 @@ pdftotext document.pdf - | grep -n "search term"
 ```bash
 pdftoppm -png -f 3 -l 3 -r 150 document.pdf output
 # Then use the vision tool with output-3.png, or in CLI mode:
-sprach vision output-3.png "Describe the table in this image"
+sprach vision output-3.png -- "Describe the table in this image"
 ```

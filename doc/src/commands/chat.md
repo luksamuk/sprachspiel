@@ -32,12 +32,20 @@ Start an interactive chat session with an LLM. Conversations are automatically s
 | `--ignore-agents` | Ignore AGENTS.md file if present |
 | `--soulless` | Skip SOUL.md personality (use neutral personality) |
 | `-v, --verbose` | Increase verbosity: `-v` (verbose), `-vv` (trace) |
+| `--tools-output <LEVEL>` | Tool output verbosity: `compact` (default), `full`, `hidden` |
+
+> **Flag ordering:** most flags are declared **both** at the top level and on the
+> `chat` subcommand, so `sprach chat -m lfm` and `sprach chat --soulless` are
+> valid. The flags that exist **only** at the top level and therefore must come
+> *before* `chat` are: `--plain`, `--code`, `-q/--quiet`, `--db`, `--list`,
+> `--init-config`, `--force` and `-p/--prompt`. Writing one of those after the
+> subcommand (`sprach chat --plain`) is rejected by the CLI parser.
 
 ## Output Format
 
-Interactive chat output is rendered at a fixed width of **80 columns**, regardless of terminal size. This ensures consistent formatting for users who prefer floating terminal windows (e.g., 80x50). The status bar, thinking blocks, markdown responses, and recent context all respect this width.
+Interactive chat is rendered with **Ratatui** and adapts to any terminal width (Responsive Chat Rebuild, v0.44.0). The status bar, thinking blocks, markdown responses, separators and recent context all follow the current terminal width, so resizing the window reflows the layout instead of breaking it.
 
-**Query mode** and other subcommands use the full terminal width.
+**Query mode** and other subcommands use the full terminal width as well.
 
 ## Tool Call Visibility
 
@@ -200,7 +208,7 @@ The `/doc show` and `/doc delete` commands accept multiple ID formats:
 - `doc:N` - Prefixed format: `/doc show doc:1`
 - `N` - Numeric format: `/doc show 1`
 
-All three formats are equivalent and interchangeable. `/doc show` renders markdown content at 80 columns, consistent with `/note show`.
+All three formats are equivalent and interchangeable. `/doc show` renders markdown content responsively, consistent with `/note show`.
 
 **Scope:**
 - Project scope (default): Document visible only in current project

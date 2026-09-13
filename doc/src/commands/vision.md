@@ -17,10 +17,15 @@ Vision provides general image understanding capabilities. It can describe images
 | Argument | Description |
 |----------|-------------|
 | `FILE` | One or more image files to analyze |
-| `PROMPT` | Optional custom prompt (overrides modes) |
+| `PROMPT` | Optional custom prompt (overrides modes). **Must be separated from the file list by `--`**, otherwise it is parsed as another filename. |
+
+> **Why the `--` is required:** the vision command accepts a variable number of
+> positional files, so the parser cannot tell where the file list ends and the
+> prompt begins. Everything after `--` is treated as the prompt.
 
 | Option | Description |
 |--------|-------------|
+| `-m, --model <MODEL>` | Model to use. Defaults to the global `[model].default` from `config.toml`. |
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -41,7 +46,7 @@ These options are specific to the vision subcommand:
 |------|------|-------------|
 | default | (none) | Brief image description |
 | detailed | `--detailed` | Comprehensive analysis with composition, colors, subjects |
-| custom | (prompt arg) | User-defined question or task |
+| custom | (prompt arg, after `--`) | User-defined question or task |
 
 ## Supported Image Formats
 
@@ -205,7 +210,10 @@ tools = false
 
 1. CLI flag `-m` → use specified model
 2. Config file `[model.vision].model` → use configured model
-3. Default → `qwen3.5-4b`
+3. Global default → `[model].default` from `config.toml`
+
+The model must report vision capability, otherwise `vision` aborts with an
+actionable error (use `--force` to override the capability check).
 
 ## Pipelines
 
@@ -214,7 +222,7 @@ tools = false
 sprach vision --detailed photo.png | sprach summarize
 
 # Vision → Translate
-sprach vision photo.png "Describe in Portuguese"
+sprach vision photo.png -- "Describe in Portuguese"
 
 # Multiple images with JSON for processing
 sprach vision --json *.png | jq '.content' > descriptions.txt
@@ -233,13 +241,13 @@ sprach vision --json *.png | jq '.content' > descriptions.txt
 
 ```bash
 # Be specific
-sprach vision photo.png "List all visible objects"
+sprach vision photo.png -- "List all visible objects"
 
 # Ask for structure
-sprach vision diagram.png "Describe this as a numbered list"
+sprach vision diagram.png -- "Describe this as a numbered list"
 
 # Request format
-sprach vision chart.png "Extract the data as a markdown table"
+sprach vision chart.png -- "Extract the data as a markdown table"
 ```
 
 ### Multi-Image Tasks
