@@ -883,6 +883,48 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 ---
 
+### 🟢 PRIORITY: Documentation Inconsistencies Found During Onboarding — LUC-140 [M1]
+
+**Status:** 📋 IN PROGRESS (PR #238)
+**Issue:** LUC-140 (ex gh#228)
+**Branch:** `docs/140-doc-inconsistencies`
+**Depends on:** None (quick win — docs/help-text only)
+
+**Goal:** Fix the documented commands, flags and status markers that contradict the actual CLI, found during a hands-on onboarding session.
+
+**Problem Statement:**
+
+The onboarding audit found commands in the docs that do not exist (`-d`, `--list-models`), syntax that fails (`sprach chat --plain`, `vision` prompt without `--`), and status markers that had drifted behind reality (version, schema). Because these are read by *new* users and by the LLM itself (the built-in skill), they actively mislead.
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1 | `-d` → `-v`/`-vv`; model list no longer claims a "(default)" | `doc/src/quickstart.md` | ✅ COMPLETED |
+| 2 | `--list-models` → `--list` (incl. the generated config template) | `doc/src/configuration.md`, `src/settings.rs` | ✅ COMPLETED |
+| 3 | Colon is optional for translate source auto-detection | `doc/src/commands/translate.md` | ✅ COMPLETED |
+| 4 | Global-flag ordering note (`--plain`/`-m`/`-t`/`-v` precede the subcommand) | `doc/src/commands/chat.md`, `doc/src/quickstart.md` | ✅ COMPLETED |
+| 5 | `/doc import` help: drop PDF/EPUB, add the real `--nowait` flag | `src/chat/commands.rs` | ✅ COMPLETED |
+| 6 | `vision` prompt requires the `--` separator; documented why; added `-m/--model` | `doc/src/commands/vision.md` | ✅ COMPLETED |
+| 7 | Extra: fixed-80-column claim removed (W6 made chat responsive) | `doc/src/commands/chat.md` | ✅ COMPLETED |
+| 8 | Extra: `content/document.rs` no longer lists PDF/EPUB as `FileType`s | `src/content/document.rs` | ✅ COMPLETED |
+| 9 | Extra: version and schema markers synced (v0.45.0, schema v15) | `IMPLEMENTATION.md`, `roadmap.md`, `implementation-status.md` | ✅ COMPLETED |
+| 10 | Extra: `spawn_ocr_agent` signature corrected in the builtin skill (was inducing LLM errors) | `src/skills/builtin/document-processing.md` | ✅ COMPLETED |
+| 11 | Quality gates: fmt, clippy, test (3217 passed) | — | ✅ COMPLETED |
+
+**Design Decisions:**
+
+1. **Verify against the binary, not the issue text.** Every claim was reproduced by running the built `sprach` binary before being changed. This mattered: the issue's item 2 pointed at `quickstart.md`, but the string actually lived in `configuration.md` — and, more importantly, inside the `SAMPLE_CONFIG` in `src/settings.rs`, the file every new user reads. Documentation fixes that are themselves inaccurate are worse than the original defect.
+2. **Scope includes the LLM-facing skill.** The defect class is "documented usage that contradicts the code". The built-in `document-processing` skill showed a 3-argument `spawn_ocr_agent` call while the tool takes 2 (`file_path`, `ocr_mode`) — an LLM follows that skill verbatim, so it was fixed in the same PR.
+3. **LUC-140 was unmilestoned in Linear** — set to M1 (Core Evolution) since it is a pre-TUI quality item, not a TUI/Sprach-2.0 concern.
+4. **Three items beyond the original seven** were fixed because they are the same defect class, not scope creep: the stale "fixed 80 columns" claim, the PDF/EPUB `FileType` listing, and the version/schema markers. Each is a doc asserting what the code contradicts.
+
+**Estimated effort:** ~2-3h (docs + help text only)
+
+**Reference:** Issue LUC-140 (ex gh#228), PR #238
+
+---
+
 ### 🔴 PRIORITY: File Write Tools — Prompt Guidance, Uniqueness Check, and Result Format — #204 [M1]
 
 **Status:** ✅ COMPLETED
