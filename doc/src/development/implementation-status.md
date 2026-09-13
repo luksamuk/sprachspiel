@@ -4,7 +4,7 @@
 
 ## Current Version
 
-**v0.45.0** — Embedding Configurability (PR #232) + `/search` project scope (LUC-141)
+**v0.45.0** — Embedding Configurability (PR #232); `/search` project scope (LUC-141) is under `[Unreleased]`
 
 ## Milestones
 

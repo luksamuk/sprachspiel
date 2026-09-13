@@ -26,8 +26,7 @@ Create summaries of long documents, articles, or any text. The summarize command
 
 | Option | Description |
 |--------|-------------|
-| `-v` | Verbose logging |
-| `-vv` | Trace logging |
+| `--help` | Show help (verbosity `-v`/`-vv` is a **global** flag — put it before the subcommand) |
 | `--help` | Show help |
 
 ## Subcommand Options

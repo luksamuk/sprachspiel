@@ -48,7 +48,7 @@ Sprachspiel is a feature-rich CLI with:
 
 See [Completed Features](./completed-features.md) for the full list.
 
-## Upcoming Release
+## Releases
 
 ### v0.45.0 — Released 2026-08-19
 
@@ -64,6 +64,17 @@ See [Completed Features](./completed-features.md) for the full list.
 ## Known Issues
 
 See the [Linear project "Sprachspiel"](https://linear.app/luksamuk/project/sprachspiel-05bb6fb1a5fd) for the live issue tracker (issues migrated from GitHub on 2026-08-19; GitHub retains PRs, reviews and CI only).
+
+### Open work in the same defect class as the LUC-140 doc audit
+
+- **LUC-142** (created during the LUC-140 audit; no GitHub equivalent — the
+  GitHub tracker is closed history) — the `--help` output of `translate`, `ocr`,
+  `summarize` and `chat` still prints the pre-rename binary name
+  `ask <subcommand>` in examples and usage errors (~50 occurrences across
+  `src/translate/cli.rs`, `src/ocr/cli.rs`, `src/summarize/cli.rs`,
+  `src/chat/cli.rs`). The `vision` instances were fixed in PR #238. Needs a
+  feedforward guard (build the strings from `APP_NAME`) so a future rename
+  cannot drift again, plus a sensor.
 
 ## Sprach 2.0: CAS Research [M3]
 

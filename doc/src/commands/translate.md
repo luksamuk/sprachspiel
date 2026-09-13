@@ -21,8 +21,7 @@ Translate text between languages with automatic source language detection. The c
 
 | Option | Description |
 |--------|-------------|
-| `-v` | Verbose logging |
-| `-vv` | Trace logging |
+| `--help` | Show help (verbosity `-v`/`-vv` is a **global** flag — put it before the subcommand) |
 | `--help` | Show help |
 
 ## Subcommand Options

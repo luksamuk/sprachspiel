@@ -26,9 +26,11 @@ Vision provides general image understanding capabilities. It can describe images
 | Option | Description |
 |--------|-------------|
 | `-m, --model <MODEL>` | Model to use. Defaults to the global `[model].default` from `config.toml`. |
-| `-v` | Verbose logging |
-| `-vv` | Trace logging |
 | `--help` | Show help |
+
+> **Verbosity is a global flag:** `vision` does not declare `-v` itself, so
+> `sprach vision -v img.png` is rejected by the parser. Write it before the
+> subcommand: `sprach -v vision img.png`.
 
 ## Subcommand Options
 

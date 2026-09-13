@@ -78,7 +78,7 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
 **Important: tool access depends on context:**
 - **In chat mode (with tools)**: Call `spawn_ocr_agent` and `spawn_vision_agent` directly.
   - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to spawn_ocr_agent.
-  - `spawn_ocr_agent` takes `(file_path, ocr_mode)` — no prompt argument; `ocr_mode` accepts `"text"`, `"table"`, or `"formula"`.
+  - `spawn_ocr_agent` takes `(file_path, ocr_mode)` — no prompt argument; `ocr_mode` accepts `"text"`, `"table"`, `"figure"`, or `"formula"`.
   - Example: `spawn_ocr_agent("page-3.png", "table")`
   - Example: `spawn_vision_agent("Analyze charts in this diagram", "page-5.png")`
 - **In CLI mode (standalone)**: Use `sprach ocr <image.png>` for text extraction, or `sprach vision <image.png>` for image understanding. Neither accepts PDFs directly — convert pages to PNG with `pdftoppm` first.

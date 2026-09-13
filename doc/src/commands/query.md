@@ -42,8 +42,7 @@ These options must be placed **before** the `query` subcommand:
 
 | Option | Description |
 |--------|-------------|
-| `-v` | Verbose logging |
-| `-vv` | Trace logging |
+| `--help` | Show help (verbosity `-v`/`-vv` is a **global** flag — put it before the subcommand) |
 | `--help` | Show help |
 
 ## Prompt Modes
@@ -288,7 +287,7 @@ sprach --ignore-agents "General question"
 2. **Use think mode** - For complex reasoning or math problems
 3. **Code mode** - When you want code without explanations
 4. **Pipe when needed** - For processing or saving responses
-5. **Debug for issues** - Use `-d` to troubleshoot problems
+5. **Debug for issues** - Use `-v` (or `-vv` for a full trace) to troubleshoot problems
 
 ## See Also
 

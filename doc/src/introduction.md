@@ -116,7 +116,7 @@ graph LR
 - Use `sprach --help` for quick reference
 - Use `man sprach` for detailed man page
 - Check this documentation for comprehensive guides
-- Enable debug mode with `-d` flag for troubleshooting
+- Enable debug mode with `-v` (or `-vv` for a full trace) for troubleshooting
 
 ## Next Steps
 

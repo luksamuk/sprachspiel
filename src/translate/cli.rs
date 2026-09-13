@@ -115,7 +115,7 @@ Send a query to an LLM model.
 EXAMPLES:
   ask query "What is Rust?"
   ask q "Explain async/await"
-  ask -m lfm query "Hello"
+  sprach -m qwen3.5:4b query "Hello"
   echo "text" | ask query
   ask -t query "Think deeply about this"
 "#
