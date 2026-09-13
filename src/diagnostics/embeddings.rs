@@ -263,7 +263,7 @@ pub fn analyze_embeddings_with_progress(
     progress("Finalizing analysis", 0.99);
     let regimes = compute_regimes(mean_cd);
     let variance_explained = compute_variance_explained(&eigenvalues, d);
-    let threshold_recommendation = recommend_threshold(d_eff, mean_cd, &regimes);
+    let threshold_recommendation = recommend_threshold(mean_cd, &regimes);
 
     EmbeddingDiagnostics {
         vector_count: n,
@@ -692,6 +692,12 @@ fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
 
 /// Recommend a semantic threshold and weight configuration based on observed geometry.
 ///
+/// The recommendation is derived from the **regime classification across a
+/// range of candidate thresholds** plus the mean cosine distance — not from
+/// `d_eff`. (A `d_eff` parameter used to be accepted here and silently
+/// ignored; it was removed rather than left as a misleading part of the
+/// signature. Wiring `d_eff` into the recommendation is LUC-93's scope.)
+///
 /// The recommendation follows these rules:
 ///
 /// - **TIGHT at θ=0.70:** Default threshold 0.70 is appropriate. Vectors
@@ -710,7 +716,6 @@ fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
 ///   This usually means the corpus is too small or too homogeneous. Threshold
 ///   doesn't matter much; suggest 0.70 with a warning.
 pub fn recommend_threshold(
-    _d_eff: f64,
     mean_cosine_distance: f64,
     regimes: &[RegimeAtThreshold],
 ) -> ThresholdRecommendation {
@@ -1134,7 +1139,7 @@ mod tests {
     fn test_recommend_threshold_tight_at_070() {
         // d̄ = 0.2, so at θ=0.70, θ'=0.30, and 0.2 < 0.30 → TIGHT
         let regimes = compute_regimes(0.2);
-        let rec = recommend_threshold(10.0, 0.2, &regimes);
+        let rec = recommend_threshold(0.2, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
@@ -1174,7 +1179,7 @@ mod tests {
             "d̄=0.28 ≥ θ'=0.15 at θ=0.85"
         );
 
-        let rec = recommend_threshold(10.0, 0.28, &regimes);
+        let rec = recommend_threshold(0.28, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
@@ -1204,7 +1209,7 @@ mod tests {
             );
         }
 
-        let rec = recommend_threshold(10.0, 0.65, &regimes);
+        let rec = recommend_threshold(0.65, &regimes);
         assert!(
             (rec.semantic_threshold - 0.85).abs() < 0.01,
             "SPREAD everywhere should recommend θ=0.85, got {}",
@@ -1231,7 +1236,7 @@ mod tests {
     fn test_recommend_threshold_very_low_distance() {
         // d̄ = 0.05 → all TIGHT, but edge case because vectors are nearly identical
         let regimes = compute_regimes(0.05);
-        let rec = recommend_threshold(10.0, 0.05, &regimes);
+        let rec = recommend_threshold(0.05, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "Very low d̄ should recommend default θ=0.70, got {}",
@@ -1263,7 +1268,7 @@ mod tests {
         assert_eq!(regimes[3].regime, Regime::Spread); // 0.85
 
         // TIGHT at 0.70 → default threshold 0.70, no adjustment
-        let rec = recommend_threshold(10.0, 0.22, &regimes);
+        let rec = recommend_threshold(0.22, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
@@ -1302,7 +1307,7 @@ mod tests {
         );
 
         // tight_at_070=true → recommend θ=0.70 (default)
-        let rec = recommend_threshold(10.0, 0.18, &regimes);
+        let rec = recommend_threshold(0.18, &regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",

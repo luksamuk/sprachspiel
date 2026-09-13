@@ -652,7 +652,6 @@ fn get_todo_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
 /// Tools are filtered based on:
 /// - Feature flags (compile-time)
 /// - Settings blacklist (runtime)
-/// - API key availability (for Serper)
 pub fn register_tools<C>(mut coordinator: C, settings: &Settings) -> (C, usize)
 where
     C: ToolRegistrar,
