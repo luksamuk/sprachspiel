@@ -45,6 +45,11 @@
 - [File Write Tools](./development/file-write-tools.md)
 - [Unified Vision](./development/unified-vision.md)
 - [Embedding Scheduler Redesign](./development/embedding-scheduler-redesign.md)
+- [Context Overflow](./development/context-overflow.md)
+- [Embedding Diagnostics](./development/embedding-diagnostics.md)
+- [Feedback & Facts](./development/feedback-and-facts.md)
+- [TODO System & Status Bar](./development/todo-and-status-bar.md)
+- [Agent Tools](./development/agent-tools.md)
 
 # Roadmap & Planning
 
@@ -86,6 +91,17 @@
 - [Legacy Overview](./development/legacy.md)
   - [Context Composition Design](./development/context_composition_design.md)
   - [Retrieval Design](./development/retrieval-design.md)
+
+# Architecture Decision Records
+
+> Documentos **históricos e decisórios**. Registram *por que* algo foi decidido — a
+> racionalidade e as alternativas descartadas — e não descrevem o comportamento atual.
+> Consulte-os para entender o *porquê*; para o *como é hoje*, veja
+> [Architecture](./development/README.md). Se o código contradiz um registro, o código
+> está certo.
+
+- [ADR Overview](./adr/README.md)
+  - [Validated Decisions & ADRs](./adr/decisions.md)
 
 ---
 
