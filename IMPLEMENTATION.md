@@ -885,7 +885,7 @@ All progress is lost, and the retry starts from scratch, wasting tokens.
 
 ### 🟢 PRIORITY: Documentation Inconsistencies Found During Onboarding — LUC-140 [M1]
 
-**Status:** 📋 IN PROGRESS (PR #238)
+**Status:** ✅ COMPLETED (PR #238)
 **Issue:** LUC-140 (ex gh#228)
 **Branch:** `docs/140-doc-inconsistencies`
 **Depends on:** None (quick win — docs/help-text only)
@@ -910,7 +910,9 @@ The onboarding audit found commands in the docs that do not exist (`-d`, `--list
 | 8 | Extra: `content/document.rs` no longer lists PDF/EPUB as `FileType`s | `src/content/document.rs` | ✅ COMPLETED |
 | 9 | Extra: version and schema markers synced (v0.45.0, schema v15) | `IMPLEMENTATION.md`, `roadmap.md`, `implementation-status.md` | ✅ COMPLETED |
 | 10 | Extra: `spawn_ocr_agent` signature corrected in the builtin skill (was inducing LLM errors) | `src/skills/builtin/document-processing.md` | ✅ COMPLETED |
-| 11 | Quality gates: fmt, clippy, test (3217 passed) | — | ✅ COMPLETED |
+| 11 | Adversarial review pass — 12 findings, all verified and fixed (flag list was wrong; `-d` still in 4 more files; schema v14 in SMOKE_TEST.md; vision default-model triple contradiction) | various | ✅ COMPLETED |
+| 12 | Quality gates: fmt, clippy, test (3223 passed) | — | ✅ COMPLETED |
+| 13 | **Sensor:** `tests/docs_consistency.rs` — 6 checks guarding this defect class | New file | ✅ COMPLETED |
 
 **Design Decisions:**
 
