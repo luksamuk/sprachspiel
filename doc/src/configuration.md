@@ -43,7 +43,7 @@ Sprachspiel looks for the config file in this order:
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: sprach --list-models
+# See all available models with: sprach --list
 # Default: "qwen3.5-4b"
 default = "qwen3.5-4b"
 

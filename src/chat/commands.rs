@@ -1277,7 +1277,7 @@ Notes:
   /note search <query> [--global] [limit]            Search notes
 
 Documents:
-  /doc import <path> [--global]   Import a document (TXT, MD, ORG, PDF, EPUB)
+  /doc import <path> [--global] [--nowait]   Import a document (TXT, MD, ORG only)
   /doc list [--global]            List documents
   /doc show <id>                  Show a document
   /doc delete <id>                Delete a document

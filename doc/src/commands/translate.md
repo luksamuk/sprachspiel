@@ -16,7 +16,7 @@ Translate text between languages with automatic source language detection. The c
 
 | Argument | Description |
 |----------|-------------|
-| `LANGUAGE` | Language pair in format `[source:]target` or just `target` for auto-detect |
+| `LANGUAGE` | Language pair in format `[source:]target` — the source is optional, so `pt` alone means "translate to Portuguese" |
 | `TEXT` | Text to translate. Reads from stdin if not provided. |
 
 | Option | Description |
@@ -62,11 +62,13 @@ These options are specific to the translate subcommand:
 # Explicit source and target
 sprach translate en:pt "Hello"
 
-# Auto-detect source (colon required)
+# Auto-detect source (colon form)
 sprach translate :pt "Hello"
 
-# Just target language (auto-detect implied)
+# Just target language (auto-detect implied — colon optional)
 sprach translate pt "Hello"
+
+# Source is optional; the target is always required
 ```
 
 ## Examples

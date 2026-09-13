@@ -108,8 +108,12 @@ Here are flags you'll use often:
 | `-m` | Select model | `sprach -m qwen3.5:4b "query"` |
 | `-t` | Think mode | `sprach -t "complex question"` |
 | `--plain` | No markdown | `sprach --plain "text"` |
-| `-d` | Debug mode | `sprach -d "query"` |
+| `-v` | Verbose (`-vv` for trace) | `sprach -v "query"` |
 | `--help` | Show help | `sprach --help` |
+
+> **Flag ordering:** global flags such as `--plain`, `-m`, `-v` and `--soulless`
+> belong **before** the subcommand: `sprach --plain query "text"`. Writing them
+> after the subcommand (`sprach query --plain`) is rejected by the CLI parser.
 
 ## List Available Resources
 
@@ -172,14 +176,14 @@ cat to-translate.txt | sprach translate :pt
 
 ## Quick Tips
 
-1. **Use `-d` for troubleshooting**: If something isn't working, add `-d` to see what's happening
+1. **Use `-v` for troubleshooting**: If something isn't working, add `-v` (or `-vv` for a full trace) to see what's happening
 
 2. **Pipe-friendly**: Most commands accept input from stdin, making them perfect for scripts
 
 3. **Markdown by default**: Output is formatted with markdown. Use `--plain` for raw text
 
-4. **Model selection**: Different tasks benefit from different models:
-   - General queries: `qwen3.5:4b` (default)
+4. **Model selection**: Different tasks benefit from different models. The names below are examples — your default depends on your own `models.toml` and `config.toml`:
+   - General queries: `qwen3.5:4b`
    - Coding: `ornith-1.0-35b` (code mode)
    - Tools: `qwen3.5:4b`
    - Summarization: `qwen3.5:4b`

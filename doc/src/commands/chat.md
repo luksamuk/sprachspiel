@@ -33,11 +33,16 @@ Start an interactive chat session with an LLM. Conversations are automatically s
 | `--soulless` | Skip SOUL.md personality (use neutral personality) |
 | `-v, --verbose` | Increase verbosity: `-v` (verbose), `-vv` (trace) |
 
+> **Flag ordering:** `--plain`, `-m`, `-t`, `-v` and `--soulless` are **global**
+> flags and must come **before** the subcommand — `sprach --plain chat`, not
+> `sprach chat --plain` (the latter is rejected by the CLI parser). Flags listed
+> in the table above are the chat-specific ones and do belong after `chat`.
+
 ## Output Format
 
-Interactive chat output is rendered at a fixed width of **80 columns**, regardless of terminal size. This ensures consistent formatting for users who prefer floating terminal windows (e.g., 80x50). The status bar, thinking blocks, markdown responses, and recent context all respect this width.
+Interactive chat is rendered with **Ratatui** and adapts to any terminal width (Responsive Chat Rebuild, v0.44.0). The status bar, thinking blocks, markdown responses, separators and recent context all follow the current terminal width, so resizing the window reflows the layout instead of breaking it.
 
-**Query mode** and other subcommands use the full terminal width.
+**Query mode** and other subcommands use the full terminal width as well.
 
 ## Tool Call Visibility
 
@@ -200,7 +205,7 @@ The `/doc show` and `/doc delete` commands accept multiple ID formats:
 - `doc:N` - Prefixed format: `/doc show doc:1`
 - `N` - Numeric format: `/doc show 1`
 
-All three formats are equivalent and interchangeable. `/doc show` renders markdown content at 80 columns, consistent with `/note show`.
+All three formats are equivalent and interchangeable. `/doc show` renders markdown content responsively, consistent with `/note show`.
 
 **Scope:**
 - Project scope (default): Document visible only in current project

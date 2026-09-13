@@ -1,6 +1,6 @@
 //! Document types for the Content System
 //!
-//! Documents are imported files (TXT, MD, ORG, PDF, EPUB) that are
+//! Documents are imported plain-text files (TXT, MD, ORG) that are
 //! stored for semantic search and retrieval. Unlike notes (LLM-created),
 //! documents are user-imported files that get chunked and embedded.
 //!
@@ -12,7 +12,11 @@
 //! # Feature Dependencies
 //!
 //! - TXT/MD/ORG: Builtin support, no dependencies
-//! - PDF/EPUB: Requires `skills-tools` feature (uses document-processing skill)
+//!
+//! PDF and EPUB are intentionally **not** supported by `import_document`:
+//! `detect_file_type()` rejects them with a pointer to `run_command`
+//! (`pdftotext` / `epub2txt`), so extraction stays inside the tool whitelist
+//! and Landlock sandbox. The extracted text is then imported as TXT/MD.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
