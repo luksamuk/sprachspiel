@@ -205,7 +205,10 @@ fn documents_do_not_cite_nonexistent_source_paths() {
         }
     }
 
-    assert!(checked > 0, "sensor found no documents to check — check `documents()`");
+    assert!(
+        checked > 0,
+        "sensor found no documents to check — check `documents()`"
+    );
     assert!(
         offenders.is_empty(),
         "documents cite `src/**` paths that do not exist ({} found across {checked} \
@@ -313,9 +316,12 @@ fn cargo_manifest_declares_a_version() {
 #[allow(dead_code)] // used by checks added when the binary is needed
 fn binary() -> Option<PathBuf> {
     let root = repo_root();
-    [root.join("target/debug/sprach"), root.join("target/release/sprach")]
-        .into_iter()
-        .find(|p| p.exists())
+    [
+        root.join("target/debug/sprach"),
+        root.join("target/release/sprach"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
 }
 
 #[allow(dead_code)] // paired with `binary()`
