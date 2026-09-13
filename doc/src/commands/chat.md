@@ -32,11 +32,14 @@ Start an interactive chat session with an LLM. Conversations are automatically s
 | `--ignore-agents` | Ignore AGENTS.md file if present |
 | `--soulless` | Skip SOUL.md personality (use neutral personality) |
 | `-v, --verbose` | Increase verbosity: `-v` (verbose), `-vv` (trace) |
+| `--tools-output <LEVEL>` | Tool output verbosity: `compact` (default), `full`, `hidden` |
 
-> **Flag ordering:** `--plain`, `-m`, `-t`, `-v` and `--soulless` are **global**
-> flags and must come **before** the subcommand — `sprach --plain chat`, not
-> `sprach chat --plain` (the latter is rejected by the CLI parser). Flags listed
-> in the table above are the chat-specific ones and do belong after `chat`.
+> **Flag ordering:** most flags are declared **both** at the top level and on the
+> `chat` subcommand, so both `sprach --plain chat` and `sprach chat -m lfm` are
+> valid. The flags that exist **only** at the top level and therefore must come
+> *before* `chat` are: `--plain`, `--code`, `-q/--quiet`, `--db`, `--list`,
+> `--init-config` and `-p/--prompt`. Writing one of those after the subcommand
+> (`sprach chat --plain`) is rejected by the CLI parser.
 
 ## Output Format
 

@@ -111,9 +111,14 @@ Here are flags you'll use often:
 | `-v` | Verbose (`-vv` for trace) | `sprach -v "query"` |
 | `--help` | Show help | `sprach --help` |
 
-> **Flag ordering:** global flags such as `--plain`, `-m`, `-v` and `--soulless`
-> belong **before** the subcommand: `sprach --plain query "text"`. Writing them
-> after the subcommand (`sprach query --plain`) is rejected by the CLI parser.
+> **Flag ordering:** where you put a flag depends on whether the subcommand
+> declares it. `--plain`, `--code`, `-q` and `--db` exist **only** at the top
+> level, so they must come before the subcommand (`sprach --plain query "text"`);
+> writing them after it (`sprach query --plain`) is rejected by the parser.
+>
+> `-m` is inconsistent across subcommands: it is accepted after `ocr`,
+> `summarize` and `vision`, but rejected after `query` and `translate`. Put `-m`
+> **before** the subcommand and it always works: `sprach -m qwen3.5:4b query "..."`.
 
 ## List Available Resources
 

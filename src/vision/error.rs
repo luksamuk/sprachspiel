@@ -83,7 +83,7 @@ fn format_ollama_error(message: &str) -> String {
 }
 
 fn format_no_images() -> String {
-    "Error: No image files provided.\n\nUsage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information.".to_string()
+    "Error: No image files provided.\n\nUsage: sprach vision [OPTIONS] <FILE>...\nTry 'sprach vision --help' for more information.".to_string()
 }
 
 fn format_no_vision_capability(model: &str) -> String {

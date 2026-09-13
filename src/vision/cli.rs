@@ -26,11 +26,11 @@ MULTI-IMAGE:
   For best multi-image results, use minicpm-v:8b model with -m flag.
 
 EXAMPLES:
-  ask vision photo.png                        # Brief description
-  ask vision --detailed photo.png             # Detailed analysis
-  ask vision screenshot.png "What UI elements are visible?"
-  ask vision img1.png img2.png -m minicpm-v   # Compare images
-  ask vision --json *.png > output.jsonl     # Batch with JSON output
+  sprach vision photo.png                         # Brief description
+  sprach vision --detailed photo.png              # Detailed analysis
+  sprach vision screenshot.png -- "What UI elements are visible?"
+  sprach vision img1.png img2.png -m minicpm-v    # Compare images
+  sprach vision --json *.png > output.jsonl       # Batch with JSON output
 
 MODELS:
   - qwen3.5:4b (default) - Multimodal, good quality, 128K context
@@ -78,8 +78,8 @@ impl VisionArgs {
     pub fn validate(&self) -> Result<(), String> {
         if self.files.is_empty() {
             return Err("No image files provided.\n\
-                Usage: ask vision [OPTIONS] <FILE>...\n\
-                Try 'ask vision --help' for more information."
+                Usage: sprach vision [OPTIONS] <FILE>...\n\
+                Try 'sprach vision --help' for more information."
                 .to_string());
         }
         Ok(())
