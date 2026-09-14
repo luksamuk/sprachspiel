@@ -107,7 +107,7 @@ Three separate double-counting bugs were discovered and fixed:
 - `src/tokens.rs` - Fixed `calculate_context_metrics()` to not double-count
 - `src/chat/continuation.rs` - Split warning/compact logic, fixed remaining calculation
 - `src/chat/core.rs` - Removed duplicate warning when tools enabled
-- `src/chat/custom_coordinator.rs` - Updated function calls for new signatures
+- `src/chat/coordinator.rs` - Updated function calls for new signatures
 - `src/prompts/base.rs` - Restructured `COMPACTION_PROMPT` with structured template
 - `src/utils.rs` - Added `truncate_to_budget()` for emergency truncation
 - `tests/context_tool_overflow.rs` - Updated for percentage-based thresholds
@@ -173,7 +173,7 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 | 6 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ Done |
 
 **New Files/Functions:**
-- `src/chat/custom_coordinator.rs`: Added `ChatEvent::ContextNeedsCompaction`, error string format with `CONTEXT_NEEDS_COMPACT:` prefix
+- `src/chat/coordinator.rs`: Added `ChatEvent::ContextNeedsCompaction`, error string format with `CONTEXT_NEEDS_COMPACT:` prefix
 - `src/chat/continuation.rs`: Added `OverflowHandleResult`, `is_inter_tool_compaction_error()`, `parse_inter_tool_compaction_error()`, `handle_inter_tool_compaction_error()`, `build_inter_tool_compaction_prompt()`
 - `src/prompts/base.rs`: Added `CONTINUATION_PROMPT_INTER_TOOL` for continuation after compaction
 - `src/chat/repl.rs`: Added `MAX_COMPACTION_CYCLES` constant (module level)

@@ -1088,7 +1088,7 @@ if let Some(facts) = &self.facts {
 | `src/facts/decay.rs` | Ebbinghaus decay calculations |
 | `src/facts/conflict.rs` | Conflict detection and resolution |
 | `src/facts/prompt.rs` | Build "## User Facts" section |
-| `src/tools/facts.rs` | LLM tools |
+| `src/tools/fact_tools.rs` | LLM tools |
 
 ### Modified Files
 

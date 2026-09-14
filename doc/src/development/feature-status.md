@@ -427,11 +427,11 @@ thinking = false
 | File | Change |
 |------|--------|
 | `src/provider/mod.rs` | NEW - Provider trait and registry |
-| `src/provider/ollama.rs` | NEW - OllamaProvider adapter |
-| `src/provider/openai.rs` | NEW - OpenAICompatibleProvider |
+| `src/provider/openai_compat.rs` | NEW - OllamaProvider adapter |
+| `src/provider/openai_compat.rs` | NEW - OpenAICompatibleProvider |
 | `src/settings.rs` | Provider configuration parsing |
 | `src/capabilities.rs` | Config-based capability detection |
-| `src/chat/custom_coordinator.rs` | Use `LlmProvider` trait instead of `ollama-rs` directly |
+| `src/chat/coordinator.rs` | Use `LlmProvider` trait instead of `ollama-rs` directly |
 | `src/embeddings/client.rs` | Provider abstraction for embeddings |
 
 **Dependencies:**

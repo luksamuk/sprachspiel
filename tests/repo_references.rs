@@ -74,6 +74,42 @@ fn is_removal_note(line: &str) -> bool {
         || l.contains("legacy")
 }
 
+/// Lines that present a path as *proposed* rather than as existing code.
+///
+/// Several documents legitimately contain implementation plans: "**Files to
+/// create:** `src/tools/run_command.rs`", "Create `src/tools/skills.rs` with…",
+/// "**EmbeddingQueue** (`src/embeddings/queue.rs`, new)". Flagging those would
+/// push someone to delete a plan for being "wrong".
+///
+/// Detecting this reliably needs the *section* context, not just the line — a
+/// `Files to create:` heading governs the bullet list under it. The caller
+/// therefore tracks whether it is inside an implementation-plan block.
+fn opens_plan_block(line: &str) -> bool {
+    let l = line.to_lowercase();
+    l.contains("files to create")
+        || l.contains("files to modify")
+        || l.contains("new files")
+        || l.contains("implementation phases")
+        || l.contains("tasks:")
+        || l.contains("proposed")
+}
+
+/// A line that reads as a plan item rather than a statement of fact.
+fn is_plan_item(line: &str) -> bool {
+    let l = line.to_lowercase();
+    l.contains("create `src/")
+        || l.contains("add `src/")
+        || l.contains(", new)")
+        || l.contains("(new)")
+        || l.contains("new file")
+        || l.contains("to create")
+        || l.contains("proposed")
+        || l.contains("plan:")
+        // A markdown bullet under a plan heading is itself plan material; the
+        // caller only calls this when inside a plan block.
+        || line.trim_start().starts_with("- `src/")
+}
+
 /// Placeholder and glob shapes that appear in how-to documentation. These are
 /// not claims about the tree, so they must not be treated as citations.
 fn is_placeholder(cited: &str) -> bool {
@@ -175,9 +211,6 @@ fn exists(cited: &str) -> bool {
 }
 
 #[test]
-#[ignore = "36 known violations across 12 documents — tracked in LUC-145. \
-            Remove this attribute when that issue lands; the sensor is correct \
-            and already verified to detect the defect class."]
 fn documents_do_not_cite_nonexistent_source_paths() {
     let mut offenders = Vec::new();
     let mut checked = 0;
@@ -190,8 +223,17 @@ fn documents_do_not_cite_nonexistent_source_paths() {
             continue;
         };
         checked += 1;
+        // Track whether we are inside an implementation-plan block: a
+        // "Files to create:" heading governs the bullets under it until a
+        // blank-line-separated section change.
+        let mut in_plan = false;
         for (lineno, line) in text.lines().enumerate() {
-            if is_removal_note(line) {
+            if opens_plan_block(line) {
+                in_plan = true;
+            } else if line.starts_with("## ") || line.starts_with("# ") {
+                in_plan = false;
+            }
+            if is_removal_note(line) || in_plan || is_plan_item(line) {
                 continue;
             }
             for cited in cited_paths(line) {

@@ -249,8 +249,8 @@ pub fn execute_sandboxed(tool: &ExternalTool, args: &[String]) -> Result<Output>
 
 **Files to create:**
 - `src/external/mod.rs`
-- `src/external/registry.rs`
-- `src/external/executor.rs`
+- `src/tools/registry.rs`
+- `src/query/executor.rs`
 - `src/external/config.rs`
 - `src/tools/tool_check.rs`
 - `src/tools/run_command.rs`
@@ -287,7 +287,7 @@ shell-words = "1.1"  # Safe argument parsing (optional)
 ### Phase 3: Document Import
 
 **Files to create:**
-- `src/db/documents.rs` (new table)
+- `src/tools/documents.rs` (new table)
 - `src/tools/import_doc.rs`
 
 **Changes:**
@@ -303,7 +303,7 @@ shell-words = "1.1"  # Safe argument parsing (optional)
 ### Phase 4: Notes System
 
 **Files to create:**
-- `src/db/notes.rs` (new table)
+- `src/tools/notes.rs` (new table)
 - `src/tools/notes.rs`
 
 **Changes:**

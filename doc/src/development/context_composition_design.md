@@ -449,7 +449,7 @@ semantic_weight = 0.6
 4. Test threshold triggers
 
 ### Phase 5: Auto-Retrieval
-1. Create `src/retrieval/context.rs`
+1. Create `src/context.rs`
 2. Implement `build_context` function
 3. Integrate with ChatSession
 4. Add configuration

@@ -591,7 +591,7 @@ configs.insert(
 
 ## Prompt Configuration
 
-System prompts are defined in `src/prompts.rs`. To customize prompts, edit the source code:
+System prompts are defined in `src/prompts/`. To customize prompts, edit the source code:
 
 ```rust
 // In src/prompts.rs
