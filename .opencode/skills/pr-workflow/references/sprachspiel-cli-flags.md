@@ -222,6 +222,58 @@ shipped; not every version was published as a release. Do not "fix" those.
 hand produced both a wrong order and a duplicated heading in the same edit — caught
 only by asserting `sorted(dates, reverse=True) == dates` and checking for repeats.
 
+## Verbatim migration: never describe the source, verify it
+
+When restoring text between stores (Linear ← `IMPLEMENTATION.md`, docs ← tracker), the text must
+move **file → API by script**, never through your own retyping or paraphrase. Then verify by
+reading the destination back and comparing against the original.
+
+### Extraction bugs silently truncate, and then look like properties of the source
+
+Splitting a document on the wrong heading level cuts bodies at the first sub-heading:
+
+```python
+re.split(r'^(#{2,4} .+)$', doc, re.M)   # ❌ #### subsections end the parent body
+re.split(r'^(#{2,3} .+)$', doc, re.M)   # ✅ #### stays inside its ### parent
+```
+
+This produced a section ending mid-sentence (`**Source:** Privacy filter in`). **The trap:** the
+truncation looks like a defect *of the original*, so the natural next move is to write a note
+explaining it — "preserved as-is rather than completed by guesswork" — which is a **fabricated
+claim about the source**. The source was fine; the extractor was not.
+
+**Rule:** before writing any statement about what the source contains or lacks ("the original
+ends here", "this section has no X"), diff the extracted text against the source. Never describe
+unverified behaviour of a file — check the file.
+
+**Sanity check on sizes:** section lengths should match what the document reports (e.g. a section
+measured at 6,418 chars must not extract as 1,431). A size mismatch is an extraction bug until
+proven otherwise. Compare against the pre-consolidation copy
+(`~/sprachspiel-backlog-backup-20260913/IMPLEMENTATION.md.original`) or `git show <sha>^:FILE`.
+
+### Verifying a restored body in Linear
+
+Read the body back (not what you sent) and compare with the source. Linear normalises markdown, so
+normalise before comparing or you will chase ghosts:
+
+| Source form | Linear stores as | Not a loss |
+|---|---|---|
+| `|---|` separator rows | `- - -` | table still renders |
+| `- item` list markers | marker dropped | list still renders |
+| bare `https://…` | `<https://…>` | link preserved |
+
+```python
+def norm(s):
+    s = re.sub(r'<https?://[^>]+>', '', s)      # Linear autolinks
+    s = re.sub(r'\|[\s\-:|]+\|', '|', s)        # separator rows
+    s = re.sub(r'[\s\-]{3,}', ' ', s)           # --- and - - -
+    return re.sub(r'\s+', ' ', re.sub(r'[*`_>#\[\]()]', '', s)).lower()
+```
+
+Coverage below 100% after this normalisation is a **real** loss — investigate each missing block
+and quote what the destination actually contains before concluding. Report coverage per item; do
+not accept "97% is close enough" without knowing what the other 3% is.
+
 ## Verification commands
 
 ```bash
