@@ -278,6 +278,13 @@ fn push_messages_as_chat_messages<'a, I>(
 /// 4. Recent messages (chronological)
 /// 5. Current query (always last)
 ///
+/// Note — this orders *slots*, it does not reorder passages inside the retrieved
+/// block. Reordering passages into LLM-favoured positions was evaluated and
+/// dropped: Cuconasu et al. 2025 (arXiv:2505.15561) test that strategy and find
+/// it performs no better than random shuffling. What matters is keeping relevant
+/// content out of the middle, which is what this function does. See
+/// `doc/src/development/research-icebox.md` §D-12 (LUC-144).
+///
 /// Returns ContextResult with messages and retrieval status.
 pub async fn build_context(
     session: &ChatSession,
