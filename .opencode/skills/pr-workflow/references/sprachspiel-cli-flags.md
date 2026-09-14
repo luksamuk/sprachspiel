@@ -187,6 +187,41 @@ invisible or noise — both were caught by the owner in review, not by the agent
 output for your text. A blockquote in `SUMMARY.md` passes review by looking right in the
 source while being absent from every generated page.
 
+## Dates and versions: verify against the tag, never infer
+
+When editing `doc/src/CHANGELOG.md` version headings, the canonical date is the
+**tag's commit date**. Inferring it from neighbouring sections is inventing data.
+
+```bash
+# canonical date per released version
+git log -1 --format='%ad' --date=short v0.39.5
+
+# what releases actually exist, with their published dates
+gh api repos/luksamuk/sprachspiel/releases --paginate \
+  | python3 -c "import json,sys; [print(r['tag_name'], r['published_at'][:10]) for r in json.load(sys.stdin)]"
+```
+
+Cross-check all of them at once rather than spot-checking; a single pass found
+four wrong dates and one section missing entirely:
+
+```python
+# for each release: does the changelog date equal the tag commit date?
+git log -1 --format='%ad' --date=short v<ver>   vs   ## [<ver>] - <date>
+```
+
+**A version jump is not an error and needs no note** (see the roles table above).
+**A section with no tag and no release must not carry a date** — either omit the
+date or mark it unreleased, and say what the evidence is. `## [0.27.0] — unreleased
+(planned here, shipped as 0.27.1)` is honest; `## [0.27.0] - 2026-03-09` copied
+from a neighbour is fabrication.
+
+**Sections without a GitHub release are not errors.** The changelog records what
+shipped; not every version was published as a release. Do not "fix" those.
+
+**Validate chronology mechanically after moving sections.** Inserting a section by
+hand produced both a wrong order and a duplicated heading in the same edit — caught
+only by asserting `sorted(dates, reverse=True) == dates` and checking for repeats.
+
 ## Verification commands
 
 ```bash
