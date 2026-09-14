@@ -1218,13 +1218,7 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Database Module** - `get_storage_path()` made public for error diagnostics
 
-## [0.35.0] - Unreleased (version skipped)
-
-> **Note:** this version number was never released — `Cargo.toml` went from 0.34.0
-> straight to 0.36.0, and no `v0.35.0` tag exists. The changes below are real and were
-> shipped; they are recorded under this heading because that is where the history was
-> written at the time. Kept as-is rather than renumbered, so the changelog still matches
-> what commits and PRs of that period referenced.
+## [0.35.0]
 
 ### Fixed
 
