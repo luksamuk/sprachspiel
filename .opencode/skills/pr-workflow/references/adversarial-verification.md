@@ -71,3 +71,43 @@ Long adversarial passes are cheap in tokens but slow in wall-clock — one took
 ~20 minutes and 39 tool calls. Start it as soon as the claims are stable (right
 after the implementation commit), so it finishes while you are still writing the
 PR body and running gates, rather than after the merge.
+
+## Scope the verifier: no builds, and fewer claims per pass
+
+Two failure modes, both observed in one session, both fixable in the dispatch
+prompt:
+
+**1. Do not let the verifier run builds or the test suite.** It burns its budget
+on work you are already doing — one verifier spent half of 42 calls on two
+`cargo test` runs plus a `sleep 120`, then hit the wall-clock timeout while still
+collecting data. Say it explicitly:
+
+> Do NOT run cargo test / clippy / build (too slow) — verify with grep, sed, git,
+> read_file only. The main agent already runs the suite.
+
+**2. Keep a pass to ~5 claims.** A 12-claim pass timed out at 1500s with 42 calls
+having produced all its evidence but no synthesis. The same material split into a
+5-claim pass finished in 116s with 6 calls. If you have many claims, either run
+two narrow passes or state that partial results are acceptable.
+
+**When it still times out, the evidence is usually recoverable.** A timed-out
+subagent leaves an append-only transcript with every tool result it collected —
+read it and extract the verdicts rather than treating the pass as failed:
+
+```bash
+# tool results, in order, from a live transcript
+grep -oP '^\d\d:\d\d:\d\d result\s+\| \K.*' \
+  ~/.hermes/profiles/<profile>/cache/delegation/live/<deleg_id>/task-0.log
+```
+
+Then re-dispatch only the items still unverified, with a narrower scope. This is
+recovery, not a substitute: a timeout near the start of a pass means you still
+know nothing, and the findings must be established some other way.
+
+**Check the artifact, not your intent.** One pass reported that a paper cited in
+prose was absent from the reference list, and that a statistic had been
+paraphrased into something the source does not say ("co-occur in the top-k of
+>60%" vs. the paper's "over 60% of queries containing at least one highly
+distracting passage among the top-10"). Both were real. The second is the same
+defect class the change was written to fix — describing a source without
+re-reading it — so a verifier that can catch it is worth its wall-clock.
