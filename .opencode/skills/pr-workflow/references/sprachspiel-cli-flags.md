@@ -169,6 +169,24 @@ LUC-N` in the PR body instead of `Fixes`.
 Pattern: `{type}/{LUC-N}-{slug}` **only** when the PR actually resolves that
 issue. Otherwise `{type}/{slug}`.
 
+## Doc-file roles: do not put content where it will not render
+
+Each documentation file has one job. Putting content in the wrong one means it is either
+invisible or noise — both were caught by the owner in review, not by the agent.
+
+| File | Its job | Do NOT put here |
+|------|---------|-----------------|
+| `doc/src/SUMMARY.md` | **Navigation only.** mdBook processes list lines (`- [text](file)`) and section prefixes (`# Heading`) and **silently discards everything else**. | Prose, blockquotes, intros, notes. They render nowhere — verify with `grep '<text>' doc/book/html/print.html`. If you want an introduction, create a page and link it. |
+| `doc/src/CHANGELOG.md` | Release notes, one `## [x.y.z] - DATE` section per version. | Meta-commentary about version numbering ("version skipped", "TBD"), status tracking, design rationale. A version jump is self-explanatory here; explaining it is noise. |
+| `IMPLEMENTATION.md` | An index: version, links, pointer to the tracker. Ceiling of 400 lines, test-enforced. | Per-issue status, phase tables, commit hashes, completion sections. |
+| `doc/src/development/*` | How the system works **today**. | Why a decision was made (that is `adr/`), release history (that is the changelog). |
+| `doc/src/adr/*` | Why a decision was made, and what was rejected. | Current behaviour — a decision record may be superseded by the code. |
+| `.opencode/skills/*` | Procedures. | Anything specific to one machine's paths. |
+
+**Verify rendering, don't assume it.** After adding structure to a doc, grep the built
+output for your text. A blockquote in `SUMMARY.md` passes review by looking right in the
+source while being absent from every generated page.
+
 ## Verification commands
 
 ```bash
