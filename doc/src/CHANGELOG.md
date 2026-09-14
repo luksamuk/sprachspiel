@@ -4,6 +4,22 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation consolidated — one source of truth per concern (LUC-140 follow-up)** — The repo carried five places that tracked overlapping state, and they had drifted apart. The audit that prompted this cleanup found **26 internal contradictions**, 12 references to files that no longer existed, and at least one case where the same document claimed an issue was `❌ NOT STARTED` in one section and `✅ COMPLETED (supersedes it)` in another. Reorganised so each concern has exactly one home:
+
+  **Issue status → Linear only.** `IMPLEMENTATION.md` went from **8,246 to 116 lines** (-98.6%). It is now an index: current version, links, and a pointer to the tracker. A test (`implementation_md_stays_an_index`) fails if it exceeds 400 lines, stops mentioning Linear, or grows a per-issue completion section again. `AGENTS.md` had four instructions telling contributors to update it for roadmap/status — those would have re-grown the tracker, so they now point at Linear and the CHANGELOG.
+
+  **Architecture → `doc/src/development/`.** Six new pages carry the design content that was buried in the tracker, verbatim: `context-overflow.md` (including the compaction constants/functions tables and the 3-layer error-recovery design), `embedding-diagnostics.md`, `feedback-and-facts.md`, `todo-and-status-bar.md`, `agent-tools.md`. Four further sections were discarded as duplicates of existing docs (83%/84%/76%/68% overlap — the existing pages are longer and cover the same ground).
+
+  **Decisions → `doc/src/adr/`.** A new section at the end of the mdBook index holds decision records (DEC-001..007, ADR-007) with an explicit banner: these record *why*, are not maintained as current behaviour, and if the code contradicts one, the code is right. Kept deliberately isolated from the architecture docs, which describe how the system works today.
+
+  **Roadmap → strategic only.** `roadmap.md` kept the milestone rationale, architecture direction, CAS research table and deferred list with reasons; the per-issue `#NNN` tables are gone (they were the mechanism by which the file and the tracker drifted apart). Waves are described by theme now.
+
+  **Retired:** `implementation-status.md` and `feature-status.md` — both duplicated the roadmap, changelog and `IMPLEMENTATION.md`; both now redirect. `feature-status.md`'s deferred-features table was **94% identical** to `roadmap.md`, it still said "Skills System — Research needed" long after skills shipped, and its "Testing / Test Coverage" checklist was never maintained.
+
+  **New sensors** (`tests/repo_references.rs`, 4 checks): documents may not cite `src/**` paths that do not exist (19 dead references fixed; the check distinguishes *proposals* — "Files to create:" — from drift); removed abstractions (`RustylineInput`, `TerminalView`, `CompatOllama`, `OllamaProvider`) may not be presented as current; and `IMPLEMENTATION.md` must stay an index. Each was verified to fire by re-injecting the defect it guards.
+
 ### Added
 
 - **ADR-010: Empathy ≠ Failure — Meta-cognition Reframing (LUC-103, ex gh#159)** — Documents the reframing principle for S2.meta1-3: behavioral shifts are not bugs, but opacity is. Detector targets unannounced system drift (not user-initiated changes), telemetry records neutral observations (TTR shift, topic avoidance, register drift), and recalibration always requires human approval. One-line record added to the ADR table in `IMPLEMENTATION.md`; cross-reference in `unified-vision.md` Synergy 7. Full ADR body lives in Linear LUC-103.
@@ -1202,7 +1218,13 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Database Module** - `get_storage_path()` made public for error diagnostics
 
-## [0.35.0] - TBD
+## [0.35.0] - Unreleased (version skipped)
+
+> **Note:** this version number was never released — `Cargo.toml` went from 0.34.0
+> straight to 0.36.0, and no `v0.35.0` tag exists. The changes below are real and were
+> shipped; they are recorded under this heading because that is where the history was
+> written at the time. Kept as-is rather than renumbered, so the changelog still matches
+> what commits and PRs of that period referenced.
 
 ### Fixed
 
