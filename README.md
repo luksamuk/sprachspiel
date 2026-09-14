@@ -383,6 +383,7 @@ Developed with assistance from:
 - **MiniMax M2.7** (MiniMax) — Code review and testing
 - **MiniMax M3** (MiniMax) — Code review
 - **Nemotron 3 Super** (NVIDIA) — Bugfixes
+- **DeepSeek v4.1 Flash** (DeepSeek) — Roadmap and code
 
 Agent harnesses used:
 - **Hermes Agent** (Nous Research) — Primary development harness with custom profiles (Hermes for orchestration, Hefesto for implementation), multi-agent Kanban task routing, and RAG-assisted context
