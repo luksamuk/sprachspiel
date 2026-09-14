@@ -54,9 +54,7 @@
 # Roadmap & Planning
 
 - [Roadmap](./development/roadmap.md)
-- [Feature Status](./development/feature-status.md)
 - [Completed Features](./development/completed-features.md)
-- [Implementation Status](./development/implementation-status.md)
 - [Implementation Directive](./development/implementation-directive.md)
 - [Implementation History](./development/implementation-history.md)
 - [Run Command Redesign](./development/run-command-redesign.md)
