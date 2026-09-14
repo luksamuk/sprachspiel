@@ -11,14 +11,30 @@ This document explains how sprachspiel composes the LLM context window, followin
 
 ## The Problem: Lost in the Middle
 
-Research from Liu et al. (2023) shows that language models perform significantly worse when relevant information is placed in the **middle** of context windows.
+Research from Liu et al. (2024) shows that language models perform significantly worse when relevant information is placed in the **middle** of context windows.
 
 **Key findings:**
 - **Beginning**: Up to 30% better performance (Anthropic research)
 - **End**: Critical for current query understanding
 - **Middle**: Information gets "lost" or poorly recalled
 
-For more details, see the ["Lost in the Middle" paper](https://arxiv.org/abs/2307.03172).
+> **Caveat — how this result was obtained.** Liu et al. measured the effect in a *controlled
+> setting*: rotating the position of a single relevant passage inside a prompt that otherwise
+> contained only irrelevant passages. Cuconasu et al. (2025, arXiv:2505.15561) note that this
+> "artificial configuration not only amplifies the impact of the positional bias but also ignores
+> how the positional bias influences the vulnerability of the LLMs to distracting passages." In
+> real queries, relevant passages and hard distractors co-occur in the top-k far more often, and
+> penalise each other.
+>
+> The practical consequence is narrow: **keep relevant content out of the middle** (which this
+> document describes), but do not expect *reordering* retrieved passages into favoured slots to
+> buy accuracy. Cuconasu et al. tested exactly that strategy and found it "do not perform better
+> than random shuffling" — statistically equivalent to the `Shuffle` baseline. Their conclusion
+> is that improvements should target retrieval quality and distractor robustness, not placement.
+>
+> See `research-icebox.md` §D-12 for the decision that dropped the reordering item (LUC-144).
+
+For more details, see the ["Lost in the Middle" paper](https://aclanthology.org/2024.tacl-1.9/).
 
 ---
 

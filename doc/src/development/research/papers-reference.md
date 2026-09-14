@@ -455,12 +455,15 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2025}
 }
 
-@article{liu2023lostinmiddle,
+@article{liu2024lostinmiddle,
   title={Lost in the Middle: How Language Models Use Long Contexts},
   author={Liu, Nelson F. and Lin, Kevin and Hewitt, John and Paranjape, Ashwin and Bevilacqua, Michele and Petroni, Fabio and Liang, Percy},
-  journal={arXiv preprint arXiv:2307.03172},
-  year={2023},
-  note={TACL 2023}
+  journal={Transactions of the Association for Computational Linguistics},
+  volume={12},
+  pages={157--173},
+  year={2024},
+  doi={10.1162/tacl_a_00638},
+  note={arXiv:2307.03172 (preprint 2023); published TACL 12:157--173, 2024}
 }
 
 @article{cuconasu2024trust,

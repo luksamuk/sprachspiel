@@ -184,7 +184,7 @@
 - **Current state:** Flat retrieval (BM25 + cosine + RRF). No hierarchical summarization.
 - **Why deferred:** Requires Metadata Enrichment, HyDE-like pairing, and Semantic Dedup (board drafts) to be stabilized first. RAPTOR adds a summarization layer on top of functioning chunk-level retrieval.
 - **Prerequisite:** Context-Aware Chunking, Metadata Enrichment, Semantic Dedup all in production
-- **Revisit when:** Flat retrieval with attention priming and metadata boosting still shows quality gaps at scale (>10k chunks)
+- **Revisit when:** Flat retrieval with metadata boosting still shows quality gaps at scale (>10k chunks)
 
 ---
 
@@ -490,6 +490,45 @@
   4. #136 may require DROP+reCREATE of vec0 tables (Phase 4) — an expensive operation that should not be coupled with a data preservation fix.
 - **New positions:** #151 is W4.5 (standalone), #136 is W4.7 (after #106 and #135)
 - **Revisit if:** #106 and #135 complete before #151, at which point a combined PR could be reconsidered (but #151 should not wait for them)
+
+---
+
+### D-12: Attention Priming (Chunk Reordering) — Dropped
+
+- **Decision:** Dropped as a roadmap item (2026-09-14). See Linear **LUC-144** for the decision, and
+  **LUC-116** for the reconciliation of what the item actually described.
+- **Reasons:**
+  1. **The justification was inverted.** The item rested on `Cuconasu et al. 2025`
+     (arXiv:2505.15561, *Do RAG Systems Really Suffer From Positional Bias?*) cited as *support* for
+     reordering retrieved chunks to LLM-favoured positions. Reading the paper shows the opposite:
+     "sophisticated strategies that attempt to rearrange the passages based on LLM positional
+     preferences **do not perform better than random shuffling**". It tests this exact strategy
+     (`MaxRelevance`) against a `Shuffle` baseline and finds no statistically significant difference
+     (Wilcoxon, p=0.05). The citation was written from the paper's title, not from reading it.
+  2. **The remaining delta is the part the paper refutes.** Section-level ordering already exists
+     (`build_context()`, `src/retrieval/context_builder.rs` — system → retrieved → summary → recent →
+     query, documented as "lost in the middle" mitigation). What was left to build was reordering
+     *within* the retrieved block, i.e. the strategy shown equivalent to shuffling.
+  3. **The paper's actual mechanism is not position.** It finds that hard distractors co-occur with
+     relevant passages in the top-k of >60% of real queries and penalise each other — and concludes
+     that improvements "should focus on retrieval quality and LLM distraction robustness rather than
+     passage positioning". Our hybrid retrieval already fuses with RRF
+     (`content_reciprocal_rank_fusion`, `src/content/db.rs`), which is the quality axis, not random
+     order.
+  4. **Keeping it would preserve the reasoning error it was filed for.** A feature whose only
+     justification is a citation that refutes it is exactly the defect class the bibliographic audit
+     (LUC-143) exists to remove.
+- **What survives (the live half):** *hard-distractor robustness*. The paper's real finding is a
+  candidate in its own right — penalising near-duplicate/low-value passages before assembly — but it
+  overlaps **Semantic Deduplication Pre-Indexing** (LUC-119) and **Metadata Enrichment** (LUC-118),
+  and would need an evaluation harness to be measured honestly. Not scheduled; revisit after those.
+- **Also survives, on its own terms:** *attention-based* prompt optimization (**R-04**), which is a
+  different feature. It needs attention-weight data that Ollama does not expose, and is deferred for
+  that reason — not because of this decision.
+- **Recovered evidence:** the hallucinated citation was recorded in place by `ab74ec9`, then
+  destroyed by the consolidation `2cec9c8`; restored by this decision's PR.
+- **Revisit if:** an evaluation harness exists that can measure retrieval quality end-to-end, and
+  the hard-distractor overlap with LUC-118/LUC-119 has been resolved.
 
 ---
 

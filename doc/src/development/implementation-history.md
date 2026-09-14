@@ -342,7 +342,7 @@ CREATE VIRTUAL TABLE chunk_embeddings_v2 USING vec0(
 
 ## References
 
-- "Lost in the Middle: How LanguageModels Use Long Contexts" (Liu et al., 2023)
+- "Lost in the Middle: How LanguageModels Use Long Contexts" (Liu et al., 2024)
 - Anthropic: "Prompt Engineering for Long Context"
 - OpenAI: GPT-4 Prompt Engineering Guide
 - Cohere: RAG Best Practices
