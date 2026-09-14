@@ -26,7 +26,7 @@ GitHub issues are **closed history** (migrated to Linear on 2026-08-19). PRs and
 
 - **Discover, don't hardcode:** project/label/milestone ids are resolved at runtime by name (`mcp__linear__list_projects` / `projects(filter: { name: { eq: "Sprachspiel" } })`). MCP `list_issues` already returns `project`/`projectMilestone` per issue, so filtering is usually client-side.
 - Every Linear issue migrated from GitHub has `Ref: gh#N` in its description; cite demands as `LUC-N (ex gh#N)`.
-- `list_issues` returns `gitBranchName` per issue — use it for branch naming (`luc-NNN-slug`); the Linear GitHub integration auto-links those branches/PRs to the issue and moves status on PR open/merge. Magic words (`Fixes LUC-141`) in commit messages/PR bodies also work.
+- `list_issues` returns `gitBranchName`, but **do not use it verbatim** — it contains a username prefix and preserves shell-hostile characters from the title (literal `=`, etc.). Use the repo's historical pattern `{type}/{LUC-N}-{slug-kebab}` instead, where `type` matches the conventional-commit type (`feat`/`fix`/`docs`/`refactor`/`test`/`chore`) and the slug is a short kebab-case paraphrase of the title (3-5 words max). Examples: `feat/151-thinking-preserve`, `docs/103-adr-empathy-reframing`, `fix/233-search-scope`. Linear's GitHub integration still auto-links via the magic word `Fixes LUC-N` in the PR body or commit message (auto-moves status on open, auto-closes on merge) — the branch name is cosmetic.
 - Linear priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low.
 
 ## When to use me

@@ -1,6 +1,6 @@
 ---
 name: pr-workflow
-description: Complete PR workflow from branch creation to merge. Covers all phases: setup, documentation, draft PR, planning, requirements checkpoint, implementation, review, card movement, and merge.
+description: "Complete PR workflow from branch creation to merge. Covers all phases — setup, documentation, draft PR, planning, requirements checkpoint, implementation, review, card movement, and merge."
 license: MIT
 compatibility: opencode
 metadata:
@@ -167,7 +167,7 @@ The Linear GitHub integration moves the issue automatically when you open the PR
 mcp__linear__save_issue(LUC-N, state: "In Progress")   # stateId via list_issue_statuses
 ```
 
-Use the issue's `gitBranchName` (`luc-NNN-slug`) for the branch — that's what the integration matches.
+Branch name follows the repo pattern `{type}/{LUC-N}-{slug-kebab}` (e.g. `feat/151-thinking-preserve`, `docs/103-adr-empathy-reframing`, `fix/233-search-scope`). Use the issue's numeric id and a short kebab-case slug; pick `type` from conventional-commit types. **Do not** use Linear's `gitBranchName` verbatim — it includes a username prefix and preserves shell-hostile characters from the title (literal `=`, etc.). The Linear GitHub integration matches on the magic word (`Fixes LUC-N`) in the PR body / commit, not on the branch name.
 
 ## Phase 2: Documentation FIRST
 
@@ -494,6 +494,14 @@ Minimum before each PR:
 4. `cargo test --all-features` — regressions
 5. Bare `#[allow(dead_code)]` check — unjustified dead code
 
+**Before marking ready, also dispatch an adversarial verifier against your own
+factual claims** ("this flag does not exist", "no occurrences remain", "markers
+now match"). Your own check is not independent evidence, and a green result from
+a check that cannot fail is worse than none. Load
+`references/adversarial-verification.md` for the dispatch prompt, the
+re-inject-the-defect rule for proving a check can fail, and how to handle the
+findings it returns.
+
 ### After All Threads Resolved
 
 - Inform user
@@ -556,3 +564,11 @@ If the PR addresses a canonical issue that had duplicates:
 - **GitHub:** `luksamuk/sprachspiel` — PRs, reviews, CI only
 - **Old GitHub Project board #4:** retired 2026-08-19 (its `PVT_*` IDs and option hashes were scrubbed; see git history if ever needed for archaeology)
 - **Linear workflow states** (team-level, resolve at runtime via `mcp__linear__list_issue_statuses`): Backlog, Todo, In Progress, In Review, Done, Canceled, Duplicate
+
+## Reference files
+
+| File | What it is |
+|------|-----------|
+| `references/adversarial-verification.md` | Self-check procedure before marking a PR ready |
+| `references/sprachspiel-cli-flags.md` | **Verified** CLI flags and subcommands — check here before writing test scripts, to avoid hallucinating flags that do not exist |
+| `references/auth-check.sh` | Run before a PR review to determine the auth path (gh CLI vs `GITHUB_TOKEN` curl fallback) |

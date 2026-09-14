@@ -341,3 +341,28 @@ curl -s -H "Authorization: token $TOKEN" \
 ```
 
 Always use `gh auth token` via PTY for sandbox auth. Direct `gh api` calls may fail if keyring auth is unavailable.
+## ⚠️ Pitfall: HTTP 422 "Line could not be resolved"
+
+The `line` field in the example above works when the commented line is part of the PR's
+diff. It fails with **HTTP 422 `Line could not be resolved`** when the line is outside the
+hunk, or when the file's diff has shifted since the comment target was computed.
+
+The older, more robust alternative is the **`position`** field, which is *hunk-relative*
+in the unified diff rather than an absolute file line:
+
+```
+Skip lines before the first @@ in each file.
+First @@ header is NOT counted; the next line is position 1.
+Subsequent @@ headers in the same file DO count (position += 1).
+Every line in a hunk (+, -, context) increments the position.
+```
+
+The algorithm is reproduced above so this skill is self-sufficient — no external script
+is required. (A worked implementation exists in the maintainer's local tooling, but it is
+deliberately not referenced here: a public repo must not point at paths that only exist on
+one machine.)
+
+**Status of this note:** the 422 failure mode is documented from prior experience, not
+re-verified against the live API in this session — the `line` form has also been observed
+working when the target is inside the hunk. If a review POST fails with 422, switch to
+`position` before assuming the payload is malformed.
