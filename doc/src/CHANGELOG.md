@@ -692,7 +692,7 @@ All notable changes to Sprachspiel will be documented in this file.
   - Added AGENTS.md section documenting the pattern and checklist
 
 
-## [0.39.5] - 2026-03-30
+## [0.39.5] - 2026-04-03
 
 ### Fixed
 
@@ -1072,7 +1072,39 @@ All notable changes to Sprachspiel will be documented in this file.
   - `truncate_tool_result()` function - no longer used
   - All were marked "no longer used" with explicit comments
 
-## [0.36.0] - 2026-03-19
+## [0.37.0] - 2026-03-21
+
+Critical fixes for token calculation and context overflow detection.
+
+### Fixed
+
+- **Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
+  - Double-counting system + tools in `calculate_context_metrics()`
+  - Double-counting system_tokens in `needs_inter_tool_compaction()`
+  - Missing system + tools in pre-tool warning remaining tokens
+
+- **Pre-Tool Warning Message** - Fixed warning saying "Auto-compacting" when it only warned
+  - Now correctly shows warning at 75%, auto-compacts at 88%
+
+- **Duplicate Context Warnings** - Fixed two warnings shown for same condition
+  - Only shows warning when tools are disabled
+
+- **Percentage-Based Context Thresholds** - Replaced fixed buffers with percentages
+  - Scales correctly with context window size (32K, 128K, 200K)
+  - `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75%
+  - `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88%
+  - `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94%
+  - `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97%
+
+### Changed
+
+- **Function Simplifications**
+  - Removed `_threshold` parameter from `check_context_overflow()`
+  - Removed `_system_prompt` and `_use_debug` from `auto_compact_if_needed()`
+  - Removed `CoordinatorError` enum (never used)
+  - Removed `CompactionStats` and `compaction_stats()` (YAGNI)
+
+## [0.36.0] - 2026-03-18
 
 ### Added
 
@@ -1265,7 +1297,7 @@ All notable changes to Sprachspiel will be documented in this file.
   - System prompt integration: Active tasks injected into LLM context
   - Global state sync: Tools and commands share same TodoState
 
-## [0.33.0] - 2026-03-16
+## [0.33.0] - 2026-03-15
 
 ### Added
 
@@ -1654,7 +1686,11 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - Removed `migrate_project()` function (replaced by automatic migration)
   - Deprecated `Session.save()` (JSON) in favor of `Session.save_sqlite()`
 
-## [0.27.0] - 2026-03-09
+## [0.27.0] — unreleased (planned here, shipped as 0.27.1)
+
+> No `v0.27.0` tag or GitHub release exists. This section records the design that
+> `0.27.1` then implemented; it was written as a plan (commit c26b78b, "docs: plan
+> SQLite as single storage (v0.27.0)"). Kept for the architecture description.
 
 ### Changed
 
@@ -1900,7 +1936,7 @@ Now correctly calculates:
   - `chat/session.rs` - Use `ROLE_USER/ASSISTANT` constants
   - Test files updated accordingly
 
-## [0.26.0] - 2026-03-04
+## [0.26.0] - 2026-03-03
 
 ### Added
 
