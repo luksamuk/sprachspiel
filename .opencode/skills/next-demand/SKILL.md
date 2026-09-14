@@ -199,30 +199,35 @@ Old GH `status:*` labels are retired. Status = Linear workflow state (Backlog/To
 
 ## Milestone Mapping
 
-| Milestone | Codename | Description | Waves/Cards |
-|-----------|----------|-------------|-------------|
-| M1 | Core Evolution | All work before TUI and Sprach 2.0 | W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116-#123, #72) → W3 (Feedback: #90-#97) → W4 (Embedding: #106, #107) → W5 (Backlog: #13, #14, #49, #50, #52, #74-#76) |
-| M2 | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
-| M3 | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
-| M4 | Future | Deferred features and research | B2-B5, B8 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF |
+| Milestone | Codename | Theme | Waves / Cards |
+|-----------|----------|-------|---------------|
+| M1 | Core Evolution | Everything before the TUI and Sprach 2.0 — provider chain, embedding geometry, feedback, thinking traces | W1 Quick Wins → W2 Provider Chain → W3 Feedback Completion → W4 Embedding Geometry → W5 M1 Backlog → W6 Responsive Chat Rebuild → W7 Thinking Trace Pipeline (see `roadmap.md` for what each wave means) |
+| M2 | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns, diff rendering | LUC-63 (TUI), LUC-86 (interaction modes), LUC-87 (benchmark infrastructure), LUC-88 (learned patterns) |
+| M3 | Sprach 2.0 | CAS research, cognitive extensions, plugin system | LUC-62 (plugin system), LUC-69..LUC-72 (S2.1–S2.5), LUC-81..LUC-83 (meta-cognition layers), LUC-115 (behavioral conflict), LUC-146 (meta_cognize), LUC-147 (privacy filter), LUC-103 (ADR Empathy — ✅ done) |
+| M4 | Future | Deferred features and research | LUC-116 (attention-based, R-04), LUC-117 (chunking), LUC-118 (metadata), LUC-119 (dedup), LUC-120 (HyDE), LUC-121 (behavioral embeddings), LUC-122 (behavioral RRF), LUC-109 (ACP), LUC-110..LUC-114 |
+
+> **On issue numbers:** waves are described by **theme**, not by `#NNN`. The M1 wave table in
+> `roadmap.md` dropped its issue numbers deliberately — citing them here is how this skill and the
+> tracker drifted apart before. Query Linear for the current state of any given item; do not treat a
+> bare `#N` as a live issue (GitHub issues are closed history since 2026-08-19).
 
 ## Draft Refinement Guide
 
 When assessing drafts for promotion, use these quick-win criteria:
 
-| Draft | Milestone | Refinement Level | Quick Win? | Why |
-|-------|-----------|-----------------|------------|-----|
-| ADR: Empathy ≠ Failure | M3 | Level 1 (30min) | ✅ Yes | Zero code, prerequisite for #99/#100/#101 |
-| Attention Priming | M4 | Level 1 (30min) | ✅ Yes | ~1 day implementation, zero dependencies, zero architecture change |
-| Privacy Filter | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Has PoC, but open questions on lifecycle and caching |
-| Context-Aware Chunking | M4 | Level 2 (4h-1d) | ⚠️ Half-day | Needs migration strategy for existing chunks |
-| Semantic Dedup | M4 | Level 1 (30min) | ✅ Yes | Offline batch job, well-scoped, no hot-path interaction |
-| Metadata Enrichment | M4 | Level 2 (4h-1d) | ❌ No | Requires schema v13 migration, complex |
-| HyDE / Q&A Pairing | M4 | Level 2 (4h-1d) | ❌ No | Depends on #106 (embedding model config) |
-| Behavioral Embeddings | M4 | Level 3 (design) | ❌ No | Premature — needs Layer 2 data first |
-| Behavioral RRF | M4 | Level 3 (design) | ❌ No | Depends on #100 and #101 being stable |
-| meta_cognize() Tool | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Depends on #100 for data structure |
-| Behavioral Conflict | M3 | Level 2 (4h-1d) | ❌ No | Depends on #77/#78 (relations graph) |
+| Item | Issue | Milestone | Refinement Level | Quick Win? | Why |
+|------|-------|-----------|-----------------|------------|-----|
+| Semantic Deduplication Pre-Indexing | LUC-119 | M4 | Level 1 (30min) | ✅ Yes | Offline batch job, well-scoped, no hot-path interaction |
+| Context-Aware Chunking (SemanticChunker) | LUC-117 | M4 | Level 2 (4h-1d) | ⚠️ Half-day | Needs migration strategy for existing chunks |
+| Privacy Filter (PII Redaction Sidecar) | LUC-147 | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Has PoC, but open questions on lifecycle and caching |
+| meta_cognize() Active Behavioral Tool | LUC-146 | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Depends on LUC-82 for data structure |
+| Metadata Enrichment (Chunk Authority & Recency) | LUC-118 | M4 | Level 2 (4h-1d) | ❌ No | Requires schema migration, complex |
+| Q&A Pairing / HyDE-like Embedding | LUC-120 | M4 | Level 2 (4h-1d) | ❌ No | Depends on the embedding-model config work |
+| Behavioral Conflict Detection | LUC-115 | M3 | Level 2 (4h-1d) | ❌ No | Depends on LUC-69/LUC-70 (relations graph) |
+| Behavioral Embeddings | LUC-121 | M4 | Level 3 (design) | ❌ No | Premature — needs Layer 2 data first |
+| Behavioral RRF | LUC-122 | M4 | Level 3 (design) | ❌ No | Depends on LUC-81..LUC-83 being stable |
+| Attention-Based Prompt Optimization (R-04) | LUC-116 | M4 | Level 3 (design) | ❌ No | Blocked on attention-weight access — Ollama exposes none. Its positional-reordering half was **dropped** (LUC-144 / D-12) |
+| ADR: Empathy ≠ Failure | LUC-103 | M3 | — | — | ✅ **Done** — shipped, no longer a candidate |
 
 ## Project Info
 
