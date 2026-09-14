@@ -92,12 +92,6 @@
 
 # Architecture Decision Records
 
-> Documentos **históricos e decisórios**. Registram *por que* algo foi decidido — a
-> racionalidade e as alternativas descartadas — e não descrevem o comportamento atual.
-> Consulte-os para entender o *porquê*; para o *como é hoje*, veja
-> [Architecture](./development/README.md). Se o código contradiz um registro, o código
-> está certo.
-
 - [ADR Overview](./adr/README.md)
   - [Validated Decisions & ADRs](./adr/decisions.md)
 
