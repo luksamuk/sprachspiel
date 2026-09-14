@@ -509,9 +509,11 @@
      (`build_context()`, `src/retrieval/context_builder.rs` — system → retrieved → summary → recent →
      query, documented as "lost in the middle" mitigation). What was left to build was reordering
      *within* the retrieved block, i.e. the strategy shown equivalent to shuffling.
-  3. **The paper's actual mechanism is not position.** It finds that hard distractors co-occur with
-     relevant passages in the top-k of >60% of real queries and penalise each other — and concludes
-     that improvements "should focus on retrieval quality and LLM distraction robustness rather than
+  3. **The paper's actual mechanism is not position.** It finds that contemporary retrievers
+     "systematically bring highly distracting ones to the top ranks, with **over 60% of queries
+     containing at least one highly distracting passage among the top-10 retrieved passages**" —
+     and that relevant and distracting passages "are, in turn, penalized". The conclusion is that
+     improvements "should focus on retrieval quality and LLM distraction robustness rather than
      passage positioning". Our hybrid retrieval already fuses with RRF
      (`content_reciprocal_rank_fusion`, `src/content/db.rs`), which is the quality axis, not random
      order.

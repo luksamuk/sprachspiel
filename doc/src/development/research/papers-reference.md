@@ -473,6 +473,19 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   year={2024}
 }
 
+@inproceedings{cuconasu2025positional,
+  title={Do RAG Systems Really Suffer From Positional Bias?},
+  author={Cuconasu, Florin and Filice, Simone and Horowitz, Guy and Maarek, Yoelle and Silvestri, Fabrizio},
+  booktitle={Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing},
+  pages={28022--28036},
+  year={2025},
+  address={Suzhou, China},
+  publisher={Association for Computational Linguistics},
+  doi={10.18653/v1/2025.emnlp-main.1422},
+  url={https://aclanthology.org/2025.emnlp-main.1422/},
+  note={arXiv:2505.15561}
+}
+
 @article{weller2025limitations,
   title={On the Theoretical Limitations of Embedding-Based Retrieval},
   author={Weller, Orion and Boratko, Michael and Naim, Iftekhar and Lee, Jinhyuk},
