@@ -211,6 +211,32 @@ Old GH `status:*` labels are retired. Status = Linear workflow state (Backlog/To
 > tracker drifted apart before. Query Linear for the current state of any given item; do not treat a
 > bare `#N` as a live issue (GitHub issues are closed history since 2026-08-19).
 
+### Never infer a Linear identifier from a GitHub number
+
+`gh#N` and `LUC-N` are **independent counters**. There is no arithmetic relationship:
+
+```
+gh#74 → LUC-66     gh#99 → LUC-81     gh#117 → LUC-86     gh#172 → LUC-116
+```
+
+The only source is the `Ref: gh#N` line in the issue description — read it per issue, or query
+Linear and build the map. Writing `LUC-84..LUC-89` as a range because the source said `#84-#89`
+produces identifiers that are plausible and wrong.
+
+Two related traps, both hit in one session:
+
+- **Assuming ordering is positional.** Reading "LUC-86" and "LUC-87" from a list and assigning them
+  to the wrong descriptions (86 was *interaction modes*, 87 was *benchmark infrastructure*). Read the
+  issue title back before describing what it contains.
+- **Trusting a `Ref:`-only snapshot.** Fetching descriptions with a narrow field selection returns
+  only the `Ref:` stub, not the title — so content checks silently compare against the wrong text.
+  Select `title` explicitly.
+
+**Rule:** every identifier written into a doc must be verified against Linear in the same pass, by
+reading back `title` + `milestone` + `state`. If a mapping cannot be established, describe the item
+by name and move on — a wrong `LUC-N` is worse than none, because it sends a future reader to an
+unrelated issue.
+
 ## Draft Refinement Guide
 
 When assessing drafts for promotion, use these quick-win criteria:
