@@ -23,7 +23,7 @@ This document captures all design decisions for v0.21.0, which integrates ChatSe
 
 ### Lost in the Middle Phenomenon
 
-Based on "Lost in the Middle: How Language Models Use Long Contexts" (Liu et al., 2023):
+Based on "Lost in the Middle: How Language Models Use Long Contexts" (Liu et al., 2024):
 
 - **Critical finding:** Model performance degrades significantly when relevant information is in the **middle** of context windows
 - **Optimal positions:** Beginning or end of context
@@ -525,7 +525,7 @@ async fn test_compaction_preserves_sqlite() {
 ## References
 
 ### Academic Papers
-- "Lost in the Middle: How Language Models Use Long Contexts" (Liu et al., 2023)
+- "Lost in the Middle: How Language Models Use Long Contexts" (Liu et al., 2024)
 
 ### Provider Documentation
 - Anthropic: Prompt Engineering for Long Context
