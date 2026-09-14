@@ -1,6 +1,6 @@
 ---
 name: pr-workflow
-description: Complete PR workflow from branch creation to merge. Covers all phases: setup, documentation, draft PR, planning, requirements checkpoint, implementation, review, card movement, and merge.
+description: "Complete PR workflow from branch creation to merge. Covers all phases — setup, documentation, draft PR, planning, requirements checkpoint, implementation, review, card movement, and merge."
 license: MIT
 compatibility: opencode
 metadata:
@@ -100,10 +100,7 @@ Write a Research Summary document (as an issue comment) with:
    # HTTP fallback: mutation commentCreate(input: { issueId, body })
    ```
 
-2. **Update IMPLEMENTATION.md** — replace `🟡 RESEARCH NEEDED` with `📋 PLANNED`:
-   - Fill in answered open questions
-   - Update effort estimate if revised
-   - Add architecture proposal section if produced
+2. **Record the research on the Linear issue** — the Research Summary comment IS the record. Do **not** mirror it into `IMPLEMENTATION.md` (an index; a test enforces it stays under 400 lines).
 
 3. **Update issue state** in Linear: `Backlog → Todo` (or the team's planned state) via `mcp__linear__save_issue` / `issueUpdate` with `stateId` (resolve the UUID from `mcp__linear__list_issue_statuses` — names are discoverable, never hardcoded).
 
@@ -157,7 +154,7 @@ If a duplicate is found:
 2. **If canonical is DONE (closed via merged PR)** — check whether the PR fully addressed the issue. If not, note residual work on the canonical issue.
 3. **Mark the duplicate** in Linear with state "Duplicate" + a comment `Closing as duplicate of LUC-<canonical> — both issues describe the same problem.`
 4. **Reference the canonical issue** in your branch name, PR title, and PR body (not the duplicate)
-5. **Update IMPLEMENTATION.md** to reference the canonical issue
+5. **Reference the canonical issue** in the branch name, PR title and PR body (`Fixes LUC-<canonical>`). Do not edit `IMPLEMENTATION.md`.
 
 ### Move Issue to In Progress
 
@@ -167,7 +164,7 @@ The Linear GitHub integration moves the issue automatically when you open the PR
 mcp__linear__save_issue(LUC-N, state: "In Progress")   # stateId via list_issue_statuses
 ```
 
-Use the issue's `gitBranchName` (`luc-NNN-slug`) for the branch — that's what the integration matches.
+Branch name follows the repo pattern `{type}/{LUC-N}-{slug-kebab}` (e.g. `feat/151-thinking-preserve`, `docs/103-adr-empathy-reframing`, `fix/233-search-scope`). Use the issue's numeric id and a short kebab-case slug; pick `type` from conventional-commit types. **Do not** use Linear's `gitBranchName` verbatim — it includes a username prefix and preserves shell-hostile characters from the title (literal `=`, etc.). The Linear GitHub integration matches on the magic word (`Fixes LUC-N`) in the PR body / commit, not on the branch name.
 
 ## Phase 2: Documentation FIRST
 
@@ -177,14 +174,11 @@ Use the issue's `gitBranchName` (`luc-NNN-slug`) for the branch — that's what 
    - Add entry under `[Unreleased]`
    - Use "Added", "Changed", "Fixed", "Removed" sections
 
-2. **Update IMPLEMENTATION.md:**
-   - Mark task as `🔄 IN PROGRESS`
-   - Add implementation plan with phases table
-   - Will mark as `✅ COMPLETED` only after merge
+2. **Do NOT update `IMPLEMENTATION.md`** — it is an index now (a test enforces a 400-line ceiling and fails if it grows a per-issue completion section). Per-issue status lives in Linear; the plan belongs in the PR body.
 
 3. **Commit documentation:**
    ```bash
-   git add doc/src/CHANGELOG.md IMPLEMENTATION.md
+   git add doc/src/CHANGELOG.md
    git commit -m "docs: update CHANGELOG for <feature>"
    ```
 
@@ -244,7 +238,7 @@ EOF
 4. **WAIT for user approval of plan**
 
 5. **After approval:**
-   - Update IMPLEMENTATION.md with detailed plan
+   - Put the detailed plan in the PR body (it is the reviewable artifact). Do not add it to `IMPLEMENTATION.md`.
    - Update PR body with implementation plan
    - Commit and push documentation changes
 
@@ -494,6 +488,14 @@ Minimum before each PR:
 4. `cargo test --all-features` — regressions
 5. Bare `#[allow(dead_code)]` check — unjustified dead code
 
+**Before marking ready, also dispatch an adversarial verifier against your own
+factual claims** ("this flag does not exist", "no occurrences remain", "markers
+now match"). Your own check is not independent evidence, and a green result from
+a check that cannot fail is worse than none. Load
+`references/adversarial-verification.md` for the dispatch prompt, the
+re-inject-the-defect rule for proving a check can fail, and how to handle the
+findings it returns.
+
 ### After All Threads Resolved
 
 - Inform user
@@ -517,8 +519,8 @@ gh pr merge PR_NUMBER --merge --delete-branch
 ### Post-Merge Cleanup
 
 ```bash
-# Update IMPLEMENTATION.md — mark task as ✅ COMPLETED
-# Find the section and update status markers
+# Do NOT touch IMPLEMENTATION.md — it is an index. The issue moves to Done in Linear
+# (automatic via the magic word) and the release note goes in CHANGELOG.md.
 
 # Verify the Linear issue moved to "Done" automatically (via "Fixes LUC-N" in PR body + the GitHub integration).
 # If it didn't, set explicitly: mcp__linear__save_issue(LUC-N, state: "Done")
@@ -546,7 +548,7 @@ If the PR addresses a canonical issue that had duplicates:
    - Phase 4 (Ready for Review): → `In Review` (integration usually does this on PR ready; verify)
    - Phase 7 (Merge): → `Done` (automatic via `Fixes LUC-N` + integration; verify, fix if missed)
 9. **ALWAYS cross-reference related issues** — comment on the canonical Linear issue about the PR, close duplicates with explanation
-10. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
+10. **ALWAYS update the Linear issue state** on every phase change — `IMPLEMENTATION.md` is an index and must not accumulate status. The phase transitions are: Phase 0 → `Todo`, Phase 1 → `In Progress`, Phase 4 → `In Review`, merge → `Done` (automatic).
 11. **ALWAYS wait for authorization** between phases — no autonomous progression
 12. **ALWAYS run quality gates** before commits and PRs — load `quality-gates` skill for the complete sensor hierarchy
 
@@ -556,3 +558,11 @@ If the PR addresses a canonical issue that had duplicates:
 - **GitHub:** `luksamuk/sprachspiel` — PRs, reviews, CI only
 - **Old GitHub Project board #4:** retired 2026-08-19 (its `PVT_*` IDs and option hashes were scrubbed; see git history if ever needed for archaeology)
 - **Linear workflow states** (team-level, resolve at runtime via `mcp__linear__list_issue_statuses`): Backlog, Todo, In Progress, In Review, Done, Canceled, Duplicate
+
+## Reference files
+
+| File | What it is |
+|------|-----------|
+| `references/adversarial-verification.md` | Self-check procedure before marking a PR ready |
+| `references/sprachspiel-cli-flags.md` | **Verified** CLI flags and subcommands — check here before writing test scripts, to avoid hallucinating flags that do not exist |
+| `references/auth-check.sh` | Run before a PR review to determine the auth path (gh CLI vs `GITHUB_TOKEN` curl fallback) |

@@ -25,7 +25,7 @@ Load me when:
 ## Mandatory References
 
 **Read before triaging:**
-1. `IMPLEMENTATION.md` — Current status of all priorities, milestones, waves
+1. `IMPLEMENTATION.md` — **Index only**: version, links to architecture docs, and a pointer to Linear. Per-issue status is NOT here; query Linear for that.
 2. `doc/src/development/roadmap.md` — Strategic direction
 3. `doc/src/development/unified-vision.md` — Research synthesis and architectural decisions
 4. `doc/src/development/research-icebox.md` — R-XX items and their dependencies
@@ -257,7 +257,7 @@ After triaging, update these files:
 
 1. **`doc/src/development/research-icebox.md`** — Add R-XX entry for new research findings
 2. **`doc/src/development/unified-vision.md`** — Add section if architecture changes
-3. **`IMPLEMENTATION.md`** — Update status if items change milestone or priority
+3. **Linear** — update status/milestone/priority on the issue itself. (`IMPLEMENTATION.md` is an index now and must not carry status.)
 
 ### Files to update CONDITIONALLY:
 
@@ -410,7 +410,7 @@ After all triage work:
 git add doc/src/development/research-icebox.md \
         doc/src/development/research/papers-reference.md \
         doc/src/development/unified-vision.md \
-        IMPLEMENTATION.md  # if status changed
+        # NOTE: do NOT stage IMPLEMENTATION.md — it is an index, and status lives in Linear.
 
 # Verify what you're committing
 git diff --cached --stat
@@ -434,7 +434,7 @@ mdbook build doc/
 ## Project Info
 
 - **Issue tracking:** Linear — project "Sprachspiel"; milestones "M1 - Core Evolution" … "M4 - Future & Cultural Grounding"
-- **GitHub:** `luksamuk/ask-ollama-rs` (sprachspiel repository) — PRs, reviews, CI, and closed-issue history only
+- **GitHub:** `luksamuk/sprachspiel` — PRs, reviews, CI, and closed-issue history only
 - **Access:** `mcp__linear__*` tools when the Linear MCP is connected; otherwise the `linear` skill (GraphQL + `LINEAR_API_KEY`)
 - **Priority within milestones:** Linear `priority` int (top of triage view = work first)
 - **Pre-migration issue numbers** (`gh#N`) map to Linear via `Ref: gh#N` in each issue's description

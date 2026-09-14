@@ -204,18 +204,26 @@ Add entries under appropriate version section:
 - Removal description
 ```
 
-## IMPLEMENTATION.md Updates
+## Where status and documentation live
+
+**Do NOT update `IMPLEMENTATION.md` after completing work.** It is an *index* — version,
+links, and a pointer to the tracker. It used to be an 8,200-line per-issue tracker, and
+the duplication is what caused 26 internal contradictions before it was consolidated.
+A test (`tests/repo_references.rs::implementation_md_stays_an_index`) fails the build if
+that file exceeds 400 lines, stops mentioning Linear, or grows a per-issue completion
+section again.
 
 After completing ANY roadmap item:
 
-1. Find the relevant section
-2. Update status markers:
-   - `❌ NOT STARTED` → `✅ COMPLETED` or `📋 IN PROGRESS`
-   - `🟡 PLANNED` → `🟢 ACTIVE` (when work begins)
-3. Add implementation summary:
-   - Key files modified
-   - Commits (with short hash)
-   - Any deviations from original plan
+| Where | What to do |
+|-------|-----------|
+| **Linear** (the issue) | Move it to Done — usually automatic via `Fixes LUC-N` in the PR body. Add a comment if implementation deviated from the plan. |
+| **`doc/src/CHANGELOG.md`** | Add the entry under `[Unreleased]`. This is the release-notes record. |
+| **`doc/src/development/`** | Update the architecture doc **only if behaviour changed** — e.g. a new constant, a new pipeline stage. Design docs describe the present. |
+| **`doc/src/adr/`** | Add a decision record **only for a decision** (rationale + rejected alternatives), not for a feature. |
+
+Do not record "key files modified" or commit hashes in documentation — `git log` is the
+record for that, and copying it into docs is how the tracker drifted in the first place.
 
 ## Documentation Checklist
 

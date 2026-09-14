@@ -312,7 +312,7 @@ Response: [content of lines 10-20]
 "#;
 ```
 
-#### `src/prompts/personality.rs`
+#### `src/soul.rs`
 
 ```rust
 pub const PERSONALITY_PEPE: &str = r#"
@@ -377,8 +377,8 @@ fn test_platform_detection() { /* ... */ }
 2. Modify `src/context.rs` - use PlatformInfo
 3. Create `src/prompts/` directory with all modules
 4. Modify `src/main.rs` - register modules
-5. Update callers: `src/query.rs`, `src/chat/repl.rs`
-6. Create `src/prompts.rs` stub for backward compatibility
+5. Update callers: `src/query/`, `src/chat/repl.rs`
+6. Create `src/prompts/` stub for backward compatibility
 7. Create tests and benchmarks
 8. Run `cargo test --all`
 9. Manual validation with different models
@@ -482,12 +482,12 @@ cargo test --test prompt_benchmark test_platform_detection -- --nocapture
 - [ ] Create `src/prompts/base.rs`
 - [ ] Create `src/prompts/tools.rs`
 - [ ] Create `src/prompts/examples.rs`
-- [ ] Create `src/prompts/personality.rs`
+- [ ] Create `src/soul.rs`
 - [ ] Create `src/prompts/builder.rs`
-- [ ] Update callers in `src/query.rs`
+- [ ] Update callers in `src/query/`
 - [ ] Update callers in `src/chat/repl.rs`
 - [ ] Create `tests/prompt_benchmark.rs`
-- [ ] Create backward compat stub in `src/prompts.rs`
+- [ ] Create backward compat stub in `src/prompts/`
 - [ ] Run all tests: `cargo test --all`
 - [ ] Manual validation with multiple models
 - [ ] Update AGENTS.md if needed

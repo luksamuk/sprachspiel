@@ -80,7 +80,7 @@ Each subcommand has its own module:
 
 | Command | Module | Purpose |
 |---------|--------|---------|
-| query | `src/query.rs` | One-shot queries (default mode) |
+| query | `src/query/` | One-shot queries (default mode) |
 | chat | `src/chat/` | Interactive conversations with history |
 | translate | `src/translate/` | Text translation |
 | ocr | `src/ocr/` | Image text extraction |
@@ -437,7 +437,7 @@ Token estimation uses a 20% safety margin (`ESTIMATION_SAFETY_MARGIN`) and highe
 - `src/tokens.rs` - Token calculation with the backend's `prompt_eval_count`
 - `src/chat/core.rs` - `auto_compact_if_needed()`, `compact_conversation()`
 - `src/chat/continuation.rs` - Pre-tool compaction check
-- `src/chat/custom_coordinator.rs` - Inter-tool overflow detection
+- `src/chat/coordinator.rs` - Inter-tool overflow detection
 
 ### 7. Tools (`src/tools/`)
 

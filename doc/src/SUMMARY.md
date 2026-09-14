@@ -45,13 +45,16 @@
 - [File Write Tools](./development/file-write-tools.md)
 - [Unified Vision](./development/unified-vision.md)
 - [Embedding Scheduler Redesign](./development/embedding-scheduler-redesign.md)
+- [Context Overflow](./development/context-overflow.md)
+- [Embedding Diagnostics](./development/embedding-diagnostics.md)
+- [Feedback & Facts](./development/feedback-and-facts.md)
+- [TODO System & Status Bar](./development/todo-and-status-bar.md)
+- [Agent Tools](./development/agent-tools.md)
 
 # Roadmap & Planning
 
 - [Roadmap](./development/roadmap.md)
-- [Feature Status](./development/feature-status.md)
 - [Completed Features](./development/completed-features.md)
-- [Implementation Status](./development/implementation-status.md)
 - [Implementation Directive](./development/implementation-directive.md)
 - [Implementation History](./development/implementation-history.md)
 - [Run Command Redesign](./development/run-command-redesign.md)
@@ -86,6 +89,11 @@
 - [Legacy Overview](./development/legacy.md)
   - [Context Composition Design](./development/context_composition_design.md)
   - [Retrieval Design](./development/retrieval-design.md)
+
+# Architecture Decision Records
+
+- [ADR Overview](./adr/README.md)
+  - [Validated Decisions & ADRs](./adr/decisions.md)
 
 ---
 

@@ -191,7 +191,7 @@ while let Some(ref next_tag) = cont_result.continuation_needed {
 | File | Changes |
 |------|---------|
 | `src/chat/repl.rs` | Continuation loop, `build_continuation_prompt()` |
-| `src/chat/custom_coordinator.rs` | `ContinuationTag`, `parse_continuation_tag()`, `ephemeral_messages` |
+| `src/chat/coordinator.rs` | `ContinuationTag`, `parse_continuation_tag()`, `ephemeral_messages` |
 | `src/prompts/builder.rs` | `context_status` field, status injection |
 | `src/prompts/base.rs` | `CONTEXT_MANAGEMENT_INSTRUCTION` |
 | `src/context_overflow.rs` | `ContextStatus.max_tokens()` |
@@ -202,7 +202,7 @@ while let Some(ref next_tag) = cont_result.continuation_needed {
 
 ### Unit Tests
 
-Located in `src/chat/custom_coordinator.rs`:
+Located in `src/chat/coordinator.rs`:
 
 ```rust
 #[test]

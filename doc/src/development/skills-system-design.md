@@ -416,7 +416,7 @@ impl ToolRegistry {
 }
 ```
 
-### 4. Command Executor (`src/external/executor.rs`)
+### 4. Command Executor (`src/query/executor.rs`)
 
 **Purpose:** Safely execute external commands with timeout and output capture.
 

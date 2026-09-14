@@ -116,7 +116,7 @@ sequenceDiagram
 
 ### Phase 1: Error Type and Event (30 min)
 
-**File:** `src/chat/custom_coordinator.rs`
+**File:** `src/chat/coordinator.rs`
 
 ```rust
 /// Event emitted during response processing
@@ -136,7 +136,7 @@ pub enum ChatEvent {
 
 ### Phase 2: Context Check Modification (30 min)
 
-**File:** `src/chat/custom_coordinator.rs`
+**File:** `src/chat/coordinator.rs`
 
 ```rust
 /// Result of context check after tool execution
@@ -189,7 +189,7 @@ fn check_and_handle_context_overflow(&self, result: String) -> ContextCheckResul
 
 ### Phase 3: Tool Execution Loop Modification (1h)
 
-**File:** `src/chat/custom_coordinator.rs`
+**File:** `src/chat/coordinator.rs`
 
 ```rust
 pub async fn process_response(&mut self, response: ChatMessageResponse) -> Result<...> {

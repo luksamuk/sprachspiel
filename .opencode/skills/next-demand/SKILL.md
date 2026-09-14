@@ -11,7 +11,7 @@ metadata:
 ## What I do
 
 I identify the next implementation demand for the sprachspiel project by:
-1. Reading `IMPLEMENTATION.md` to understand completed and planned work
+1. Reading `IMPLEMENTATION.md` (an **index** — it no longer tracks status) for links to the architecture docs
 2. Reading `doc/src/development/roadmap.md` for strategic context
 3. Querying open demands from **Linear** (project "Sprachspiel") — issues migrated from GitHub on 2026-08-19
 4. Cross-referencing priorities, milestones (M1-M4), and dependencies (Linear issue relations)
@@ -26,7 +26,7 @@ GitHub issues are **closed history** (migrated to Linear on 2026-08-19). PRs and
 
 - **Discover, don't hardcode:** project/label/milestone ids are resolved at runtime by name (`mcp__linear__list_projects` / `projects(filter: { name: { eq: "Sprachspiel" } })`). MCP `list_issues` already returns `project`/`projectMilestone` per issue, so filtering is usually client-side.
 - Every Linear issue migrated from GitHub has `Ref: gh#N` in its description; cite demands as `LUC-N (ex gh#N)`.
-- `list_issues` returns `gitBranchName` per issue — use it for branch naming (`luc-NNN-slug`); the Linear GitHub integration auto-links those branches/PRs to the issue and moves status on PR open/merge. Magic words (`Fixes LUC-141`) in commit messages/PR bodies also work.
+- `list_issues` returns `gitBranchName`, but **do not use it verbatim** — it contains a username prefix and preserves shell-hostile characters from the title (literal `=`, etc.). Use the repo's historical pattern `{type}/{LUC-N}-{slug-kebab}` instead, where `type` matches the conventional-commit type (`feat`/`fix`/`docs`/`refactor`/`test`/`chore`) and the slug is a short kebab-case paraphrase of the title (3-5 words max). Examples: `feat/151-thinking-preserve`, `docs/103-adr-empathy-reframing`, `fix/233-search-scope`. Linear's GitHub integration still auto-links via the magic word `Fixes LUC-N` in the PR body or commit message (auto-moves status on open, auto-closes on merge) — the branch name is cosmetic.
 - Linear priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low.
 
 ## When to use me
@@ -39,7 +39,7 @@ Use this skill when the user asks "What's the next demand?", "Qual a próxima de
 
 1. **`AGENTS.md`** — Project guidelines, code style, tool development rules
 2. **`doc/src/development/PR-PROCESS.md`** — The mandatory PR workflow. READ THIS COMPLETELY before starting any implementation.
-3. **`IMPLEMENTATION.md`** — Current status of all priorities, completed work, what's planned
+3. **`IMPLEMENTATION.md`** — **Index only** (version, links, pointer to the tracker). Per-issue status is NOT here any more — it lives in Linear. Do not expect to find completion state in this file.
 4. **`doc/src/development/roadmap.md`** — Strategic direction, milestones, future plans
 
 ## Step-by-Step Process
@@ -84,7 +84,7 @@ Priority ordering rules:
 4. Items that **unblock other items** get priority boost — check `relations` / `inverseRelations` (e.g., embedding chain LUC-92→LUC-93→…→LUC-96)
 
 Exclude from candidates:
-- Items already `COMPLETED` in IMPLEMENTATION.md
+- Items already `Done` in Linear (`statusType == completed`)
 - Items with **unresolved `blocked_by` relations** — surface the blocking chain in the table instead of listing them as actionable
 - Items in `M2` milestone (TUI) — design-only until M1 complete
 - Items in `M3` milestone (Sprach 2.0) — research-only until M1 complete
@@ -149,7 +149,7 @@ After the issue candidates, show:
 
 When the user selects a draft to promote:
 
-1. **Level 1 (Ready):** Promote the Linear issue — set milestone (`save_issue`), priority, and move from Backlog to a planned state; update IMPLEMENTATION.md if needed
+1. **Level 1 (Ready):** Promote the Linear issue — set milestone (`save_issue`), priority, and move from Backlog to a planned state. Do **not** add a section to `IMPLEMENTATION.md` (a test enforces it stays an index)
 2. **Level 2 (Needs research):** Follow Phase 0 of the pr-workflow — mark the issue `🟡 RESEARCH NEEDED` (comment), investigate, produce Research Summary, then promote to planned
 3. **Level 3 (Needs design):** Schedule a design discussion — do NOT create an issue yet
 
@@ -167,7 +167,7 @@ Phase 0 is MANDATORY for research cards — it answers open questions before any
 → **Load the `pr-workflow` skill and start at Phase 1 (Setup).**
 The card's open questions are already answered; proceed directly to branch creation.
 
-**Do NOT determine this yourself.** Always check the card's status in IMPLEMENTATION.md before selecting the starting phase.
+**Do NOT determine this yourself.** Check the issue's state and labels in **Linear** before selecting the starting phase — `IMPLEMENTATION.md` no longer carries status.
 
 ## Key Rules
 
@@ -227,6 +227,6 @@ When assessing drafts for promotion, use these quick-win criteria:
 ## Project Info
 
 - **Issue tracking:** Linear — project "Sprachspiel", milestones "M1 - Core Evolution" … "M4 - Future & Cultural Grounding"
-- **GitHub:** `luksamuk/ask-ollama-rs` (PRs, reviews, CI only; issues are closed history)
+- **GitHub:** `luksamuk/sprachspiel` (PRs, reviews, CI only; issues are closed history)
 - **Old project board #4:** retired (legacy references kept in closed issues' history)
 - **Priority within milestones:** Linear `priority` + board order in the Linear triage view

@@ -4,6 +4,22 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation consolidated — one source of truth per concern (LUC-140 follow-up)** — The repo carried five places that tracked overlapping state, and they had drifted apart. The audit that prompted this cleanup found **26 internal contradictions**, 12 references to files that no longer existed, and at least one case where the same document claimed an issue was `❌ NOT STARTED` in one section and `✅ COMPLETED (supersedes it)` in another. Reorganised so each concern has exactly one home:
+
+  **Issue status → Linear only.** `IMPLEMENTATION.md` went from **8,246 to 116 lines** (-98.6%). It is now an index: current version, links, and a pointer to the tracker. A test (`implementation_md_stays_an_index`) fails if it exceeds 400 lines, stops mentioning Linear, or grows a per-issue completion section again. `AGENTS.md` had four instructions telling contributors to update it for roadmap/status — those would have re-grown the tracker, so they now point at Linear and the CHANGELOG.
+
+  **Architecture → `doc/src/development/`.** Six new pages carry the design content that was buried in the tracker, verbatim: `context-overflow.md` (including the compaction constants/functions tables and the 3-layer error-recovery design), `embedding-diagnostics.md`, `feedback-and-facts.md`, `todo-and-status-bar.md`, `agent-tools.md`. Four further sections were discarded as duplicates of existing docs (83%/84%/76%/68% overlap — the existing pages are longer and cover the same ground).
+
+  **Decisions → `doc/src/adr/`.** A new section at the end of the mdBook index holds decision records (DEC-001..007, ADR-007) with an explicit banner: these record *why*, are not maintained as current behaviour, and if the code contradicts one, the code is right. Kept deliberately isolated from the architecture docs, which describe how the system works today.
+
+  **Roadmap → strategic only.** `roadmap.md` kept the milestone rationale, architecture direction, CAS research table and deferred list with reasons; the per-issue `#NNN` tables are gone (they were the mechanism by which the file and the tracker drifted apart). Waves are described by theme now.
+
+  **Retired:** `implementation-status.md` and `feature-status.md` — both duplicated the roadmap, changelog and `IMPLEMENTATION.md`; both now redirect. `feature-status.md`'s deferred-features table was **94% identical** to `roadmap.md`, it still said "Skills System — Research needed" long after skills shipped, and its "Testing / Test Coverage" checklist was never maintained.
+
+  **New sensors** (`tests/repo_references.rs`, 4 checks): documents may not cite `src/**` paths that do not exist (19 dead references fixed; the check distinguishes *proposals* — "Files to create:" — from drift); removed abstractions (`RustylineInput`, `TerminalView`, `CompatOllama`, `OllamaProvider`) may not be presented as current; and `IMPLEMENTATION.md` must stay an index. Each was verified to fire by re-injecting the defect it guards.
+
 ### Added
 
 - **ADR-010: Empathy ≠ Failure — Meta-cognition Reframing (LUC-103, ex gh#159)** — Documents the reframing principle for S2.meta1-3: behavioral shifts are not bugs, but opacity is. Detector targets unannounced system drift (not user-initiated changes), telemetry records neutral observations (TTR shift, topic avoidance, register drift), and recalibration always requires human approval. One-line record added to the ADR table in `IMPLEMENTATION.md`; cross-reference in `unified-vision.md` Synergy 7. Full ADR body lives in Linear LUC-103.
@@ -676,7 +692,7 @@ All notable changes to Sprachspiel will be documented in this file.
   - Added AGENTS.md section documenting the pattern and checklist
 
 
-## [0.39.5] - 2026-03-30
+## [0.39.5] - 2026-04-03
 
 ### Fixed
 
@@ -1056,7 +1072,39 @@ All notable changes to Sprachspiel will be documented in this file.
   - `truncate_tool_result()` function - no longer used
   - All were marked "no longer used" with explicit comments
 
-## [0.36.0] - 2026-03-19
+## [0.37.0] - 2026-03-21
+
+Critical fixes for token calculation and context overflow detection.
+
+### Fixed
+
+- **Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
+  - Double-counting system + tools in `calculate_context_metrics()`
+  - Double-counting system_tokens in `needs_inter_tool_compaction()`
+  - Missing system + tools in pre-tool warning remaining tokens
+
+- **Pre-Tool Warning Message** - Fixed warning saying "Auto-compacting" when it only warned
+  - Now correctly shows warning at 75%, auto-compacts at 88%
+
+- **Duplicate Context Warnings** - Fixed two warnings shown for same condition
+  - Only shows warning when tools are disabled
+
+- **Percentage-Based Context Thresholds** - Replaced fixed buffers with percentages
+  - Scales correctly with context window size (32K, 128K, 200K)
+  - `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75%
+  - `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88%
+  - `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94%
+  - `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97%
+
+### Changed
+
+- **Function Simplifications**
+  - Removed `_threshold` parameter from `check_context_overflow()`
+  - Removed `_system_prompt` and `_use_debug` from `auto_compact_if_needed()`
+  - Removed `CoordinatorError` enum (never used)
+  - Removed `CompactionStats` and `compaction_stats()` (YAGNI)
+
+## [0.36.0] - 2026-03-18
 
 ### Added
 
@@ -1202,7 +1250,7 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Database Module** - `get_storage_path()` made public for error diagnostics
 
-## [0.35.0] - TBD
+## [0.35.0]
 
 ### Fixed
 
@@ -1249,7 +1297,7 @@ All notable changes to Sprachspiel will be documented in this file.
   - System prompt integration: Active tasks injected into LLM context
   - Global state sync: Tools and commands share same TodoState
 
-## [0.33.0] - 2026-03-16
+## [0.33.0] - 2026-03-15
 
 ### Added
 
@@ -1638,29 +1686,11 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - Removed `migrate_project()` function (replaced by automatic migration)
   - Deprecated `Session.save()` (JSON) in favor of `Session.save_sqlite()`
 
-## [0.26.8] - 2026-03-09
+## [0.27.0] — unreleased (planned here, shipped as 0.27.1)
 
-### Fixed
-
-- **Context Utilization After Compaction** - Fixed token count calculation after `/compact`
-  - `history_real_tokens()` now skips compacted messages
-  - `check_context_overflow()` now respects `messages_sent_to_llm`
-  - `/context` display now shows correct active messages and summary tokens
-  - Context utilization bar reflects post-compaction state
-
-### Details
-
-Before this fix, `/context` showed incorrect token counts after compaction:
-- Counted ALL messages (including compacted ones)
-- Showed 100%+ utilization even after successful compaction
-- Displayed wrong message count
-
-Now correctly calculates:
-- Tokens from summary + active messages only
-- Skips messages before `messages_sent_to_llm`
-- Shows summary token estimate in output
-
-## [0.27.0] - PLANNED
+> No `v0.27.0` tag or GitHub release exists. This section records the design that
+> `0.27.1` then implemented; it was written as a plan (commit c26b78b, "docs: plan
+> SQLite as single storage (v0.27.0)"). Kept for the architecture description.
 
 ### Changed
 
@@ -1731,6 +1761,28 @@ Users with existing JSON sessions will see a notification:
 ```
 
 ---
+
+## [0.26.8] - 2026-03-09
+
+### Fixed
+
+- **Context Utilization After Compaction** - Fixed token count calculation after `/compact`
+  - `history_real_tokens()` now skips compacted messages
+  - `check_context_overflow()` now respects `messages_sent_to_llm`
+  - `/context` display now shows correct active messages and summary tokens
+  - Context utilization bar reflects post-compaction state
+
+### Details
+
+Before this fix, `/context` showed incorrect token counts after compaction:
+- Counted ALL messages (including compacted ones)
+- Showed 100%+ utilization even after successful compaction
+- Displayed wrong message count
+
+Now correctly calculates:
+- Tokens from summary + active messages only
+- Skips messages before `messages_sent_to_llm`
+- Shows summary token estimate in output
 
 ## [0.26.7] - 2026-03-09
 
@@ -1884,7 +1936,7 @@ Users with existing JSON sessions will see a notification:
   - `chat/session.rs` - Use `ROLE_USER/ASSISTANT` constants
   - Test files updated accordingly
 
-## [0.26.0] - 2026-03-04
+## [0.26.0] - 2026-03-03
 
 ### Added
 
