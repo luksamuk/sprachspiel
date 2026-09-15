@@ -1,7 +1,7 @@
 //! CLI structures for translation subcommand
 //!
 //! Defines the TranslateArgs struct and related CLI parsing for the
-//! `ask translate` subcommand.
+//! `sprach translate` subcommand.
 
 use clap::{Args, Subcommand};
 
@@ -15,31 +15,52 @@ use crate::vision::VisionArgs;
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Translate text between languages using TranslateGemma
-    #[command(visible_alias = "t")]
+    #[command(
+        visible_alias = "t",
+        long_about = crate::consts::app::help_text(TRANSLATE_LONG_ABOUT)
+    )]
     Translate(TranslateArgs),
 
     /// Query an LLM model
-    #[command(visible_alias = "q")]
+    #[command(
+        visible_alias = "q",
+        long_about = crate::consts::app::help_text(QUERY_LONG_ABOUT)
+    )]
     Query(QueryArgs),
 
     /// Extract text from images
-    #[command(visible_alias = "o")]
+    #[command(
+        visible_alias = "o",
+        long_about = crate::consts::app::help_text(crate::ocr::cli::OCR_LONG_ABOUT)
+    )]
     Ocr(OcrArgs),
 
     /// Summarize text using AI
-    #[command(visible_alias = "sum")]
+    #[command(
+        visible_alias = "sum",
+        long_about = crate::consts::app::help_text(crate::summarize::cli::SUMMARIZE_LONG_ABOUT)
+    )]
     Summarize(SummarizeArgs),
 
     /// Interactive chat with conversation history
-    #[command(visible_alias = "c")]
+    #[command(
+        visible_alias = "c",
+        long_about = crate::consts::app::help_text(crate::chat::cli::CHAT_LONG_ABOUT)
+    )]
     Chat(ChatArgs),
 
     /// Analyze and describe images using vision models
-    #[command(visible_alias = "v")]
+    #[command(
+        visible_alias = "v",
+        long_about = crate::consts::app::help_text(crate::vision::cli::VISION_LONG_ABOUT)
+    )]
     Vision(VisionArgs),
 
     /// Diagnose embedding geometry and retrieval health
-    #[command(visible_alias = "diag")]
+    #[command(
+        visible_alias = "diag",
+        long_about = crate::consts::app::help_text(DIAG_LONG_ABOUT)
+    )]
     Diagnostics(DiagArgs),
 
     /// Generate shell completions
@@ -47,7 +68,10 @@ pub enum Commands {
     Completion(CompletionArgs),
 
     /// Manage configuration files
-    #[command(visible_alias = "cfg")]
+    #[command(
+        visible_alias = "cfg",
+        long_about = crate::consts::app::help_text(CONFIG_LONG_ABOUT)
+    )]
     Config(ConfigArgs),
 
     /// Manage models.toml (provider config, model entries)
@@ -55,11 +79,10 @@ pub enum Commands {
     Models(ModelsArgs),
 }
 
-/// Arguments for the translate subcommand
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Translate text between languages",
-    long_about = r#"
+/// Long help for `translate`, rendered by
+/// [`crate::consts::app::help_text`]. See `Commands` for why this is a
+/// constant rather than a `long_about` on the args struct (LUC-142).
+pub const TRANSLATE_LONG_ABOUT: &str = r#"
 Translate text using TranslateGemma model.
 
 LANGUAGE FORMAT:
@@ -73,17 +96,20 @@ LANGUAGE CODES:
   - Shorthands: 'br' → pt-BR, 'us' → en-US
 
 EXAMPLES:
-  ask translate en:pt "Hello world"
-  ask translate :pt "Hello world"              # Auto-detect source
-  ask translate pt "Hello world"                 # Auto-detect source
-  ask translate english:brazilian "Hello"        # Using names
-  ask translate he:en "שלום"                   # Hebrew to English
-  cat file.txt | ask translate en:pt
-  ask translate en:pt --prompt formal "Hello"    # Formal style
-  ask translate --list                           # List all languages
-  ask translate --list port                      # Filter by 'port'
-"#
-)]
+  {app} translate en:pt "Hello world"
+  {app} translate :pt "Hello world"              # Auto-detect source
+  {app} translate pt "Hello world"                 # Auto-detect source
+  {app} translate english:brazilian "Hello"        # Using names
+  {app} translate he:en "שלום"                   # Hebrew to English
+  cat file.txt | {app} translate en:pt
+  {app} translate en:pt --prompt formal "Hello"    # Formal style
+  {app} translate --list                           # List all languages
+  {app} translate --list port                      # Filter by 'port'
+"#;
+
+/// Arguments for the translate subcommand
+#[derive(Args, Debug, Clone)]
+#[command(about = "Translate text between languages")]
 pub struct TranslateArgs {
     /// Language specification in format \[source:\]target
     /// Examples: en:pt, :pt, pt, english:brazilian
@@ -105,21 +131,24 @@ pub struct TranslateArgs {
     pub list: Option<Option<String>>,
 }
 
-/// Arguments for the query subcommand (original CLI behavior)
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Query an LLM model",
-    long_about = r#"
+/// Long help for `query`, rendered by [`crate::consts::app::help_text`].
+///
+/// Declared here rather than as a `long_about` on [`QueryArgs`]: see `Commands`
+/// for why (LUC-142).
+pub const QUERY_LONG_ABOUT: &str = r#"
 Send a query to an LLM model.
 
 EXAMPLES:
-  ask query "What is Rust?"
-  ask q "Explain async/await"
-  sprach -m qwen3.5:4b query "Hello"
-  echo "text" | ask query
-  ask -t query "Think deeply about this"
-"#
-)]
+  {app} query "What is Rust?"
+  {app} q "Explain async/await"
+  {app} -m qwen3.5:4b query "Hello"
+  echo "text" | {app} query
+  {app} -t query "Think deeply about this"
+"#;
+
+/// Arguments for the query subcommand (original CLI behavior)
+#[derive(Args, Debug, Clone)]
+#[command(about = "Query an LLM model")]
 #[derive(Default)]
 pub struct QueryArgs {
     /// The query to send to the model (optional, reads from stdin if not provided)
@@ -127,11 +156,14 @@ pub struct QueryArgs {
     pub query: Option<String>,
 }
 
-/// Arguments for the diagnostics subcommand
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Diagnose embedding geometry and retrieval health",
-    long_about = r#"
+/// Long help for `diag`, rendered by
+/// [`crate::consts::app::help_text`].
+///
+/// A constant, not a `#[command(long_about = ...)]` on the args struct: a
+/// doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap would compile the text in and never print it
+/// (LUC-142). The variant that owns this struct references the constant.
+pub const DIAG_LONG_ABOUT: &str = r#"
 Analyze stored embedding vectors to assess retrieval quality.
 
 Computes spectral metrics (d_eff, d̄, regime classification, variance
@@ -151,8 +183,11 @@ EXAMPLES:
   sprach diagnostics --source facts
   sprach diagnostics --db /path/to/sprachspiel.db
   sprach --db /path/to/sprachspiel.db diagnostics
-"#
-)]
+"#;
+
+/// Arguments for the diagnostics subcommand
+#[derive(Args, Debug, Clone)]
+#[command(about = "Diagnose embedding geometry and retrieval health")]
 pub struct DiagArgs {
     /// Which embedding source to analyze
     ///
@@ -206,11 +241,14 @@ impl TranslateArgs {
 
 use clap::ValueEnum;
 
-/// Arguments for the `config` subcommand family
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Manage sprachspiel configuration",
-    long_about = r#"
+/// Long help for `config`, rendered by
+/// [`crate::consts::app::help_text`].
+///
+/// A constant, not a `#[command(long_about = ...)]` on the args struct: a
+/// doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap would compile the text in and never print it
+/// (LUC-142). The variant that owns this struct references the constant.
+pub const CONFIG_LONG_ABOUT: &str = r#"
 Subcommands for managing the user's `config.toml` file (e.g. merging
 new fields added by newer versions of sprachspiel into an existing
 configuration without overwriting user values).
@@ -219,8 +257,11 @@ EXAMPLES:
   sprach config upgrade               # Merge missing default fields
   sprach config upgrade --dry-run     # Preview changes without modifying
   sprach config upgrade --no-backup   # Skip creating a .bak file
-"#
-)]
+"#;
+
+/// Arguments for the `config` subcommand family
+#[derive(Args, Debug, Clone)]
+#[command(about = "Manage sprachspiel configuration")]
 pub struct ConfigArgs {
     #[command(subcommand)]
     pub action: ConfigAction,
@@ -230,15 +271,21 @@ pub struct ConfigArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum ConfigAction {
     /// Merge missing default fields into existing config.toml
-    #[command(visible_alias = "up")]
+    #[command(
+        visible_alias = "up",
+        long_about = crate::consts::app::help_text(CONFIG_UPGRADE_LONG_ABOUT)
+    )]
     Upgrade(UpgradeArgs),
 }
 
-/// Arguments for `sprach config upgrade`
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Merge missing default fields into config.toml",
-    long_about = r#"
+/// Long help for `upgrade`, rendered by
+/// [`crate::consts::app::help_text`].
+///
+/// A constant, not a `#[command(long_about = ...)]` on the args struct: a
+/// doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap would compile the text in and never print it
+/// (LUC-142). The variant that owns this struct references the constant.
+pub const CONFIG_UPGRADE_LONG_ABOUT: &str = r#"
 Merge missing default fields into the existing configuration file at
 ~/.config/sprachspiel/config.toml (or $XDG_CONFIG_HOME/sprachspiel/).
 
@@ -256,8 +303,11 @@ EXAMPLES:
   sprach config upgrade               # Upgrade with backup
   sprach config upgrade --dry-run     # Show what would be added
   sprach config upgrade --no-backup   # Skip the backup file
-"#
-)]
+"#;
+
+/// Arguments for `sprach config upgrade`
+#[derive(Args, Debug, Clone)]
+#[command(about = "Merge missing default fields into config.toml")]
 pub struct UpgradeArgs {
     /// Show what would be added without modifying the file
     #[arg(long)]
@@ -280,15 +330,21 @@ pub struct ModelsArgs {
 pub enum ModelsAction {
     /// Merge missing fields into models.toml (e.g., add `provider` to models
     /// that don't have one, create a default `[provider]` block if missing).
-    #[command(visible_alias = "up")]
+    #[command(
+        visible_alias = "up",
+        long_about = crate::consts::app::help_text(MODELS_UPGRADE_LONG_ABOUT)
+    )]
     Upgrade(ModelsUpgradeArgs),
 }
 
-/// Arguments for `sprach models upgrade`
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Migrate models.toml to current format (adds provider field, creates [provider] section)",
-    long_about = r#"
+/// Long help for `modelsupgrade`, rendered by
+/// [`crate::consts::app::help_text`].
+///
+/// A constant, not a `#[command(long_about = ...)]` on the args struct: a
+/// doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap would compile the text in and never print it
+/// (LUC-142). The variant that owns this struct references the constant.
+pub const MODELS_UPGRADE_LONG_ABOUT: &str = r#"
 Migrate ~/.config/sprachspiel/models.toml to the current format.
 
 This command handles migrations that can't be done with simple field
@@ -315,7 +371,12 @@ EXAMPLES:
   sprach models upgrade               # Migrate with backup
   sprach models upgrade --dry-run     # Show what would be added
   sprach models upgrade --no-backup   # Skip the backup file
-"#
+"#;
+
+/// Arguments for `sprach models upgrade`
+#[derive(Args, Debug, Clone)]
+#[command(
+    about = "Migrate models.toml to current format (adds provider field, creates [provider] section)"
 )]
 pub struct ModelsUpgradeArgs {
     /// Show what would be added without modifying the file

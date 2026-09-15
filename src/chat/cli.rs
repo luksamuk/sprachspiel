@@ -1,17 +1,19 @@
 //! CLI structures for chat subcommand
 //!
 //! Defines the ChatArgs struct and related CLI parsing for the
-//! `ask chat` subcommand.
+//! `sprach chat` subcommand.
 
 use clap::Args;
 
 use super::session::ToolOutputLevel;
 
-/// Arguments for the chat subcommand
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Interactive chat with conversation history",
-    long_about = r#"
+/// Long help for `chat`, rendered by [`crate::consts::app::help_text`].
+///
+/// Declared here, not as `#[command(long_about = ...)]` on the args struct:
+/// a doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap compiles that text in and never prints it (LUC-142).
+/// The `Commands` variant references this constant.
+pub const CHAT_LONG_ABOUT: &str = r#"
 Start an interactive chat session with an LLM model.
 
 Conversations are automatically saved per project (identified by git remote URL
@@ -30,13 +32,16 @@ COMMANDS (inside chat):
   /info           Show current session information
 
 EXAMPLES:
-  ask chat                      # Start chat with default model
-  ask chat -m lfm               # Start with specific model
-  ask chat --anonymous          # Temporary session (no persistence)
-  ask chat --load my-session    # Load a named session
-  ask chat -t                   # Start with thinking mode enabled
-"#
-)]
+  {app} chat                      # Start chat with default model
+  {app} chat -m lfm               # Start with specific model
+  {app} chat --anonymous          # Temporary session (no persistence)
+  {app} chat --load my-session    # Load a named session
+  {app} chat -t                   # Start with thinking mode enabled
+"#;
+
+/// Arguments for the chat subcommand
+#[derive(Args, Debug, Clone)]
+#[command(about = "Interactive chat with conversation history")]
 pub struct ChatArgs {
     /// Anonymous session (no history persistence)
     #[arg(short, long)]

@@ -262,7 +262,7 @@ sprach vision -m qwen3.5-4b photo.png      # General-purpose with vision
 ```bash
 sprach ocr document.png                     # Default (GLM-OCR)
 sprach ocr document.png --mode table         # Table extraction
-sprach ocr document.png --formula            # Formula extraction
+sprach ocr document.png --mode formula       # Formula extraction
 ```
 
 ### For Translation

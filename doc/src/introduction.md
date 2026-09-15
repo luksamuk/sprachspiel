@@ -41,7 +41,7 @@ Use an OCR-capable model to extract text, tables, formulas, and figures:
 ```bash
 sprach ocr document.png
 sprach ocr --mode table spreadsheet.png
-sprach ocr --formula equation.png
+sprach ocr --mode formula equation.png
 ```
 
 ### 4. Summarize Documents
