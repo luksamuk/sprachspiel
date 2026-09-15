@@ -23,8 +23,10 @@ fn repo_root() -> PathBuf {
 }
 
 /// Collect every `.md` file under `doc/src` (the user-facing mdBook sources),
-/// plus `SMOKE_TEST.md` at the repo root — it carries the same version/schema
-/// markers and drifted the same way in LUC-140.
+/// plus the root-level `README.md` and `SMOKE_TEST.md` — they carry the same
+/// commands and markers and drifted the same way. `README.md` was missing until
+/// LUC-142: `sprach ocr --detailed` (a flag that has never existed) survived
+/// there unnoticed precisely because this walker did not look at it.
 fn doc_sources() -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -41,9 +43,11 @@ fn doc_sources() -> Vec<PathBuf> {
     }
     let mut out = Vec::new();
     walk(&repo_root().join("doc/src"), &mut out);
-    let smoke = repo_root().join("SMOKE_TEST.md");
-    if smoke.exists() {
-        out.push(smoke);
+    for name in ["README.md", "SMOKE_TEST.md"] {
+        let p = repo_root().join(name);
+        if p.exists() {
+            out.push(p);
+        }
     }
     out
 }
@@ -410,6 +414,183 @@ fn documented_cli_examples_are_parseable() {
         "documented CLI examples are rejected by the parser because a \
          top-level-only flag follows the subcommand (LUC-140):\n  {}\n\n\
          Global flags must precede the subcommand: `sprach --plain query \"x\"`.",
+        offenders.join("\n  ")
+    );
+}
+
+/// No documented flag that a subcommand does not declare.
+///
+/// The sibling check above only catches flags that are *misplaced*; it never
+/// asked whether a flag **exists**. That blind spot let `sprach ocr --detailed`
+/// sit in `README.md` and `sprach chat --context 4096` in the context docs —
+/// neither flag has ever existed (LUC-142 follow-up).
+///
+/// The set of valid flags is read from the **live clap definitions**, not from a
+/// hand-maintained list: a hardcoded list is exactly the kind of thing that goes
+/// stale and re-creates the defect this guards. `sprach <sub> -h` is parsed by
+/// the binary for the same reason.
+///
+/// Deliberately narrow — a false positive makes the sensor worthless, so three
+/// shapes are skipped rather than guessed at:
+///
+/// - **Pipelines.** `sprach ocr a.png | sprach summarize --style x` gives
+///   `--style` to *summarize*. Scan stops at `|`, `&&`, `;`, `>`.
+/// - **Nested subcommands.** `sprach config upgrade --dry-run` gives
+///   `--dry-run` to `upgrade`; when the token after the subcommand is another
+///   subcommand name, that pair's flags are consulted.
+/// - **`--`.** The vision prompt separator, not a flag.
+#[test]
+fn documented_subcommand_flags_exist() {
+    let manifest = repo_root();
+    let candidates = [
+        manifest.join("target/debug/sprach"),
+        manifest.join("target/release/sprach"),
+    ];
+    let Some(bin) = candidates.into_iter().find(|p| p.exists()) else {
+        return;
+    };
+
+    let subcommands = [
+        "translate",
+        "query",
+        "ocr",
+        "summarize",
+        "chat",
+        "vision",
+        "diagnostics",
+        "config",
+        "models",
+    ];
+
+    // Top-level-only flags, valid before any subcommand. Sourced from
+    // `src/main.rs`; a subcommand that declares its own `--list` still passes
+    // because the per-subcommand set is consulted first.
+    const TOPLEVEL: &[&str] = &[
+        "--plain",
+        "--code",
+        "-c",
+        "-q",
+        "--db",
+        "--force",
+        "--tools",
+        "--ignore-agents",
+        "--soulless",
+        "-m",
+        "--model",
+        "-t",
+        "--think",
+        "-v",
+        "--verbose",
+        "--help",
+        "-h",
+        "--version",
+        "-V",
+        "-l",
+        "--list",
+    ];
+
+    /// Extract the flag-looking tokens from a `-h` rendering.
+    fn flags_of(text: &str) -> std::collections::HashSet<String> {
+        let mut set = std::collections::HashSet::new();
+        for word in text.split(|c: char| c.is_whitespace() || c == ',' || c == '=') {
+            let w = word.trim_matches(|c: char| c == '[' || c == ']' || c == '<' || c == '>');
+            if w.starts_with('-') && w.len() > 1 {
+                set.insert(w.to_string());
+            }
+        }
+        set
+    }
+
+    // Learn the flags of `sprach <sub>` and `sprach <sub> <nested>` from clap.
+    let mut valid: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    for sub in subcommands {
+        let Ok(out) = Command::new(&bin).args([sub, "-h"]).output() else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let set = flags_of(&text);
+        // Nested subcommands: any word the help lists as a subcommand.
+        for nested in ["upgrade", "up"] {
+            if let Ok(nout) = Command::new(&bin).args([sub, nested, "-h"]).output() {
+                if nout.status.success() {
+                    let ntext = String::from_utf8_lossy(&nout.stdout);
+                    let nset = flags_of(&ntext);
+                    if !nset.is_empty() {
+                        valid.insert(format!("{sub} {nested}"), nset);
+                    }
+                }
+            }
+        }
+        valid.insert(sub.to_string(), set);
+    }
+    if valid.is_empty() {
+        return;
+    }
+
+    // Shell operators that end this command's argument list.
+    const PIPES: &[&str] = &["|", "&&", "||", ";", ">", ">>", "2>", "2>&1"];
+
+    let mut offenders = Vec::new();
+    for path in doc_sources() {
+        if is_changelog(&path) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (lineno, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("sprach ") else {
+                continue;
+            };
+            let toks: Vec<&str> = rest.split_whitespace().collect();
+            let Some(pos) = toks.iter().position(|t| subcommands.contains(t)) else {
+                continue;
+            };
+            let sub = toks[pos];
+            // Nested subcommand? (`config upgrade --dry-run`)
+            let mut key = sub.to_string();
+            let mut args_start = pos + 1;
+            if toks.len() > pos + 1 {
+                let candidate = format!("{} {}", sub, toks[pos + 1]);
+                if valid.contains_key(&candidate) {
+                    key = candidate;
+                    args_start = pos + 2;
+                }
+            }
+            let Some(known) = valid.get(&key) else {
+                continue;
+            };
+            for tok in &toks[args_start..] {
+                if PIPES.contains(tok) {
+                    break;
+                }
+                // `--` is the vision prompt separator, not a flag.
+                if *tok == "--" {
+                    break;
+                }
+                if !tok.starts_with('-') || tok.len() < 2 {
+                    continue;
+                }
+                let name = tok.split('=').next().unwrap_or(tok);
+                if TOPLEVEL.contains(&name) || known.contains(name) {
+                    continue;
+                }
+                offenders.push(format!(
+                    "{}:{} — `{trimmed}` passes `{name}` to `{key}`, which does not \
+                     declare it",
+                    rel(&path),
+                    lineno + 1
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "documentation shows flags that do not exist on the subcommand \
+         (LUC-142 follow-up):\n  {}",
         offenders.join("\n  ")
     );
 }
