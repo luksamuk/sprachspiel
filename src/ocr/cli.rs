@@ -8,11 +8,13 @@ use std::path::PathBuf;
 
 use super::mode::OcrMode;
 
-/// Arguments for the OCR subcommand
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Extract text from images",
-    long_about = r#"Extract text, tables, figures, or formulas from images.
+/// Long help for `sprach ocr`, rendered by [`crate::consts::app::help_text`].
+///
+/// Lives here rather than in a `#[command(long_about = ...)]` on [`OcrArgs`]
+/// because a doc-comment on a `Subcommand` variant takes precedence over the
+/// struct's help attributes — clap would compile this text in and never print
+/// it. The `Commands::Ocr` variant references this constant.
+pub const OCR_LONG_ABOUT: &str = "Extract text, tables, figures, or formulas from images.
 
 SUPPORTED IMAGE FORMATS:
   - PNG (.png)
@@ -31,21 +33,23 @@ MODES:
   formula  - Extract mathematical formulas (LaTeX)
 
 EXAMPLES:
-  ask ocr document.png                    # Extract text from image
-  ask ocr --table spreadsheet.png       # Extract table structure
-  ask ocr --formula equation.png          # Extract LaTeX formulas
-  ask ocr --json *.png > output.jsonl   # Batch process with JSON output
-  ask ocr page*.png > combined.txt        # Process multiple images
+  {app} ocr document.png                 # Extract text from image
+  {app} ocr --mode table sheet.png       # Extract table structure
+  {app} ocr --mode formula eq.png        # Extract LaTeX formulas
+  {app} ocr --json *.png > output.jsonl  # Batch process with JSON output
+  {app} ocr page*.png > combined.txt     # Process multiple images
 
 PIPELINES:
-  ask ocr japanese.png | ask translate ja:pt    # OCR + translate
-  ask ocr report.png | ask summarize             # OCR + summarize
+  {app} ocr japanese.png | {app} translate ja:pt    # OCR + translate
+  {app} ocr report.png | {app} summarize            # OCR + summarize
 
 REQUIREMENTS:
-  - Ollama must be running locally or accessible remotely
-  - GLM-OCR model must be downloaded: ollama pull glm-ocr:bf16
-"#
-)]
+  - The LLM server must be running locally or accessible remotely
+  - An OCR model must be available: ollama pull glm-ocr:bf16";
+
+/// Arguments for the OCR subcommand
+#[derive(Args, Debug, Clone)]
+#[command(about = "Extract text from images")]
 pub struct OcrArgs {
     /// Image file(s) to process
     #[arg(value_name = "FILE")]
@@ -65,13 +69,19 @@ pub struct OcrArgs {
 }
 
 impl OcrArgs {
-    /// Validate that files are provided
+    /// Validate that files are provided.
+    ///
+    /// This message is printed to stderr and **is** reachable — `sprach ocr`
+    /// with no arguments exits through this path. It used to say `Usage: ask ocr`,
+    /// naming the binary from before the rename; that reached users because it
+    /// is a runtime error string, not help text.
     pub fn validate(&self) -> Result<(), String> {
         if self.files.is_empty() {
-            return Err("No image files provided.\n\
-                Usage: ask ocr [OPTIONS] <FILE>...\n\
-                Try 'ask ocr --help' for more information."
-                .to_string());
+            return Err(format!(
+                "No image files provided.\nUsage: {app} ocr [OPTIONS] <FILE>...\n\
+                 Try '{app} ocr --help' for more information.",
+                app = crate::consts::app::APP_NAME
+            ));
         }
         Ok(())
     }
@@ -99,5 +109,42 @@ mod tests {
             max_tokens: 8192,
         };
         assert!(args_empty.validate().is_err());
+    }
+
+    /// The no-arguments error is user-visible (`sprach ocr` prints it to stderr),
+    /// so it must name the real binary. It previously said `ask ocr`.
+    #[test]
+    fn validation_error_names_the_real_binary() {
+        let args = OcrArgs {
+            files: vec![],
+            mode: OcrMode::Text,
+            json: false,
+            max_tokens: 8192,
+        };
+        let err = args.validate().expect_err("empty files must be rejected");
+        assert!(
+            err.contains("sprach ocr"),
+            "error must name the real binary: {err}"
+        );
+        assert!(
+            !err.contains("ask ocr"),
+            "error must not name the pre-rename binary: {err}"
+        );
+    }
+
+    /// `long_about` is only printed if the `Commands` variant references it, and
+    /// the text must render `{app}` — a literal `{app}` leaking into `--help`
+    /// would be worse than the stale name it replaced.
+    #[test]
+    fn long_about_renders_app_name() {
+        let rendered = crate::consts::app::help_text(OCR_LONG_ABOUT);
+        assert!(
+            rendered.contains("sprach ocr"),
+            "rendered help must name the binary"
+        );
+        assert!(
+            !rendered.contains("{app}"),
+            "placeholder must be substituted: {rendered}"
+        );
     }
 }

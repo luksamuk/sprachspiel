@@ -199,7 +199,7 @@ cat file.txt | sprach translate :pt     # Pipe input
 
 ```bash
 sprach ocr document.png                 # Extract text
-sprach ocr --detailed image.jpg         # Detailed extraction
+sprach ocr --mode table image.jpg       # Table extraction
 sprach ocr page1.png page2.png           # Multiple files
 ```
 
@@ -214,8 +214,8 @@ sprach summarize --style bullets file.txt  # Bullet points
 ### Vision
 
 ```bash
-sprach vision photo.jpg "What's in this image?"
-sprach vision screenshot.png "Describe the UI"
+sprach vision photo.jpg -- "What's in this image?"
+sprach vision screenshot.png -- "Describe the UI"
 ```
 
 ## Examples

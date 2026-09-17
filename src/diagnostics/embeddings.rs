@@ -696,7 +696,9 @@ fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
 /// range of candidate thresholds** plus the mean cosine distance — not from
 /// `d_eff`. (A `d_eff` parameter used to be accepted here and silently
 /// ignored; it was removed rather than left as a misleading part of the
-/// signature. Wiring `d_eff` into the recommendation is LUC-93's scope.)
+/// signature. `d_eff` is deliberately not consulted: regime classification
+/// over candidate thresholds already captures the geometry signal, and the
+/// embedding-diagnostics doc describes how the two relate.)
 ///
 /// The recommendation follows these rules:
 ///

@@ -6,10 +6,13 @@
 use clap::Args;
 use std::path::PathBuf;
 
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Analyze and describe images using vision models",
-    long_about = r#"Analyze and describe images using vision models like qwen3.5, moondream, llava, or minicpm-v.
+/// Long help for `vision`, rendered by [`crate::consts::app::help_text`].
+///
+/// Declared here, not as `#[command(long_about = ...)]` on the args struct:
+/// a doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap compiles that text in and never prints it.
+/// The `Commands` variant references this constant.
+pub const VISION_LONG_ABOUT: &str = r#"Analyze and describe images using vision models like qwen3.5, moondream, llava, or minicpm-v.
 
 SUPPORTED FORMATS:
   - PNG (.png)
@@ -49,8 +52,10 @@ CONFIGURATION:
   Default model can be set in ~/.config/sprachspiel/config.toml:
   [model.vision]
   model = "qwen3.5:4b"
-"#
-)]
+"#;
+
+#[derive(Args, Debug, Clone)]
+#[command(about = "Analyze and describe images using vision models")]
 pub struct VisionArgs {
     /// Image file(s) to analyze
     #[arg(value_name = "FILE")]

@@ -226,8 +226,12 @@ fn test_parse_continuation_tag_nested_tags() { ... }  // Multiple tags
 Force context pressure by using a small context window:
 
 ```bash
-# Small context for testing
-sprach chat --model qwen3.5:4b --context 4096
+# Small context for testing — set num_ctx in models.toml (there is no CLI flag
+# for the context window; see doc/src/configuration.md)
+#   [model.chat]
+#   model = "qwen3.5:4b"
+#   num_ctx = 4096
+sprach chat -m qwen3.5:4b
 
 # Engage in long conversation until context fills
 # LLM should pause and continue automatically
