@@ -256,8 +256,7 @@ fn documents_do_not_cite_nonexistent_source_paths() {
         "documents cite `src/**` paths that do not exist ({} found across {checked} \
          documents):\n  {}\n\n\
          Either correct the path or delete the reference. If the reference is \
-         legitimately historical, move it to a document excluded by `is_checked()` \
-         (see LUC-145).",
+         legitimately historical, move it to a document excluded by `is_checked()`.",
         offenders.len(),
         offenders.join("\n  ")
     );
@@ -294,12 +293,15 @@ fn removed_abstractions_are_not_presented_as_current() {
         }
     }
 
-    // Informational: this is reported but not failed while the historical
-    // sections still exist. LUC-145 tracks their removal. The assertion below
-    // flips to a hard failure once that issue lands.
+    // Reported, not asserted. These mentions are legitimate history, not drift:
+    // `chat-mode-design.md` is banner-marked legacy, `completed-features.md`
+    // records what was removed, and `provider-architecture.md` cites a completed
+    // status table. A hard failure here would force deleting accurate history to
+    // satisfy a keyword check — the guard's purpose is that nothing re-presents
+    // these types as *current*, which is what `is_checked()` already enforces.
     if !offenders.is_empty() {
         eprintln!(
-            "note: {} mention(s) of removed abstractions remain (tracked in LUC-145):\n  {}",
+            "note: {} mention(s) of removed abstractions in historical documents:\n  {}",
             offenders.len(),
             offenders.join("\n  ")
         );
@@ -352,6 +354,86 @@ fn cargo_manifest_declares_a_version() {
         .find_map(|l| l.strip_prefix("version = "))
         .map(|v| v.trim().trim_matches('"').to_string());
     assert!(version.is_some(), "Cargo.toml must declare a version");
+}
+
+/// Source comments and test messages must not carry issue identifiers.
+///
+/// A reference like `(LUC-141)` in a doc-comment explains nothing a reader can
+/// act on, and goes stale the moment the issue closes — it becomes a pointer to
+/// a tracker entry that no longer describes anything. The *explanation* stays in
+/// the code; the *history* belongs in the tracker, the CHANGELOG and `doc/src/`.
+///
+/// This is a placement rule, not a documentation ban: `AGENTS.md`, the skills
+/// and `doc/src/**` legitimately cite identifiers, because those documents *are*
+/// the history. Only Rust sources are checked here.
+///
+/// Guarded because the rule is easy to violate one comment at a time — 43
+/// occurrences had accumulated before it was swept, and nothing stopped the next
+/// one from being written.
+#[test]
+fn rust_sources_do_not_cite_issue_identifiers() {
+    fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                rust_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let root = repo_root();
+    let mut files = Vec::new();
+    for dir in ["src", "tests", "benches"] {
+        let p = root.join(dir);
+        if p.exists() {
+            rust_files(&p, &mut files);
+        }
+    }
+
+    // This file has to name the identifiers to explain the rule it enforces.
+    // Excluded by path rather than by content, so a real violation written
+    // anywhere else in this file is still caught.
+    let self_path = root.join("tests/repo_references.rs");
+
+    let mut offenders = Vec::new();
+    for path in files {
+        if path == self_path {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (lineno, line) in text.lines().enumerate() {
+            // `LUC-123` and `gh#123` are the tracker forms. A bare `#123` is
+            // deliberately not matched: it is common in Rust for generics,
+            // colour codes and array indices, and a false positive here would
+            // train the reader to ignore the sensor.
+            let cites = |prefix: &str| {
+                line.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '#')
+                    .any(|t| {
+                        t.strip_prefix(prefix)
+                            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+                    })
+            };
+            if cites("LUC-") || cites("gh#") {
+                offenders.push(format!("{}:{} — {}", rel(&path), lineno + 1, line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "Rust sources cite tracker identifiers ({} found).\n\n\
+         Keep the explanation, drop the pointer: the rationale belongs in the \
+         code, the history belongs in Linear / CHANGELOG.md / doc/src/.\n\n{}",
+        offenders.len(),
+        offenders.join("\n")
+    );
 }
 
 /// Keeps the `Command` import honest if future checks shell out.

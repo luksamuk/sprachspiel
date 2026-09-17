@@ -2,9 +2,9 @@
 //!
 //! Guards against a recurring defect class: the user-facing documentation and
 //! `--help` output advertising commands or flags that do not exist. This has
-//! now happened twice — LUC-140 (ex gh#228) fixed `-d` and `--list-models` in
-//! the docs, and LUC-142 tracks ~50 occurrences of the pre-rename binary name
-//! `ask` still printed by the CLI source.
+//! has now happened twice: the docs advertised `-d` and `--list-models` long
+//! after both stopped existing, and the CLI source still printed the pre-rename
+//! binary name `ask` in help strings and usage errors.
 //!
 //! The checks here are deliberately narrow and cheap: they scan repository text
 //! for strings that are known-not-to-exist in the CLI. They do NOT parse the
@@ -24,8 +24,8 @@ fn repo_root() -> PathBuf {
 
 /// Collect every `.md` file under `doc/src` (the user-facing mdBook sources),
 /// plus the root-level `README.md` and `SMOKE_TEST.md` — they carry the same
-/// commands and markers and drifted the same way. `README.md` was missing until
-/// LUC-142: `sprach ocr --detailed` (a flag that has never existed) survived
+/// commands and markers and drifted the same way. `README.md` was missing for a
+/// long time: `sprach ocr --detailed` (a flag that has never existed) survived
 /// there unnoticed precisely because this walker did not look at it.
 fn doc_sources() -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -66,12 +66,6 @@ fn rel(path: &Path) -> String {
         .to_string()
 }
 
-/// Lines in development/planning docs that discuss these very defects are
-/// allowed to name them.
-fn is_explanatory(line: &str) -> bool {
-    line.contains("LUC-140") || line.contains("LUC-142") || line.contains("gh#228")
-}
-
 /// Flags removed or never implemented. Verified against the built binary:
 /// both error with "unexpected argument".
 const PHANTOM_FLAGS: &[&str] = &["--list-models", "--no-tui"];
@@ -87,9 +81,6 @@ fn docs_do_not_reference_phantom_flags() {
             continue;
         };
         for (lineno, line) in content.lines().enumerate() {
-            if is_explanatory(line) {
-                continue;
-            }
             for flag in PHANTOM_FLAGS {
                 if line.contains(flag) {
                     offenders.push(format!("{}:{} references `{flag}`", rel(&path), lineno + 1));
@@ -101,7 +92,7 @@ fn docs_do_not_reference_phantom_flags() {
         offenders.is_empty(),
         "documentation references flags that do not exist in the CLI:\n  {}\n\n\
          Verify with `sprach <flag>` — if it errors with 'unexpected argument', \
-         fix the doc (see LUC-140).",
+         fix the doc.",
         offenders.join("\n  ")
     );
 }
@@ -119,9 +110,6 @@ fn docs_do_not_use_nonexistent_debug_flag() {
             continue;
         };
         for (lineno, line) in content.lines().enumerate() {
-            if is_explanatory(line) {
-                continue;
-            }
             if line_uses_debug_flag(line) {
                 offenders.push(format!("{}:{} — `{}`", rel(&path), lineno + 1, line.trim()));
             }
@@ -129,7 +117,7 @@ fn docs_do_not_use_nonexistent_debug_flag() {
     }
     assert!(
         offenders.is_empty(),
-        "documentation uses the nonexistent `-d` flag (LUC-140):\n  {}\n\n\
+        "documentation uses the nonexistent `-d` flag:\n  {}\n\n\
          `sprach -d \"x\"` errors with 'unexpected argument'. Use `-v` (verbose) \
          or `-vv` (trace).",
         offenders.join("\n  ")
@@ -193,7 +181,7 @@ fn vision_examples_separate_prompt_with_double_dash() {
     assert!(
         offenders.is_empty(),
         "vision examples pass a prompt without the `--` separator, so the prompt \
-         is parsed as another filename (LUC-140):\n  {}\n\n\
+         is parsed as another filename:\n  {}\n\n\
          Correct form: sprach vision photo.png -- \"prompt\"",
         offenders.join("\n  ")
     );
@@ -210,7 +198,7 @@ fn extract_quoted(s: &str) -> Option<&str> {
 /// Every subcommand's `--help` must print the current binary name, and no
 /// `--help` may name a model that does not exist. The project was renamed from
 /// `ask-ai` to `sprachspiel` (short binary `sprach`), and the rename missed the
-/// help strings in several CLI modules (LUC-142).
+/// help strings in several CLI modules.
 ///
 /// Also guards the model-example class: `sprach --help` advertised
 /// `-m lfm` as "the default" while `DEFAULT_MODEL` is `qwen3.5:4b` and `lfm` is
@@ -271,14 +259,14 @@ fn help_output_uses_current_binary_name() {
     assert!(
         offenders.is_empty(),
         "--help output uses the pre-rename binary name `ask` or a nonexistent \
-         model example (LUC-142 / LUC-140):\n  {}",
+         model example:\n  {}",
         offenders.join("\n  ")
     );
 }
 
 /// No documented `sprach <sub> -v` — verbosity is declared only on the top-level
-/// `Cli`, so the flag must precede the subcommand. Five command pages listed
-/// `-v`/`-vv` in their per-subcommand option tables (LUC-140 residual).
+/// `Cli`, so the flag must precede the subcommand. Five command pages had
+/// listed `-v`/`-vv` in their per-subcommand option tables.
 #[test]
 fn verbosity_is_not_documented_as_a_subcommand_flag() {
     let manifest = repo_root();
@@ -339,15 +327,15 @@ fn verbosity_is_not_documented_as_a_subcommand_flag() {
     }
     assert!(
         offenders.is_empty(),
-        "docs show `-v` after a subcommand that rejects it (LUC-140):\n  {}\n\n\
+        "docs show `-v` after a subcommand that rejects it:\n  {}\n\n\
          Correct form: `sprach -v <sub> ...`.",
         offenders.join("\n  ")
     );
 }
 
 /// Every CLI example in the docs must be accepted by the parser. This is the
-/// sensor for the flag-ordering class (LUC-140): docs showed `sprach chat
-/// --plain`, which the parser rejects because `--plain` is top-level-only.
+/// sensor for the flag-ordering class: docs showed `sprach chat --plain`,
+/// which the parser rejects because `--plain` is top-level-only.
 ///
 /// Only commands whose subcommand is known to the test are checked, and only
 /// when a binary is available.
@@ -412,7 +400,7 @@ fn documented_cli_examples_are_parseable() {
     assert!(
         offenders.is_empty(),
         "documented CLI examples are rejected by the parser because a \
-         top-level-only flag follows the subcommand (LUC-140):\n  {}\n\n\
+         top-level-only flag follows the subcommand:\n  {}\n\n\
          Global flags must precede the subcommand: `sprach --plain query \"x\"`.",
         offenders.join("\n  ")
     );
@@ -423,7 +411,7 @@ fn documented_cli_examples_are_parseable() {
 /// The sibling check above only catches flags that are *misplaced*; it never
 /// asked whether a flag **exists**. That blind spot let `sprach ocr --detailed`
 /// sit in `README.md` and `sprach chat --context 4096` in the context docs —
-/// neither flag has ever existed (LUC-142 follow-up).
+/// neither flag has ever existed.
 ///
 /// The set of valid flags is read from the **live clap definitions**, not from a
 /// hand-maintained list: a hardcoded list is exactly the kind of thing that goes
@@ -590,15 +578,16 @@ fn documented_subcommand_flags_exist() {
     assert!(
         offenders.is_empty(),
         "documentation shows flags that do not exist on the subcommand \
-         (LUC-142 follow-up):\n  {}",
+:
+  {}",
         offenders.join("\n  ")
     );
 }
 
 /// Version and schema-version markers in docs must match the crate and the
-/// database. This drifted four separate times in LUC-140 (IMPLEMENTATION.md,
-/// roadmap.md, implementation-status.md, SMOKE_TEST.md), which is why it gets
-/// a sensor rather than another manual sweep.
+/// database. This drifted four separate times (IMPLEMENTATION.md, roadmap.md,
+/// implementation-status.md, SMOKE_TEST.md), which is why it gets a sensor
+/// rather than another manual sweep.
 #[test]
 fn docs_version_and_schema_markers_match_code() {
     let manifest = repo_root();
@@ -626,13 +615,13 @@ fn docs_version_and_schema_markers_match_code() {
     // `schema vN` must always name the live version.
     let stale_schema = format!("schema v{}", schema_version.parse::<i32>().unwrap_or(0) - 1);
     for path in doc_sources() {
+        if is_changelog(&path) {
+            continue;
+        }
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
         for (lineno, line) in content.lines().enumerate() {
-            if is_explanatory(line) {
-                continue;
-            }
             if line.contains(&stale_schema) {
                 offenders.push(format!(
                     "{}:{} says `{stale_schema}` but SCHEMA_VERSION is {schema_version}",

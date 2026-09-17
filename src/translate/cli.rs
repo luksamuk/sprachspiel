@@ -81,7 +81,7 @@ pub enum Commands {
 
 /// Long help for `translate`, rendered by
 /// [`crate::consts::app::help_text`]. See `Commands` for why this is a
-/// constant rather than a `long_about` on the args struct (LUC-142).
+/// constant rather than a `long_about` on the args struct.
 pub const TRANSLATE_LONG_ABOUT: &str = r#"
 Translate text using TranslateGemma model.
 
@@ -134,7 +134,7 @@ pub struct TranslateArgs {
 /// Long help for `query`, rendered by [`crate::consts::app::help_text`].
 ///
 /// Declared here rather than as a `long_about` on [`QueryArgs`]: see `Commands`
-/// for why (LUC-142).
+/// for why.
 pub const QUERY_LONG_ABOUT: &str = r#"
 Send a query to an LLM model.
 
@@ -162,7 +162,7 @@ pub struct QueryArgs {
 /// A constant, not a `#[command(long_about = ...)]` on the args struct: a
 /// doc-comment on a `Subcommand` variant takes precedence over the struct's
 /// help attributes, so clap would compile the text in and never print it
-/// (LUC-142). The variant that owns this struct references the constant.
+/// The variant that owns this struct references the constant.
 pub const DIAG_LONG_ABOUT: &str = r#"
 Analyze stored embedding vectors to assess retrieval quality.
 
@@ -247,7 +247,7 @@ use clap::ValueEnum;
 /// A constant, not a `#[command(long_about = ...)]` on the args struct: a
 /// doc-comment on a `Subcommand` variant takes precedence over the struct's
 /// help attributes, so clap would compile the text in and never print it
-/// (LUC-142). The variant that owns this struct references the constant.
+/// The variant that owns this struct references the constant.
 pub const CONFIG_LONG_ABOUT: &str = r#"
 Subcommands for managing the user's `config.toml` file (e.g. merging
 new fields added by newer versions of sprachspiel into an existing
@@ -284,7 +284,7 @@ pub enum ConfigAction {
 /// A constant, not a `#[command(long_about = ...)]` on the args struct: a
 /// doc-comment on a `Subcommand` variant takes precedence over the struct's
 /// help attributes, so clap would compile the text in and never print it
-/// (LUC-142). The variant that owns this struct references the constant.
+/// The variant that owns this struct references the constant.
 pub const CONFIG_UPGRADE_LONG_ABOUT: &str = r#"
 Merge missing default fields into the existing configuration file at
 ~/.config/sprachspiel/config.toml (or $XDG_CONFIG_HOME/sprachspiel/).
@@ -343,7 +343,7 @@ pub enum ModelsAction {
 /// A constant, not a `#[command(long_about = ...)]` on the args struct: a
 /// doc-comment on a `Subcommand` variant takes precedence over the struct's
 /// help attributes, so clap would compile the text in and never print it
-/// (LUC-142). The variant that owns this struct references the constant.
+/// The variant that owns this struct references the constant.
 pub const MODELS_UPGRADE_LONG_ABOUT: &str = r#"
 Migrate ~/.config/sprachspiel/models.toml to the current format.
 

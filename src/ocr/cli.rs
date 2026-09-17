@@ -13,7 +13,7 @@ use super::mode::OcrMode;
 /// Lives here rather than in a `#[command(long_about = ...)]` on [`OcrArgs`]
 /// because a doc-comment on a `Subcommand` variant takes precedence over the
 /// struct's help attributes — clap would compile this text in and never print
-/// it (LUC-142). The `Commands::Ocr` variant references this constant.
+/// it. The `Commands::Ocr` variant references this constant.
 pub const OCR_LONG_ABOUT: &str = "Extract text, tables, figures, or formulas from images.
 
 SUPPORTED IMAGE FORMATS:
@@ -74,7 +74,7 @@ impl OcrArgs {
     /// This message is printed to stderr and **is** reachable — `sprach ocr`
     /// with no arguments exits through this path. It used to say `Usage: ask ocr`,
     /// naming the binary from before the rename; that reached users because it
-    /// is a runtime error string, not help text (LUC-142).
+    /// is a runtime error string, not help text.
     pub fn validate(&self) -> Result<(), String> {
         if self.files.is_empty() {
             return Err(format!(

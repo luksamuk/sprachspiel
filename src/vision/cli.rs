@@ -10,7 +10,7 @@ use std::path::PathBuf;
 ///
 /// Declared here, not as `#[command(long_about = ...)]` on the args struct:
 /// a doc-comment on a `Subcommand` variant takes precedence over the struct's
-/// help attributes, so clap compiles that text in and never prints it (LUC-142).
+/// help attributes, so clap compiles that text in and never prints it.
 /// The `Commands` variant references this constant.
 pub const VISION_LONG_ABOUT: &str = r#"Analyze and describe images using vision models like qwen3.5, moondream, llava, or minicpm-v.
 

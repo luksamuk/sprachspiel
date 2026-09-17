@@ -263,15 +263,65 @@ Critical rules for reviews:
  - Use response prefixes: ✅ Resolvido, ✅ Verificado, 📋, ❌, ❓
  - **Reply + Resolve are inseparable.** After replying to a review thread inline, you MUST resolve the thread in the same session via `resolveReviewThread`. A reply without a resolve leaves the thread OPEN, which reviewers interpret as "the issue still exists." Before considering a review-response session complete, verify that ALL threads are resolved via the GraphQL check in the `code-review` skill. A session is NOT complete until every thread is resolved.
 
+## Issue References in Code
+
+**Do NOT put issue identifiers (`LUC-142`, `gh#228`, `#187`) in source comments or test
+assertion messages.** The tracker does not belong in the code.
+
+A comment that says *"scope filtering mirrors `content_item_in_scope` so project-scoped
+rows stay visible"* explains the invariant and survives refactoring. One that says
+*"(LUC-141)"* explains nothing, and goes stale the moment the issue closes: the identifier
+becomes an unresolvable pointer that sends a future reader to a tracker entry they cannot
+act on. The rationale belongs in the code; the *history* belongs in the tracker, the
+CHANGELOG, and `doc/src/`.
+
+This is not a documentation ban — it is a placement rule:
+
+| Where | Issue identifiers? |
+|-------|--------------------|
+| `src/**` comments, `tests/**` assertion messages | **No** |
+| `AGENTS.md`, skills, `doc/src/development/**` | Yes — these *are* the history |
+| `doc/src/CHANGELOG.md` | Yes — release notes cite what shipped |
+| Test names, doc-comment `# Arguments` sections | No — name the behaviour, not the ticket |
+
+When removing a reference, keep the explanation and drop only the pointer:
+
+```rust
+// BEFORE — the identifier is noise; the sentence is the useful part
+/// Pure scope predicate for search filtering (LUC-141).
+
+// AFTER — same meaning, no tracker coupling
+/// Pure scope predicate for search filtering.
+```
+
+For a deferral, state the *reason* in the code and leave the tracking to the tracker:
+
+```rust
+// BAD  — "tracked" by an issue a reader must go look up
+/// Wiring `d_eff` in is LUC-93's scope.
+
+// GOOD — the reader learns why it is not done here
+/// `d_eff` is deliberately not consulted: the recommendation follows regime
+/// classification across candidate thresholds instead. See `embedding-diagnostics.md`.
+```
+
+Enforcement:
+
+```bash
+rg 'LUC-\d+|gh#\d+' src/ tests/ --type rust   # must return nothing
+```
+
 ## Never Leave Things for Later
 
 **CRITICAL RULE:** If you cannot complete something now, you MUST document it.
 
 1. **Todo list** — Use the todowrite tool for immediate tasks
 2. **Roadmap** — update the Linear project/milestone for larger features (not `IMPLEMENTATION.md`)
-3. **Code comments** — If leaving TODO/FIXME, add issue reference or context
+3. **Code comments** — explain the *why* in place (never an issue identifier — see above); if a
+   TODO/FIXME is genuinely needed, give it context a reader can act on, and track the work itself
+   in Linear
 4. **Changelog** — Note incomplete work in version notes
-5. **GitHub Issue** — Create/update issue on the Project board
+5. **Linear issue** — Create/update the issue in the project
 
 If you tell the user "I'll do X later", you have failed. Either do it now, or explicitly ask if it should be deferred and then document it in a visible place.
 
