@@ -327,6 +327,62 @@ When a PR includes files unrelated to its stated purpose, flag it. The fix may b
 
 ---
 
+# Part 6: What Reviewer Feedback Usually Turns Into
+
+A review comment often asks for a **rule**, not just a fix ("we should avoid this kind of thing — add it as a
+directive and sweep the codebase"). That is three deliverables, and delivering only the fix will earn a
+second round:
+
+1. **The sweep** — fix every existing occurrence, mechanically where possible.
+2. **The directive** — a rule in `AGENTS.md` (or the relevant skill). Check whether an existing rule says the
+   *opposite*: the instruction that produces a defect is often still written down. Fixing it is part of the answer.
+3. **The sensor** — a test, so the class cannot return one instance at a time. The AGENTS.md steering rule
+   requires this for any repeated defect.
+
+Prove the sensor fires (`docs_consistency.rs` / `repo_references.rs` are the landing spots):
+
+```python
+# re-inject the defect, confirm FAILED, restore, confirm ok
+shutil.copy(path, '/tmp/probe.rs')
+open(path,'w').write(text.replace("good line", "good line (LUC-999)"))
+assert 'FAILED' in run("cargo test --test repo_references <name>")
+shutil.copy('/tmp/probe.rs', path)
+```
+
+### Sweeping references without damaging the prose
+
+When deleting a pointer (an issue id, a dead path), **keep the explanation and drop only the pointer**. A
+mechanical regex leaves debris: orphaned punctuation (`///.`), comments starting in lowercase, and — the worst
+case — a sentence whose meaning *depended* on the pointer:
+
+```rust
+// BAD  — the reason was the reference; nothing is left
+/// Wiring `d_eff` in is LUC-93's scope.      →   (deleted)
+
+// GOOD — state the reason directly
+/// `d_eff` is deliberately not consulted: regime classification over candidate
+/// thresholds already carries the geometry signal.
+```
+
+After a mechanical pass, always `git diff` the whole change and read it as prose. Then check whether an
+exemption helper keys on the thing you removed — an `is_explanatory()` that exempts lines *by identifier* is
+the same coupling you are eliminating, and it usually exists to serve a real need that a structural check
+(`is_changelog()`) serves better.
+
+### A sensor that cries wolf gets deleted
+
+Prefer a narrower sensor over a noisy one. Skip shapes that cannot be judged:
+
+- `#123` in Rust is generics, hex colour, array index — do **not** match a bare `#` form.
+- Pipelines (`a | b`) give a flag to the *second* command; stop the scan at `|`, `&&`, `;`, `>`.
+- Nested subcommands (`config upgrade --dry-run`) resolve flags against the nested pair.
+- The sensor's own file must be excluded **by path**, not by content, so a real violation elsewhere in it still fires.
+
+Verify the non-firing direction too (a line with `#123`, `Vec<T>` and `#1a2b3c` must pass), not just that the
+defect trips it.
+
+---
+
 # Part 5: Auth Setup for Review API
 
 When `gh auth status` fails in sandboxed environments:
