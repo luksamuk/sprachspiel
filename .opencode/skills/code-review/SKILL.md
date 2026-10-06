@@ -411,6 +411,32 @@ exemption helper keys on the thing you removed — an `is_explanatory()` that ex
 the same coupling you are eliminating, and it usually exists to serve a real need that a structural check
 (`is_changelog()`) serves better.
 
+### Never claim a guard covers what you excluded from it
+
+The most dangerous sentence in a sensor is a comment asserting what it still catches. If the
+implementation skips a file, a shape or a line, the comment describing that skip is where a false
+sense of safety hides.
+
+Real failure: a test claimed *"a real violation written anywhere else in this file is still caught"*
+while doing `if path == self_path { continue }` — skipping the **whole file**. A `FIXME(LUC-777)`
+appended to the test passed cleanly. The claim was false *by construction*.
+
+```rust
+// BAD — exclusion by path kills every future violation in that file
+let self_path = root.join("tests/repo_references.rs");
+for path in files {
+    if path == self_path { continue }   // whole file, permanently unguarded
+```
+
+Before writing "still caught", re-read the loop and trace which inputs actually reach the check.
+Then **prove it**: re-inject the violation into the excluded region and confirm the sensor reports it.
+
+**Better than narrowing the exclusion: remove the need for it.** The exclusion existed only because
+the test had to name a real identifier to document the pattern. Writing the pattern generically
+(`LUC-<n>` / `gh#<n>`) let the file be scanned like any other, so the exception and the blind spot
+disappeared together. An exception you cannot remove is a spot to document loudly; one you *can*
+remove is a bug.
+
 ### A sensor that cries wolf gets deleted
 
 Prefer a narrower sensor over a noisy one. Skip shapes that cannot be judged:
