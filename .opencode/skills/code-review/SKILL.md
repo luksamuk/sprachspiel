@@ -423,4 +423,34 @@ Prefer a narrower sensor over a noisy one. Skip shapes that cannot be judged:
 Verify the non-firing direction too (a line with `#123`, `Vec<T>` and `#1a2b3c` must pass), not just that the
 defect trips it.
 
+### Marking a PR ready: the body rots as the branch grows
+
+A PR body written before the review round describes a branch that no longer exists. Before `gh pr ready`,
+re-read the body and check every factual claim against the current branch:
+
+- **Sensor/test counts** — `- [x] \`cargo test --test repo_references\` — 4/4` becomes wrong the moment you add a
+  fifth sensor. Count them: `rg -c '^#\[test\]' tests/<file>.rs`.
+- **The file table** — a follow-up commit touching `AGENTS.md` or a skill is invisible if the table predates it.
+- **Missing sections entirely** — work done in response to review may have no section at all.
+
+Verify counts from the artifact, never from what you remember writing.
+
+### Retracting a wrong claim you already published
+
+If you discover a claim in your own review reply was false (a measurement, a count, a behaviour), **edit the
+comment** rather than quietly moving on — `gh api repos/:o/:r/pulls/comments/<id> --method PATCH -F body=@file`.
+Label it plainly as a correction and give the re-measured numbers. A wrong number left standing in a review
+trains the reviewer to distrust the right ones.
+
+The failure mode to avoid: reporting a *build* cost as a *test* cost. "The suite takes 404s" was actually
+first-compile time, not the test budget — re-measure both sides (`git stash` the change, time it, restore)
+before claiming a performance regression. A 0.1s difference is not a regression.
+
+### CHANGELOG sections must stay grouped
+
+Never add a second `### Changed` under a version heading that already has one — the release notes become
+`Fixed, Removed, Fixed, Changed, ... Changed`, which is unreadable and breaks the grouping convention.
+Insert the entry **inside** the existing section of the same category instead, and confirm the heading
+sequence is unchanged from before your edit.
+
 ---
