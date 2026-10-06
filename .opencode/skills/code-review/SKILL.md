@@ -413,6 +413,25 @@ the same coupling you are eliminating, and it usually exists to serve a real nee
 
 ### Never claim a guard covers what you excluded from it
 
+**Phrase claims so they can only be settled by execution, not by reading.** Two verifiers given the
+same question disagreed, and the split was predictable:
+
+```
+verifier A (read the code)   → confirmed
+verifier B (re-injected a violation and ran it) → REFUTED
+```
+
+Verifier A had read the comment *describing* the exclusion and accepted it. Verifier B did not argue
+with the comment — it appended `FIXME(LUC-777)` and watched the test pass. **A claim whose truth can
+be established by reading prose will be "confirmed" by reading prose.** So:
+
+- Write claims about a guard as *"re-inject X, the test must FAIL"*, never as *"the guard catches X"*.
+- Give verifiers the instruction to **execute** the falsification, not to inspect for it.
+- Treat a read-only confirmation of an executable claim as no evidence at all.
+
+When two verifiers disagree, the one that ran something wins — but verify it yourself before acting,
+since a re-injector can also mis-edit. Confirm the restored file's hash afterwards.
+
 The most dangerous sentence in a sensor is a comment asserting what it still catches. If the
 implementation skips a file, a shape or a line, the comment describing that skip is where a false
 sense of safety hides.
