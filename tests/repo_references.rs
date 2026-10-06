@@ -358,7 +358,7 @@ fn cargo_manifest_declares_a_version() {
 
 /// Source comments and test messages must not carry issue identifiers.
 ///
-/// A reference like `(LUC-141)` in a doc-comment explains nothing a reader can
+/// A reference like `(LUC-<n>)` in a doc-comment explains nothing a reader can
 /// act on, and goes stale the moment the issue closes — it becomes a pointer to
 /// a tracker entry that no longer describes anything. The *explanation* stays in
 /// the code; the *history* belongs in the tracker, the CHANGELOG and `doc/src/`.
@@ -370,6 +370,11 @@ fn cargo_manifest_declares_a_version() {
 /// Guarded because the rule is easy to violate one comment at a time — 43
 /// occurrences had accumulated before it was swept, and nothing stopped the next
 /// one from being written.
+///
+/// No file is excluded, including this one. Describing the pattern as
+/// `LUC-<n>` / `gh#<n>` — rather than spelling out a real identifier — keeps this
+/// documentation out of the sensor's own net, so a violation written anywhere,
+/// here or elsewhere, is still reported.
 #[test]
 fn rust_sources_do_not_cite_issue_identifiers() {
     fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -395,21 +400,13 @@ fn rust_sources_do_not_cite_issue_identifiers() {
         }
     }
 
-    // This file has to name the identifiers to explain the rule it enforces.
-    // Excluded by path rather than by content, so a real violation written
-    // anywhere else in this file is still caught.
-    let self_path = root.join("tests/repo_references.rs");
-
     let mut offenders = Vec::new();
     for path in files {
-        if path == self_path {
-            continue;
-        }
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
         for (lineno, line) in text.lines().enumerate() {
-            // `LUC-123` and `gh#123` are the tracker forms. A bare `#123` is
+            // `LUC-<n>` and `gh#<n>` are the tracker forms. A bare `#123` is
             // deliberately not matched: it is common in Rust for generics,
             // colour codes and array indices, and a false positive here would
             // train the reader to ignore the sensor.
