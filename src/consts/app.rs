@@ -13,6 +13,29 @@
 /// Must match Cargo.toml `[[bin]] name`.
 pub const APP_NAME: &str = "sprach";
 
+/// Render a help-text template, substituting `{app}` with [`APP_NAME`].
+///
+/// The CLI help blocks (`long_about`) contain examples that users copy verbatim,
+/// so they must name the binary that actually exists. Writing `sprach` literally
+/// in each block is how the pre-rename `ask` survived: the project was renamed,
+/// the docs were updated, and the strings inside the compiled help were not —
+/// because nothing connected them to `APP_NAME`.
+///
+/// Writing `{app}` instead makes the name derive from the single source of truth.
+/// `concat!` cannot do this (it rejects a `const`, requiring a literal), so the
+/// substitution happens at runtime — the cost is one `String` per help block, and
+/// clap holds them for the life of the process anyway.
+///
+/// # Example
+///
+/// ```
+/// use sprachspiel::consts::app::help_text;
+/// assert_eq!(help_text("{app} ocr page.png"), "sprach ocr page.png");
+/// ```
+pub fn help_text(body: &str) -> String {
+    body.replace("{app}", APP_NAME).trim().to_string()
+}
+
 /// Log filename
 pub const LOG_FILENAME: &str = "sprachspiel.log";
 

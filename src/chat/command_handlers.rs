@@ -855,7 +855,7 @@ pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Handle search command (async)
 ///
 /// Searches session messages plus project-scoped content (imported
-/// documents, notes) of the session's project for matching text (LUC-141).
+/// documents, notes) of the session's project for matching text.
 /// Anonymous sessions are rejected with a clear error (sibling idiom of /save).
 /// Returns `SearchOutcome` data, which is converted to `CommandOutput` here.
 pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {

@@ -366,3 +366,136 @@ one machine.)
 re-verified against the live API in this session — the `line` form has also been observed
 working when the target is inside the hunk. If a review POST fails with 422, switch to
 `position` before assuming the payload is malformed.
+
+---
+
+# Part 6: What Reviewer Feedback Usually Turns Into
+
+A review comment often asks for a **rule**, not just a fix ("we should avoid this kind of thing — add it as a
+directive and sweep the codebase"). That is three deliverables, and delivering only the fix will earn a
+second round:
+
+1. **The sweep** — fix every existing occurrence, mechanically where possible.
+2. **The directive** — a rule in `AGENTS.md` (or the relevant skill). Check whether an existing rule says the
+   *opposite*: the instruction that produces a defect is often still written down. Fixing it is part of the answer.
+3. **The sensor** — a test, so the class cannot return one instance at a time. The AGENTS.md steering rule
+   requires this for any repeated defect.
+
+Prove the sensor fires (`docs_consistency.rs` / `repo_references.rs` are the landing spots):
+
+```python
+# re-inject the defect, confirm FAILED, restore, confirm ok
+shutil.copy(path, '/tmp/probe.rs')
+open(path,'w').write(text.replace("good line", "good line (LUC-999)"))
+assert 'FAILED' in run("cargo test --test repo_references <name>")
+shutil.copy('/tmp/probe.rs', path)
+```
+
+### Sweeping references without damaging the prose
+
+When deleting a pointer (an issue id, a dead path), **keep the explanation and drop only the pointer**. A
+mechanical regex leaves debris: orphaned punctuation (`///.`), comments starting in lowercase, and — the worst
+case — a sentence whose meaning *depended* on the pointer:
+
+```rust
+// BAD  — the reason was the reference; nothing is left
+/// Wiring `d_eff` in is LUC-93's scope.      →   (deleted)
+
+// GOOD — state the reason directly
+/// `d_eff` is deliberately not consulted: regime classification over candidate
+/// thresholds already carries the geometry signal.
+```
+
+After a mechanical pass, always `git diff` the whole change and read it as prose. Then check whether an
+exemption helper keys on the thing you removed — an `is_explanatory()` that exempts lines *by identifier* is
+the same coupling you are eliminating, and it usually exists to serve a real need that a structural check
+(`is_changelog()`) serves better.
+
+### Never claim a guard covers what you excluded from it
+
+**Phrase claims so they can only be settled by execution, not by reading.** Two verifiers given the
+same question disagreed, and the split was predictable:
+
+```
+verifier A (read the code)   → confirmed
+verifier B (re-injected a violation and ran it) → REFUTED
+```
+
+Verifier A had read the comment *describing* the exclusion and accepted it. Verifier B did not argue
+with the comment — it appended `FIXME(LUC-777)` and watched the test pass. **A claim whose truth can
+be established by reading prose will be "confirmed" by reading prose.** So:
+
+- Write claims about a guard as *"re-inject X, the test must FAIL"*, never as *"the guard catches X"*.
+- Give verifiers the instruction to **execute** the falsification, not to inspect for it.
+- Treat a read-only confirmation of an executable claim as no evidence at all.
+
+When two verifiers disagree, the one that ran something wins — but verify it yourself before acting,
+since a re-injector can also mis-edit. Confirm the restored file's hash afterwards.
+
+The most dangerous sentence in a sensor is a comment asserting what it still catches. If the
+implementation skips a file, a shape or a line, the comment describing that skip is where a false
+sense of safety hides.
+
+Real failure: a test claimed *"a real violation written anywhere else in this file is still caught"*
+while doing `if path == self_path { continue }` — skipping the **whole file**. A `FIXME(LUC-777)`
+appended to the test passed cleanly. The claim was false *by construction*.
+
+```rust
+// BAD — exclusion by path kills every future violation in that file
+let self_path = root.join("tests/repo_references.rs");
+for path in files {
+    if path == self_path { continue }   // whole file, permanently unguarded
+```
+
+Before writing "still caught", re-read the loop and trace which inputs actually reach the check.
+Then **prove it**: re-inject the violation into the excluded region and confirm the sensor reports it.
+
+**Better than narrowing the exclusion: remove the need for it.** The exclusion existed only because
+the test had to name a real identifier to document the pattern. Writing the pattern generically
+(`LUC-<n>` / `gh#<n>`) let the file be scanned like any other, so the exception and the blind spot
+disappeared together. An exception you cannot remove is a spot to document loudly; one you *can*
+remove is a bug.
+
+### A sensor that cries wolf gets deleted
+
+Prefer a narrower sensor over a noisy one. Skip shapes that cannot be judged:
+
+- `#123` in Rust is generics, hex colour, array index — do **not** match a bare `#` form.
+- Pipelines (`a | b`) give a flag to the *second* command; stop the scan at `|`, `&&`, `;`, `>`.
+- Nested subcommands (`config upgrade --dry-run`) resolve flags against the nested pair.
+- The sensor's own file must be excluded **by path**, not by content, so a real violation elsewhere in it still fires.
+
+Verify the non-firing direction too (a line with `#123`, `Vec<T>` and `#1a2b3c` must pass), not just that the
+defect trips it.
+
+### Marking a PR ready: the body rots as the branch grows
+
+A PR body written before the review round describes a branch that no longer exists. Before `gh pr ready`,
+re-read the body and check every factual claim against the current branch:
+
+- **Sensor/test counts** — `- [x] \`cargo test --test repo_references\` — 4/4` becomes wrong the moment you add a
+  fifth sensor. Count them: `rg -c '^#\[test\]' tests/<file>.rs`.
+- **The file table** — a follow-up commit touching `AGENTS.md` or a skill is invisible if the table predates it.
+- **Missing sections entirely** — work done in response to review may have no section at all.
+
+Verify counts from the artifact, never from what you remember writing.
+
+### Retracting a wrong claim you already published
+
+If you discover a claim in your own review reply was false (a measurement, a count, a behaviour), **edit the
+comment** rather than quietly moving on — `gh api repos/:o/:r/pulls/comments/<id> --method PATCH -F body=@file`.
+Label it plainly as a correction and give the re-measured numbers. A wrong number left standing in a review
+trains the reviewer to distrust the right ones.
+
+The failure mode to avoid: reporting a *build* cost as a *test* cost. "The suite takes 404s" was actually
+first-compile time, not the test budget — re-measure both sides (`git stash` the change, time it, restore)
+before claiming a performance regression. A 0.1s difference is not a regression.
+
+### CHANGELOG sections must stay grouped
+
+Never add a second `### Changed` under a version heading that already has one — the release notes become
+`Fixed, Removed, Fixed, Changed, ... Changed`, which is unreadable and breaks the grouping convention.
+Insert the entry **inside** the existing section of the same category instead, and confirm the heading
+sequence is unchanged from before your edit.
+
+---

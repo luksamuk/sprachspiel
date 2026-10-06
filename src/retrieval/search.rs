@@ -68,7 +68,7 @@ pub enum SearchOutcome {
     },
 }
 
-/// Human label for a search result row, by content type (LUC-141).
+/// Human label for a search result row, by content type.
 ///
 /// Messages delegate to the centralized role labels (`consts/roles.rs`) —
 /// do NOT hardcode role labels here again (AGENTS.md string-duplication
@@ -221,7 +221,7 @@ pub async fn run_search(
     let settings = crate::settings::Settings::load();
     let keyword_weight = settings.indexing.keyword_weight;
     let semantic_weight = settings.indexing.semantic_weight;
-    // LUC-141: search ALL content types (messages, notes, documents) —
+    // Search ALL content types (messages, notes, documents) —
     // not just messages. Scoping: session messages (conversation_id filter)
     // plus same-project project-scoped content (coupled filter in db layer).
     // feedback_settings stays None: no feedback boost and no on_content_access

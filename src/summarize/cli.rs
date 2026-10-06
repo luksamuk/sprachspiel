@@ -5,11 +5,13 @@
 
 use clap::{Args, ValueEnum};
 
-/// Arguments for the summarize subcommand
-#[derive(Args, Debug, Clone)]
-#[command(
-    about = "Summarize text using AI",
-    long_about = r#"Create concise summaries of provided text while preserving key information.
+/// Long help for `summarize`, rendered by [`crate::consts::app::help_text`].
+///
+/// Declared here, not as `#[command(long_about = ...)]` on the args struct:
+/// a doc-comment on a `Subcommand` variant takes precedence over the struct's
+/// help attributes, so clap compiles that text in and never prints it.
+/// The `Commands` variant references this constant.
+pub const SUMMARIZE_LONG_ABOUT: &str = r#"Create concise summaries of provided text while preserving key information.
 
 This subcommand uses a specialized summarization prompt and automatically
 disables tool usage for security and efficiency.
@@ -18,21 +20,24 @@ MODEL:
   Resolved from config.toml [model.summarize], [model] default, or --model flag.
 
 EXAMPLES:
-  ask summarize "Long text here..."
-  echo "Long text" | ask summarize
-  ask ocr document.png | ask summarize
-  cat article.txt | ask summarize
+  {app} summarize "Long text here..."
+  echo "Long text" | {app} summarize
+  {app} ocr document.png | {app} summarize
+  cat article.txt | {app} summarize
 
   # With length limit
-  ask summarize --max-length 200 "Very long text..."
+  {app} summarize --max-length 200 "Very long text..."
 
   # Bullet points only
-  ask summarize --format bullets "Text..."
+  {app} summarize --format bullets "Text..."
 
   # Technical content
-  ask summarize --style technical documentation.txt
-"#
-)]
+  {app} summarize --style technical documentation.txt
+"#;
+
+/// Arguments for the summarize subcommand
+#[derive(Args, Debug, Clone)]
+#[command(about = "Summarize text using AI")]
 pub struct SummarizeArgs {
     /// Text to summarize (optional, reads from stdin if not provided)
     #[arg(value_name = "TEXT")]
@@ -113,27 +118,6 @@ impl SummaryStyle {
 }
 
 impl SummarizeArgs {
-    /// Validate that text is provided
-    #[allow(dead_code)]
-    pub fn validate(&self) -> Result<(), String> {
-        if let Some(ref text) = self.text
-            && !text.trim().is_empty()
-        {
-            return Ok(());
-        }
-
-        // Check stdin
-        match crate::utils::read_stdin() {
-            Ok(t) if !t.is_empty() => Ok(()),
-            Ok(_) => Err("No text provided for summarization.\n\
-                Usage: ask summarize [OPTIONS] <TEXT>\n\
-                   or: echo \"text\" | ask summarize\n\
-                Try 'ask summarize --help' for more information."
-                .to_string()),
-            Err(e) => Err(format!("Failed to read input: {}", e)),
-        }
-    }
-
     /// Build the complete prompt based on format and style
     pub fn build_prompt(&self, base_prompt: &str) -> String {
         let length_instruction = format!(

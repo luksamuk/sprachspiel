@@ -65,7 +65,7 @@ fn escape_sql_literal(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-/// Pure scope predicate for search filtering (LUC-141).
+/// Pure scope predicate for search filtering.
 ///
 /// Single source of truth for scope semantics — the keyword SQL condition
 /// built in `search_content_keyword` mirrors this predicate exactly:
@@ -894,7 +894,7 @@ impl Database {
             if let Some(ct) = &content_type {
                 conditions.push(format!("ci.content_type = '{}'", ct));
             }
-            // LUC-141: scope filtering mirrors content_item_in_scope (module-level
+            // Scope filtering mirrors content_item_in_scope (module-level
             // predicate). Project constraint applies ONLY to the NULL-conversation
             // branch so legacy session messages with NULL project_id are never
             // excluded. A conversation filter WITHOUT a project filter keeps
@@ -1152,7 +1152,7 @@ impl Database {
             if let Some(ct) = &content_type {
                 results.retain(|r| &r.item.content_type == ct);
             }
-            // LUC-141: scope filtering via the shared predicate — same semantics
+            // Scope filtering via the shared predicate — same semantics
             // as the keyword SQL condition (see content_item_in_scope).
             if conversation_id.is_some() || project_id.is_some() {
                 results.retain(|r| {
@@ -2543,10 +2543,10 @@ mod tests {
                 .any(|r| r.item.conversation_id.as_deref() == Some("conv-1")),
             "session messages must still be found (regression guard)"
         );
-        // LUC-141: project-scoped document must now be visible
+        // Project-scoped document must now be visible
         assert!(
             results.iter().any(|r| r.item.id == doc_id),
-            "project-scoped document must be visible to conversation-filtered search (LUC-141)"
+            "project-scoped document must be visible to conversation-filtered search"
         );
     }
 
@@ -2622,7 +2622,7 @@ mod tests {
         );
         assert!(
             results.iter().any(|r| r.item.id == doc_id),
-            "semantic search must include project-scoped documents (LUC-141)"
+            "semantic search must include project-scoped documents"
         );
     }
 
@@ -2682,7 +2682,7 @@ mod tests {
 
         assert!(
             results.iter().any(|r| r.item.id == doc_id),
-            "hybrid search must include project-scoped documents (LUC-141)"
+            "hybrid search must include project-scoped documents"
         );
     }
 
@@ -2936,7 +2936,7 @@ mod tests {
         let found = results
             .iter()
             .find(|r| r.item.id == doc_id)
-            .expect("chunked project-scoped document must survive the scope retain (LUC-141)");
+            .expect("chunked project-scoped document must survive the scope retain");
         assert!(
             found.chunk_content.is_some(),
             "chunk row must carry its chunk_content through the retain"
