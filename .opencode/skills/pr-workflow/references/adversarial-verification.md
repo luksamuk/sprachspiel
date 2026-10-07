@@ -111,3 +111,30 @@ paraphrased into something the source does not say ("co-occur in the top-k of
 distracting passage among the top-10"). Both were real. The second is the same
 defect class the change was written to fix — describing a source without
 re-reading it — so a verifier that can catch it is worth its wall-clock.
+
+## Two consults on one brief are not interchangeable — pin the output path
+
+A design consultation can be dispatched twice (a timeout, a retry after a config
+fix). If both write to the same file, the second **overwrites** the first and the
+stronger review leaves no trace. Observed: a first pass (305 lines, ran its own
+prototype against the repo) was declared a timeout and re-dispatched; the retry
+(113 lines, partly reasoned from the brief alone) clobbered the file, and the work
+proceeded on the weaker review. The first pass had found three real defects the
+second missed — including one where the fix removed a paper's figure while the
+document went on *recommending* the approach it discredited.
+
+- Give every dispatch its **own** output path (`<brief>-review-a.md`, `-b.md`),
+  never a shared one.
+- Before acting on a review, check how many runs produced it. `wc -l` and mtime
+  on the output file are cheap; the longer file may be the better review.
+- A dispatch that "timed out" may have completed: check the process status and
+  the file size **before** re-dispatching over it.
+
+## Verify every finding, but do not discard a report wholesale
+
+A review is a lead generator, not an oracle — each finding must be reproduced
+against the artifact before acting. The failure mode runs both ways: one
+dismissed review was partly reasoned from the brief rather than the repo, so a
+generalization of its was stale — and three of its findings were nonetheless real,
+two of them defects in work already committed. "Some of it was wrong" is not a
+reason to skip reproducing the rest.
