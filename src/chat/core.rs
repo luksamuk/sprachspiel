@@ -1194,7 +1194,7 @@ pub async fn compact_conversation(
         let truncation = fallback_truncate(
             &pruned_messages,
             context_window,
-            DEFAULT_KEEP_FIRST.min(DEFAULT_KEEP_FIRST),
+            DEFAULT_KEEP_FIRST,
             0, // don't preserve last within middle (they're in "keep_last")
         );
 

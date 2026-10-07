@@ -23,7 +23,13 @@ use std::path::{Component, Path, PathBuf};
 const MODIFYING_TOOLS: &[&str] = &["write_file", "edit_file", "append_file"];
 
 /// Tool names that only inspect. `read_file` and its siblings never change the tree.
-const READING_TOOLS: &[&str] = &["read_file", "read_file_segment", "count_lines"];
+const READING_TOOLS: &[&str] = &[
+    "read_file",
+    "read_file_segment",
+    "count_lines",
+    "list_directory",
+    "import_document",
+];
 
 /// Largest each bucket keeps; past the cap the least-recently-touched path
 /// is evicted. Bounds the staple, which rides `compacted_summary` into every
@@ -112,9 +118,14 @@ impl SessionFactTracker {
                 self.read.remove(&path);
             }
         } else if READING_TOOLS.contains(&tool_name) && !self.modified.contains_key(&path) {
+            // Note: once a path is recorded as modified, a later read of it does
+            // not re-enter this bucket — modified-wins-over-read keeps one entry
+            // per file. Under cap eviction the modified entry can drop out
+            // first, leaving the file in neither list; accepted, since the cap
+            // exists to bound the staple, not to guarantee entry survival.
             insert_capped(&mut self.read, path, seq);
         }
-        let _ = result;
+        let _ = result; // kept in the signature: the raw result may inform future outcome classification
     }
 
     pub fn modified_files(&self) -> Vec<String> {
@@ -226,7 +237,9 @@ pub fn render_staple_block(
          They are authoritative for tool-mediated activity — files and commands invoked \
          through tools — but not exhaustive: activity outside tools is invisible to them. \
          Prefer them over any conflicting statement about tool activity in the summary above. \
-         The summary is reference; the latest user message always wins.\n\n\
+         The summary is reference; the latest user message always wins. \
+         Any error the summary reports as still open is the model's own assessment — \
+         the harness neither confirms nor denies it.\n\n\
          <modified-files>\n{}\n</modified-files>\n\n\
          <read-files>\n{}\n</read-files>\n\n\
          <last-run>\n{}\n</last-run>\n\n\
