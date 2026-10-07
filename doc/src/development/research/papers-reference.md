@@ -114,7 +114,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 #### RLM — Recursive Language Models (Zhang et al. 2025)
 
 - **Paper:** arXiv:2512.24601
-- **Key findings:** Sub-agents with isolated context preserve 100% of information vs. compaction which loses details. But slower (2-5x) and compaction remains inevitable for long history.
+- **Key findings:** Sub-agents with isolated context preserve 100% of information vs. compaction which loses details, at "comparable cost" — the authors measure it as cheaper per query. Compaction remains inevitable for long history.
 - **Sprachspiel implication:** Context-offload via sub-agent (R-26) resolves 1 of 3 context pressure sources. Session variables (R-26 §4) add on-demand injection. Benchmark-driven validation required (B1.5). See RECURSION-SPRACHSPIEL.md analysis.
 
 #### NLP Historical Errors — Cultural Grounding (Diógenes et al. 2026)
