@@ -9,11 +9,10 @@
 //! conversation history cannot serve as the source: tool messages are persisted as
 //! bare result strings with no tool name attached.
 //!
-//! Wire-up into the compaction driver is a follow-up task; until that lands
-//! the module's items are not yet constructed by the binary target, which
-//! carries its own private module tree.
-
-#![allow(dead_code)]
+//! Wire-up into the compaction driver: `flush_turn_facts` (src/chat/core.rs)
+//! merges the per-turn coordinator's tracker into the session after every turn,
+//! and `compact_conversation` staples the rendered block onto each summary, so
+//! the module's items are constructed by the binary target.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -406,6 +405,19 @@ mod tests {
             !out.contains("<unresolved-error>"),
             "the harness staple must omit the block it cannot know"
         );
+    }
+
+    #[test]
+    fn staple_block_states_authority_over_the_summary() {
+        let mut t = SessionFactTracker::default();
+        t.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+        let out = render_staple_block(&t, Some("ship it"));
+
+        assert!(
+            out.contains("authoritative"),
+            "the block must outrank conflicting prose"
+        );
+        assert!(out.contains("src/a.rs"));
     }
 
     #[test]

@@ -947,7 +947,6 @@ impl Coordinator {
     }
 
     /// Facts captured from this turn's tool executions.
-    #[allow(dead_code)] // Used in tests; consumed by the compaction wire-up task
     pub fn fact_tracker(&self) -> &crate::chat::fact_tracker::SessionFactTracker {
         &self.fact_tracker
     }

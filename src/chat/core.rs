@@ -1279,11 +1279,22 @@ pub async fn compact_conversation(
 /// merging keeps the two provenances distinguishable — a fact the code wrote
 /// must not be reworded by a later summarization pass.
 fn finalize_summary(summary: String, session: &ChatSession) -> String {
-    // Intermediate stub: the staple lands in the next commit, which consumes
-    // `session`. The explicit discard keeps `make lint` green in between
-    // without an allow attribute.
-    let _ = session;
-    summary
+    use crate::chat::fact_tracker::render_staple_block;
+
+    if session.fact_tracker.is_empty() {
+        return summary;
+    }
+
+    // Read from the session, not from the compacted slice: the tracker is the
+    // one source that saw the whole session, including turns before an earlier
+    // compaction.
+    let last_request = session.get_last_user_message().map(|m| m.content.as_str());
+
+    format!(
+        "{}\n\n{}",
+        summary,
+        render_staple_block(&session.fact_tracker, last_request)
+    )
 }
 
 /// Recursively summarize message chunks.
@@ -1496,5 +1507,67 @@ async fn compact_with_llm(
             Ok(summary)
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
+    }
+}
+
+#[cfg(test)]
+mod finalize_summary_tests {
+    use super::finalize_summary;
+    use crate::chat::fact_tracker::SessionFactTracker;
+    use crate::chat::session::{ChatSession, MessageRole, SavedMessage};
+
+    #[test]
+    fn the_staple_is_appended_exactly_once_per_summary() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        let mut turn_tracker = SessionFactTracker::default();
+        turn_tracker.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+        session.merge_fact_tracker(&turn_tracker);
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "fix the parser next".into(),
+            ..Default::default()
+        });
+
+        let out = finalize_summary("## Goal\nshipped the parser".to_string(), &session);
+
+        assert_eq!(
+            out.matches("<compaction_facts>").count(),
+            1,
+            "exactly one wrapper per summary"
+        );
+        assert!(
+            out.ends_with("</compaction_facts>"),
+            "the block is appended after the model's prose, never merged"
+        );
+        assert!(
+            out.contains("## Goal"),
+            "the model's prose survives verbatim"
+        );
+        assert!(
+            out.contains("src/a.rs"),
+            "the tracker's verified facts ride the staple"
+        );
+        assert!(
+            out.contains("fix the parser next"),
+            "the latest user request rides the staple"
+        );
+    }
+
+    #[test]
+    fn an_empty_tracker_leaves_the_summary_unchanged() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "fix the parser next".into(),
+            ..Default::default()
+        });
+
+        let summary = "## Goal\nshipped the parser".to_string();
+        let out = finalize_summary(summary.clone(), &session);
+
+        assert_eq!(
+            out, summary,
+            "no tools ran — no block, not an empty scaffold"
+        );
     }
 }

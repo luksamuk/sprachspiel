@@ -1174,7 +1174,6 @@ impl ChatSession {
     /// Merging rather than replacing: a file modified three turns before a
     /// compaction is still modified at compaction time, and the tracker answers
     /// "what changed in this session", not "what changed just now".
-    #[allow(dead_code)] // Used in tests; consumed by the compaction wire-up task
     pub fn merge_fact_tracker(&mut self, incoming: &crate::chat::fact_tracker::SessionFactTracker) {
         for path in incoming.modified_files() {
             self.fact_tracker.record_tool(
