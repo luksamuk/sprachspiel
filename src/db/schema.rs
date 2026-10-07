@@ -9,7 +9,7 @@
 //! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 15;
+pub const SCHEMA_VERSION: i32 = 16;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -28,7 +28,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     compacted_range_end INTEGER,
     think INTEGER DEFAULT 0,
     tools INTEGER DEFAULT 1,
-    tool_output_level TEXT DEFAULT 'compact'
+    tool_output_level TEXT DEFAULT 'compact',
+    -- Harness-extracted session facts, as a JSON object (added in v16).
+    -- Nullable: a session that predates this field, or one that never ran a
+    -- tool, has no facts to record.
+    fact_tracker TEXT
 );
 
 -- Session todos table (for task tracking)
