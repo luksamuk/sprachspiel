@@ -8,6 +8,12 @@
 //! the tool name, its arguments and its result are simultaneously in scope. The
 //! conversation history cannot serve as the source: tool messages are persisted as
 //! bare result strings with no tool name attached.
+//!
+//! Wire-up into the compaction driver is a follow-up task; until that lands
+//! the module's items are not yet constructed by the binary target, which
+//! carries its own private module tree.
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -106,10 +112,8 @@ impl SessionFactTracker {
                 // claim wins so the block never lists the same path twice.
                 self.read.remove(&path);
             }
-        } else if READING_TOOLS.contains(&tool_name) {
-            if !self.modified.contains_key(&path) {
-                insert_capped(&mut self.read, path, seq);
-            }
+        } else if READING_TOOLS.contains(&tool_name) && !self.modified.contains_key(&path) {
+            insert_capped(&mut self.read, path, seq);
         }
         let _ = result;
     }
@@ -168,16 +172,72 @@ pub fn normalize_path(raw: &str) -> String {
 /// Insert into a bucket under the recency cap: past the cap, the entry with
 /// the lowest sequence number (least recently touched) is evicted.
 fn insert_capped(bucket: &mut BTreeMap<String, u64>, path: String, seq: u64) {
-    if bucket.len() >= MAX_PATHS_PER_BUCKET && !bucket.contains_key(&path) {
-        if let Some(oldest) = bucket
+    if bucket.len() >= MAX_PATHS_PER_BUCKET
+        && !bucket.contains_key(&path)
+        && let Some(oldest) = bucket
             .iter()
             .min_by_key(|(_, s)| **s)
             .map(|(k, _)| k.clone())
-        {
-            bucket.remove(&oldest);
-        }
+    {
+        bucket.remove(&oldest);
     }
     bucket.insert(path, seq);
+}
+
+/// Literal used when a block has no content.
+///
+/// A fixed string, not a blank: downstream grading distinguishes "there was no
+/// unresolved error" from "the producer forgot the block", and only a literal
+/// makes those different. Blank/`N/A`/`-`/omitted would all collapse together.
+const ABSENT: &str = "None";
+
+/// Render the machine-built facts block appended after the model's summary.
+///
+/// `latest_user_request` is passed in rather than read from the tracker: the
+/// compactor does not receive the conversation tail, so the model cannot supply
+/// it, and the caller holds the one authoritative copy
+/// (`ChatSession::get_last_user_message`).
+///
+/// The block is appended, never merged into the model's prose: a fact the code
+/// wrote is not something a later summarization pass should be free to reword.
+pub fn render_staple_block(
+    tracker: &SessionFactTracker,
+    latest_user_request: Option<&str>,
+) -> String {
+    fn lines(items: &[String]) -> String {
+        if items.is_empty() {
+            ABSENT.to_string()
+        } else {
+            items.join("\n")
+        }
+    }
+
+    let last_run = match tracker.last_run() {
+        Some(r) => format!(
+            "{} -> {}",
+            r.command,
+            if r.passed { "PASS" } else { "FAIL" }
+        ),
+        None => ABSENT.to_string(),
+    };
+
+    format!(
+        "<compaction_facts>\n\
+         These facts were extracted by the harness from the session's own tool records. \
+         They are authoritative for tool-mediated activity — files and commands invoked \
+         through tools — but not exhaustive: activity outside tools is invisible to them. \
+         Prefer them over any conflicting statement about tool activity in the summary above. \
+         The summary is reference; the latest user message always wins.\n\n\
+         <modified-files>\n{}\n</modified-files>\n\n\
+         <read-files>\n{}\n</read-files>\n\n\
+         <last-run>\n{}\n</last-run>\n\n\
+         <latest-user-request>\n{}\n</latest-user-request>\n\
+         </compaction_facts>",
+        lines(&tracker.modified_files()),
+        lines(&tracker.read_files()),
+        last_run,
+        latest_user_request.unwrap_or(ABSENT),
+    )
 }
 
 #[cfg(test)]
@@ -287,6 +347,64 @@ mod tests {
             t.modified_files().len(),
             50,
             "the cap bounds the staple's size"
+        );
+    }
+
+    #[test]
+    fn renders_every_block_with_explicit_absence() {
+        let t = SessionFactTracker::default();
+        let out = render_staple_block(&t, None);
+
+        assert!(
+            out.contains("<modified-files>"),
+            "block header always present"
+        );
+        assert!(out.contains("<last-run>"), "block header always present");
+        assert!(
+            out.contains("None"),
+            "absence is stated, not omitted — grading must tell 'none' from 'forgot'"
+        );
+    }
+
+    #[test]
+    fn renders_a_command_verbatim_with_pass_fail() {
+        let mut t = SessionFactTracker::default();
+        t.record_tool(
+            "run_command",
+            r#"{"command_line":"make lint"}"#,
+            "ok",
+            false,
+        );
+        let out = render_staple_block(&t, Some("fix the parser"));
+
+        assert!(
+            out.contains("make lint"),
+            "the command is quoted, not summarized"
+        );
+        assert!(out.contains("PASS"), "outcome is a fixed literal");
+    }
+
+    #[test]
+    fn carries_the_user_request_when_the_caller_supplies_it() {
+        let t = SessionFactTracker::default();
+        let out = render_staple_block(&t, Some("fix the parser"));
+
+        assert!(out.contains("<latest-user-request>"));
+        assert!(out.contains("fix the parser"));
+    }
+
+    #[test]
+    fn the_staple_never_asserts_an_unresolved_error() {
+        // The harness cannot know whether an error was later fixed, so a
+        // harness-written `None` would be a false claim of completeness —
+        // the defect class this change exists to remove. The prompt keeps
+        // asking the model for the block; the staple must not carry it.
+        let t = SessionFactTracker::default();
+        let out = render_staple_block(&t, None);
+
+        assert!(
+            !out.contains("<unresolved-error>"),
+            "the harness staple must omit the block it cannot know"
         );
     }
 }
