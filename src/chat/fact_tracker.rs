@@ -200,4 +200,93 @@ mod tests {
         assert_eq!(t.modified_files(), vec![normalize_path("src/a.rs")]);
         assert_eq!(t.read_files(), vec![normalize_path("src/b.rs")]);
     }
+
+    #[test]
+    fn a_failed_write_is_not_a_modification() {
+        let mut t = SessionFactTracker::default();
+        t.record_tool(
+            "write_file",
+            r#"{"path":"src/a.rs"}"#,
+            "BLOCKED: path denied",
+            true,
+        );
+
+        assert!(
+            t.modified_files().is_empty(),
+            "a write that failed changed nothing"
+        );
+    }
+
+    #[test]
+    fn a_path_written_after_being_read_is_a_modification() {
+        let mut t = SessionFactTracker::default();
+        t.record_tool("read_file", r#"{"path":"src/a.rs"}"#, "1|hello", false);
+        t.record_tool(
+            "edit_file",
+            r#"{"path":"src/a.rs","operation":"replace"}"#,
+            "Updated.",
+            false,
+        );
+
+        assert_eq!(t.modified_files(), vec![normalize_path("src/a.rs")]);
+        assert!(
+            t.read_files().is_empty(),
+            "a modified path is not also reported as merely read"
+        );
+    }
+
+    #[test]
+    fn output_order_is_stable() {
+        let mut a = SessionFactTracker::default();
+        let mut b = SessionFactTracker::default();
+        for p in ["src/z.rs", "src/a.rs", "src/m.rs"] {
+            let args = format!(r#"{{"path":"{p}"}}"#);
+            a.record_tool("write_file", &args, "ok", false);
+        }
+        for p in ["src/m.rs", "src/z.rs", "src/a.rs"] {
+            let args = format!(r#"{{"path":"{p}"}}"#);
+            b.record_tool("write_file", &args, "ok", false);
+        }
+
+        assert_eq!(
+            a.modified_files(),
+            b.modified_files(),
+            "insertion order must not leak into output"
+        );
+    }
+
+    #[test]
+    fn records_the_last_command_with_its_outcome() {
+        let mut t = SessionFactTracker::default();
+        t.record_tool(
+            "run_command",
+            r#"{"command_line":"cargo test"}"#,
+            "ok",
+            false,
+        );
+        t.record_tool(
+            "run_command",
+            r#"{"command_line":"cargo build"}"#,
+            "Error: no",
+            true,
+        );
+
+        let last = t.last_run().expect("a command ran");
+        assert_eq!(last.command, "cargo build");
+        assert!(!last.passed);
+    }
+
+    #[test]
+    fn each_bucket_keeps_at_most_50_paths() {
+        let mut t = SessionFactTracker::default();
+        for i in 0..60 {
+            let args = format!(r#"{{"path":"src/f{i}.rs"}}"#);
+            t.record_tool("write_file", &args, "ok", false);
+        }
+        assert_eq!(
+            t.modified_files().len(),
+            50,
+            "the cap bounds the staple's size"
+        );
+    }
 }
