@@ -138,6 +138,17 @@ reach the primary source and be mechanical enough to run over every claim:
    removing it. That is the normal case: writing about sources is itself a
    source-reading task, and it fails the same way.
 
+**Check the document's status, not just its content.** Before writing a
+present-tense claim about a document ("this is the recommended model", "this is
+how X works"), grep the document itself for a status marker:
+`rg -i 'HISTORICAL NOTE|superseded|no longer|outdated|deprecated' <file>`. A page
+can carry its own warning banner while the body still reads as current, and
+reading from where the content is convenient — a benchmark table — rather than
+from where its status is stated — the note above it — is how a superseded fact
+gets restated as present. Observed: an entry asserted a paper was "selected as
+default for code mode" while the top of the citing document said a different
+model had replaced it and the page was kept for historical reference.
+
 **Do not transcribe the repository's own summary lines into the authoritative
 artifact.** The existing prose is what is under audit. If its "Key finding" line
 paraphrases the source ("co-occur in the top-k of >60%"), copying it into the
