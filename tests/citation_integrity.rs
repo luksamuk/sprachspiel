@@ -300,22 +300,38 @@ fn normalize(name: &str) -> String {
 // Sensors
 // ---------------------------------------------------------------------------
 
-/// Every cited arXiv ID is a paper the manifest knows.
+/// Every cited arXiv ID is in the canonical bibliography.
 ///
-/// This is the completeness half: the manifest is generated from what the repo
-/// cites, so an ID present in prose but absent from the manifest means the
-/// generator has not been re-run since the citation was added.
+/// This is the completeness half, and it is the check the audit asked for: "new
+/// citations must be added to `papers-reference.md` rather than inline". A paper
+/// cited in a design document but absent from the bibliography means the citation
+/// exists only at its use-site, where nothing reconciles it with the paper.
+///
+/// It reads the bibliography, not the manifest. An earlier version compared against
+/// the manifest — which is generated *from* the citations, so it agreed with them
+/// by construction and would have passed on an empty bibliography. A guard that
+/// checks a file derived from the thing it guards verifies nothing.
+///
+/// The CHANGELOG is excluded because release notes legitimately cite papers that
+/// must NOT be in the bibliography: a retracted one and a fabricated one, both as
+/// corrections. Adding those to the canonical list would corrupt what it protects.
 #[test]
-fn cited_arxiv_ids_are_all_in_the_manifest() {
-    let papers = manifest();
-    let mut unknown: Vec<String> = Vec::new();
+fn cited_arxiv_ids_are_all_in_the_bibliography() {
+    let bib_path = repo_root().join("doc/src/development/research/papers-reference.md");
+    let bib = std::fs::read_to_string(&bib_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", rel(&bib_path)));
+    let in_bib = |id: &str| bib.contains(id);
 
+    let mut unknown: Vec<String> = Vec::new();
     for file in scanned_files() {
+        if rel(&file).ends_with("CHANGELOG.md") || rel(&file).ends_with("papers-reference.md") {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
         for (id, _) in citations_with_attribution(&text) {
-            if !papers.contains_key(&id) {
+            if !in_bib(&id) {
                 unknown.push(format!("{id} (in {})", rel(&file)));
             }
         }
@@ -323,9 +339,9 @@ fn cited_arxiv_ids_are_all_in_the_manifest() {
 
     assert!(
         unknown.is_empty(),
-        "arXiv IDs cited but absent from tests/data/citation-manifest.json:\n  {}\n\
-         Either the citation is wrong, or the manifest needs regenerating:\n  \
-         python3 scripts/generate-citation-manifest.py",
+        "arXiv IDs cited in the repo but absent from the canonical bibliography:\n  {}\n\
+         Add the paper to doc/src/development/research/papers-reference.md (table row,\n\
+         prose entry, and BibTeX block) rather than citing it inline only.",
         unknown.join("\n  ")
     );
 }
@@ -497,10 +513,17 @@ fn bibliography_table_matches_the_manifest() {
             .trim_matches('*');
         if !lead.is_empty() {
             let real: Vec<String> = paper.authors.iter().map(|a| normalize(a)).collect();
-            let present = real.iter().any(|full| {
-                full.split_whitespace()
-                    .any(|part| part == lead.to_lowercase())
-            }) || real.iter().any(|full| full.contains(&lead.to_lowercase()));
+            // Normalise the claim the same way as the author list. `DeepSeek-AI` is
+            // the lead author of one entry, and the author list stores it as
+            // `DeepSeek-AI` while `normalize` strips the hyphen — so comparing a raw
+            // `deepseek-ai` against `deepseekai` reported a correct row as wrong.
+            // Same trap as `Gui-Bo Zhu` vs `Guibo Zhu`: punctuation and diacritics
+            // differ between how a paper writes a name and how a sensor splits it.
+            let lead_norm = normalize(lead);
+            let present = real
+                .iter()
+                .any(|full| full.split_whitespace().any(|part| part == lead_norm))
+                || real.iter().any(|full| full.contains(lead_norm.as_str()));
             if !present {
                 offenders.push(format!(
                     "{id}: table credits `{lead}`, arXiv lists [{}]",

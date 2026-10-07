@@ -330,7 +330,7 @@
 
 ### C-14: HyDE (Gao et al. 2022) and Dense X Retrieval (Chen et al. 2023)
 
-- **Institutions:** arXiv:2212.10496, arXiv:2312.06648
+- **Sources:** arXiv:2212.10496 (HyDE), arXiv:2312.06648 (Dense X Retrieval)
 - **Key findings:** HyDE moves query embeddings closer to relevant documents by generating hypothetical answers. Propositions (Q&A pairs) as retrieval granularity surpass passage-level.
 - **Relevance to sprachspiel:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time
 - **References:** arXiv:2212.10496, arXiv:2312.06648
