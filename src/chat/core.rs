@@ -36,8 +36,8 @@ use crate::context_overflow::{
 };
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
-    PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
-    build_system_prompt,
+    PromptConfig, PromptType, build_chunk_summary_prompt, build_compaction_prompt,
+    build_continuation_prompt, build_system_prompt,
 };
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
@@ -1236,16 +1236,17 @@ fn compact_recursive<'a>(
         for (i, chunk) in chunks.iter().enumerate() {
             let conversation_text = build_conversation_text(&chunk.messages);
 
-            // Use a slightly different prompt for sub-summaries to encourage conciseness
+            // Use the chunk prompt: sub-summaries stay plain prose (no fact
+            // blocks) — see CHUNK_SUMMARY_PROMPT's documentation.
             let chunk_prompt = if chunks.len() > 1 {
                 format!(
-                    "This is part {}/{} of a longer conversation. Summarize this section concisely.\n\n{}",
+                    "This is part {}/{} of a longer conversation.\n\n{}",
                     i + 1,
                     chunks.len(),
-                    build_compaction_prompt(&conversation_text)
+                    build_chunk_summary_prompt(&conversation_text)
                 )
             } else {
-                build_compaction_prompt(&conversation_text)
+                build_chunk_summary_prompt(&conversation_text)
             };
 
             log::debug!(
@@ -1294,7 +1295,7 @@ fn compact_recursive<'a>(
         if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
             // Combined summaries fit — do a final summarization pass.
             // Stream the final consolidation so the user sees progress.
-            let final_prompt = build_compaction_prompt(&combined);
+            let final_prompt = build_chunk_summary_prompt(&combined);
             compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
