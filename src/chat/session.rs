@@ -297,7 +297,18 @@ impl ChatSession {
             fact_tracker: meta
                 .fact_tracker
                 .as_deref()
-                .and_then(|json| serde_json::from_str(json).ok())
+                .map(|json| match serde_json::from_str(json) {
+                    Ok(tracker) => tracker,
+                    Err(e) => {
+                        // A corrupt column silently defaulting would present
+                        // the compaction an empty fact block for work that
+                        // really happened — keep the loss visible.
+                        log::warn!(
+                            "fact tracker column failed to deserialize ({e}); starting empty"
+                        );
+                        crate::chat::fact_tracker::SessionFactTracker::default()
+                    }
+                })
                 .unwrap_or_default(),
         })
     }
@@ -873,6 +884,10 @@ impl ChatSession {
         self.compacted_summary = None;
         self.compacted_range = None;
         self.messages_sent_to_llm = 0;
+        // Full reset, not a merge: the tracker's facts describe THIS
+        // conversation's tool activity, so they must not leak into the
+        // next session's compaction staple.
+        self.fact_tracker = crate::chat::fact_tracker::SessionFactTracker::default();
         self.updated_at = Utc::now();
     }
 
@@ -1297,10 +1312,16 @@ mod tests {
             ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
+        session.merge_fact_tracker(&{
+            let mut t = crate::chat::fact_tracker::SessionFactTracker::default();
+            t.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+            t
+        });
 
         // Verify setup
         assert_eq!(session.messages.len(), 1);
         assert!(session.compacted_summary.is_some());
+        assert!(!session.fact_tracker.is_empty());
 
         // Forget
         session.forget_session();
@@ -1310,6 +1331,12 @@ mod tests {
         assert!(session.compacted_summary.is_none()); // Summary CLEARED!
         assert!(session.compacted_range.is_none()); // Range CLEARED!
         assert_eq!(session.messages_sent_to_llm, 0);
+        // Task 6b: the fact tracker is fully reset (default), not merged
+        // into — facts must not leak across sessions.
+        assert!(
+            session.fact_tracker.is_empty(),
+            "forget_session must reset the fact tracker, not preserve it"
+        );
     }
 
     #[test]

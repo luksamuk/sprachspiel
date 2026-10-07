@@ -379,6 +379,26 @@ pub fn process_chat_response(
     }
 }
 
+/// Hand one turn's captured tool facts to the persistent session.
+///
+/// Called from BOTH `send_message` and `send_message_stream`, after the retry
+/// loop closes and before the dispatch on the turn's `result`, so merge
+/// semantics live in exactly one place and both turn exits are covered.
+///
+/// The placement is deliberate: a turn may end by exhausting the context
+/// budget mid-tool-loop (the coordinator returns
+/// `CONTEXT_NEEDS_COMPACT` before the turn completes), and compaction then
+/// runs immediately. A flush on the success path alone would staple no facts
+/// precisely when the session worked hardest. The `Coordinator` is still
+/// alive here — it is dropped only at function return.
+///
+/// Borrow, not drain: the coordinator is per-turn (its tracker starts empty
+/// each call), and merge is cumulative on the session side, so nothing
+/// double-counts. The borrow checker accepts the two disjoint locals.
+fn flush_turn_facts(session: &mut ChatSession, coordinator: &Coordinator) {
+    session.merge_fact_tracker(coordinator.fact_tracker());
+}
+
 /// Send a message to the LLM and process the response
 ///
 /// This is the core function for chat interaction, handling:
@@ -626,6 +646,14 @@ pub async fn send_message(
             }
         }
     };
+
+    // Hand this turn's tool facts to the session so a later compaction can
+    // staple them. Placed after the loop, not inside the Ok arm: this turn
+    // may have ended by exhausting the context budget (the tool loop returns
+    // CONTEXT_NEEDS_COMPACT before the turn completes), and compaction then
+    // runs immediately — a flush on the success path alone would staple no
+    // facts precisely when the session worked hardest.
+    flush_turn_facts(session, &coordinator);
 
     finish_spinner(spinner);
 
@@ -897,6 +925,14 @@ pub async fn send_message_stream(
             }
         }
     };
+
+    // Hand this turn's tool facts to the session so a later compaction can
+    // staple them. Placed after the loop, not inside the Ok arm: this turn
+    // may have ended by exhausting the context budget (the tool loop returns
+    // CONTEXT_NEEDS_COMPACT before the turn completes), and compaction then
+    // runs immediately — a flush on the success path alone would staple no
+    // facts precisely when the session worked hardest.
+    flush_turn_facts(session, &coordinator);
 
     // Drain view events accumulated during coordinator chat directly into
     // the LLM event channel. This guarantees that ViewActions (pre-tool

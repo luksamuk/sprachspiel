@@ -517,6 +517,10 @@ fn handle_new(state: &mut ReplState) -> Vec<CommandOutput> {
     state.session.messages_sent_to_llm = 0;
     state.session.compacted_range = None;
     state.session.name = None;
+    // Full reset, not a merge: the tracker's facts describe the previous
+    // conversation's tool activity, so they must not leak into the next
+    // session's compaction staple.
+    state.session.fact_tracker = Default::default();
 
     // Generate new session ID
     use std::time::{SystemTime, UNIX_EPOCH};

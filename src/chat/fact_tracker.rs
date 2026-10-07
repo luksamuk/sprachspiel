@@ -407,4 +407,26 @@ mod tests {
             "the harness staple must omit the block it cannot know"
         );
     }
+
+    #[test]
+    fn merge_is_cumulative_across_two_turns() {
+        let mut session_tracker = SessionFactTracker::default();
+        let mut turn_one = SessionFactTracker::default();
+        turn_one.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+        for p in turn_one.modified_files() {
+            session_tracker.record_tool("write_file", &format!(r#"{{"path":"{p}"}}"#), "", false);
+        }
+
+        let mut turn_two = SessionFactTracker::default();
+        turn_two.record_tool("write_file", r#"{"path":"src/b.rs"}"#, "ok", false);
+        for p in turn_two.modified_files() {
+            session_tracker.record_tool("write_file", &format!(r#"{{"path":"{p}"}}"#), "", false);
+        }
+
+        assert_eq!(
+            session_tracker.modified_files().len(),
+            2,
+            "facts accumulate, they do not reset"
+        );
+    }
 }
