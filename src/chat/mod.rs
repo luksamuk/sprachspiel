@@ -38,6 +38,7 @@ pub mod coordinator;
 pub mod core;
 pub mod error_recovery;
 pub mod event_loop;
+pub mod fact_tracker;
 pub mod input;
 pub mod llm_event;
 pub mod model_switch;
