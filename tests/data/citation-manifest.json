@@ -1,0 +1,683 @@
+{
+ "2010.12251": {
+  "authors": [
+   "Sunghyun Park",
+   "Han Li",
+   "Ameen Patel",
+   "Sidharth Mudgal",
+   "Sungjin Lee",
+   "Young-Bum Kim",
+   "Spyros Matsoukas",
+   "Ruhi Sarikaya"
+  ],
+  "title": "A scalable framework for learning from implicit user feedback to improve natural language understanding in large-scale conversational AI systems",
+  "year": "2020"
+ },
+ "2212.10496": {
+  "authors": [
+   "Luyu Gao",
+   "Xueguang Ma",
+   "Jimmy Lin",
+   "Jamie Callan"
+  ],
+  "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels",
+  "year": "2022"
+ },
+ "2302.12173": {
+  "authors": [
+   "Kai Greshake",
+   "Sahar Abdelnabi",
+   "Shailesh Mishra",
+   "Christoph Endres",
+   "Thorsten Holz",
+   "Mario Fritz"
+  ],
+  "title": "Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection",
+  "year": "2023"
+ },
+ "2306.05499": {
+  "authors": [
+   "Yi Liu",
+   "Gelei Deng",
+   "Yuekang Li",
+   "Kailong Wang",
+   "Zihao Wang",
+   "Xiaofeng Wang",
+   "Tianwei Zhang",
+   "Yepang Liu",
+   "Haoyu Wang",
+   "Yan Zheng",
+   "Leo Yu Zhang",
+   "Yang Liu"
+  ],
+  "title": "Prompt Injection attack against LLM-integrated Applications",
+  "year": "2023"
+ },
+ "2307.03172": {
+  "authors": [
+   "Nelson F. Liu",
+   "Kevin Lin",
+   "John Hewitt",
+   "Ashwin Paranjape",
+   "Michele Bevilacqua",
+   "Fabio Petroni",
+   "Percy Liang"
+  ],
+  "title": "Lost in the Middle: How Language Models Use Long Contexts",
+  "year": "2023"
+ },
+ "2308.15022": {
+  "authors": [
+   "Qingyue Wang",
+   "Yanhe Fu",
+   "Yanan Cao",
+   "Shuai Wang",
+   "Zhiliang Tian",
+   "Liang Ding"
+  ],
+  "title": "Recursively Summarizing Enables Long-Term Dialogue Memory in Large Language Models",
+  "year": "2023"
+ },
+ "2310.05342": {
+  "authors": [
+   "Zhiting Ma",
+   "Juntao Huang",
+   "Wen-An Yong"
+  ],
+  "title": "Uniform accuracy of implicit-explicit backward differentiation formulas (IMEX-BDF) for linear hyperbolic relaxation systems",
+  "year": "2023"
+ },
+ "2310.08560": {
+  "authors": [
+   "Charles Packer",
+   "Sarah Wooders",
+   "Kevin Lin",
+   "Vivian Fang",
+   "Shishir G. Patil",
+   "Ion Stoica",
+   "Joseph E. Gonzalez"
+  ],
+  "title": "MemGPT: Towards LLMs as Operating Systems",
+  "year": "2023"
+ },
+ "2312.06648": {
+  "authors": [
+   "Tong Chen",
+   "Hongwei Wang",
+   "Sihao Chen",
+   "Wenhao Yu",
+   "Kaixin Ma",
+   "Xinran Zhao",
+   "Hongming Zhang",
+   "Dong Yu"
+  ],
+  "title": "Dense X Retrieval: What Retrieval Granularity Should We Use?",
+  "year": "2023"
+ },
+ "2401.18059": {
+  "authors": [
+   "Parth Sarthi",
+   "Salman Abdullah",
+   "Aditi Tuli",
+   "Shubh Khanna",
+   "Anna Goldie",
+   "Christopher D. Manning"
+  ],
+  "title": "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval",
+  "year": "2024"
+ },
+ "2402.03009": {
+  "authors": [
+   "Junjie Fang",
+   "Likai Tang",
+   "Hongzhe Bi",
+   "Yujia Qin",
+   "Si Sun",
+   "Zhenyu Li",
+   "Haolun Li",
+   "Yongjian Li",
+   "Xin Cong",
+   "Yankai Lin",
+   "Yukun Yan",
+   "Xiaodong Shi",
+   "Sen Song",
+   "Zhiyuan Liu",
+   "Maosong Sun"
+  ],
+  "title": "UniMem: Towards a Unified View of Long-Context Large Language Models",
+  "year": "2024"
+ },
+ "2402.14048": {
+  "authors": [
+   "André Hottung",
+   "Mridul Mahajan",
+   "Kevin Tierney"
+  ],
+  "title": "PolyNet: Learning Diverse Solution Strategies for Neural Combinatorial Optimization",
+  "year": "2024"
+ },
+ "2404.10198": {
+  "authors": [
+   "Kevin Wu",
+   "Eric Wu",
+   "James Zou"
+  ],
+  "title": "ClashEval: Quantifying the tug-of-war between an LLM's internal prior and external evidence",
+  "year": "2024"
+ },
+ "2405.12497": {
+  "authors": [
+   "Jianyang Gao",
+   "Cheng Long"
+  ],
+  "title": "RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search",
+  "year": "2024"
+ },
+ "2406.06110": {
+  "authors": [
+   "Chensen Huang",
+   "Guibo Zhu",
+   "Xuepeng Wang",
+   "Yifei Luo",
+   "Guojing Ge",
+   "Haoran Chen",
+   "Dong Yi",
+   "Jinqiao Wang"
+  ],
+  "title": "Recurrent Context Compression: Efficiently Expanding the Context Window of LLM",
+  "year": "2024"
+ },
+ "2406.10746": {
+  "authors": [
+   "Haike Xu",
+   "Zongyu Lin",
+   "Yizhou Sun",
+   "Kai-Wei Chang",
+   "Piotr Indyk"
+  ],
+  "title": "SparseCL: Sparse Contrastive Learning for Contradiction Retrieval",
+  "year": "2024"
+ },
+ "2406.11931": {
+  "authors": [
+   " DeepSeek-AI",
+   "Qihao Zhu",
+   "Daya Guo",
+   "Zhihong Shao",
+   "Dejian Yang",
+   "Peiyi Wang",
+   "Runxin Xu",
+   "Y. Wu",
+   "Yukun Li",
+   "Huazuo Gao",
+   "Shirong Ma",
+   "Wangding Zeng",
+   "Xiao Bi",
+   "Zihui Gu",
+   "Hanwei Xu",
+   "Damai Dai",
+   "Kai Dong",
+   "Liyue Zhang",
+   "Yishi Piao",
+   "Zhibin Gou",
+   "Zhenda Xie",
+   "Zhewen Hao",
+   "Bingxuan Wang",
+   "Junxiao Song",
+   "Deli Chen",
+   "Xin Xie",
+   "Kang Guan",
+   "Yuxiang You",
+   "Aixin Liu",
+   "Qiushi Du",
+   "Wenjun Gao",
+   "Xuan Lu",
+   "Qinyu Chen",
+   "Yaohui Wang",
+   "Chengqi Deng",
+   "Jiashi Li",
+   "Chenggang Zhao",
+   "Chong Ruan",
+   "Fuli Luo",
+   "Wenfeng Liang"
+  ],
+  "title": "DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence",
+  "year": "2024"
+ },
+ "2406.13805": {
+  "authors": [
+   "Yufang Hou",
+   "Alessandra Pascale",
+   "Javier Carnerero-Cano",
+   "Tigran Tchrakian",
+   "Radu Marinescu",
+   "Elizabeth Daly",
+   "Inkit Padhi",
+   "Prasanna Sattigeri"
+  ],
+  "title": "WikiContradict: A Benchmark for Evaluating LLMs on Real-World Knowledge Conflicts from Wikipedia",
+  "year": "2024"
+ },
+ "2406.14972": {
+  "authors": [
+   "Florin Cuconasu",
+   "Giovanni Trappolini",
+   "Nicola Tonellotto",
+   "Fabrizio Silvestri"
+  ],
+  "title": "A Tale of Trust and Accuracy: Base vs. Instruct LLMs in RAG Systems",
+  "year": "2024"
+ },
+ "2410.10813": {
+  "authors": [
+   "Di Wu",
+   "Hongwei Wang",
+   "Wenhao Yu",
+   "Yuwei Zhang",
+   "Kai-Wei Chang",
+   "Dong Yu"
+  ],
+  "title": "LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory",
+  "year": "2024"
+ },
+ "2410.21337": {
+  "authors": [
+   "Md Abdur Rahman",
+   "Fan Wu",
+   "Alfredo Cuzzocrea",
+   "Sheikh Iqbal Ahamed"
+  ],
+  "title": "Fine-tuned Large Language Models (LLMs): Improved Prompt Injection Attacks Detection",
+  "withdrawn": "I am requesting the withdrawal of my paper due to critical issues identified in the methodology/results that may impact its accuracy and reliability.",
+  "year": "2024"
+ },
+ "2411.14513": {
+  "authors": [
+   "Narcisa Guran",
+   "Florian Knauf",
+   "Man Ngo",
+   "Stefan Petrescu",
+   "Jan S. Rellermeyer"
+  ],
+  "title": "Towards a Middleware for Large Language Models",
+  "year": "2024"
+ },
+ "2501.00663": {
+  "authors": [
+   "Ali Behrouz",
+   "Peilin Zhong",
+   "Vahab Mirrokni"
+  ],
+  "title": "Titans: Learning to Memorize at Test Time",
+  "year": "2024"
+ },
+ "2502.09955": {
+  "authors": [
+   "Iddo Drori",
+   "Gaston Longhitano",
+   "Mao Mao",
+   "Seunghwan Hyun",
+   "Yuke Zhang",
+   "Sungjun Park",
+   "Zachary Meeks",
+   "Xin-Yu Zhang",
+   "Ben Segev",
+   "Howard Yong",
+   "Nakul Verma",
+   "Avi Shporer",
+   "Alon Amit",
+   "Madeleine Udell"
+  ],
+  "title": "Diverse Inference and Verification for Advanced Reasoning",
+  "year": "2025"
+ },
+ "2504.00180": {
+  "authors": [
+   "Vignesh Gokul",
+   "Srikanth Tenneti",
+   "Alwarappan Nakkiran"
+  ],
+  "title": "Contradiction Detection in RAG Systems: Evaluating LLMs as Context Validators for Improved Information Consistency",
+  "year": "2025"
+ },
+ "2504.19874": {
+  "authors": [
+   "Amir Zandieh",
+   "Majid Daliri",
+   "Majid Hadian",
+   "Vahab Mirrokni"
+  ],
+  "title": "TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate",
+  "year": "2025"
+ },
+ "2505.03574": {
+  "authors": [
+   "Sahana Chennabasappa",
+   "Cyrus Nikolaidis",
+   "Daniel Song",
+   "David Molnar",
+   "Stephanie Ding",
+   "Shengye Wan",
+   "Spencer Whitman",
+   "Lauren Deason",
+   "Nicholas Doucette",
+   "Abraham Montilla",
+   "Alekhya Gampa",
+   "Beto de Paola",
+   "Dominik Gabi",
+   "James Crnkovich",
+   "Jean-Christophe Testud",
+   "Kat He",
+   "Rashnil Chaturvedi",
+   "Wu Zhou",
+   "Joshua Saxe"
+  ],
+  "title": "LlamaFirewall: An open source guardrail system for building secure AI agents",
+  "year": "2025"
+ },
+ "2505.15561": {
+  "authors": [
+   "Florin Cuconasu",
+   "Simone Filice",
+   "Guy Horowitz",
+   "Yoelle Maarek",
+   "Fabrizio Silvestri"
+  ],
+  "title": "Do RAG Systems Really Suffer From Positional Bias?",
+  "year": "2025"
+ },
+ "2506.08500": {
+  "authors": [
+   "Arie Cattan",
+   "Alon Jacovi",
+   "Ori Ram",
+   "Jonathan Herzig",
+   "Roee Aharoni",
+   "Sasha Goldshtein",
+   "Eran Ofek",
+   "Idan Szpektor",
+   "Avi Caciularu"
+  ],
+  "title": "DRAGged into Conflicts: Detecting and Addressing Conflicting Sources in Search-Augmented LLMs",
+  "year": "2025"
+ },
+ "2506.17417": {
+  "authors": [
+   "Mingyuan Wu",
+   "Meitang Li",
+   "Jingcheng Yang",
+   "Jize Jiang",
+   "Kaizhuo Yan",
+   "Zhaoheng Li",
+   "Hanchao Yu",
+   "Minjia Zhang",
+   "Klara Nahrstedt"
+  ],
+  "title": "Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?",
+  "year": "2025"
+ },
+ "2507.03724": {
+  "authors": [
+   "Zhiyu Li",
+   "Chenyang Xi",
+   "Chunyu Li",
+   "Ding Chen",
+   "Boyu Chen",
+   "Shichao Song",
+   "Simin Niu",
+   "Hanyu Wang",
+   "Jiawei Yang",
+   "Chen Tang",
+   "Qingchen Yu",
+   "Jihao Zhao",
+   "Yezhaohui Wang",
+   "Peng Liu",
+   "Zehao Lin",
+   "Pengyuan Wang",
+   "Jiahao Huo",
+   "Tianyi Chen",
+   "Kai Chen",
+   "Kehang Li",
+   "Zhen Tao",
+   "Huayi Lai",
+   "Hao Wu",
+   "Bo Tang",
+   "Zhengren Wang",
+   "Zhaoxin Fan",
+   "Ningyu Zhang",
+   "Linfeng Zhang",
+   "Junchi Yan",
+   "Mingchuan Yang",
+   "Tong Xu",
+   "Wei Xu",
+   "Huajun Chen",
+   "Haofen Wang",
+   "Hongkang Yang",
+   "Wentao Zhang",
+   "Zhi-Qin John Xu",
+   "Siheng Chen",
+   "Feiyu Xiong"
+  ],
+  "title": "MemOS: A Memory OS for AI System",
+  "year": "2025"
+ },
+ "2508.21038": {
+  "authors": [
+   "Orion Weller",
+   "Michael Boratko",
+   "Iftekhar Naim",
+   "Jinhyuk Lee"
+  ],
+  "title": "On the Theoretical Limitations of Embedding-Based Retrieval",
+  "year": "2025"
+ },
+ "2509.09714": {
+  "authors": [
+   "Serge Lionel Nikiema",
+   "Albérick Euraste Djire",
+   "Abdoul Aziz Bonkoungou",
+   "Micheline Bénédicte Moumoula",
+   "Jordan Samhi",
+   "Abdoul Kader Kabore",
+   "Jacques Klein",
+   "Tegawendé F. Bissyande"
+  ],
+  "title": "How Small Transformation Expose the Weakness of Semantic Similarity Measures",
+  "year": "2025"
+ },
+ "2509.24527": {
+  "authors": [
+   "Danijar Hafner",
+   "Wilson Yan",
+   "Timothy Lillicrap"
+  ],
+  "title": "Training Agents Inside of Scalable World Models",
+  "year": "2025"
+ },
+ "2510.04371": {
+  "authors": [
+   "Naimeng Ye",
+   "Arnav Ahuja",
+   "Georgios Liargkovas",
+   "Yunan Lu",
+   "Kostis Kaffes",
+   "Tianyi Peng"
+  ],
+  "title": "Speculative Actions: A Lossless Framework for Faster Agentic Systems",
+  "year": "2025"
+ },
+ "2511.03506": {
+  "authors": [
+   "Ding Chen",
+   "Simin Niu",
+   "Kehang Li",
+   "Peng Liu",
+   "Xiangping Zheng",
+   "Bo Tang",
+   "Xinchi Li",
+   "Feiyu Xiong",
+   "Zhiyu Li"
+  ],
+  "title": "HaluMem: Evaluating Hallucinations in Memory Systems of Agents",
+  "year": "2025"
+ },
+ "2512.23684": {
+  "authors": [
+   "Panagiotis Theocharopoulos",
+   "Ajinkya Kulkarni",
+   "Mathew Magimai. -Doss"
+  ],
+  "title": "Multilingual Hidden Prompt Injection Attacks on LLM-Based Academic Reviewing",
+  "year": "2025"
+ },
+ "2512.24601": {
+  "authors": [
+   "Alex L. Zhang",
+   "Tim Kraska",
+   "Omar Khattab"
+  ],
+  "title": "Recursive Language Models",
+  "year": "2025"
+ },
+ "2601.06007": {
+  "authors": [
+   "Elias Lumer",
+   "Faheem Nizar",
+   "Akshaya Jangiti",
+   "Kevin Frank",
+   "Anmol Gulati",
+   "Mandar Phadate",
+   "Vamse Kumar Subbiah"
+  ],
+  "title": "Don't Break the Cache: An Evaluation of Prompt Caching for Long-Horizon Agentic Tasks",
+  "year": "2026"
+ },
+ "2601.13251": {
+  "authors": [
+   "Ebubekir Tosun",
+   "Mehmet Emin Buldur",
+   "Özay Ezerceli",
+   "Mahmoud ElHussieni"
+  ],
+  "title": "Beyond Cosine Similarity: Taming Semantic Drift and Antonym Intrusion in a 15-Million Node Turkish Synonym Graph",
+  "year": "2026"
+ },
+ "2601.18642": {
+  "authors": [
+   "Lei Wei",
+   "Xiao Peng",
+   "Xu Dong",
+   "Niantao Xie",
+   "Bin Wang"
+  ],
+  "title": "FadeMem: Biologically-Inspired Forgetting for Efficient Agent Memory",
+  "year": "2026"
+ },
+ "2602.03485": {
+  "authors": [
+   "Quanyu Long",
+   "Kai Jie Jiang",
+   "Jianda Chen",
+   "Xu Guo",
+   "Leilei Gan",
+   "Wenya Wang"
+  ],
+  "title": "Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning",
+  "year": "2026"
+ },
+ "2602.14721": {
+  "authors": [
+   "Zikai Xiao",
+   "Jianhong Tu",
+   "Chuhang Zou",
+   "Yuxin Zuo",
+   "Zhi Li",
+   "Peng Wang",
+   "Bowen Yu",
+   "Fei Huang",
+   "Junyang Lin",
+   "Zuozhu Liu"
+  ],
+  "title": "WebWorld: A Large-Scale World Model for Web Agent Training",
+  "year": "2026"
+ },
+ "2603.05344": {
+  "authors": [
+   "Nghi D. Q. Bui"
+  ],
+  "title": "Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering, and Lessons Learned",
+  "year": "2026"
+ },
+ "2603.06976": {
+  "authors": [
+   "Muhammad Arslan Shaukat",
+   "Muntasir Adnan",
+   "Carlos C. N. Kuhn"
+  ],
+  "title": "A Systematic Investigation of Document Chunking Strategies and Embedding Sensitivity",
+  "year": "2026"
+ },
+ "2603.09023": {
+  "authors": [
+   "Tony Mason"
+  ],
+  "title": "The Missing Memory Hierarchy: Demand Paging for LLM Context Windows",
+  "year": "2026"
+ },
+ "2603.10165": {
+  "authors": [
+   "Yinjie Wang",
+   "Xuyang Chen",
+   "Xiaolong Jin",
+   "Mengdi Wang",
+   "Ling Yang"
+  ],
+  "title": "OpenClaw-RL: Train Any Agent Simply by Talking",
+  "year": "2026"
+ },
+ "2603.20578": {
+  "authors": [
+   "Zihua Wu",
+   "Georg Gartner"
+  ],
+  "title": "Context Cartography: Toward Structured Governance of Contextual Space in Large Language Model Systems",
+  "year": "2026"
+ },
+ "2603.24895": {
+  "authors": [
+   "Max Holschneider",
+   "Saetbyeol LeeYouk"
+  ],
+  "title": "PII Shield: A Browser-Level Overlay for User-Controlled Personal Identifiable Information (PII) Management in AI Interactions",
+  "year": "2026"
+ },
+ "2605.03344": {
+  "authors": [
+   "Negar Arabzadeh",
+   "Wenjie Ma",
+   "Sewon Min",
+   "Matei Zaharia"
+  ],
+  "title": "RAG over Thinking Traces Can Improve Reasoning Tasks",
+  "year": "2026"
+ },
+ "2605.19932": {
+  "authors": [
+   "Zhuohan Gu",
+   "Qizheng Zhang",
+   "Omar Khattab",
+   "Samuel Madden"
+  ],
+  "title": "PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents",
+  "year": "2026"
+ },
+ "2605.22791": {
+  "authors": [
+   "Ali Hatamizadeh",
+   "Yejin Choi",
+   "Jan Kautz"
+  ],
+  "title": "Gated DeltaNet-2: Decoupling Erase and Write in Linear Attention",
+  "year": "2026"
+ }
+}

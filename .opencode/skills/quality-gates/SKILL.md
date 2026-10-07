@@ -35,6 +35,50 @@ Sensors must be run **in order of cost**. Cheapest first — if a cheap sensor f
 
 If either fails: **fix before committing. No exceptions.**
 
+# Documentation Sensors
+
+These are integration tests (`tests/*.rs`), not unit tests: they read the repo's own
+documents and assert that what those documents claim is still true. They are part of
+`cargo test --all-features`, and their failure means a document is lying — fix the
+document, not the sensor.
+
+| Sensor file | Guards |
+|-------------|--------|
+| `tests/repo_references.rs` | Documents name `src/**` paths that exist; removed abstractions are not presented as current; `IMPLEMENTATION.md` stays an index; `src/**` does not cite tracker identifiers |
+| `tests/docs_consistency.rs` | Documented CLI flags exist in the live clap definition; examples parse; version/schema markers match the code |
+| `tests/citation_integrity.rs` | Cited arXiv IDs are real and in the manifest; attributed surnames appear on the paper's real author list; a withdrawn paper is never cited as support; the bibliography table's author and year columns match arXiv |
+| `tests/repo_references.rs` + `tests/docs_consistency.rs` | See AGENTS.md for the placement rule on tracker identifiers — out of `src/**`/`tests/**` assertion messages, allowed in `AGENTS.md`, skills, `doc/src/development/**`, `doc/src/CHANGELOG.md` |
+
+**A new sensor is not done until it has been shown to fail.** Green on first run
+proves only that the parser runs. Reinject the defect the sensor exists to catch,
+watch it fail with a useful message, then restore. Two sensors written during the
+September 2026 audits passed clean while covering nothing, because they excluded
+the very file they lived in, or matched `LUC-140` as an exemption key.
+
+## Citation sensor: what it can and cannot see
+
+`citation_integrity.rs` verifies **identity** — the ID is real, the surname is on the
+paper, the paper is not retracted. It cannot verify a **number**: "reduces latency by
+~40%" against a paper reporting "up to 20%" is invisible to it, because reading a
+claim back to its source is judgement, not string matching. Of the seven citation
+defects found in the September 2026 audit, this sensor catches one class; the rest
+are found by reading the paper.
+
+Two consequences, both load-bearing:
+
+- **Never describe the sensor as "citations verified."** That wording is exactly the
+  false confidence the audit was about: an artifact that looks checked, so nobody
+  re-checks it.
+- **The manifest is generated, never hand-written** —
+  `python3 scripts/generate-citation-manifest.py`. It is not in `cargo test` because
+  the arXiv rate-limits by IP window: the audit hit HTTP 429 on 19 of 58 requests
+  with 3s spacing. Refresh it when adding a citation, and read the diff — a changed
+  author list on an unchanged ID is either a correction or a new misattribution.
+
+A new test sensor must assert its own coverage, by the way. `bibliography_table_matches_the_manifest`
+asserts `checked > 10` rows: if the table shape changes so the parser matches nothing,
+the test would otherwise pass vacuously on an empty set.
+
 ## Before Each PR
 
 | Order | Command | Cost | What it catches |
