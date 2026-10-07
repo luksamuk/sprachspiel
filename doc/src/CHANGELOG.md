@@ -918,6 +918,7 @@ All notable changes to Sprachspiel will be documented in this file.
 - **Multilingual Prompt Injection Security Research** - Comprehensive security analysis
   - **Documented Bypasses:** Azure Content Filter bypassed using Thai/Arabic payloads (HackerNoon)
   - **Academic Research:** arXiv:2512.23684 multilingual hidden prompt injection on 500 papers
+  - **ML Detection:** XLM-RoBERTa fine-tuned for multilingual detection
   - **Future Consideration:** Translate-then-detect approach using existing `ask translate` infrastructure
   - **Current Mitigation:** English-only sanitization + warning on non-Latin characters
   - References added to skills-system-design.md

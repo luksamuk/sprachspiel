@@ -1155,14 +1155,11 @@ When chat multi-mode is implemented (allowing Translate mode within chat session
     - Apply English sanitization to translated content
     - Log original language + translation for audit
 
- 2. **Alternative: ML-based multilingual detection:**
-    - Fine-tune XLM-RoBERTa on prompt injection dataset
-    - Deploy as pre-filter before skill loading
-    - Higher accuracy but requires ML infrastructure
-
  **Implementation Dependency:**
  - Requires: Specialized Agent Architecture (P4 in roadmap)
  - Existing: `sprach translate` subcommand with `translategemma` model
+
+**Not considered: ML-based detection.** An earlier revision listed fine-tuning XLM-RoBERTa as the higher-accuracy alternative. Its only evidence was the withdrawn paper above, so the approach has no support here until a source that survives review is found. The decision is tracked in Linear (LUC-61), not in this document — a design page must not recommend what its own evidence cannot justify.
 
 **References:**
 - [Multilingual Prompt Injection Bypasses (HackerNoon)](https://hackernoon.com/multilingual-prompt-injection-exposes-gaps-in-llm-safety-nets)

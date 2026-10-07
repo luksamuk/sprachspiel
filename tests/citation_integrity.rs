@@ -126,31 +126,67 @@ fn scanned_files() -> Vec<PathBuf> {
 /// as misattributions twenty times over. A false positive on a *correct* citation
 /// is how a guard gets deleted instead of fixed.
 ///
-/// Within a line, the window is the run of text since the previous citation, cut at
-/// the last cell or entry boundary so a neighbouring entry's name cannot leak in:
+/// Attribution appears on **both** sides of the ID in these documents, so both sides
+/// are read:
 ///
 /// ```text
-/// Sources: Arabzadeh et al. 2026 (arXiv:2605.03344), Gu et al. 2026 (arXiv:2605.19932)
-///              ^ window 1: "…Arabzadeh et al."          ^ window 2: "), Gu et al. 2026 ("
+/// Cuconasu et al. (2025, arXiv:2505.15561) note that this …
+///      ^ before                                    ^ after (empty)
+/// "Mamba: Linear-Time Sequence Modeling" (2312.00752) — Gu et al. 2023
+///                                      ^ before        ^ AFTER — this is why the
+///                                                        first version missed it
 /// ```
 ///
 /// A line that names no author — `**References:** arXiv:X`, `| Title | Authors | [arXiv:X] | 2025 |`
-/// — yields an empty window and is skipped. Table rows have their own schema and are
-/// checked harder by `bibliography_table_matches_the_manifest`.
+/// — yields empty windows on both sides and is skipped. Table rows have their own
+/// schema and are checked harder by `bibliography_table_matches_the_manifest`.
 fn citations_with_attribution(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
 
     for line in text.lines() {
+        let positions = id_positions(line);
         let mut cursor = 0usize;
-        for (start, id) in id_positions(line) {
-            if start >= cursor {
-                let window = trim_to_entry_boundary(&line[cursor..start]);
-                out.push((id.clone(), window.to_string()));
-                cursor = start + id.len();
+        for (n, (start, id)) in positions.iter().enumerate() {
+            if *start < cursor {
+                continue;
             }
+            let after_start = start + id.len();
+            // The after-window ends at the next citation on the line, so a line
+            // listing several papers cannot attribute one author to two IDs.
+            let after_end = positions
+                .get(n + 1)
+                .map(|(next, _)| *next)
+                .unwrap_or(line.len());
+            let mut window = trim_to_entry_boundary(&line[cursor..*start]).to_string();
+            if after_start <= after_end {
+                let after = trim_after_boundary(&line[after_start..after_end]);
+                if !after.trim().is_empty() {
+                    window.push(' ');
+                    window.push_str(after);
+                }
+            }
+            out.push((id.clone(), window));
+            cursor = after_start;
         }
     }
     out
+}
+
+/// Cut a window forward to the end of its own entry.
+///
+/// The mirror of `trim_to_entry_boundary`. A comma, cell or list separator starts the
+/// next entry, so the following paper's author cannot leak in:
+///
+/// ```text
+/// … Gu et al. 2026 (arXiv:2605.19932), Diógenes et al. 2026 …
+///                                   ^ cut here — Diógenes belongs to the next entry
+/// ```
+fn trim_after_boundary(window: &str) -> &str {
+    let cut = window
+        .find([',', '|', ';'])
+        .or_else(|| window.find(") ("))
+        .unwrap_or(window.len());
+    &window[..cut]
 }
 
 /// Cut a window back to the start of its own entry.
@@ -199,9 +235,17 @@ fn id_positions(text: &str) -> Vec<(usize, String)> {
             }
             let digits = &bytes[i + 5..j];
             if (4..=5).contains(&digits.len()) {
+                // Two forms count as a citation:
+                // - `arXiv:2510.04371` / `arxiv.org/abs/2406.11931` — labelled;
+                // - `(2312.00752)` — a bare ID in a parenthetical, which the repo
+                //   uses for Mamba and Megalodon. Requiring a label missed these,
+                //   and `context_management_research.md` is where they live.
                 let ctx_start = i.saturating_sub(24);
                 let context: String = lower[ctx_start..i].iter().collect();
-                if context.contains("arxiv") || context.contains("abs/") {
+                let labelled = context.contains("arxiv") || context.contains("abs/");
+                let parenthesised =
+                    i > 0 && bytes[i - 1] == '(' && j < bytes.len() && bytes[j] == ')';
+                if labelled || parenthesised {
                     out.push((byte_off[i], bytes[i..j].iter().collect::<String>()));
                 }
             }

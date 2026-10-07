@@ -35,12 +35,24 @@ SCAN = ["doc", "src", ".opencode", "AGENTS.md", "README.md"]
 # Must match the scanner in tests/citation_integrity.rs, which accepts the URL form
 # too: `https://arxiv.org/abs/2406.11931` is a citation and was missed here while
 # the sensor saw it, so a citation could be invisible to the manifest.
-ID_RE = re.compile(r"(?:arXiv:?\s*|arxiv\.org/abs/)(\d{4}\.\d{4,5})")
+ID_RE = re.compile(r"(?:arXiv:?\s*|arxiv\.org/abs/|(?<=\())(\d{4}\.\d{4,5})")
 
 
 def cited_ids() -> list[str]:
-    """Every arXiv ID cited anywhere we consider authoritative."""
-    cmd = ["rg", "-o", r"(arXiv:?\s*|arxiv\.org/abs/)\d{4}\.\d{4,5}", "--no-filename", *SCAN]
+    """Every arXiv ID cited anywhere we consider authoritative.
+
+    Three forms appear in these documents: `arXiv:2510.04371`, the URL
+    `arxiv.org/abs/2406.11931`, and a bare ID in a parenthetical `(2312.00752)`.
+    Accepting only the first two left Mamba and Megalodon invisible to the
+    manifest while the offline scanner saw them.
+    """
+    cmd = [
+        "rg",
+        "-o",
+        r"(arXiv:?\s*|arxiv\.org/abs/|\()\d{4}\.\d{4,5}",
+        "--no-filename",
+        *SCAN,
+    ]
     out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
     return sorted({m.group(1) for m in ID_RE.finditer(out)})
 

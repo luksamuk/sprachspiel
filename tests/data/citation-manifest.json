@@ -100,6 +100,14 @@
   "title": "MemGPT: Towards LLMs as Operating Systems",
   "year": "2023"
  },
+ "2312.00752": {
+  "authors": [
+   "Albert Gu",
+   "Tri Dao"
+  ],
+  "title": "Mamba: Linear-Time Sequence Modeling with Selective State Spaces",
+  "year": "2023"
+ },
  "2312.06648": {
   "authors": [
    "Tong Chen",
@@ -154,6 +162,22 @@
    "Kevin Tierney"
   ],
   "title": "PolyNet: Learning Diverse Solution Strategies for Neural Combinatorial Optimization",
+  "year": "2024"
+ },
+ "2404.08801": {
+  "authors": [
+   "Xuezhe Ma",
+   "Xiaomeng Yang",
+   "Wenhan Xiong",
+   "Beidi Chen",
+   "Lili Yu",
+   "Hao Zhang",
+   "Jonathan May",
+   "Luke Zettlemoyer",
+   "Omer Levy",
+   "Chunting Zhou"
+  ],
+  "title": "Megalodon: Efficient LLM Pretraining and Inference with Unlimited Context Length",
   "year": "2024"
  },
  "2404.10198": {

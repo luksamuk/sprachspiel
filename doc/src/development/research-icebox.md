@@ -86,7 +86,8 @@
 
 ### R-08: Importance-Based Eviction Strategy
 
-- **Source:** arXiv:2601.06007v2 (Don't Break the Cache, PricewaterhouseCoopers, U.S.)
+- **Source:** (no paper source; see note) Importance-weighted eviction is our own design question
+- **Note on a previous citation:** this entry used to cite `arXiv:2601.06007` ("Don't Break the Cache") as its source. That paper evaluates **prompt caching** for long-horizon agentic tasks — it says nothing about eviction during compaction, so it cannot support this item. The claim is re-anchored below and the citation is dropped.
 - **Current state:** Simple middle-compaction (preserve first N + last N, summarize middle). Content decay and feedback adjust importance, but eviction during compaction doesn't use importance scores.
 - **Why deferred:** Need to understand how `importance_score` and `feedback_score` interact with real eviction decisions. Current compaction works; changing the strategy risks regressions.
 - **Prerequisite:** Production data on importance score distribution; understanding of how feedback-weighted retrieval interacts with importance-weighted eviction
@@ -311,7 +312,7 @@
 
 ### C-12: Shaukat et al. 2026 (Document Chunking Strategies)
 
-- **Institution:** arXiv:2603.06976
+- **Source:** arXiv:2603.06976
 - **Key finding:** Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed-size chunking. Evaluated 36 methods across 6 domains with 5 embedding models.
 - **Relevance to sprachspiel:** Board draft "Context-Aware Chunking [M4]" — validates semantic chunking over fixed-size
 - **Reference:** arXiv:2603.06976
@@ -320,7 +321,7 @@
 
 ### C-13: ClashEval (Wu et al. 2024)
 
-- **Institution:** arXiv:2404.10198
+- **Source:** arXiv:2404.10198
 - **Key finding:** LLMs overwrite correct internal knowledge with incorrect retrieved evidence in >60% of cases. Without metadata authority distinctions, models treat all chunks equally.
 - **Relevance to sprachspiel:** Board draft "Metadata Enrichment [M4]" — authority and recency metadata enables RRF boosting, preventing stale/wrong information from drowning current/correct information
 - **Reference:** arXiv:2404.10198
