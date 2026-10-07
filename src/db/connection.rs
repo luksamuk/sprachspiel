@@ -778,6 +778,17 @@ impl Database {
         Ok(())
     }
 
+    /// v15 → v16: add the `fact_tracker` column.
+    ///
+    /// Stores harness-extracted session facts as JSON. Nullable: sessions that
+    /// predate this column, and sessions that never ran a tool, have nothing
+    /// to record, and NULL distinguishes that from an empty-but-present value.
+    fn migrate_v15_to_v16(conn: &Connection) -> Result<()> {
+        Self::add_column_if_missing(conn, "conversations", "fact_tracker", "TEXT")?;
+        log::info!("Migration v15→v16: Added conversations.fact_tracker column");
+        Ok(())
+    }
+
     /// Apply incremental schema migrations (dispatcher)
     fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
         if from_version < 3 {
@@ -818,6 +829,9 @@ impl Database {
         }
         if from_version < 15 {
             Self::migrate_v14_to_v15(conn)?;
+        }
+        if from_version < 16 {
+            Self::migrate_v15_to_v16(conn)?;
         }
         Ok(())
     }
@@ -1067,6 +1081,40 @@ mod tests {
         assert!(columns.contains(&"priority".to_string()));
         assert!(columns.contains(&"tags".to_string()));
         assert!(columns.contains(&"created_at".to_string()));
+    }
+
+    #[test]
+    fn migration_adds_fact_tracker_column() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        // Simulate a pre-v16 database by creating the old table shape.
+        conn.execute_batch(
+            "CREATE TABLE conversations (
+                id TEXT PRIMARY KEY, model TEXT NOT NULL,
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                tool_output_level TEXT DEFAULT 'compact'
+            );",
+        )
+        .expect("old shape");
+
+        Database::apply_migrations(&conn, 15).expect("migration");
+
+        let mut has_column = false;
+        {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(conversations)")
+                .expect("pragma");
+            let mut rows = stmt.query([]).expect("query");
+            while let Some(row) = rows.next().expect("next") {
+                let name: String = row.get(1).expect("name");
+                if name == "fact_tracker" {
+                    has_column = true;
+                }
+            }
+        }
+        assert!(
+            has_column,
+            "the migration must add the fact_tracker column to an existing database"
+        );
     }
 
     #[test]

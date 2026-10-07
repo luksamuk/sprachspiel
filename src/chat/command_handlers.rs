@@ -517,6 +517,10 @@ fn handle_new(state: &mut ReplState) -> Vec<CommandOutput> {
     state.session.messages_sent_to_llm = 0;
     state.session.compacted_range = None;
     state.session.name = None;
+    // Full reset, not a merge: the tracker's facts describe the previous
+    // conversation's tool activity, so they must not leak into the next
+    // session's compaction staple.
+    state.session.fact_tracker = Default::default();
 
     // Generate new session ID
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3316,6 +3320,41 @@ mod tests {
             last_assistant_message_id: None,
             last_status_token_bucket: 0,
         }
+    }
+
+    #[test]
+    fn handle_new_resets_the_fact_tracker() {
+        // /new is a full reset, not a merge: the tracker's facts describe the
+        // PREVIOUS conversation's tool activity, so they must not leak into
+        // the next session's compaction staple. forget_session's equivalent
+        // reset is pinned in session.rs; pin its sibling here too.
+        let mut state = create_test_state_with_db();
+        {
+            let mut turn = crate::chat::fact_tracker::SessionFactTracker::default();
+            turn.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+            turn.record_tool(
+                "run_command",
+                r#"{"command_line":"make lint"}"#,
+                "ok",
+                false,
+            );
+            state.session.merge_fact_tracker(&turn);
+        }
+        assert!(
+            !state.session.fact_tracker.is_empty(),
+            "setup must produce a non-empty tracker"
+        );
+
+        handle_new(&mut state);
+
+        assert!(
+            state.session.fact_tracker.is_empty(),
+            "/new must reset the fact tracker — previous-session facts must not leak into the next compaction staple"
+        );
+        assert!(
+            state.session.messages.is_empty(),
+            "/new must also clear the messages alongside the tracker"
+        );
     }
 
     #[test]

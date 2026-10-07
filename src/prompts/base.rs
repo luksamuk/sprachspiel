@@ -131,7 +131,7 @@ continue naturally from the checkpoint without repeating completed work.
 /// System prompt for conversation compaction
 ///
 /// Used when summarizing old messages during context overflow.
-/// Produces structured markdown summaries with explicit token limit.
+/// Produces structured markdown summaries including XML-style fact blocks.
 /// Compaction prompt for summarizing conversation history.
 ///
 /// **No token or character limits are imposed on the summary.** The LLM
@@ -154,7 +154,8 @@ Use this structure:
 [What is the user trying to accomplish?]
 
 ## Instructions
-[Important user constraints and preferences]
+[Important user constraints and preferences. Quote user preferences verbatim rather than
+paraphrasing — paraphrased preferences are the least reliably retained category.]
 
 ## Progress
 **Completed:** [Work done so far]
@@ -164,7 +165,33 @@ Use this structure:
 [Key insights, decisions, and important context learned during the conversation]
 
 ## Relevant Files
-- [Files read, edited, or concerned — include root path if relevant]
+List each file once, under the block that matches what actually happened to it.
+A file that was changed belongs in <modified-files>; a file merely inspected belongs in
+<read-files>. Do not list the same path in both.
+
+<modified-files>
+[Files created, written to, edited, or appended to. Paths as they were passed to the tool.]
+</modified-files>
+
+<read-files>
+[Files opened or inspected only.]
+</read-files>
+
+<last-run>
+[The last significant command run, quoted exactly as issued, then -> PASS or -> FAIL.
+If no command ran, write: None]
+</last-run>
+
+<unresolved-error>
+[An error or blocker still outstanding at the end of this segment. If there is none,
+write exactly: None]
+</unresolved-error>
+
+State each fact once. Do not repeat the content of these blocks inside the prose sections
+above — repetition dilutes attention for everything else in the summary.
+
+Quote commands and paths exactly. If you do not know a value, write None rather than
+inventing a plausible one.
 
 DO NOT include:
 - Full message transcripts
@@ -173,6 +200,20 @@ DO NOT include:
 - Staleness labels like "(stale)", "(N days ago)", "(unused)" — these become inaccurate over time; interpret the fact's content instead
 
 Preserve enough detail so another assistant could seamlessly continue this work."#;
+
+/// Prompt used for the per-chunk summaries in recursive compaction.
+///
+/// Deliberately different from `COMPACTION_PROMPT`: a chunk summary is an
+/// intermediate artifact that a later consolidation pass rewrites. Asking each
+/// chunk for fact blocks would produce one set per chunk, and the consolidation
+/// pass would then re-derive them from prose — the unreliable path — precisely
+/// on the large contexts where reliable facts matter most.
+///
+/// The authoritative facts for a compacted session are stapled by the harness
+/// from its own tool records, once, after the summary is final.
+pub const CHUNK_SUMMARY_PROMPT: &str = r#"Summarize this segment of a longer conversation concisely.
+Preserve decisions, file paths, commands and their outcomes, and anything the user asked for.
+Do not include full transcripts or conversational filler."#;
 
 /// Template for continuation prompts
 ///
@@ -290,6 +331,80 @@ mod tests {
         assert!(
             COMPACTION_PROMPT.contains("MARKDOWN") || COMPACTION_PROMPT.contains("Markdown"),
             "COMPACTION_PROMPT must specify Markdown format"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_declares_fact_blocks() {
+        for block in [
+            "<modified-files>",
+            "<read-files>",
+            "<last-run>",
+            "<unresolved-error>",
+        ] {
+            assert!(
+                COMPACTION_PROMPT.contains(block),
+                "COMPACTION_PROMPT must declare {block} so the model's prose is structured"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compaction_prompt_does_not_request_the_latest_user_request() {
+        // The compactor receives only the middle of the conversation
+        // (get_compaction_range_default keeps first 5 and last 5), so the most
+        // recent user message is not in its input. Asking for a verbatim quote
+        // of text the model was never shown invites it to invent one. The
+        // authoritative copy is supplied by the harness instead.
+        assert!(
+            !COMPACTION_PROMPT.contains("<latest-user-request>"),
+            "the prompt must not request a fact the compaction input does not contain"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_separates_modified_from_read() {
+        assert!(
+            COMPACTION_PROMPT.contains("<modified-files>")
+                && COMPACTION_PROMPT.contains("<read-files>"),
+            "modified and read must be separate blocks — one bucket lets a model report a file it \
+             only inspected as though it had changed it, indistinguishably"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_says_none_when_unknown() {
+        // The compactor must be told to write the literal None for any value
+        // it does not know, instead of inventing a plausible one — a
+        // hallucinated path or command renders the "authoritative" staple
+        // untrustworthy. Every prompt test stayed green with this sentence
+        // deleted, so the instruction itself goes unpinned.
+        assert!(
+            COMPACTION_PROMPT.contains("write None rather than"),
+            "COMPACTION_PROMPT must keep the None-when-unknown instruction"
+        );
+        assert!(
+            COMPACTION_PROMPT.contains("inventing a plausible one"),
+            "COMPACTION_PROMPT must name the hallucination failure being avoided"
+        );
+    }
+
+    #[test]
+    fn test_chunk_prompt_omits_fact_blocks() {
+        // Intermediate chunk summaries feed a later consolidation pass. Fact
+        // blocks in a chunk would multiply (one set per chunk) and then be
+        // re-derived from prose by that pass — reintroducing exactly the
+        // unreliability the blocks exist to remove, on the large contexts
+        // where it matters most. The chunk prompt therefore asks for prose only.
+        for block in ["<modified-files>", "<last-run>", "<unresolved-error>"] {
+            assert!(
+                !CHUNK_SUMMARY_PROMPT.contains(block),
+                "CHUNK_SUMMARY_PROMPT must not claim to emit {block}"
+            );
+        }
+        assert!(
+            CHUNK_SUMMARY_PROMPT.contains("concisely"),
+            "the chunk prompt is a plain summarization instruction"
         );
     }
 }
