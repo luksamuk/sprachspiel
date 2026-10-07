@@ -29,6 +29,23 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **Aha Moment Revisited: Are VLMs Truly Capable of Self Verification in Inference-time Scaling?** | Wu, Li, Yang, Jiang, Yan, Li, Yu, Zhang & Nahrstedt | [arXiv:2506.17417](https://arxiv.org/abs/2506.17417) | 2025 |
 | **Self-Verification Dilemma: Experience-Driven Suppression of Overused Checking in LLM Reasoning** | Long, Jiang, Chen, Guo, Gan & Wang | [arXiv:2602.03485](https://arxiv.org/abs/2602.03485) | 2026 |
 | **Diverse Inference and Verification for Advanced Reasoning** | Drori, Longhitano, Mao, Hyun, Zhang, Park, Meeks, Zhang, Segev, Yong, Verma, Shporer, Amit, Udell | [arXiv:2502.09955](https://arxiv.org/abs/2502.09955) | 2025 |
+| **Prompt Injection attack against LLM-integrated Applications** | Liu et al. (12 authors) | [arXiv:2306.05499](https://arxiv.org/abs/2306.05499) | 2023 |
+| **Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection** | Greshake et al. (6 authors) | [arXiv:2302.12173](https://arxiv.org/abs/2302.12173) | 2023 |
+| **Multilingual Hidden Prompt Injection Attacks on LLM-Based Academic Reviewing** | Theocharopoulos et al. (3 authors) | [arXiv:2512.23684](https://arxiv.org/abs/2512.23684) | 2025 |
+| **Mamba: Linear-Time Sequence Modeling with Selective State Spaces** | Gu & Dao | [arXiv:2312.00752](https://arxiv.org/abs/2312.00752) | 2023 |
+| **Megalodon: Efficient LLM Pretraining and Inference with Unlimited Context Length** | Ma et al. (10 authors) | [arXiv:2404.08801](https://arxiv.org/abs/2404.08801) | 2024 |
+| **Recursively Summarizing Enables Long-Term Dialogue Memory in Large Language Models** | Wang et al. (6 authors) | [arXiv:2308.15022](https://arxiv.org/abs/2308.15022) | 2023 |
+| **Recurrent Context Compression: Efficiently Expanding the Context Window of LLM** | Huang et al. (8 authors) | [arXiv:2406.06110](https://arxiv.org/abs/2406.06110) | 2024 |
+| **Speculative Actions: A Lossless Framework for Faster Agentic Systems** | Ye et al. (6 authors) | [arXiv:2510.04371](https://arxiv.org/abs/2510.04371) | 2025 |
+| **Don't Break the Cache: An Evaluation of Prompt Caching for Long-Horizon Agentic Tasks** | Lumer et al. (7 authors) | [arXiv:2601.06007](https://arxiv.org/abs/2601.06007) | 2026 |
+| **Precise Zero-Shot Dense Retrieval without Relevance Labels** | Gao et al. (4 authors) | [arXiv:2212.10496](https://arxiv.org/abs/2212.10496) | 2022 |
+| **Dense X Retrieval: What Retrieval Granularity Should We Use?** | Chen et al. (8 authors) | [arXiv:2312.06648](https://arxiv.org/abs/2312.06648) | 2023 |
+| **RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval** | Sarthi et al. (6 authors) | [arXiv:2401.18059](https://arxiv.org/abs/2401.18059) | 2024 |
+| **ClashEval: Quantifying the tug-of-war between an LLM's internal prior and external evidence** | Wu et al. (3 authors) | [arXiv:2404.10198](https://arxiv.org/abs/2404.10198) | 2024 |
+| **DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence** | DeepSeek-AI et al. (40 authors) | [arXiv:2406.11931](https://arxiv.org/abs/2406.11931) | 2024 |
+| **Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering, and Lessons Learned** | Bui | [arXiv:2603.05344](https://arxiv.org/abs/2603.05344) | 2026 |
+| **A scalable framework for learning from implicit user feedback to improve natural language understanding in large-scale conversational AI systems** | Park et al. (8 authors) | [arXiv:2010.12251](https://arxiv.org/abs/2010.12251) | 2020 |
+| **PolyNet: Learning Diverse Solution Strategies for Neural Combinatorial Optimization** | Hottung et al. (3 authors) | [arXiv:2402.14048](https://arxiv.org/abs/2402.14048) | 2024 |
 
 ## Key Contributions
 
@@ -114,7 +131,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 #### RLM — Recursive Language Models (Zhang et al. 2025)
 
 - **Paper:** arXiv:2512.24601
-- **Key findings:** Sub-agents with isolated context preserve 100% of information vs. compaction which loses details. But slower (2-5x) and compaction remains inevitable for long history.
+- **Key findings:** Sub-agents with isolated context preserve 100% of information vs. compaction which loses details, at "comparable cost" — the authors measure it as cheaper per query. Compaction remains inevitable for long history.
 - **Sprachspiel implication:** Context-offload via sub-agent (R-26) resolves 1 of 3 context pressure sources. Session variables (R-26 §4) add on-demand injection. Benchmark-driven validation required (B1.5). See RECURSION-SPRACHSPIEL.md analysis.
 
 #### NLP Historical Errors — Cultural Grounding (Diógenes et al. 2026)
@@ -192,6 +209,109 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Paper:** arXiv:2502.09955 — "Diverse Inference and Verification for Advanced Reasoning"
 - **Key findings:** Strict binary verification (Lean formal proofs for math, code execution for ARC puzzles) provides unambiguous 0/1 correctness signals. A proof either type-checks or it doesn't; code either produces the correct output or it doesn't. This strict verification combined with rejection sampling and RL with inference feedback significantly improves reasoning: IMO combinatorics 33.3% → 77.8%.
 - **Sprachspiel implication:** ADR-005 — validates binary Good/Bad feedback signals (±1.0) with no partial credit. The strict verification paradigm confirms that granularity should come from temporal decay, not from base_value magnitude.
+
+#### Liu et al. (2023) — Prompt Injection — Direct Attacks (HouYi)
+
+- **Paper:** arXiv:2306.05499 — "Prompt Injection attack against LLM-integrated Applications"
+- **Key findings:** Explores prompt injection against ten commercial LLM-integrated applications and finds that current *attack* strategies are constrained in practice; the authors then build HouYi, a black-box attack, and deploy it on 36 applications, finding 31 susceptible, with 10 vendors (including Notion) confirming the findings.
+- **Sprachspiel implication:** Cited in `skills-system-design.md` § Security Considerations, next to the indirect-injection paper, as the direct-attack reference behind the injection-pattern detection added to skill sanitization. A skill file is untrusted input.
+
+#### Greshake et al. (2023) — Indirect Prompt Injection
+
+- **Paper:** arXiv:2302.12173 — "Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection"
+- **Key findings:** The user is not necessarily the one prompting the LLM. LLM-integrated applications blur the line between data and instructions, so content from a retrieved document or a tool result can carry an instruction.
+- **Sprachspiel implication:** Cited in `skills-system-design.md` § Security Considerations as the indirect-injection reference behind skill sanitization: skill content reaches the model as context, so `sanitize_content()` runs on it before loading.
+
+#### Theocharopoulos et al. (2025) — Multilingual Hidden Prompt Injection
+
+- **Paper:** arXiv:2512.23684 — "Multilingual Hidden Prompt Injection Attacks on LLM-Based Academic Reviewing"
+- **Key findings:** Embeds semantically equivalent hidden prompts in four languages across ~500 real ICML papers and finds that prompt injection substantially changes review scores and accept/reject decisions for English, Japanese and Chinese injections, while Arabic injections have little to no effect — vulnerability differs notably across languages.
+- **Sprachspiel implication:** Cited in `skills-system-design.md` § Future Consideration: Multilingual Skill Sanitization, whose stated problem is that sanitization regexes are English-only while the paper shows injections in other languages changing model behaviour. This is that paper; it is not the withdrawn one.
+
+#### Gu & Dao (2023) — Mamba — Linear-Time Sequence Modeling
+
+- **Paper:** arXiv:2312.00752 — "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
+- **Key findings:** Identifies a weakness of subquadratic architectures — linear attention, gated convolution and state space models underperform attention on language because they cannot do content-based reasoning. Mamba lets the SSM parameters be functions of the input, so the model selectively propagates or forgets along the sequence length depending on the current token.
+- **Sprachspiel implication:** Cited in `context_management_research.md` § 3.2 as evidence that current quadratic-attention models need explicit context management — the constraint our compaction strategy works around.
+
+#### Ma et al. (2024) — Megalodon — Unlimited Context Length
+
+- **Paper:** arXiv:2404.08801 — "Megalodon: Efficient LLM Pretraining and Inference with Unlimited Context Length"
+- **Key findings:** An architecture for efficient sequence modeling with unlimited context length: Mega's exponential moving average with gated attention, plus improved normalization and long-context training.
+- **Sprachspiel implication:** Listed in `context_management_research.md` § Academic Papers ("Megalodon — Unlimited context") among the architectures surveyed when evaluating options for the context-window constraint.
+
+#### Wang et al. (2023) — Recursive Summarization for Long Dialogue Memory
+
+- **Paper:** arXiv:2308.15022 — "Recursively Summarizing Enables Long-Term Dialogue Memory in Large Language Models"
+- **Key findings:** Recursively generating summaries with the LLM itself keeps a long dialogue compressible without losing the thread, improving recall of past information over a single summarization pass.
+- **Sprachspiel implication:** Cited in `context-overflow.md` (the compaction-overflow research) as the academic validation of recursive summarization for long dialogue memory — the basis of the 3-layer compaction cascade.
+
+#### Huang et al. (2024) — Recurrent Context Compression
+
+- **Paper:** arXiv:2406.06110 — "Recurrent Context Compression: Efficiently Expanding the Context Window of LLM"
+- **Key findings:** Learned compression expands effective context within fixed storage, and identifies a failure mode when instructions and context are compressed together in downstream tasks.
+- **Sprachspiel implication:** C-08 — our structured summary template (Goal/Instructions/Progress/Discoveries/Files) is a manual version of learned compression. Revisit for R-01 if compaction quality degrades.
+
+#### Ye et al. (2025) — Speculative Actions
+
+- **Paper:** arXiv:2510.04371 — "Speculative Actions: A Lossless Framework for Faster Agentic Systems"
+- **Key findings:** Pre-executes likely next actions to hide API latency: up to 20% latency reduction at 55% next-action prediction accuracy. Lossless — a wrong speculation is discarded, never surfaced. (ICLR 2026, Columbia University.)
+- **Sprachspiel implication:** C-09 — pattern detection could pre-compact when approaching the threshold and pre-embed after messages. Revisit for R-03, which requires usage data.
+
+#### Lumer et al. (2026) — Prompt Caching for Long-Horizon Agentic Tasks
+
+- **Paper:** arXiv:2601.06007 — "Don't Break the Cache: An Evaluation of Prompt Caching for Long-Horizon Agentic Tasks"
+- **Key findings:** Evaluates prompt caching for long-horizon agentic tasks — cache behaviour and cost/latency under repeated prefix reuse. It measures caching; it does not study memory eviction.
+- **Sprachspiel implication:** **Cited, then dropped.** R-08 (Importance-Based Eviction Strategy) had cited this paper, but it is about prompt caching rather than eviction during compaction, so it cannot support that item. Recorded here because it remains visible in the `0.38.0` correction note: whoever follows that pointer should find the paper and this explanation.
+
+#### Gao et al. (2022) — HyDE — Hypothetical Document Embeddings
+
+- **Paper:** arXiv:2212.10496 — "Precise Zero-Shot Dense Retrieval without Relevance Labels"
+- **Key findings:** Fully zero-shot dense retrieval is hard with no relevance labels. HyDE pivots: given a query, an instruction-following model generates a hypothetical document that captures relevance patterns but is unreal and may contain false details, and an unsupervised contrastively learned encoder embeds it instead of the query.
+- **Sprachspiel implication:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time.
+
+#### Chen et al. (2023) — Dense X Retrieval — Propositions as Retrieval Unit
+
+- **Paper:** arXiv:2312.06648 — "Dense X Retrieval: What Retrieval Granularity Should We Use?"
+- **Key findings:** The retrieval unit is an overlooked design choice. Indexing propositions — self-contained factual statements decomposed from a passage — outperforms passage- and sentence-level indexing.
+- **Sprachspiel implication:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — propositions are the extreme case of the same instinct: retrieve on the smallest unit that stands alone.
+
+#### Sarthi et al. (2024) — RAPTOR — Tree-Organized Retrieval
+
+- **Paper:** arXiv:2401.18059 — "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval"
+- **Key findings:** Recursively embeds, clusters and summarizes chunks bottom-up into a tree, then retrieves from several levels at once, so a question can be answered from whole-document context rather than one contiguous chunk.
+- **Sprachspiel implication:** R-17 (RAPTOR-like Hierarchical Retrieval) — deferred until Context-Aware Chunking, Metadata Enrichment and Semantic Dedup are stable, since it layers summarization on top of working chunk-level retrieval.
+
+#### Wu et al. (2024) — ClashEval — Internal Prior vs Retrieved Evidence
+
+- **Paper:** arXiv:2404.10198 — "ClashEval: Quantifying the tug-of-war between an LLM's internal prior and external evidence"
+- **Key findings:** Across 1200+ questions in six domains, six top LLMs adopt incorrect retrieved content and override their own correct prior knowledge **over 60% of the time**. The more blatant the error the less often it is adopted; the less confident the model, the more often.
+- **Sprachspiel implication:** C-13 — Board draft "Metadata Enrichment [M4]": authority and recency metadata enables RRF boosting, preventing stale or wrong information from drowning current and correct information.
+
+#### DeepSeek-AI et al. (2024) — DeepSeek-Coder-V2
+
+- **Paper:** arXiv:2406.11931 — "DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence"
+- **Key findings:** An open-source MoE code model reaching GPT-4-Turbo-comparable performance on code tasks, further pre-trained from DeepSeek-V2 on 6T additional tokens.
+- **Sprachspiel implication:** The paper behind `code_mode_research.md`, which benchmarked DeepSeek-Coder-V2 and originally named `deepseek-coder-v2:16b-32k` its default. That document now carries a historical note: **qwen2.5-coder:7b** is the recommended code-mode model (better tool calling, 4.7 GB, fits 6 GB VRAM), so the paper records the evaluation that was done rather than the current choice.
+
+#### Bui (2026) — OPENDEV — Effective AI Coding Agents for the Terminal
+
+- **Paper:** arXiv:2603.05344 — "Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering, and Lessons Learned"
+- **Key findings:** Presents OPENDEV, a terminal-native open-source coding agent, and extracts the patterns behind it: a compound AI system rather than one monolith, planning separated from execution, and an experience-driven memory pipeline.
+- **Sprachspiel implication:** The base paper of `research/effective-agents-analysis.md`, which analyses Sprachspiel against it and estimates 60–70% of the recommended patterns already implemented. Its recommendations map to the open board items for multi-agent architecture, cross-session memory and adaptive compaction.
+
+#### Park et al. (2020) — Implicit User Feedback for NLU
+
+- **Paper:** arXiv:2010.12251 — "A scalable framework for learning from implicit user feedback to improve natural language understanding in large-scale conversational AI systems"
+- **Key findings:** Learns NLU improvements from implicit user feedback: interaction data and dialogue context carry satisfaction and intent signals that can be inferred without explicit labels.
+- **Sprachspiel implication:** Considered as background for feedback-driven retrieval; not adopted. A `0.85` cosine threshold was once attributed to this paper, but it states no such figure — the attribution was removed rather than re-cited.
+- **Note:** Cited in the `0.38.0` release-note correction as the source of a claim it never made. Kept here so a reader who finds that note can see what the paper actually is.
+
+#### Hottung et al. (2024) — PolyNet — Neural Combinatorial Optimization
+
+- **Paper:** arXiv:2402.14048 — "PolyNet: Learning Diverse Solution Strategies for Neural Combinatorial Optimization"
+- **Key findings:** Promotes exploration in neural combinatorial optimization by generating diverse solutions, instead of enforcing diversity through handcrafted rules that can degrade quality on harder problems.
+- **Sprachspiel implication:** **Rejected, not adopted.** Listed in `research-appendix.md` § "Papers Considered but Rejected" with the reason "Neural CO, not memory". Recorded so the rejection reason survives — a bibliography that lists only what was adopted hides the search that produced it.
 
 ## Related Blog Posts
 
@@ -498,5 +618,124 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   author={Nikiema, Serge Lionel and Djire, Albérick Euraste and Bonkoungou, Abdoul Aziz and Moumoula, Micheline Bénédicte and Samhi, Jordan and Kabore, Abdoul Kader and Klein, Jacques and Bissyande, Tegawendé F.},
   journal={arXiv preprint arXiv:2509.09714},
   year={2025}
+}
+
+@article{liu2023promptinjection,
+  title={Prompt Injection attack against LLM-integrated Applications},
+  author={Liu, Yi and Deng, Gelei and Li, Yuekang and others},
+  journal={arXiv preprint arXiv:2306.05499},
+  year={2023}
+}
+
+@article{greshake2023indirect,
+  title={Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection},
+  author={Greshake, Kai and Abdelnabi, Sahar and Mishra, Shailesh and Endres, Christoph and Holz, Thorsten and Fritz, Mario},
+  journal={arXiv preprint arXiv:2302.12173},
+  year={2023}
+}
+
+@article{theocharopoulos2025multilingual,
+  title={Multilingual Hidden Prompt Injection Attacks on LLM-Based Academic Reviewing},
+  author={Theocharopoulos, Panagiotis and Kulkarni, Ajinkya and -Doss, Mathew Magimai.},
+  journal={arXiv preprint arXiv:2512.23684},
+  year={2025}
+}
+
+@article{gu2023mamba,
+  title={Mamba: Linear-Time Sequence Modeling with Selective State Spaces},
+  author={Gu, Albert and Dao, Tri},
+  journal={arXiv preprint arXiv:2312.00752},
+  year={2023}
+}
+
+@article{ma2024megalodon,
+  title={Megalodon: Efficient LLM Pretraining and Inference with Unlimited Context Length},
+  author={Ma, Xuezhe and Yang, Xiaomeng and Xiong, Wenhan and others},
+  journal={arXiv preprint arXiv:2404.08801},
+  year={2024}
+}
+
+@article{wang2023recursive,
+  title={Recursively Summarizing Enables Long-Term Dialogue Memory in Large Language Models},
+  author={Wang, Qingyue and Fu, Yanhe and Cao, Yanan and Wang, Shuai and Tian, Zhiliang and Ding, Liang},
+  journal={arXiv preprint arXiv:2308.15022},
+  year={2023}
+}
+
+@article{huang2024rcc,
+  title={Recurrent Context Compression: Efficiently Expanding the Context Window of LLM},
+  author={Huang, Chensen and Zhu, Guibo and Wang, Xuepeng and others},
+  journal={arXiv preprint arXiv:2406.06110},
+  year={2024}
+}
+
+@article{ye2025speculative,
+  title={Speculative Actions: A Lossless Framework for Faster Agentic Systems},
+  author={Ye, Naimeng and Ahuja, Arnav and Liargkovas, Georgios and Lu, Yunan and Kaffes, Kostis and Peng, Tianyi},
+  journal={arXiv preprint arXiv:2510.04371},
+  year={2025}
+}
+
+@article{lumer2026cache,
+  title={Don't Break the Cache: An Evaluation of Prompt Caching for Long-Horizon Agentic Tasks},
+  author={Lumer, Elias and Nizar, Faheem and Jangiti, Akshaya and others},
+  journal={arXiv preprint arXiv:2601.06007},
+  year={2026}
+}
+
+@article{gao2022hyde,
+  title={Precise Zero-Shot Dense Retrieval without Relevance Labels},
+  author={Gao, Luyu and Ma, Xueguang and Lin, Jimmy and Callan, Jamie},
+  journal={arXiv preprint arXiv:2212.10496},
+  year={2022}
+}
+
+@article{chen2023densex,
+  title={Dense X Retrieval: What Retrieval Granularity Should We Use?},
+  author={Chen, Tong and Wang, Hongwei and Chen, Sihao and others},
+  journal={arXiv preprint arXiv:2312.06648},
+  year={2023}
+}
+
+@article{sarthi2024raptor,
+  title={RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval},
+  author={Sarthi, Parth and Abdullah, Salman and Tuli, Aditi and Khanna, Shubh and Goldie, Anna and Manning, Christopher D.},
+  journal={arXiv preprint arXiv:2401.18059},
+  year={2024}
+}
+
+@article{wu2024clasheval,
+  title={ClashEval: Quantifying the tug-of-war between an LLM's internal prior and external evidence},
+  author={Wu, Kevin and Wu, Eric and Zou, James},
+  journal={arXiv preprint arXiv:2404.10198},
+  year={2024}
+}
+
+@article{deepseekai2024coder,
+  title={DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence},
+  author={DeepSeek-AI and Zhu, Qihao and Guo, Daya and others},
+  journal={arXiv preprint arXiv:2406.11931},
+  year={2024}
+}
+
+@article{bui2026opendev,
+  title={Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering, and Lessons Learned},
+  author={Bui, Nghi D. Q.},
+  journal={arXiv preprint arXiv:2603.05344},
+  year={2026}
+}
+
+@article{park2020feedback,
+  title={A scalable framework for learning from implicit user feedback to improve natural language understanding in large-scale conversational AI systems},
+  author={Park, Sunghyun and Li, Han and Patel, Ameen and others},
+  journal={arXiv preprint arXiv:2010.12251},
+  year={2020}
+}
+
+@article{hottung2024polynet,
+  title={PolyNet: Learning Diverse Solution Strategies for Neural Combinatorial Optimization},
+  author={Hottung, André and Mahajan, Mridul and Tierney, Kevin},
+  journal={arXiv preprint arXiv:2402.14048},
+  year={2024}
 }
 ```

@@ -1132,7 +1132,8 @@ These apply to skills that use `run_command` - skills cannot bypass these contro
 |--------|---------|
 | HackerNoon (Feb 2026) | Bypassed Azure Content Filter using Thai and Arabic payloads - $37,500 in bug bounties |
 | arXiv:2512.23684 | Multilingual hidden prompt injection tested on 500 ICML papers - English, Japanese, Chinese successful |
-| arXiv:2410.21337v1 | XLM-RoBERTa fine-tuned achieves 99.13% accuracy for multilingual injection detection |
+
+**Note on ML-based detection:** an earlier revision of this document cited a fine-tuned XLM-RoBERTa result for multilingual injection detection. That paper was withdrawn by its author over "critical issues identified in the methodology/results", so the figure is gone and the viability of an ML classifier here should be treated as **unestablished**. Do not re-derive this from the withdrawn source.
 
 **Root Cause:**
 - Safety training is disproportionately English-centric
@@ -1154,19 +1155,15 @@ When chat multi-mode is implemented (allowing Translate mode within chat session
     - Apply English sanitization to translated content
     - Log original language + translation for audit
 
- 2. **Alternative: ML-based multilingual detection:**
-    - Fine-tune XLM-RoBERTa on prompt injection dataset
-    - Deploy as pre-filter before skill loading
-    - Higher accuracy but requires ML infrastructure
-
  **Implementation Dependency:**
  - Requires: Specialized Agent Architecture (P4 in roadmap)
  - Existing: `sprach translate` subcommand with `translategemma` model
 
+**Not considered: ML-based detection.** An earlier revision listed fine-tuning XLM-RoBERTa as the higher-accuracy alternative. Its only evidence was the withdrawn paper above, so the approach has no support here until a source that survives review is found. The decision is tracked in Linear (LUC-61), not in this document — a design page must not recommend what its own evidence cannot justify.
+
 **References:**
 - [Multilingual Prompt Injection Bypasses (HackerNoon)](https://hackernoon.com/multilingual-prompt-injection-exposes-gaps-in-llm-safety-nets)
 - [Multilingual Hidden Prompt Injection (arXiv:2512.23684)](https://arxiv.org/abs/2512.23684)
-- [Fine-tuned LLMs for Detection (arXiv:2410.21337v1)](https://arxiv.org/html/2410.21337v1)
 - [OpenAI Moderation API (40 languages)](https://developers.openai.com/api/docs/guides/moderation)
 
 ## Testing Strategy

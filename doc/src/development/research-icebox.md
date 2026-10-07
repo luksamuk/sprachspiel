@@ -32,7 +32,7 @@
 
 ### R-03: Speculative Execution
 
-- **Source:** arXiv:2510.04371 (Speculative Actions, ICLR 2026, DeepMind/Stanford)
+- **Source:** arXiv:2510.04371 (Speculative Actions, ICLR 2026, Columbia University)
 - **Current state:** No pattern detection or predictive pre-execution
 - **Why deferred:** Without collected usage patterns, speculative execution is guesswork. No telemetry data to validate which patterns are worth pre-executing.
 - **Prerequisite:** Telemetry system collecting tool usage patterns; evidence of repeated sequential patterns
@@ -86,7 +86,8 @@
 
 ### R-08: Importance-Based Eviction Strategy
 
-- **Source:** arXiv:2601.06007v2 (Don't Break the Cache, MIT CSAIL)
+- **Source:** (no paper source; see note) Importance-weighted eviction is our own design question
+- **Note on a previous citation:** this entry used to cite `arXiv:2601.06007` ("Don't Break the Cache") as its source. That paper evaluates **prompt caching** for long-horizon agentic tasks — it says nothing about eviction during compaction, so it cannot support this item. The claim is re-anchored below and the citation is dropped.
 - **Current state:** Simple middle-compaction (preserve first N + last N, summarize middle). Content decay and feedback adjust importance, but eviction during compaction doesn't use importance scores.
 - **Why deferred:** Need to understand how `importance_score` and `feedback_score` interact with real eviction decisions. Current compaction works; changing the strategy risks regressions.
 - **Prerequisite:** Production data on importance score distribution; understanding of how feedback-weighted retrieval interacts with importance-weighted eviction
@@ -274,7 +275,7 @@
 
 ### C-08: Recurrent Context Compression (arXiv:2406.06110)
 
-- **Institution:** Stanford NLP
+- **Institution:** University of Chinese Academy of Sciences; Institute of Automation, Chinese Academy of Sciences
 - **Key finding:** Learned compression outperforms static windowing in maintaining key facts
 - **Relevance to sprachspiel:** Our structured summary template (Goal/Instructions/Progress/Discoveries/Files) is a manual version of learned compression
 - **Revisit for:** R-01 (multi-stage pipeline) — if our compaction quality degrades
@@ -283,8 +284,8 @@
 
 ### C-09: Speculative Actions (arXiv:2510.04371)
 
-- **Institution:** DeepMind/Stanford (ICLR 2026)
-- **Key finding:** Pre-executing likely next actions reduces latency by ~40%
+- **Institution:** Columbia University (ICLR 2026)
+- **Key finding:** Pre-executing likely next actions reduces latency by up to 20% (55% next-action prediction accuracy)
 - **Relevance to sprachspiel:** Pattern detection could pre-compact when approaching threshold, pre-embed after messages
 - **Revisit for:** R-03 (speculative execution) — requires usage data
 
@@ -311,7 +312,7 @@
 
 ### C-12: Shaukat et al. 2026 (Document Chunking Strategies)
 
-- **Institution:** arXiv:2603.06976
+- **Source:** arXiv:2603.06976
 - **Key finding:** Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed-size chunking. Evaluated 36 methods across 6 domains with 5 embedding models.
 - **Relevance to sprachspiel:** Board draft "Context-Aware Chunking [M4]" — validates semantic chunking over fixed-size
 - **Reference:** arXiv:2603.06976
@@ -320,7 +321,7 @@
 
 ### C-13: ClashEval (Wu et al. 2024)
 
-- **Institution:** arXiv:2404.10198
+- **Source:** arXiv:2404.10198
 - **Key finding:** LLMs overwrite correct internal knowledge with incorrect retrieved evidence in >60% of cases. Without metadata authority distinctions, models treat all chunks equally.
 - **Relevance to sprachspiel:** Board draft "Metadata Enrichment [M4]" — authority and recency metadata enables RRF boosting, preventing stale/wrong information from drowning current/correct information
 - **Reference:** arXiv:2404.10198
@@ -329,7 +330,7 @@
 
 ### C-14: HyDE (Gao et al. 2022) and Dense X Retrieval (Chen et al. 2023)
 
-- **Institutions:** arXiv:2212.10496, arXiv:2312.06648
+- **Sources:** arXiv:2212.10496 (HyDE), arXiv:2312.06648 (Dense X Retrieval)
 - **Key findings:** HyDE moves query embeddings closer to relevant documents by generating hypothetical answers. Propositions (Q&A pairs) as retrieval granularity surpass passage-level.
 - **Relevance to sprachspiel:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time
 - **References:** arXiv:2212.10496, arXiv:2312.06648
@@ -612,7 +613,7 @@
 
 - **Source:** RLM (Zhang et al. 2025, arXiv:2512.24601); RECURSION-SPRACHSPIEL.md
 - **Current state:** Compaction is the only mechanism when context fills. Offload resolves 1 of 3 pressure sources (large tool results).
-- **Why significant:** Preserves 100% of information (sub-agent sees everything), vs compaction which loses details. But slower (2-5x) and compaction remains inevitable for long history.
+- **Why significant:** Preserves 100% of information (sub-agent sees everything), vs compaction which loses details. The paper reports this "having comparable cost" and the authors measure it as cheaper per query, not more expensive; compaction remains inevitable for long history.
 - **Depends on:** B1.5 benchmark (validate H1: offload preserves more facts than compaction)
 - **Implementation:** Offload threshold between 85% and 88%, SubagentRunner with config, SourceType::ToolOffload
 - **Cross-refs:** TAP offline vs offload inline (complementary); Session variables as on-demand session vars (RLM §4)

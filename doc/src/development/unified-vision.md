@@ -246,7 +246,7 @@ Reconciled milestone progression: M1 Core Evolution → M2 UX & Pre-Launch → M
 ## 8. Research Synthesis — From Papers to Roadmap
 
 **Added:** 2026-05-24
-**Sources:** Arabzadeh et al. 2026 (arXiv:2605.03344), Gu et al. 2026 (arXiv:2605.19932), Diógenes et al. 2026 (PRW-5188-2880), Zhang et al. 2025 (arXiv:2512.24601), Zandieh et al. 2026 (ICLR 2026, arXiv:2504.19874), Gao & Long 2024 (SIGMOD 2024, arXiv:2405.12497), and analysis of passive models (BusyBeaver, Privacy Filter, LlamaFirewall, WebWorld, Needle). See Section 8.9 for full citations.
+**Sources:** Arabzadeh et al. 2026 (arXiv:2605.03344), Gu et al. 2026 (arXiv:2605.19932), Diógenes et al. 2026 (PRW-5188-2880), Zhang et al. 2025 (arXiv:2512.24601), Zandieh et al. 2025 (ICLR 2026, arXiv:2504.19874), Gao & Long 2024 (SIGMOD 2024, arXiv:2405.12497), and analysis of passive models (BusyBeaver, Privacy Filter, LlamaFirewall, WebWorld, Needle). See Section 8.9 for full citations.
 **Key Decision:** Cultural Grounding (R-24) moved to **M4** — important but not the current priority. Memory pipeline (TAP, PEEK, feedback) is the priority.
 
 ### 8.1 Source Map

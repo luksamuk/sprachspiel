@@ -111,3 +111,74 @@ paraphrased into something the source does not say ("co-occur in the top-k of
 distracting passage among the top-10"). Both were real. The second is the same
 defect class the change was written to fix — describing a source without
 re-reading it — so a verifier that can catch it is worth its wall-clock.
+
+## When the deliverable IS a claim, test it against the primary source mechanically
+
+Docs work that *states facts about external sources* (bibliography entries,
+attributions, "paper X shows Y") cannot be verified by a subagent reading your
+diff — the verifier would grade your prose against your prose. The check has to
+reach the primary source and be mechanical enough to run over every claim:
+
+1. **Fetch the source** (abstract, metadata, API) into a file. Network calls are
+   a maintainer step, not a test step — rate limits and flakiness turn a sensor
+   into a nuisance that gets disabled.
+2. **Require each claim's subject term to appear in the fetched text.** For an
+   entry about Mamba, the string `selective state space` must be in the abstract.
+   Crude on purpose: it catches *unsupported* claims, which is the failure mode.
+3. **Read every entry back after writing it.** This is the step that pays. In one
+   session it caught two claims the assistant had written itself:
+   - a paper summarised as "current **defences** are limited" when the abstract
+     constrains current **attack** strategies, and the paper's contribution was
+     the attack — a paper's *direction* read backwards;
+   - "safety behaviour is disproportionately English-centric", which was an
+     inference from the motivating document, not a finding of the paper (the
+     abstract reported English/Japanese/Chinese succeeding and Arabic not).
+
+   Both are the same defect class the work existed to remove, introduced *while*
+   removing it. That is the normal case: writing about sources is itself a
+   source-reading task, and it fails the same way.
+
+**Check the document's status, not just its content.** Before writing a
+present-tense claim about a document ("this is the recommended model", "this is
+how X works"), grep the document itself for a status marker:
+`rg -i 'HISTORICAL NOTE|superseded|no longer|outdated|deprecated' <file>`. A page
+can carry its own warning banner while the body still reads as current, and
+reading from where the content is convenient — a benchmark table — rather than
+from where its status is stated — the note above it — is how a superseded fact
+gets restated as present. Observed: an entry asserted a paper was "selected as
+default for code mode" while the top of the citing document said a different
+model had replaced it and the page was kept for historical reference.
+
+**Do not transcribe the repository's own summary lines into the authoritative
+artifact.** The existing prose is what is under audit. If its "Key finding" line
+paraphrases the source ("co-occur in the top-k of >60%"), copying it into the
+canonical file propagates the defect and gives it a second home. Go to the
+source; use the repo's line only for the *relevance* (why we read it), which is
+local knowledge it legitimately owns.
+
+## Two consults on one brief are not interchangeable — pin the output path
+
+A design consultation can be dispatched twice (a timeout, a retry after a config
+fix). If both write to the same file, the second **overwrites** the first and the
+stronger review leaves no trace. Observed: a first pass (305 lines, ran its own
+prototype against the repo) was declared a timeout and re-dispatched; the retry
+(113 lines, partly reasoned from the brief alone) clobbered the file, and the work
+proceeded on the weaker review. The first pass had found three real defects the
+second missed — including one where the fix removed a paper's figure while the
+document went on *recommending* the approach it discredited.
+
+- Give every dispatch its **own** output path (`<brief>-review-a.md`, `-b.md`),
+  never a shared one.
+- Before acting on a review, check how many runs produced it. `wc -l` and mtime
+  on the output file are cheap; the longer file may be the better review.
+- A dispatch that "timed out" may have completed: check the process status and
+  the file size **before** re-dispatching over it.
+
+## Verify every finding, but do not discard a report wholesale
+
+A review is a lead generator, not an oracle — each finding must be reproduced
+against the artifact before acting. The failure mode runs both ways: one
+dismissed review was partly reasoned from the brief rather than the repo, so a
+generalization of its was stale — and three of its findings were nonetheless real,
+two of them defects in work already committed. "Some of it was wrong" is not a
+reason to skip reproducing the rest.

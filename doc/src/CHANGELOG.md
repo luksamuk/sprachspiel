@@ -4,6 +4,41 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Citation metadata corrected against primary sources; citations that do not support their claim re-anchored** — A bibliographic audit of the ~49 arXiv IDs cited across the repo found the failures were not typos: the ID matched the real title, but the *attribution* came from a different paper referenced inside it — the signature of a citation written from a title rather than from the paper. Seven sites were wrong in versioned files and are now corrected against the sources themselves (arXiv metadata, ICLR 2026 proceedings, ACL Anthology, OpenAlex):
+
+  | Where | Claimed | Verified |
+  |---|---|---|
+  | `research-icebox.md` (×2) | `arXiv:2510.04371` — "DeepMind/Stanford" | Columbia University (all authors `@columbia.edu`); ICLR 2026 confirmed |
+  | `research-icebox.md` | `arXiv:2406.06110` — "Institution: Stanford NLP" | UCAS + Institute of Automation, Chinese Academy of Sciences |
+  | `research-icebox.md` | `arXiv:2601.06007` — "MIT CSAIL" | PricewaterhouseCoopers, U.S. |
+  | `unified-vision.md` | `arXiv:2504.19874` — "Zandieh et al. 2026" | 2025 (ICLR 2026 correct) |
+  | `research-icebox.md` | `arXiv:2510.04371` "reduces latency by ~40%" | the paper reports "up to 20%" |
+  | `research-icebox.md` + `papers-reference.md` | `arXiv:2512.24601` "slower (2-5x)" | the paper reports "having comparable cost" |
+
+  **The withdrawn paper.** `arXiv:2410.21337` was retracted by its author — the notice reads *"critical issues identified in the methodology/results that may impact its accuracy and reliability."* The repo cited exactly the contested figure (`99.13%` XLM-RoBERTa accuracy) as evidence that ML-based multilingual injection detection was viable, which made translate-then-detect look promising. The figure is removed from `skills-system-design.md` (both the findings table and the reference link) and from the `0.38.0` release note, which keeps its historical record but not a quantitative claim now known to be false: removing an unsupported number is not meta-commentary. **No code ever followed that path** — there is no `XLM-RoBERTa` in `src/`, and the shipped mitigation is English-only regex plus a non-Latin warning, so the damage was a trap for whoever implements multilingual sanitization rather than a consumed decision.
+
+  **Re-verified and found correct:** `arXiv:2505.15561` (Cuconasu et al., *Do RAG Systems Really Suffer From Positional Bias?*, EMNLP 2025) had been flagged for verification. It does conclude that reordering passages by LLM positional preference "do not perform better than random shuffling" (Wilcoxon, p=0.05), which is exactly how the repo uses it. The BibTeX (authors, pages 28022–28036, DOI `10.18653/v1/2025.emnlp-main.1422`) matches ACL Anthology and OpenAlex.
+
+  Also resolved without action: a fabricated citation (`arXiv:2310.05342`, whose ID actually belongs to a numerical-analysis paper) had already been removed, and the `0.85` threshold claim attributed to `arXiv:2010.12251` no longer cites that ID — the surviving `0.85` values are this project's own `CONFLICT_THRESHOLD`.
+
+- **The canonical bibliography now holds every paper the repo cites (17 added), and the coverage check reads it instead of a generated file** — `papers-reference.md` was meant to be the single source for citations, but 17 of the 42 arXiv IDs cited across `doc/src` appeared only at their use-site. Each is now in all three representations the file keeps (table row, prose entry with a `Sprachspiel implication`, BibTeX block), so a reader who meets an ID in a design document can look up what the paper is and why it was read.
+
+  Authors and years come from the arXiv API, not from recall — three hand-written author lists were wrong when this was drafted (`2512.23684`, `2402.14048`, `2406.05499`), which is the exact defect class this work removes. `finding` paraphrases each paper's abstract; `implication` transcribes what the citing document already says. Nothing was invented: where a paper was read and *rejected* (PolyNet) or cited and then *dropped* (the prompt-caching paper, whose topic did not match the item that cited it), the entry says so, because a bibliography that lists only what was adopted hides the search that produced it.
+
+  Two papers are deliberately absent. The retracted one, because adding it would corrupt the list it is meant to be protected from; and the fabricated one, whose ID resolves to an unrelated numerical-analysis paper — an entry there would advertise research that never happened. Both stay visible in this changelog, which is where their history belongs.
+
+  **The coverage sensor changed target.** It previously compared cited IDs against `tests/data/citation-manifest.json` — a file generated *from* those citations, so it agreed with them by construction and would have passed on an empty bibliography. It now reads `papers-reference.md`. Verified in both directions by re-injection: a new inline citation fails, and deleting a bibliography entry fails.
+
+### Added
+
+- **`citations_are_real_and_correctly_attributed` sensor, backed by a generated manifest** — The audit above found its defects by hand, which means they would return as soon as someone writes another citation from a title. `tests/citation_integrity.rs` now checks the identity half mechanically: every cited arXiv ID exists, the surnames the prose attributes to a citation appear on that paper's real author list, no withdrawn paper is cited as support, and the bibliography table's author and year columns match arXiv. The data comes from `tests/data/citation-manifest.json`, produced by `scripts/generate-citation-manifest.py` — generated, never hand-written, and refreshed as a maintainer step rather than inside `cargo test`, because the arXiv API rate-limits by IP window (this audit took HTTP 429 on 19 of 58 requests with 3 s spacing) and a test that must be re-run until green is worse than no test.
+
+  **What it does not do is stated in the test itself:** it verifies identity, not numbers. Reading "reduces latency by ~40%" back to a paper reporting "up to 20%" is judgement, not string matching, so six of the seven defects above remain a reading task. The sensor was deliberately not described as "citations verified" — an artifact that looks checked is precisely what let those defects survive.
+
+  Writing it also caught two defects in the sensor itself, which is the argument for showing a new sensor failing before trusting it: the first run reported three findings against `doc/book/**` (gitignored mdBook *output*, so those were stale copies, not the source), and it cross-attributed authors on lines naming several papers, turning four correct citations into twenty apparent misattributions. It also surfaced a generator/scanner mismatch — `https://arxiv.org/abs/2406.11931` was a citation the manifest could not see.
+
 ### Fixed
 
 - **Documented flags that do not exist, and the sensor blind spot that let them live (LUC-142 follow-up)** — Closing LUC-142 revealed the `documented_cli_examples_are_parseable` sensor only checked whether a flag was *misplaced* (a top-level flag after a subcommand); it never asked whether a flag **exists**. Four documented examples used flags the CLI has never had: `sprach ocr --detailed` (`README.md`; `--detailed` belongs to `vision`), `sprach query -c` (`-c` is top-level-only), `sprach chat --context 4096` (the window is `num_ctx` in `models.toml` — there is no CLI flag for it), and `sprach ocr --formula` (the flag is `--mode formula`). All corrected. Two further drifts were found in the same pass: `README.md` showed `sprach vision photo.jpg "prompt"` **without** the `--` separator, which makes clap read the prompt as another filename — the exact defect LUC-140 fixed in `doc/src/` but never in the README. New sensor `documented_subcommand_flags_exist` reads the valid flag sets from the **live clap definitions** (`sprach <sub> -h`, including nested `config upgrade` / `models upgrade`) rather than a hand-maintained list, and understands pipelines (`|`) and `--`. It fired correctly on all three re-injected defects, including the `README.md` one. `doc_sources()` now also walks the root `README.md` — it was excluded before, which is precisely why a nonexistent flag survived there unnoticed.
@@ -891,7 +926,7 @@ All notable changes to Sprachspiel will be documented in this file.
 - **Multilingual Prompt Injection Security Research** - Comprehensive security analysis
   - **Documented Bypasses:** Azure Content Filter bypassed using Thai/Arabic payloads (HackerNoon)
   - **Academic Research:** arXiv:2512.23684 multilingual hidden prompt injection on 500 papers
-  - **ML Detection:** XLM-RoBERTa fine-tuned achieves 99.13% accuracy (arXiv:2410.21337v1)
+  - **ML Detection:** XLM-RoBERTa fine-tuned for multilingual detection
   - **Future Consideration:** Translate-then-detect approach using existing `ask translate` infrastructure
   - **Current Mitigation:** English-only sanitization + warning on non-Latin characters
   - References added to skills-system-design.md
