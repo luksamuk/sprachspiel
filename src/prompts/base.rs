@@ -373,6 +373,23 @@ mod tests {
     }
 
     #[test]
+    fn test_compaction_prompt_says_none_when_unknown() {
+        // The compactor must be told to write the literal None for any value
+        // it does not know, instead of inventing a plausible one — a
+        // hallucinated path or command renders the "authoritative" staple
+        // untrustworthy. Every prompt test stayed green with this sentence
+        // deleted, so the instruction itself goes unpinned.
+        assert!(
+            COMPACTION_PROMPT.contains("write None rather than"),
+            "COMPACTION_PROMPT must keep the None-when-unknown instruction"
+        );
+        assert!(
+            COMPACTION_PROMPT.contains("inventing a plausible one"),
+            "COMPACTION_PROMPT must name the hallucination failure being avoided"
+        );
+    }
+
+    #[test]
     fn test_chunk_prompt_omits_fact_blocks() {
         // Intermediate chunk summaries feed a later consolidation pass. Fact
         // blocks in a chunk would multiply (one set per chunk) and then be

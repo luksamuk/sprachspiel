@@ -1130,8 +1130,12 @@ mod tests {
         // file's own source because the defect is how the array is built,
         // not an observable output of any one call without a live backend.
         let src = include_str!("context_builder.rs");
-        // Split so this assertion's own text is not a match.
-        let forbidden = ["messages.push(", "result.message)"].concat();
+        // Split so this assertion's own text is not a match. Deliberately
+        // WITHOUT the closing paren: the defect also resurfaces as
+        // `clone()` — pushing a cloned second system message passes an
+        // exact `...message)` guard but fails the same template just as
+        // hard, so the pinned prefix must catch both shapes.
+        let forbidden = ["messages.push(", "result.message"].concat();
         assert!(
             !src.contains(&forbidden),
             "retrieval result must be folded into the system prompt, not pushed as a second system message"
