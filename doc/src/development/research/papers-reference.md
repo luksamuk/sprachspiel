@@ -292,7 +292,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 
 - **Paper:** arXiv:2406.11931 — "DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence"
 - **Key findings:** An open-source MoE code model reaching GPT-4-Turbo-comparable performance on code tasks, further pre-trained from DeepSeek-V2 on 6T additional tokens.
-- **Sprachspiel implication:** The model evaluated and selected for code mode — `code_mode_research.md` benchmarks it as the default (`deepseek-coder-v2:16b-32k`) for that mode.
+- **Sprachspiel implication:** The paper behind `code_mode_research.md`, which benchmarked DeepSeek-Coder-V2 and originally named `deepseek-coder-v2:16b-32k` its default. That document now carries a historical note: **qwen2.5-coder:7b** is the recommended code-mode model (better tool calling, 4.7 GB, fits 6 GB VRAM), so the paper records the evaluation that was done rather than the current choice.
 
 #### Bui (2026) — OPENDEV — Effective AI Coding Agents for the Terminal
 
