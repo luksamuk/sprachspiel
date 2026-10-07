@@ -210,10 +210,10 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - **Key findings:** Strict binary verification (Lean formal proofs for math, code execution for ARC puzzles) provides unambiguous 0/1 correctness signals. A proof either type-checks or it doesn't; code either produces the correct output or it doesn't. This strict verification combined with rejection sampling and RL with inference feedback significantly improves reasoning: IMO combinatorics 33.3% → 77.8%.
 - **Sprachspiel implication:** ADR-005 — validates binary Good/Bad feedback signals (±1.0) with no partial credit. The strict verification paradigm confirms that granularity should come from temporal decay, not from base_value magnitude.
 
-#### Liu et al. (2023) — Prompt Injection — Direct Attacks
+#### Liu et al. (2023) — Prompt Injection — Direct Attacks (HouYi)
 
 - **Paper:** arXiv:2306.05499 — "Prompt Injection attack against LLM-integrated Applications"
-- **Key findings:** Deconstructs prompt injection against ten commercial LLM-integrated applications and finds that current defences are limited in practice against a determined attacker.
+- **Key findings:** Explores prompt injection against ten commercial LLM-integrated applications and finds that current *attack* strategies are constrained in practice; the authors then build HouYi, a black-box attack, and deploy it on 36 applications, finding 31 susceptible, with 10 vendors (including Notion) confirming the findings.
 - **Sprachspiel implication:** Cited in `skills-system-design.md` § Security Considerations, next to the indirect-injection paper, as the direct-attack reference behind the injection-pattern detection added to skill sanitization. A skill file is untrusted input.
 
 #### Greshake et al. (2023) — Indirect Prompt Injection
@@ -225,13 +225,13 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 #### Theocharopoulos et al. (2025) — Multilingual Hidden Prompt Injection
 
 - **Paper:** arXiv:2512.23684 — "Multilingual Hidden Prompt Injection Attacks on LLM-Based Academic Reviewing"
-- **Key findings:** Tests multilingual hidden prompt injection across 500 ICML papers: English, Japanese and Chinese payloads all succeeded, showing safety behaviour is disproportionately English-centric.
-- **Sprachspiel implication:** Cited in `skills-system-design.md` § Future Consideration: Multilingual Skill Sanitization as the evidence that English-only sanitization can be bypassed. This is the paper that motivates the work tracked for multilingual sanitization; it is not the withdrawn one.
+- **Key findings:** Embeds semantically equivalent hidden prompts in four languages across ~500 real ICML papers and finds that prompt injection substantially changes review scores and accept/reject decisions for English, Japanese and Chinese injections, while Arabic injections have little to no effect — vulnerability differs notably across languages.
+- **Sprachspiel implication:** Cited in `skills-system-design.md` § Future Consideration: Multilingual Skill Sanitization, whose stated problem is that sanitization regexes are English-only while the paper shows injections in other languages changing model behaviour. This is that paper; it is not the withdrawn one.
 
 #### Gu & Dao (2023) — Mamba — Linear-Time Sequence Modeling
 
 - **Paper:** arXiv:2312.00752 — "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
-- **Key findings:** Selective state spaces let the model decide what to propagate and what to forget, giving content-based reasoning that scales linearly instead of quadratically with sequence length.
+- **Key findings:** Identifies a weakness of subquadratic architectures — linear attention, gated convolution and state space models underperform attention on language because they cannot do content-based reasoning. Mamba lets the SSM parameters be functions of the input, so the model selectively propagates or forgets along the sequence length depending on the current token.
 - **Sprachspiel implication:** Cited in `context_management_research.md` § 3.2 as evidence that current quadratic-attention models need explicit context management — the constraint our compaction strategy works around.
 
 #### Ma et al. (2024) — Megalodon — Unlimited Context Length
@@ -267,7 +267,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 #### Gao et al. (2022) — HyDE — Hypothetical Document Embeddings
 
 - **Paper:** arXiv:2212.10496 — "Precise Zero-Shot Dense Retrieval without Relevance Labels"
-- **Key findings:** Given a query, generate a hypothetical document zero-shot and embed that instead. Retrieval then matches document-to-document rather than query-to-document, which works without relevance labels.
+- **Key findings:** Fully zero-shot dense retrieval is hard with no relevance labels. HyDE pivots: given a query, an instruction-following model generates a hypothetical document that captures relevance patterns but is unreal and may contain false details, and an unsupervised contrastively learned encoder embeds it instead of the query.
 - **Sprachspiel implication:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time.
 
 #### Chen et al. (2023) — Dense X Retrieval — Propositions as Retrieval Unit
