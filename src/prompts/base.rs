@@ -155,7 +155,7 @@ Use this structure:
 
 ## Instructions
 [Important user constraints and preferences. Quote user preferences verbatim rather than
-paraphrasing — paraphrased preferences are the least reliably retained category.]
+paraphrasing.]
 
 ## Progress
 **Completed:** [Work done so far]
