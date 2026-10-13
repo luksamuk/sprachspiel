@@ -129,7 +129,14 @@ pub const COMPACT_MSG_OVERHEAD: usize = 10;
 /// into every future context; their size is bounded by the 50-per-bucket cap
 /// (`MAX_PATHS_PER_BUCKET`), which is the largest component a summary can gain.
 ///
-/// Total: ~3300
+/// 50 + 40 + 480 + 30 + 2000 + 700 = 3300 — the constant is the sum of the
+/// items above, not an independent measurement; re-measure when any item moves.
+///
+/// This overhead is per-compaction, not cumulative: every compaction replaces
+/// `compacted_summary` whole (`set_compacted_summary_with_range` overwrites
+/// the field; it never appends), so a summary carries exactly one staple, and
+/// the next compaction discards the previous summary — including its staple —
+/// rather than stacking them.
 pub const COMPACTION_PROMPT_OVERHEAD: usize = 3300;
 
 /// Safety margin for token estimation during compaction.

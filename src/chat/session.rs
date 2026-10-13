@@ -1274,6 +1274,15 @@ mod tests {
     }
 
     #[test]
+    fn a_new_compaction_replaces_the_summary_rather_than_appending() {
+        let mut session = ChatSession::new("m".into(), None, true);
+        session.set_compacted_summary_with_range("OLD".into(), Some((0, 1)));
+        session.set_compacted_summary_with_range("NEW".into(), Some((0, 2)));
+        let summary = session.compacted_summary.as_deref().expect("set");
+        assert_eq!(summary, "NEW", "each compaction replaces the whole summary");
+    }
+
+    #[test]
     fn test_clear_messages_preserves_summary() {
         let mut session = ChatSession::new("test-model".into(), None, false);
 
