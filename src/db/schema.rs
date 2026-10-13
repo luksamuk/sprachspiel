@@ -29,9 +29,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     think INTEGER DEFAULT 0,
     tools INTEGER DEFAULT 1,
     tool_output_level TEXT DEFAULT 'compact',
-    -- Harness-extracted session facts, as a JSON object (added in v16).
-    -- Nullable: a session that predates this field, or one that never ran a
-    -- tool, has no facts to record.
+    -- Harness-extracted session facts, as a JSON object. Nullable: a session
+    -- that predates this field, or one that never ran a tool, has no facts
+    -- to record.
     fact_tracker TEXT
 );
 

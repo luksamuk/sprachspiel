@@ -778,7 +778,7 @@ impl Database {
         Ok(())
     }
 
-    /// v15 → v16: add the `fact_tracker` column.
+    /// Add the `fact_tracker` column to `conversations`.
     ///
     /// Stores harness-extracted session facts as JSON. Nullable: sessions that
     /// predate this column, and sessions that never ran a tool, have nothing
@@ -1086,7 +1086,7 @@ mod tests {
     #[test]
     fn migration_adds_fact_tracker_column() {
         let conn = Connection::open_in_memory().expect("in-memory db");
-        // Simulate a pre-v16 database by creating the old table shape.
+        // Simulate a database predating this column by creating the old table shape.
         conn.execute_batch(
             "CREATE TABLE conversations (
                 id TEXT PRIMARY KEY, model TEXT NOT NULL,
