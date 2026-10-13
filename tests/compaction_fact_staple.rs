@@ -12,7 +12,7 @@ use sprachspiel::chat::session::ChatSession;
 
 /// One turn's worth of tool executions, as the coordinator hook would record
 /// them: a modification, a read, and a command that passed.
-fn a_turn_tracker_with_facts() -> SessionFactTracker {
+fn sample_turn_facts() -> SessionFactTracker {
     let mut turn = SessionFactTracker::default();
     turn.record_tool(
         "write_file",
@@ -39,7 +39,7 @@ fn a_turn_tracker_with_facts() -> SessionFactTracker {
 fn a_session_that_recorded_facts_renders_a_staple_naming_them() {
     let mut session = ChatSession::new("test-model".into(), None, true);
     session.add_user_message("fix the parser".into());
-    session.merge_fact_tracker(&a_turn_tracker_with_facts());
+    session.merge_fact_tracker(&sample_turn_facts());
 
     assert!(
         !session.fact_tracker.is_empty(),
@@ -141,7 +141,7 @@ fn the_staple_states_failures_without_claiming_resolution() {
 fn the_staple_is_appended_exactly_once_after_untouched_prose() {
     let mut session = ChatSession::new("test-model".into(), None, true);
     session.add_user_message("fix the parser".into());
-    session.merge_fact_tracker(&a_turn_tracker_with_facts());
+    session.merge_fact_tracker(&sample_turn_facts());
 
     let last_request = session.get_last_user_message().map(|m| m.content.as_str());
     let block = render_staple_block(&session.fact_tracker, last_request);
@@ -168,7 +168,7 @@ fn the_staple_is_appended_exactly_once_after_untouched_prose() {
 fn the_staple_rides_compacted_summary_into_the_next_context() {
     let mut session = ChatSession::new("test-model".into(), None, true);
     session.add_user_message("fix the parser".into());
-    session.merge_fact_tracker(&a_turn_tracker_with_facts());
+    session.merge_fact_tracker(&sample_turn_facts());
 
     let last_request = session.get_last_user_message().map(|m| m.content.as_str());
     let block = render_staple_block(&session.fact_tracker, last_request);
