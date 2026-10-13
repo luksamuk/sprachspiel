@@ -243,7 +243,7 @@ When a conversation's context exceeds the model's context window, `/compact` fai
 | `COMPACTION_MAX_CONTEXT_RATIO` | 0.60 | Max ratio of context window per chunk |
 | `MAX_RECURSION_DEPTH` | 3 | Max recursion levels for chunked summarization |
 | `TRUNCATION_TARGET_RATIO` | 0.50 | Target ratio after fallback truncation |
-| `COMPACTION_PROMPT_OVERHEAD` | 3000 | Reserved tokens for prompt + response (was 2500, increased for accuracy) |
+| `COMPACTION_PROMPT_OVERHEAD` | 3300 | Reserved tokens for prompt + response (2500 → 3000 for accuracy; → 3300 when `COMPACTION_PROMPT` grew the fact-block schema) |
 | `COMPACT_MSG_OVERHEAD` | 10 | Per-message overhead in compaction (vs. `MESSAGE_OVERHEAD=4` elsewhere) |
 | `ESTIMATION_SAFETY_MARGIN` | 1.20 | 20% buffer on token estimates to compensate for underestimation |
 

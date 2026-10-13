@@ -99,6 +99,8 @@ pub struct ConversationMetadataParams<'a> {
     pub tools: bool,
     /// Tool output verbosity level
     pub tool_output_level: &'a str,
+    /// Harness-extracted session facts, serialized as JSON by the caller
+    pub fact_tracker: Option<&'a str>,
     /// Update timestamp
     pub updated_at: DateTime<Utc>,
 }
@@ -118,6 +120,9 @@ pub struct ConversationMetadata {
     pub tool_output_level: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Harness-extracted session facts (JSON), None when the session
+    /// predates the column or never ran a tool
+    pub fact_tracker: Option<String>,
 }
 
 /// Todo row from the database
@@ -287,8 +292,9 @@ impl Database {
                     think = ?7,
                     tools = ?8,
                     tool_output_level = ?9,
-                    updated_at = ?10
-                 WHERE id = ?11",
+                    fact_tracker = ?10,
+                    updated_at = ?11
+                 WHERE id = ?12",
                 params![
                     params.name,
                     params.model,
@@ -299,6 +305,7 @@ impl Database {
                     params.think as i64,
                     params.tools as i64,
                     params.tool_output_level,
+                    params.fact_tracker,
                     params.updated_at.timestamp(),
                     params.id,
                 ],
@@ -315,7 +322,7 @@ impl Database {
             conn.query_row(
                 "SELECT id, project_id, title, model, system_prompt, 
                         compacted_summary, compacted_range_start, compacted_range_end,
-                        think, tools, tool_output_level, created_at, updated_at
+                        think, tools, tool_output_level, created_at, updated_at, fact_tracker
                  FROM conversations WHERE id = ?1",
                 params![id],
                 |row| {
@@ -351,6 +358,7 @@ impl Database {
                             .unwrap_or_else(Utc::now),
                         updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
                             .unwrap_or_else(Utc::now),
+                        fact_tracker: row.get(13)?,
                     })
                 },
             )

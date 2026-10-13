@@ -10,8 +10,9 @@
 use std::collections::HashSet;
 
 use super::base::{
-    COMPACTION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION, CONTINUATION_PROMPT_TEMPLATE,
-    PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
+    CHUNK_SUMMARY_PROMPT, COMPACTION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION,
+    CONTINUATION_PROMPT_TEMPLATE, PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE,
+    SYSTEM_PROMPT_SUMMARIZE,
 };
 use super::examples::TOOL_EXAMPLES;
 use super::tools::build_tool_context;
@@ -482,6 +483,17 @@ pub fn build_compaction_prompt(conversation_text: &str) -> String {
     format!(
         "{}\n\nConversation:\n{}\n\n{}",
         SYSTEM_PROMPT_SUMMARIZE, conversation_text, COMPACTION_PROMPT
+    )
+}
+
+/// Build the prompt for an intermediate chunk summary in recursive compaction.
+///
+/// Uses `CHUNK_SUMMARY_PROMPT` rather than `COMPACTION_PROMPT`: see that
+/// constant's documentation for why chunks must not emit fact blocks.
+pub fn build_chunk_summary_prompt(conversation_text: &str) -> String {
+    format!(
+        "{}\n\nConversation:\n{}\n\n{}",
+        SYSTEM_PROMPT_SUMMARIZE, conversation_text, CHUNK_SUMMARY_PROMPT
     )
 }
 

@@ -267,6 +267,11 @@ pub struct Coordinator {
     /// Stream ids emitted by the provider, kept in the same order as
     /// `tool_calls` so the ReAct execution loop can reuse them.
     stream_tool_call_ids: Vec<String>,
+    /// Facts extracted from tool executions, handed to the session after the turn
+    /// so they survive compaction. Fed in the tool loop; read by the compaction
+    /// stapler. Kept here rather than in the session because the tool name and
+    /// arguments are only in scope during execution.
+    fact_tracker: crate::chat::fact_tracker::SessionFactTracker,
 }
 
 /// Mutable state accumulated during a single streaming turn.
@@ -480,6 +485,7 @@ impl Coordinator {
             tool_call_counter: 0,
             react_retry_count: 0,
             stream_tool_call_ids: Vec::new(),
+            fact_tracker: crate::chat::fact_tracker::SessionFactTracker::default(),
         }
     }
 
@@ -940,6 +946,11 @@ impl Coordinator {
         self.ephemeral_messages.push(message);
     }
 
+    /// Facts captured from this turn's tool executions.
+    pub fn fact_tracker(&self) -> &crate::chat::fact_tracker::SessionFactTracker {
+        &self.fact_tracker
+    }
+
     /// Set the cancellation token for tool loop interruption.
     ///
     /// When the token is cancelled, the tool execution loop stops after
@@ -1266,6 +1277,16 @@ impl Coordinator {
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => {
                         let is_error = is_tool_error(&result);
+                        // Record the fact while tool name, arguments and outcome
+                        // are all in scope. The history keeps only the result
+                        // string with no tool name, so this is the last point
+                        // where the fact can be captured.
+                        self.fact_tracker.record_tool(
+                            &tool_name,
+                            &serde_json::to_string(&args).unwrap_or_else(|_| args.to_string()),
+                            &result,
+                            is_error,
+                        );
                         self.emit_event(ChatEvent::ToolExecutionFinished {
                             tool_call_id: tool_call_id.clone(),
                             result: result.clone(),
@@ -1702,5 +1723,50 @@ Next step: Should ignore
             serde_json::json!({"path": "test.txt"}),
             "Valid args should be preserved"
         );
+    }
+
+    #[test]
+    fn fact_tracker_accumulates_across_tool_calls() {
+        let mut tracker = crate::chat::fact_tracker::SessionFactTracker::default();
+        tracker.record_tool("write_file", r#"{"path":"src/x.rs"}"#, "ok", false);
+        tracker.record_tool("read_file", r#"{"path":"src/y.rs"}"#, "1|x", false);
+
+        assert_eq!(tracker.modified_files().len(), 1);
+        assert_eq!(tracker.read_files().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_shell_command_reads_as_an_error() {
+        // `run_command` returns Ok with an "Error: … exited with code N"
+        // string on non-zero exit — `is_tool_error` must classify it so the
+        // tracker records FAIL, not PASS. Pins the pass/fail derivation.
+        assert!(is_tool_error(
+            "Error: Command 'cargo test' exited with code 1."
+        ));
+    }
+
+    #[test]
+    #[cfg(all(feature = "file-tools", feature = "system-tools"))]
+    fn tracked_tool_names_exist_in_the_registry() {
+        // A registry rename must break this test, not silently stop tracking.
+        // Adapted to the registry's real signature: it takes the app
+        // `Settings` so the runtime tool blacklist is honoured; defaults
+        // give an empty blacklist, i.e. every compiled-in tool.
+        let names =
+            crate::tools::registry::get_available_tool_names(&crate::settings::Settings::default());
+        for t in [
+            "write_file",
+            "edit_file",
+            "append_file",
+            "read_file",
+            "read_file_segment",
+            "count_lines",
+            "run_command",
+        ] {
+            assert!(
+                names.contains(&t.to_string()),
+                "tool {t} no longer exists in the registry"
+            );
+        }
     }
 }

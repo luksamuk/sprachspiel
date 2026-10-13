@@ -36,8 +36,8 @@ use crate::context_overflow::{
 };
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
-    PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
-    build_system_prompt,
+    PromptConfig, PromptType, build_chunk_summary_prompt, build_compaction_prompt,
+    build_continuation_prompt, build_system_prompt,
 };
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
@@ -379,6 +379,26 @@ pub fn process_chat_response(
     }
 }
 
+/// Hand one turn's captured tool facts to the persistent session.
+///
+/// Called from BOTH `send_message` and `send_message_stream`, after the retry
+/// loop closes and before the dispatch on the turn's `result`, so merge
+/// semantics live in exactly one place and both turn exits are covered.
+///
+/// The placement is deliberate: a turn may end by exhausting the context
+/// budget mid-tool-loop (the coordinator returns
+/// `CONTEXT_NEEDS_COMPACT` before the turn completes), and compaction then
+/// runs immediately. A flush on the success path alone would staple no facts
+/// precisely when the session worked hardest. The `Coordinator` is still
+/// alive here — it is dropped only at function return.
+///
+/// Borrow, not drain: the coordinator is per-turn (its tracker starts empty
+/// each call), and merge is cumulative on the session side, so nothing
+/// double-counts. The borrow checker accepts the two disjoint locals.
+fn flush_turn_facts(session: &mut ChatSession, coordinator: &Coordinator) {
+    session.merge_fact_tracker(coordinator.fact_tracker());
+}
+
 /// Send a message to the LLM and process the response
 ///
 /// This is the core function for chat interaction, handling:
@@ -626,6 +646,14 @@ pub async fn send_message(
             }
         }
     };
+
+    // Hand this turn's tool facts to the session so a later compaction can
+    // staple them. Placed after the loop, not inside the Ok arm: this turn
+    // may have ended by exhausting the context budget (the tool loop returns
+    // CONTEXT_NEEDS_COMPACT before the turn completes), and compaction then
+    // runs immediately — a flush on the success path alone would staple no
+    // facts precisely when the session worked hardest.
+    flush_turn_facts(session, &coordinator);
 
     finish_spinner(spinner);
 
@@ -898,6 +926,14 @@ pub async fn send_message_stream(
         }
     };
 
+    // Hand this turn's tool facts to the session so a later compaction can
+    // staple them. Placed after the loop, not inside the Ok arm: this turn
+    // may have ended by exhausting the context budget (the tool loop returns
+    // CONTEXT_NEEDS_COMPACT before the turn completes), and compaction then
+    // runs immediately — a flush on the success path alone would staple no
+    // facts precisely when the session worked hardest.
+    flush_turn_facts(session, &coordinator);
+
     // Drain view events accumulated during coordinator chat directly into
     // the LLM event channel. This guarantees that ViewActions (pre-tool
     // content, context warnings) arrive as LlmEvent::ViewAction BEFORE
@@ -1080,11 +1116,16 @@ pub async fn compact_conversation(
     // Check if pre-pruned messages fit in context — if yes, single-pass compaction.
     // If the LLM rejects the prompt as "too long" despite our estimate, fall through
     // to Layer 2 (chunked summarization) — defense in depth against estimation errors.
+    // Single-exit contract: every layer leaves the summary in `layer_summary`
+    // and each subsequent layer only runs if the previous one left nothing.
+    // The one exit below staples the verified facts exactly once per summary.
+    let mut layer_summary = None;
+
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
         match compact_with_llm(provider, model_config, compact_prompt, llm_tx.clone(), true).await {
-            Ok(summary) => return Ok((summary, range)),
+            Ok(summary) => layer_summary = Some(summary),
             Err(e) if is_prompt_too_long_error(&e.to_string()) => {
                 log::warn!(
                     "Layer 1 single-pass compaction failed (prompt too long: {}). \
@@ -1102,43 +1143,45 @@ pub async fn compact_conversation(
 
     // ── Layer 2: Chunked Recursive Summarization ─────────────────────
     //
-    // The pre-pruned messages don't fit in a single LLM call.
-    // Split them into chunks that each fit, summarize each chunk,
-    // and combine the summaries.
-    log::info!(
-        "Pre-pruned messages exceed context window ({} tokens > {} available). \
-         Attempting chunked recursive summarization.",
-        estimate_compaction_tokens(&pruned_messages),
-        context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
-    );
+    // The pre-pruned messages don't fit in a single LLM call — or Layer 1 ran
+    // without producing a summary. Split them into chunks that each fit,
+    // summarize each chunk, and combine the summaries.
+    if layer_summary.is_none() {
+        log::info!(
+            "Pre-pruned messages exceed context window ({} tokens > {} available). \
+             Attempting chunked recursive summarization.",
+            estimate_compaction_tokens(&pruned_messages),
+            context_window.saturating_sub(COMPACTION_PROMPT_OVERHEAD),
+        );
 
-    let chunk_budget = max_chunk_tokens(context_window);
-    let chunks = split_into_chunks(&pruned_messages, chunk_budget);
+        let chunk_budget = max_chunk_tokens(context_window);
+        let chunks = split_into_chunks(&pruned_messages, chunk_budget);
 
-    log::debug!(
-        "Layer 2 (chunked summarization): split into {} chunk(s), budget {} tokens/chunk",
-        chunks.len(),
-        chunk_budget,
-    );
+        log::debug!(
+            "Layer 2 (chunked summarization): split into {} chunk(s), budget {} tokens/chunk",
+            chunks.len(),
+            chunk_budget,
+        );
 
-    // Report progress to the TUI as a separate system message
-    let _ = llm_tx.try_send(LlmEvent::CompactInfo {
-        message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
-    });
+        // Report progress to the TUI as a separate system message
+        let _ = llm_tx.try_send(LlmEvent::CompactInfo {
+            message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
+        });
 
-    match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0).await {
-        Ok(summary) => {
-            log::info!(
-                "Layer 2 (chunked summarization): succeeded with {} chunks",
-                chunks.len()
-            );
-            return Ok((summary, range));
-        }
-        Err(e) => {
-            log::warn!(
-                "Layer 2 (chunked summarization) failed: {}. Falling back to truncation.",
-                e
-            );
+        match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0).await {
+            Ok(summary) => {
+                log::info!(
+                    "Layer 2 (chunked summarization): succeeded with {} chunks",
+                    chunks.len()
+                );
+                layer_summary = Some(summary);
+            }
+            Err(e) => {
+                log::warn!(
+                    "Layer 2 (chunked summarization) failed: {}. Falling back to truncation.",
+                    e
+                );
+            }
         }
     }
 
@@ -1147,62 +1190,111 @@ pub async fn compact_conversation(
     // Chunked summarization failed (model unavailable, max recursion
     // exceeded, etc.). Hard-truncate oldest middle messages to fit
     // within context_window * TRUNCATION_TARGET_RATIO.
-    let truncation = fallback_truncate(
-        &pruned_messages,
-        context_window,
-        DEFAULT_KEEP_FIRST.min(DEFAULT_KEEP_FIRST),
-        0, // don't preserve last within middle (they're in "keep_last")
-    );
-
-    if truncation.dropped_count > 0 {
-        log::warn!(
-            "Layer 3 (fallback truncation): dropped {} oldest middle messages \
-             to fit context window ({}/{:.0}% remaining).",
-            truncation.dropped_count,
-            truncation.remaining_tokens,
-            (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
+    if layer_summary.is_none() {
+        let truncation = fallback_truncate(
+            &pruned_messages,
+            context_window,
+            DEFAULT_KEEP_FIRST,
+            0, // don't preserve last within middle (they're in "keep_last")
         );
-        let _ = llm_tx.try_send(LlmEvent::CompactInfo {
-            message: format!(
-                "⚠ Truncation applied: dropped {} oldest messages to fit context window.",
-                truncation.dropped_count
-            ),
-        });
-    }
 
-    let conversation_text = build_conversation_text(&truncation.remaining_messages);
-    let compact_prompt = build_compaction_prompt(&conversation_text);
-
-    // Layer 3 is the last resort. If even truncation fails to fit the prompt,
-    // compaction is truly impossible — return a clear error with diagnostics.
-    match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true).await {
-        Ok(summary) => Ok((summary, range)),
-        Err(e) if is_prompt_too_long_error(&e.to_string()) => {
-            log::error!(
-                "Layer 3 fallback truncation STILL exceeded context window. \
-                 Estimated {} tokens (truncated from {}), context window {}, overhead {}. \
-                 This should never happen — truncation targets {:.0}% of the window.",
-                estimate_compaction_tokens(&truncation.remaining_messages),
-                estimate_compaction_tokens(&pruned_messages),
-                context_window,
-                COMPACTION_PROMPT_OVERHEAD,
-                TRUNCATION_TARGET_RATIO * 100.0,
+        if truncation.dropped_count > 0 {
+            log::warn!(
+                "Layer 3 (fallback truncation): dropped {} oldest middle messages \
+                 to fit context window ({}/{:.0}% remaining).",
+                truncation.dropped_count,
+                truncation.remaining_tokens,
+                (truncation.remaining_tokens as f32 / context_window as f32) * 100.0,
             );
-            Err(format!(
-                "Compaction failed: even after truncation to {:.0}% of context, \
-                 the prompt still exceeds the model's window. \
-                 Original estimate: {} tokens, truncated estimate: {} tokens, \
-                 context window: {} tokens. Error: {}",
-                TRUNCATION_TARGET_RATIO * 100.0,
-                estimate_compaction_tokens(&pruned_messages),
-                estimate_compaction_tokens(&truncation.remaining_messages),
-                context_window,
-                e
-            )
-            .into())
+            let _ = llm_tx.try_send(LlmEvent::CompactInfo {
+                message: format!(
+                    "⚠ Truncation applied: dropped {} oldest messages to fit context window.",
+                    truncation.dropped_count
+                ),
+            });
         }
-        Err(e) => Err(e),
+
+        let conversation_text = build_conversation_text(&truncation.remaining_messages);
+        let compact_prompt = build_compaction_prompt(&conversation_text);
+
+        // Layer 3 is the last resort. If even truncation fails to fit the prompt,
+        // compaction is truly impossible — return a clear error with diagnostics.
+        match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true).await {
+            Ok(summary) => layer_summary = Some(summary),
+            Err(e) if is_prompt_too_long_error(&e.to_string()) => {
+                log::error!(
+                    "Layer 3 fallback truncation STILL exceeded context window. \
+                     Estimated {} tokens (truncated from {}), context window {}, overhead {}. \
+                     This should never happen — truncation targets {:.0}% of the window.",
+                    estimate_compaction_tokens(&truncation.remaining_messages),
+                    estimate_compaction_tokens(&pruned_messages),
+                    context_window,
+                    COMPACTION_PROMPT_OVERHEAD,
+                    TRUNCATION_TARGET_RATIO * 100.0,
+                );
+                // The one early return left in the function: the Layer 3
+                // diagnostics, which cannot be stapled to a summary that
+                // will never exist. Layer 1/2's too-long errors fall
+                // through to the next layer instead of exiting here.
+                return Err(format!(
+                    "Compaction failed: even after truncation to {:.0}% of context, \
+                     the prompt still exceeds the model's window. \
+                     Original estimate: {} tokens, truncated estimate: {} tokens, \
+                     context window: {} tokens. Error: {}",
+                    TRUNCATION_TARGET_RATIO * 100.0,
+                    estimate_compaction_tokens(&pruned_messages),
+                    estimate_compaction_tokens(&truncation.remaining_messages),
+                    context_window,
+                    e
+                )
+                .into());
+            }
+            Err(e) => return Err(e),
+        }
     }
+
+    // Single exit for all three layers. The fact staple is appended here —
+    // and only here — so every compaction summary carries it exactly once,
+    // regardless of which layer produced the prose.
+    //
+    // The `None` arm is structurally unreachable: layers 1 and 2 fall through
+    // without a summary only when the next layer exists to produce one, and
+    // the match above returns from every layer-3 arm. It is handled as an
+    // error rather than a panic because a panic here would abort the whole
+    // chat session on a bug; the error degrades it instead.
+    let summary = match layer_summary {
+        Some(summary) => summary,
+        None => {
+            return Err(
+                "Internal error: compaction finished without a summary from any layer.".into(),
+            );
+        }
+    };
+    Ok((finalize_summary(summary, session), range))
+}
+
+/// Append harness-extracted facts to a model-written summary.
+///
+/// The model summarizes; the harness states facts. Appending rather than
+/// merging keeps the two provenances distinguishable — a fact the code wrote
+/// must not be reworded by a later summarization pass.
+fn finalize_summary(summary: String, session: &ChatSession) -> String {
+    use crate::chat::fact_tracker::render_staple_block;
+
+    if session.fact_tracker.is_empty() {
+        return summary;
+    }
+
+    // Read from the session, not from the compacted slice: the tracker is the
+    // one source that saw the whole session, including turns before an earlier
+    // compaction.
+    let last_request = session.get_last_user_message().map(|m| m.content.as_str());
+
+    format!(
+        "{}\n\n{}",
+        summary,
+        render_staple_block(&session.fact_tracker, last_request)
+    )
 }
 
 /// Recursively summarize message chunks.
@@ -1236,16 +1328,17 @@ fn compact_recursive<'a>(
         for (i, chunk) in chunks.iter().enumerate() {
             let conversation_text = build_conversation_text(&chunk.messages);
 
-            // Use a slightly different prompt for sub-summaries to encourage conciseness
+            // Use the chunk prompt: sub-summaries stay plain prose (no fact
+            // blocks) — see CHUNK_SUMMARY_PROMPT's documentation.
             let chunk_prompt = if chunks.len() > 1 {
                 format!(
-                    "This is part {}/{} of a longer conversation. Summarize this section concisely.\n\n{}",
+                    "This is part {}/{} of a longer conversation.\n\n{}",
                     i + 1,
                     chunks.len(),
-                    build_compaction_prompt(&conversation_text)
+                    build_chunk_summary_prompt(&conversation_text)
                 )
             } else {
-                build_compaction_prompt(&conversation_text)
+                build_chunk_summary_prompt(&conversation_text)
             };
 
             log::debug!(
@@ -1294,7 +1387,7 @@ fn compact_recursive<'a>(
         if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
             // Combined summaries fit — do a final summarization pass.
             // Stream the final consolidation so the user sees progress.
-            let final_prompt = build_compaction_prompt(&combined);
+            let final_prompt = build_chunk_summary_prompt(&combined);
             compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
@@ -1414,5 +1507,67 @@ async fn compact_with_llm(
             Ok(summary)
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
+    }
+}
+
+#[cfg(test)]
+mod finalize_summary_tests {
+    use super::finalize_summary;
+    use crate::chat::fact_tracker::SessionFactTracker;
+    use crate::chat::session::{ChatSession, MessageRole, SavedMessage};
+
+    #[test]
+    fn the_staple_is_appended_exactly_once_per_summary() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        let mut turn_tracker = SessionFactTracker::default();
+        turn_tracker.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+        session.merge_fact_tracker(&turn_tracker);
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "fix the parser next".into(),
+            ..Default::default()
+        });
+
+        let out = finalize_summary("## Goal\nshipped the parser".to_string(), &session);
+
+        assert_eq!(
+            out.matches("<compaction_facts>").count(),
+            1,
+            "exactly one wrapper per summary"
+        );
+        assert!(
+            out.ends_with("</compaction_facts>"),
+            "the block is appended after the model's prose, never merged"
+        );
+        assert!(
+            out.contains("## Goal"),
+            "the model's prose survives verbatim"
+        );
+        assert!(
+            out.contains("src/a.rs"),
+            "the tracker's verified facts ride the staple"
+        );
+        assert!(
+            out.contains("fix the parser next"),
+            "the latest user request rides the staple"
+        );
+    }
+
+    #[test]
+    fn an_empty_tracker_leaves_the_summary_unchanged() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "fix the parser next".into(),
+            ..Default::default()
+        });
+
+        let summary = "## Goal\nshipped the parser".to_string();
+        let out = finalize_summary(summary.clone(), &session);
+
+        assert_eq!(
+            out, summary,
+            "no tools ran — no block, not an empty scaffold"
+        );
     }
 }

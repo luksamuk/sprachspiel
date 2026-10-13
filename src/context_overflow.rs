@@ -120,13 +120,24 @@ pub const COMPACT_MSG_OVERHEAD: usize = 10;
 ///
 /// - System message in `compact_with_llm()` (~50 tokens)
 /// - `SYSTEM_PROMPT_SUMMARIZE` in user message (~40 tokens)
-/// - `COMPACTION_PROMPT` instructions (~120 tokens)
+/// - `COMPACTION_PROMPT` instructions (~480 tokens; measured 1907 chars ≈ 476 tokens, rounded up)
 /// - `"Conversation:"` label + formatting (~30 tokens)
 /// - Response allowance (~2000 tokens)
-/// - Safety buffer for tokenization variance (~760 tokens)
+/// - Safety buffer for tokenization variance (~700 tokens)
 ///
-/// Total: ~3000
-pub const COMPACTION_PROMPT_OVERHEAD: usize = 3000;
+/// The structured fact blocks stapled by the harness also ride the summary
+/// into every future context; their size is bounded by the 50-per-bucket cap
+/// (`MAX_PATHS_PER_BUCKET`), which is the largest component a summary can gain.
+///
+/// 50 + 40 + 480 + 30 + 2000 + 700 = 3300 — the constant is the sum of the
+/// items above, not an independent measurement; re-measure when any item moves.
+///
+/// This overhead is per-compaction, not cumulative: every compaction replaces
+/// `compacted_summary` whole (`set_compacted_summary_with_range` overwrites
+/// the field; it never appends), so a summary carries exactly one staple, and
+/// the next compaction discards the previous summary — including its staple —
+/// rather than stacking them.
+pub const COMPACTION_PROMPT_OVERHEAD: usize = 3300;
 
 /// Safety margin for token estimation during compaction.
 ///
@@ -612,7 +623,7 @@ pub fn is_prompt_too_long_error(error: &str) -> bool {
 ///
 /// Each chunk must leave room for:
 /// - The system prompt for summarization (~200 tokens)
-/// - The compaction prompt instructions (~300 tokens)
+/// - The chunk-summary prompt instructions (~70 tokens)
 /// - The model's response (~2000 tokens)
 ///
 /// Uses `COMPACTION_MAX_CONTEXT_RATIO` (60%) as the target ratio.
@@ -1605,8 +1616,10 @@ mod tests {
 
     #[test]
     fn test_compaction_prompt_overhead_value() {
-        // COMPACTION_PROMPT_OVERHEAD should be 3000 (increased from 2500)
-        assert_eq!(COMPACTION_PROMPT_OVERHEAD, 3000);
+        // Budget for system prompt, the compaction instructions, the
+        // "Conversation:" label and a response allowance. Raised when the
+        // instructions grew to declare the structured fact blocks.
+        assert_eq!(COMPACTION_PROMPT_OVERHEAD, 3300);
     }
 
     #[test]

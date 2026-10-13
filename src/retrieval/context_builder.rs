@@ -269,6 +269,23 @@ fn push_messages_as_chat_messages<'a, I>(
     }
 }
 
+/// Fold a retrieval result's text into the consolidated system prompt.
+///
+/// Both context builders must keep exactly ONE system message, at index 0:
+/// strict chat templates (Qwen3.5-family, Gemma, ik_llama) raise
+/// "System message must be at the beginning" when a second system message
+/// precedes the user turn. Returns the retrieved count for the caller's
+/// `ContextResult`.
+fn fold_retrieved_text(consolidated_system: &mut String, result: &RetrievalResult) -> usize {
+    let retrieved_text = match result.message.role {
+        LlmRole::System => &result.message.content,
+        _ => unreachable!("RetrievalResult.message is always system"),
+    };
+    consolidated_system.push_str("\n\n");
+    consolidated_system.push_str(retrieved_text);
+    result.count
+}
+
 /// Build context for LLM with optimal ordering
 ///
 /// Context order (to avoid "lost in the middle"):
@@ -353,13 +370,7 @@ pub async fn build_context(
                 // Append the retrieved context to the single
                 // system prompt instead of pushing a separate
                 // system message.
-                let retrieved_text = match result.message.role {
-                    LlmRole::System => result.message.content,
-                    _ => unreachable!("RetrievalResult.message is always system"),
-                };
-                consolidated_system.push_str("\n\n");
-                consolidated_system.push_str(&retrieved_text);
-                retrieved_count = result.count;
+                retrieved_count = fold_retrieved_text(&mut consolidated_system, &result);
                 retrieval_performed = true;
             }
         } else {
@@ -467,8 +478,12 @@ pub async fn build_query_context(
     let mut retrieval_performed = false;
     let mut retrieved_count = 0;
 
-    // 1. System prompt (always first)
-    messages.push(LlmMessage::system(system_prompt.to_string()));
+    // The OpenAI chat-completions spec allows multiple system messages,
+    // but several backends (llama-swap proxying Qwen3.5, Gemma, some
+    // Ollama builds) reject any request with two system messages before
+    // the user turn. Build a single consolidated system prompt up front
+    // — exactly ONE system message at index 0, same as build_context().
+    let mut consolidated_system = system_prompt.to_string();
 
     // 2. Retrieved messages (search across all project sessions)
     if config.enabled {
@@ -485,8 +500,9 @@ pub async fn build_query_context(
             )
             .await
             {
-                messages.push(result.message);
-                retrieved_count = result.count;
+                // Fold the retrieved context into the single system
+                // prompt instead of pushing a separate system message.
+                retrieved_count = fold_retrieved_text(&mut consolidated_system, &result);
                 retrieval_performed = true;
             }
         } else {
@@ -497,6 +513,7 @@ pub async fn build_query_context(
     }
 
     // 3. Current query (always last)
+    messages.push(LlmMessage::system(consolidated_system));
     messages.push(LlmMessage::user(user_query.to_string()));
 
     log::debug!(
@@ -1101,5 +1118,50 @@ mod tests {
         assert!(result.messages[0].content.contains("System prompt."));
         assert!(result.messages[0].content.contains("compacted summary"));
         assert!(result.messages[0].content.contains("<summary_context>"));
+    }
+
+    #[test]
+    fn retrieved_context_is_never_pushed_as_a_second_system_message() {
+        // Strict chat templates (Qwen3.5-family, Gemma, ik_llama) reject a
+        // request whose second message is system: 500 "System message must
+        // be at the beginning". Retrieved context must be FOLDED into the
+        // single consolidated system prompt (see fold_retrieved_text), never
+        // pushed as its own message. The pattern is asserted against this
+        // file's own source because the defect is how the array is built,
+        // not an observable output of any one call without a live backend.
+        let src = include_str!("context_builder.rs");
+        // Split so this assertion's own text is not a match. Deliberately
+        // WITHOUT the closing paren: the defect also resurfaces as
+        // `clone()` — pushing a cloned second system message passes an
+        // exact `...message)` guard but fails the same template just as
+        // hard, so the pinned prefix must catch both shapes.
+        let forbidden = ["messages.push(", "result.message"].concat();
+        assert!(
+            !src.contains(&forbidden),
+            "retrieval result must be folded into the system prompt, not pushed as a second system message"
+        );
+    }
+
+    #[test]
+    fn fold_retrieved_text_appends_after_a_blank_line() {
+        let mut consolidated = "BASE".to_string();
+        let result = RetrievalResult {
+            message: LlmMessage::system("<retrieved>CTX</retrieved>".to_string()),
+            count: 3,
+        };
+        let count = fold_retrieved_text(&mut consolidated, &result);
+        assert_eq!(consolidated, "BASE\n\n<retrieved>CTX</retrieved>");
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn query_context_keeps_exactly_one_system_message() {
+        // Retrieval is skipped with no db/client; the retrieval-HIT path
+        // enters only through fold_retrieved_text, covered above.
+        let config = RetrievalConfig::default();
+        let ctx = build_query_context(None, None, None, "query", "system-prompt", &config).await;
+        assert_eq!(ctx.messages.len(), 2);
+        assert!(matches!(ctx.messages[0].role, LlmRole::System));
+        assert!(matches!(ctx.messages[1].role, LlmRole::User));
     }
 }
