@@ -1,18 +1,8 @@
-//! Session fact tracker for compaction: facts the code knows, not facts a model recalls.
-//!
-//! The compaction summary is written by a language model, and measured retention of
-//! facts in such prose is poor — a fact the model may or may not restate. Facts
-//! extracted from the session's own tool-call records are not a recall problem.
-//!
-//! The tracker is fed at tool-execution time, because that is the only point where
-//! the tool name, its arguments and its result are simultaneously in scope. The
-//! conversation history cannot serve as the source: tool messages are persisted as
-//! bare result strings with no tool name attached.
-//!
-//! Wire-up into the compaction driver: `flush_turn_facts` (src/chat/core.rs)
-//! merges the per-turn coordinator's tracker into the session after every turn,
-//! and `compact_conversation` staples the rendered block onto each summary, so
-//! the module's items are constructed by the binary target.
+//! Session fact tracker for compaction: harness-extracted session facts the
+//! code knows, not facts a model recalls. Cumulative across compactions by
+//! design — a file modified before an earlier compaction is still modified
+//! for the rest of the session. Rendering the staple block lives here too
+//! (`render_staple_block`, appended to each compaction summary).
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
