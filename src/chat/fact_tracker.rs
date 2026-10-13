@@ -267,8 +267,8 @@ mod tests {
         );
         t.record_tool("read_file", r#"{"path":"src/b.rs"}"#, "1|hello", false);
 
-        // Paths are stored normalized (REVIEW DELTA) — assert on the
-        // normalizer's output, never on the raw argument.
+        // Paths are stored normalized — assert on the normalizer's
+        // output, never on the raw argument.
         assert_eq!(t.modified_files(), vec![normalize_path("src/a.rs")]);
         assert_eq!(t.read_files(), vec![normalize_path("src/b.rs")]);
     }

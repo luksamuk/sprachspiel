@@ -1,35 +1,11 @@
-//! End-to-end wiring check for compaction fact staples (plan Tasks 13+14).
+//! Wiring check for compaction fact staples over the public API:
+//! record_tool -> merge_fact_tracker -> render_staple_block -> the staple
+//! riding `compacted_summary` into the context the LLM receives. The
+//! private single-exit contract (append-once, prose untouched,
+//! empty-unchanged) is pinned in `src/chat/core.rs: finalize_summary_tests`.
 //!
-//! The unit tests in `src/chat/fact_tracker.rs` prove the tracker and the
-//! renderer; `mod finalize_summary_tests` in `src/chat/core.rs` proves the
-//! append-once / prose-untouched / empty-unchanged contract of
-//! `finalize_summary`. What they cannot prove is that the pieces are wired
-//! together through API reachable from outside the crate — and that wiring is
-//! where every previous defect in this area lived.
-//!
-//! Honest scope (why there is no live-LLM e2e here):
-//!
-//! * `finalize_summary` is private to `chat::core`, and `compact_conversation`
-//!   drives a live model (`compact_with_llm`), so an integration test in
-//!   `tests/` can neither call the single exit nor run the real compactor
-//!   without standing up a model server; promoting either to `pub` would leak
-//!   crate internals. The plan's e2e-with-LLM assertions are pinned instead:
-//!   * here, over the full public pipeline: `record_tool` (the coordinator
-//!     hook's input) -> `ChatSession::merge_fact_tracker` (the turn-exit flush
-//!     it drives) -> `render_staple_block` fed from
-//!     `ChatSession::get_last_user_message` (what `finalize_summary` reads) ->
-//!     the caller's append -> `set_compacted_summary_with_range` -> the staple
-//!     riding `compacted_summary` into `get_messages_for_llm`, i.e. the context
-//!     the LLM actually receives after a compaction;
-//!   * at unit level in `core.rs:mod finalize_summary_tests`, which asserts
-//!     directly on `finalize_summary` — the single exit of
-//!     `compact_conversation` — for append-exactly-once, prose-untouched and
-//!     empty-unchanged (the equivalent of running the layers with a live LLM
-//!     would end at that same exit).
-//! * The coordinator hook feeding `record_tool` at tool-execution time only
-//!   runs inside a live tool-call turn; its merge side (facts surviving the
-//!   merge and the SQLite round-trip) is pinned by the unit tests in
-//!   `src/chat/session.rs`.
+//! No live-LLM e2e: `compact_conversation` drives a real model, and the
+//! coordinator hook only runs inside a live tool-call turn.
 
 use sprachspiel::chat::fact_tracker::{SessionFactTracker, render_staple_block};
 use sprachspiel::chat::session::ChatSession;
