@@ -13,9 +13,15 @@ mod chunk_config;
 mod chunker;
 mod client;
 mod fallback;
+pub mod prefix;
 mod recovery;
 mod regenerate;
 mod vector;
+
+/// Capture provider for embedding-path tests (query/doc/chunk/fact/batch
+/// render assertions). Not compiled outside test builds.
+#[cfg(test)]
+pub(crate) mod spy;
 
 /// Minimum content length (in bytes) for meaningful embedding generation.
 ///
@@ -34,6 +40,7 @@ pub const MIN_EMBED_CONTENT_LEN: usize = 10;
 pub use chunk_config::DynamicChunkConfig;
 pub use chunker::{ChunkConfig, chunk_text, chunk_text_with_config, needs_chunking};
 pub use client::{EmbeddingClient, EmbeddingError};
+pub use prefix::PrefixTemplates;
 pub use fallback::{
     EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
 };

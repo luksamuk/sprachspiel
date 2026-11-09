@@ -109,7 +109,7 @@ async fn init_chat_database(
             model_id: model_id.to_string(),
             dimensions,
             probe: false, // already probed above
-            prefix: settings.indexing.prefix.clone(),
+            prefixes: settings.indexing.resolved_prefixes(),
             context_length: _model_cfg.num_ctx,
         },
         false,

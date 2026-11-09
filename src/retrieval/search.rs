@@ -15,7 +15,7 @@ use crate::consts::roles::format_role_label;
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
 
-use crate::embeddings::EmbeddingClient;
+use crate::embeddings::{EmbeddingClient, PrefixTemplates};
 
 /// Search result with formatted output
 pub struct FormattedResult {
@@ -179,7 +179,7 @@ pub async fn run_search(
     provider: &crate::provider::OpenAICompatibleProvider,
     embedding_model_id: &str,
     embedding_dimensions: u32,
-    embedding_prefix: &str,
+    prefixes: PrefixTemplates,
     embedding_context_length: Option<u32>,
     query: &str,
     conversation_id: Option<&str>,
@@ -194,17 +194,26 @@ pub async fn run_search(
         limit
     );
 
+    // A persistent reindex is reconstructing the vector bank; semantic
+    // answer is unavailable until it finishes.
+    if db.is_reindex_in_progress() {
+        return SearchOutcome::SearchError(
+            "Embedding reindex in progress — semantic search is paused until it finishes."
+                .to_string(),
+        );
+    }
+
     // Generate embedding for query
     let embedding_client = EmbeddingClient::with_model(
         provider.clone(),
         embedding_model_id.to_string(),
         embedding_dimensions,
-        embedding_prefix.to_string(),
+        prefixes,
         embedding_context_length,
     );
 
     log::debug!("Generating embedding for query...");
-    let query_result = match embedding_client.embed(query).await {
+    let query_result = match embedding_client.embed_query(query).await {
         Ok(result) => {
             log::debug!("Embedding generated ({} dimensions)", result.vector.len());
             result

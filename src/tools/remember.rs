@@ -658,8 +658,15 @@ async fn remember_by_query(
     query: &str,
     limit: usize,
 ) -> String {
+    // Semantic retrieval is paused while the persistent reindex
+    // reconstructs the vector bank.
+    if db.is_reindex_in_progress() {
+        return "Embedding reindex is in progress — semantic search is paused \
+             until it finishes. Try again later."
+            .to_string();
+    }
     // Generate embedding for query
-    let query_result = match embedding_client.embed(query).await {
+    let query_result = match embedding_client.embed_query(query).await {
         Ok(result) => result,
         Err(e) => {
             return format!(

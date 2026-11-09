@@ -185,9 +185,15 @@ async fn perform_retrieval(
     project_id: Option<&str>,
     config: &RetrievalConfig,
 ) -> Option<RetrievalResult> {
+    // A persistent reindex invalidates the vector bank as it goes; the
+    // semantic layer answers nothing until the reconstruction finishes.
+    if db.is_reindex_in_progress() {
+        log::debug!("Reindex in progress — skipping semantic retrieval");
+        return None;
+    }
     log::debug!("Generating embedding for query...");
 
-    let result = client.embed(query).await.ok()?;
+    let result = client.embed_query(query).await.ok()?;
     let embedding = result.vector;
     let query_norm_correction = result.norm_correction;
 

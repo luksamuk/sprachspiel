@@ -343,6 +343,16 @@ model = "nomic"
 # RRF weights (moved from the old [retrieval] section).
 # keyword_weight = 0.4  # BM25; default 0.4
 # semantic_weight = 0.6  # vector similarity; default 0.6
+
+# Task-steering templates for asymmetric retrieval models (e.g.
+# embeddinggemma-2). {content} required exactly once; {title} valid
+# only in the doc template (missing/empty/whitespace title renders
+# "none"). Unknown {..} placeholders fail the config. Empty templates
+# embed the text unchanged (default). The legacy single-sided `prefix`
+# key is deprecated: applying it to both sides warns at startup, and
+# combining it with these keys fails the config.
+# query_prefix = "task: search result | query: {content}"
+# doc_prefix = "title: {title} | text: {content}"
 ```
 
 ### Required `models.toml` Schema

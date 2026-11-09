@@ -910,7 +910,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
         &embedding_provider,
         &embedding_model_id,
         embedding_dimensions,
-        &state.settings.indexing.prefix,
+        state.settings.indexing.resolved_prefixes(),
         embedding_context_length,
         &query,
         Some(&conversation_id),
@@ -989,21 +989,13 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         }
     };
 
-    // Reset all embedding flags and delete vec0 embeddings so that
-    // regenerate_all_embeddings() will re-process every item from scratch.
-    // This is done synchronously because it's fast (just SQL statements).
-    let reset_stats = match db.reset_all_embedding_flags() {
-        Ok(stats) => stats,
-        Err(e) => {
-            return vec![CommandOutput::error(format!(
-                "Failed to reset embedding flags: {e}"
-            ))];
-        }
-    };
-
-    // If there's nothing to re-index, report immediately
-    if reset_stats.items == 0 && reset_stats.facts == 0 {
-        return vec![CommandOutput::info("No content to re-index.")];
+    // A persistent marker left by a previous (possibly crashed) reindex
+    // holds the vector bank blocked; a new run must not start on top.
+    if db.is_reindex_in_progress() {
+        return vec![CommandOutput::error(
+            "A previous reindex is still marked in progress (possibly from a \
+             crash). Restore a consistent state before reindexing again."
+        )];
     }
 
     // Resolve the indexing alias to get the upstream model_id,
@@ -1023,11 +1015,44 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
             }
         };
 
+    // Set the persistent marker BEFORE the first destructive SQL: from
+    // this point the vector bank is inconsistent, so retrieval and new
+    // embedding writes must be blocked (the marker survives a crash).
+    if let Err(e) = db.set_reindex_in_progress(true) {
+        return vec![CommandOutput::error(format!(
+            "Failed to set the persistent reindex marker: {e}"
+        ))];
+    }
+    let clear_marker = || {
+        if let Err(e) = db.set_reindex_in_progress(false) {
+            log::error!("Failed to clear the persistent reindex marker: {e}");
+        }
+    };
+
+    // Reset all embedding flags and delete vec0 embeddings so that
+    // regenerate_all_embeddings() will re-process every item from scratch.
+    // This is done synchronously because it's fast (just SQL statements).
+    let reset_stats = match db.reset_all_embedding_flags() {
+        Ok(stats) => stats,
+        Err(e) => {
+            clear_marker();
+            return vec![CommandOutput::error(format!(
+                "Failed to reset embedding flags: {e}"
+            ))];
+        }
+    };
+
+    // If there's nothing to re-index, report immediately
+    if reset_stats.items == 0 && reset_stats.facts == 0 {
+        clear_marker();
+        return vec![CommandOutput::info("No content to re-index.")];
+    }
+
     let embedding_client = crate::embeddings::EmbeddingClient::with_model(
         embedding_provider,
         embedding_model_id,
         embedding_dimensions,
-        state.settings.indexing.prefix.clone(),
+        state.settings.indexing.resolved_prefixes(),
         embedding_context_length,
     );
     let embedding_client = Arc::new(embedding_client);
@@ -1046,6 +1071,7 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
         let is_reindexing = state.session.is_reindexing.clone();
+        let marker_db = Arc::clone(&db);
         tokio::spawn(async move {
             let result = crate::embeddings::regenerate_all_embeddings(
                 &db,
@@ -1055,19 +1081,24 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
             )
             .await;
 
+            // Clear the persistent marker: the bank is consistent again.
+            if let Err(e) = marker_db.set_reindex_in_progress(false) {
+                log::error!("Failed to clear the persistent reindex marker: {e}");
+            }
+
             // Build completion message
             let msg = if result.has_errors() {
                 format!(
                     "✓ Reindexed {} of {} embeddings. {} failed — will be retried on next startup.",
                     result.total_processed(),
-                    result.items_processed + result.chunks_processed,
+                    result.total_processed() + result.total_failed(),
                     result.total_failed()
                 )
             } else {
                 format!(
                     "✓ Reindexed {} of {} embeddings.",
                     result.total_processed(),
-                    result.items_processed + result.chunks_processed
+                    result.total_processed()
                 )
             };
 
@@ -1093,9 +1124,12 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         )
         .await;
 
+        // Clear the persistent marker: the bank is consistent again.
+        clear_marker();
+
         vec![CommandOutput::ReindexResult(ReindexData {
             regenerated: stats.total_processed(),
-            total: stats.items_processed + stats.chunks_processed,
+            total: stats.total_processed(),
             success: true,
             error: None,
         })]
@@ -2533,8 +2567,8 @@ pub fn handle_note_add(
                 let note_content = note.content.clone();
 
                 tokio::spawn(async move {
-                    let ctx =
-                        EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref());
+                    let ctx = EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref())
+                        .with_title(title.as_deref());
                     if let Err(e) =
                         embed_item_with_fallback(ctx, &db_clone, &client, client.context_length())
                             .await
@@ -3004,6 +3038,7 @@ pub fn handle_document_import(
                     let db_clone = Arc::clone(&db);
                     let pid = project_id.clone();
                     let doc_content = document.content.clone();
+                    let doc_title = title.clone();
 
                     tokio::spawn(async move {
                         let ctx = EmbedItemContext::new(
@@ -3012,7 +3047,8 @@ pub fn handle_document_import(
                             "document",
                             None,
                             pid.as_deref(),
-                        );
+                        )
+                        .with_title(Some(&doc_title));
                         if let Err(e) = embed_item_with_fallback(
                             ctx,
                             &db_clone,
@@ -3034,7 +3070,8 @@ pub fn handle_document_import(
                         "document",
                         None,
                         project_id.as_deref(),
-                    );
+                    )
+                    .with_title(Some(&title));
 
                     match tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(async {

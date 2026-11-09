@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::embeddings::prefix::{PrefixTemplates, TemplateError};
+
 /// Default model name when not specified in config
 pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 
@@ -341,10 +343,6 @@ fn default_semantic_weight() -> f32 {
     DEFAULT_SEMANTIC_WEIGHT
 }
 
-fn default_embedding_prefix() -> String {
-    "search_document: ".to_string()
-}
-
 /// Thinking Trace Transform configuration.
 ///
 /// Controls whether reasoning traces from LLM responses are included in
@@ -437,13 +435,70 @@ pub struct IndexingSettings {
     #[serde(default = "default_semantic_weight")]
     pub semantic_weight: f32,
 
-    /// Prefix prepended to each text before embedding (e.g.
-    /// `"search_document: "` for nomic-embed-text models). Some
-    /// models (BGE, GTE, mxbai) do not require a prefix — set to
-    /// `""` for those. Default: `"search_document: "` (matches
-    /// nomic-embed-text-v2-moe, the current default model).
-    #[serde(default = "default_embedding_prefix")]
-    pub prefix: String,
+    /// DEPRECATED: single prefix applied to both retrieval sides.
+    ///
+    /// `None` means the key is absent; `Some` means it was set
+    /// explicitly in `config.toml`. When set alone, its value is
+    /// resolved to both the query and the doc side (the pre-149
+    /// behavior), and sprach logs a deprecation warning at load.
+    /// When set together with `query_prefix` or `doc_prefix`, config
+    /// loading fails fast.
+    ///
+    /// Migrate to `query_prefix`/`doc_prefix`.
+    #[serde(default)]
+    pub prefix: Option<String>,
+
+    /// Task-steering template for the query side of retrieval (e.g.
+    /// `"task: search result | query: {content}"` for
+    /// embeddinggemma-2). Valid placeholder: `{content}` exactly once.
+    /// Default: `""` — the text is embedded unchanged.
+    #[serde(default)]
+    pub query_prefix: String,
+
+    /// Task-steering template for the document side of retrieval (e.g.
+    /// `"title: {title} | text: {content}"` for embeddinggemma-2).
+    /// Valid placeholders: `{content}` exactly once, `{title}`
+    /// optional — a missing/empty/whitespace title renders as `none`.
+    /// Default: `""` — the text is embedded unchanged.
+    #[serde(default)]
+    pub doc_prefix: String,
+}
+
+impl IndexingSettings {
+    /// Validate the prefix configuration (called at config load;
+    /// failures must abort startup).
+    ///
+    /// - The legacy `prefix` combined with either side-specific
+    ///   template is ambiguous → error.
+    /// - Templates follow the [`PrefixTemplates`] placeholder contract.
+    pub fn validate_prefixes(&self) -> Result<(), TemplateError> {
+        if self.prefix.is_some() && (!self.query_prefix.is_empty() || !self.doc_prefix.is_empty())
+        {
+            return Err(TemplateError(
+                "[indexing]: the deprecated key `prefix` cannot be combined with \
+                 `query_prefix`/`doc_prefix` — migrate `prefix` to the two side keys"
+                    .to_string(),
+            ));
+        }
+        self.resolved_prefixes().validate()
+    }
+
+    /// Resolve the effective per-side steering templates.
+    ///
+    /// A legacy `prefix` set alone applies to both sides (today's
+    /// behavior); otherwise the side-specific templates are used.
+    pub fn resolved_prefixes(&self) -> PrefixTemplates {
+        match &self.prefix {
+            Some(legacy) => PrefixTemplates {
+                query: legacy.clone(),
+                doc: legacy.clone(),
+            },
+            None => PrefixTemplates {
+                query: self.query_prefix.clone(),
+                doc: self.doc_prefix.clone(),
+            },
+        }
+    }
 }
 
 impl Default for IndexingSettings {
@@ -458,7 +513,9 @@ impl Default for IndexingSettings {
             probe: true,
             keyword_weight: DEFAULT_KEYWORD_WEIGHT,
             semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
-            prefix: default_embedding_prefix(),
+            prefix: None,
+            query_prefix: String::new(),
+            doc_prefix: String::new(),
         }
     }
 }
@@ -858,11 +915,19 @@ model = "nomic"
 # overlap). Moved from the old [retrieval] section.
 # semantic_weight = 0.6
 
-# Prefix prepended to each text before embedding.
-# nomic-embed-text models use "search_document: " (the default).
-# Models that do not require a prefix (BGE, GTE, mxbai) should
-# set this to "" (empty string).
-# Default: "search_document: "
+# Task-steering prefixes (per retrieval side).
+# Embedding models trained for asymmetric retrieval (e.g. the
+# "eg2" alias, embeddinggemma-2) use different input formats on each
+# side. Templates carry explicit placeholders: {content} (required,
+# exactly once) and {title} (doc template only — a missing or empty
+# title renders as "none"). Empty templates embed the text unchanged,
+# so leaving both unset preserves behavior.
+# query_prefix = "task: search result | query: {content}"
+# doc_prefix = "title: {title} | text: {content}"
+#
+# The single-sided legacy key `prefix` is deprecated: it applies to
+# BOTH sides (with a warning at startup) and fails the config when
+# combined with query_prefix/doc_prefix. Migrate to the two side keys.
 # prefix = "search_document: "
 "#;
 
@@ -943,7 +1008,18 @@ impl Settings {
         {
             match Self::load_from_file(&config_path) {
                 Ok(settings) => return settings,
-                Err(e) => eprintln!("Warning: Failed to load config file: {}", e),
+                // Fail fast: a present but invalid config file must not
+                // be silently replaced by defaults — the user set
+                // configuration explicitly, and running with built-in
+                // defaults would mask the misconfiguration.
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    eprintln!(
+                        "sprach cannot start with the invalid config file: {}",
+                        config_path.display()
+                    );
+                    std::process::exit(1);
+                }
             }
         }
         Settings::default()
@@ -953,6 +1029,19 @@ impl Settings {
     fn load_from_file(path: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let content = std::fs::read_to_string(path)?;
         let settings: Settings = toml::from_str(&content)?;
+        // Fail fast on ambiguous or malformed prefix configuration
+        // instead of shipping templates that render wrong embeddings.
+        settings.indexing.validate_prefixes()?;
+        if settings.indexing.prefix.is_some() {
+            eprintln!(
+                "Warning: [indexing].prefix is deprecated — migrate to \
+                 [indexing].query_prefix / [indexing].doc_prefix (per-side \
+                 task-steering templates)."
+            );
+            log::warn!(
+                "[indexing].prefix is deprecated; use [indexing].query_prefix and [indexing].doc_prefix"
+            );
+        }
         Ok(settings)
     }
 
@@ -1539,7 +1628,10 @@ semantic_threshold = 0.80
         let settings = Settings::default();
         assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
-        assert_eq!(settings.indexing.prefix, "search_document: ");
+        // The legacy key is absent by default and side templates are empty.
+        assert!(settings.indexing.prefix.is_none());
+        assert_eq!(settings.indexing.query_prefix, "");
+        assert_eq!(settings.indexing.doc_prefix, "");
     }
 
     #[test]
@@ -1620,7 +1712,12 @@ prefix = ""
         assert!(!settings.indexing.probe);
         assert!((settings.indexing.keyword_weight - 0.3).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.7).abs() < f32::EPSILON);
-        assert_eq!(settings.indexing.prefix, "");
+        assert_eq!(settings.indexing.prefix, Some(String::new()));
+        assert_eq!(
+            settings.indexing.resolved_prefixes().render_query("q"),
+            "q",
+            "legacy empty prefix applies an empty string to both sides"
+        );
     }
 
     #[test]

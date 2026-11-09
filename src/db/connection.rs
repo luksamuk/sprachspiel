@@ -129,6 +129,52 @@ impl Database {
         Ok(())
     }
 
+    // Persistent reindex marker: while this DB key (`reindex_in_progress`
+    // in `schema_meta`) is set, `/reindex` is reconstructing the vector
+    // bank. The embeddings are inconsistent from the first reset until the
+    // last write, so retrieval skips the semantic layer and new embedding
+    // writes are refused. The marker lives in the database rather than
+    // memory precisely so a crash mid-reindex leaves the block in place
+    // instead of serving a mixed-bank space as valid.
+
+    /// Set or clear the persistent reindex marker.
+    pub fn set_reindex_in_progress(&self, in_progress: bool) -> Result<()> {
+        #[expect(clippy::expect_used)]
+        // Mutex poison — same pattern as all other db methods
+        let conn = self.conn.lock().expect("lock poisoned: db connection");
+        if in_progress {
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('reindex_in_progress', '1')",
+                [],
+            )?;
+        } else {
+            conn.execute(
+                "DELETE FROM schema_meta WHERE key = 'reindex_in_progress'",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Whether the persistent reindex marker is set.
+    pub fn is_reindex_in_progress(&self) -> bool {
+        #[expect(clippy::expect_used)]
+        // Mutex poison — same pattern as all other db methods
+        let conn = self.conn.lock().expect("lock poisoned: db connection");
+        match conn.query_row(
+            "SELECT value FROM schema_meta WHERE key = 'reindex_in_progress'",
+            [],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(_) => true,
+            Err(rusqlite::Error::QueryReturnedNoRows) => false,
+            Err(e) => {
+                log::warn!("Failed to read reindex marker: {e}");
+                false
+            }
+        }
+    }
+
     /// Ensure the vec0 tables match the configured embedding dimensions.
     ///
     /// Reads the stored dimensions from `schema_meta`. If they differ

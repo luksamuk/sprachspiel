@@ -193,7 +193,7 @@ impl QueryContextBuilder {
                 model_id,
                 dimensions,
                 probe: false, // query subcommand skips the probe (one-shot)
-                prefix: settings.indexing.prefix.clone(),
+                prefixes: settings.indexing.resolved_prefixes(),
                 context_length,
             },
             skip_persistence,

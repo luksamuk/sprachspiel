@@ -289,6 +289,12 @@ fn resolve_global_normalized(ctx: &DedupContext<'_>, matches: &[Fact]) -> Option
 ///
 /// Returns `Some(DedupResult)` if a semantic match is found, `None` to continue.
 async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
+    // Semantic layer is paused while the persistent reindex rebuilds
+    // the fact bank; the remaining (non-semantic) layers still run.
+    if ctx.db.is_reindex_in_progress() {
+        log::debug!("dedup: Reindex in progress — skipping semantic layer");
+        return None;
+    }
     let client = ctx.embedding_client?;
     let _triple = extract_fact_triple(ctx.content)?;
 
@@ -675,6 +681,9 @@ async fn do_insert(ctx: &DedupContext<'_>) -> DedupResult {
     // embedding is already stored in fact_embeddings.
     if ctx.config.generate_embedding
         && let Some(client) = ctx.embedding_client
+        // While the persistent reindex rebuilds the fact bank, new
+        // fact embeddings are left to the post-reindex recovery pass.
+        && !ctx.db.is_reindex_in_progress()
     {
         match super::embedding::generate_fact_embedding(ctx.content, client).await {
             Ok(result) => {

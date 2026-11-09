@@ -92,6 +92,10 @@ fn content_item_in_scope(
     }
 }
 
+/// (id, content_type, title, content) row returned by the reindex
+/// query. The title feeds the doc-side template's `{title}` slot.
+pub type ReindexItemRow = (i64, String, Option<String>, String);
+
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
 pub struct ContentSearchParams<'a> {
@@ -455,19 +459,25 @@ impl Database {
     /// little semantic signal and were previously stuck in an infinite
     /// recovery loop (found by `has_embedding = 0`, skipped, left at
     /// `has_embedding = 0` on every startup).
-    pub fn get_content_items_for_reindex(&self) -> Result<Vec<(i64, String, String)>> {
+    /// Returns (id, content_type, title, content) where `title` is the
+    /// item's optional title column (documents carry it; messages do
+    /// not). The title feeds the doc-side steering template's `{title}`
+    /// slot during embedding.
+    /// (id, content_type, title, content) row returned by the reindex
+    /// query. The title feeds the doc-side template's `{title}` slot.
+    pub fn get_content_items_for_reindex(&self) -> Result<Vec<ReindexItemRow>> {
         self.with_connection(|conn| {
             let min_len = crate::embeddings::MIN_EMBED_CONTENT_LEN as i64;
             let mut stmt = conn.prepare(
-                "SELECT id, content_type, content FROM content_items 
-                 WHERE has_embedding = 0 
-                 AND length(content) >= ?1 
+                "SELECT id, content_type, title, content FROM content_items
+                 WHERE has_embedding = 0
+                 AND length(content) >= ?1
                  AND content != ''
                  ORDER BY created_at ASC",
             )?;
 
             let rows = stmt.query_map(params![min_len], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?;
 
             rows.collect::<Result<Vec<_>, _>>()

@@ -18,12 +18,15 @@ const DEFAULT_OVERLAP_PERCENT: f32 = 0.20;
 /// Default minimum chunk size (percentage of chunk size)
 const DEFAULT_MIN_CHUNK_PERCENT: f32 = 0.25;
 
-/// Token margin for prefix (e.g., "search_document: " is ~20 tokens + 20 overhead)
+/// Default token margin floor for prefix (e.g., "search_document: " is
+/// ~20 tokens + 20 overhead)
 ///
 /// Increased from 30 to 40 to account for tokenizer overhead and prefix formatting.
 /// When exact token counts become available (via reqwest-based provider), this can
 /// be reduced back to 30 or replaced with actual prefix token counts.
-const DEFAULT_PREFIX_MARGIN: usize = 40;
+/// Rendered steering templates add their token cost on top of this floor
+/// (see [`crate::embeddings::client::EmbeddingClient::prefix_margin_tokens`]).
+pub(crate) const DEFAULT_PREFIX_MARGIN: usize = 40;
 
 /// Characters per token ratio (conservative for Portuguese/code)
 ///
@@ -32,7 +35,7 @@ const DEFAULT_PREFIX_MARGIN: usize = 40;
 /// conservative (lower) ratio to overestimate token count, generating
 /// smaller chunks that have headroom even if the real tokenizer counts
 /// more tokens than the estimate.
-const DEFAULT_CHARS_PER_TOKEN: f32 = 2.0;
+pub(crate) const DEFAULT_CHARS_PER_TOKEN: f32 = 2.0;
 
 /// Dynamic chunk configuration based on model context length.
 ///
@@ -67,6 +70,17 @@ impl DynamicChunkConfig {
             min_chunk_percent: DEFAULT_MIN_CHUNK_PERCENT,
             prefix_margin: DEFAULT_PREFIX_MARGIN,
             chars_per_token: DEFAULT_CHARS_PER_TOKEN,
+        }
+    }
+
+    /// Create with an explicit prefix token margin. The margin is
+    /// never allowed to shrink below the default floor, so callers
+    /// passing a computed margin keep the safety headroom when the
+    /// configured prefix is cheaper than the old reserved space.
+    pub fn with_prefix_margin(context_length: usize, margin_tokens: usize) -> Self {
+        Self {
+            prefix_margin: margin_tokens.max(DEFAULT_PREFIX_MARGIN),
+            ..Self::new(context_length)
         }
     }
 

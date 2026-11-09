@@ -130,7 +130,14 @@ pub async fn verify_and_dedup_facts(
             // Embedding exists in DB — reuse it (no Ollama call)
             fact_embeddings.push((fact.id, emb.clone(), fact.scope));
         } else {
-            // No vec0 row — generate embedding (rare: recovery should catch these)
+            // No vec0 row. Normally generate it here, but while the
+            // persistent reindex owns the bank, writes are deferred to
+            // the post-reindex recovery pass.
+            if db.is_reindex_in_progress() {
+                log::debug!("Reindex in progress — deferring fact {} embedding", fact.id);
+                continue;
+            }
+            // generate embedding (rare: recovery should catch these)
             match super::embedding::generate_fact_embedding(&fact.content, client).await {
                 Ok(result) => {
                     generated += 1;

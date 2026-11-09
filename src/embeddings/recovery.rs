@@ -75,6 +75,15 @@ pub async fn recover_missing_embeddings(
     quiet: bool,
     progress_tx: Option<EmbeddingProgressTx>,
 ) -> usize {
+    // The persistent reindex owns the vector bank; embedding recovery
+    // must not interleave writes with a running (or interrupted)
+    // reindex — this startup pass skips and defers to the reindex run.
+    if db.is_reindex_in_progress() {
+        log::warn!(
+            "Reindex in progress — deferring embedding recovery until it finishes"
+        );
+        return 0;
+    }
     // Phase 0: cleanup orphan chunks (those with wrong item_id mapping)
     cleanup_orphan_chunks(db, quiet);
 
@@ -213,7 +222,7 @@ async fn get_context_length(embedding_client: &Arc<EmbeddingClient>, quiet: bool
 /// The `report_progress` method replaces the 7 duplicated `EmbeddingProgress::new`
 /// blocks that were inline in the original `recover_missing_embeddings`.
 struct RecoveryState {
-    items: Vec<(i64, String, String)>,
+    items: Vec<(i64, String, Option<String>, String)>,
     total_missing: usize,
     processed: usize,
     entities_current: usize,
@@ -224,7 +233,7 @@ struct RecoveryState {
 
 impl RecoveryState {
     fn new(
-        items: Vec<(i64, String, String)>,
+        items: Vec<(i64, String, Option<String>, String)>,
         total_missing: usize,
         progress_tx: Option<EmbeddingProgressTx>,
     ) -> Self {
@@ -270,12 +279,12 @@ async fn process_content_items(
     context_length: usize,
     quiet: bool,
 ) {
-    let chunk_config = DynamicChunkConfig::new(context_length);
+    let chunk_config = embedding_client.dynamic_chunk_config(context_length);
     let max_chars = chunk_config.max_chars();
     let now = Utc::now();
 
     let items = std::mem::take(&mut state.items);
-    for (item_id, content_type, content) in &items {
+    for (item_id, content_type, title, content) in &items {
         let timestamp = now;
 
         if content.trim().is_empty() || content.len() < MIN_EMBED_CONTENT_LEN {
@@ -324,6 +333,7 @@ async fn process_content_items(
                 db,
                 embedding_client,
                 content,
+                title.as_deref(),
                 *item_id,
                 content_type.as_str(),
                 conv_id.as_deref(),
@@ -429,6 +439,7 @@ async fn process_short_content_item(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     content: &str,
+    title: Option<&str>,
     item_id: i64,
     content_type: &str,
     conv_id: Option<&str>,
@@ -436,7 +447,8 @@ async fn process_short_content_item(
     context_length: usize,
     quiet: bool,
 ) {
-    let ctx = EmbedItemContext::new(content, item_id, content_type, conv_id, proj_id);
+    let ctx = EmbedItemContext::new(content, item_id, content_type, conv_id, proj_id)
+        .with_title(title);
 
     match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
         Ok(result) => {
