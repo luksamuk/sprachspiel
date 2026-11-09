@@ -1241,7 +1241,7 @@ impl Settings {
         }
         // Fallback: use the first OpenAI provider if available, else default Ollama
         let providers = crate::user_models::get_providers();
-        for (_name, cfg) in providers.iter() {
+        for cfg in providers.values() {
             if matches!(cfg.kind, crate::user_models::ProviderKind::OpenAI) {
                 return crate::provider::OpenAICompatibleProvider::from_provider_config(cfg);
             }

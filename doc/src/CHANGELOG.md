@@ -111,6 +111,14 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - **Security: quinn-proto 0.11.14 → 0.11.15+ (RUSTSEC-2026-0185)** — Upgraded `reqwest` to pull in `quinn-proto >=0.11.15`, fixing remote memory exhaustion from unbounded out-of-order stream reassembly (CVSS 7.5 high). `quinn-proto` arrives transitively via `reqwest → quinn → quinn-proto`.
 
+- **Security: TLS stack bump — rustls 0.23.36 → 0.23.46, rustls-webpki 0.103.13 → 0.103.16, webpki-roots 1.0.5 → 1.0.11 (LUC-157)** — clears six advisories in the compiled TLS path that every HTTPS call to a model provider takes: RUSTSEC-2026-0285 (TLS 1.3 handshake messages accepted across encryption-level boundaries, medium 5.3), RUSTSEC-2026-0346 (`Debug` impls for client session values expose TLS secrets, medium 4.0), RUSTSEC-2026-0348 (Brotli certificate decompression can allocate up to 1 GiB before authentication, low 3.7), RUSTSEC-2026-0349 (unauthenticated ServerHello can downgrade later connections to classical key exchange, low 3.7), RUSTSEC-2026-0382 (certificate verification may accept distrusted intermediates) and RUSTSEC-2026-0381 (bundled root certificates allow trust in distrusted emSign intermediates). All moves are semver-compatible lockfile bumps; no API change, no feature change.
+
+- **Security: quinn-proto 0.11.15 → 0.11.19 (LUC-157)** — clears five advisories (RUSTSEC-2026-0338, -0339, -0340, -0341, -0342: remote-peer panics and memory-exhaustion bypasses in the QUIC protocol crate). `quinn` reaches the lockfile through `reqwest` but is not in the Linux build graph (the `http3` feature is not enabled), so this is lockfile hygiene: the audit stays clean for any future feature change.
+
+- **Security: pulldown-cmark 0.13.3 → 0.13.6 (LUC-157)** — clears RUSTSEC-2026-0414 (exponential event growth with `ENABLE_WIKILINKS`, high 7.5) and RUSTSEC-2026-0433 (quadratic parsing of nested image wikilinks, high 7.5). `pulldown-cmark` arrives transitively via `tui-markdown` (chat markdown rendering); the vulnerable `ENABLE_WIKILINKS` option is not used anywhere in the project, so the exposure was DoS-class at worst — the bump is defense in depth.
+
+  The fourteenth live advisory (RUSTSEC-2026-0459, `libsqlite3-sys` bundled C SQLite CVE-2026-119375) requires the `rusqlite 0.32 → 0.41` migration and is tracked as LUC-158; it is intentionally out of this lockfile-only change so the compiled TLS fix ships without waiting on a database-layer migration. The weekly audit sensor that under-reported these advisories (20-line summary cap) is tracked as LUC-159, and the remaining unsound/unmaintained warnings as LUC-160.
+
 ## [0.45.0] - 2026-08-19
 
 ### Added

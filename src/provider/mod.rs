@@ -26,6 +26,11 @@ use std::pin::Pin;
 /// Implementations: `OpenAICompatibleProvider` (default).
 /// Business code should depend on this trait, not concrete providers.
 #[async_trait]
+// The `#[must_use]` attributes the clippy lint flags live inside the
+// `async_trait` macro expansion, not in this file: the generated boxed
+// futures are wrapped in `Pin<Box<dyn Future>>`, which is already
+// `#[must_use]`. Removing them would mean editing the proc-macro output.
+#[allow(clippy::double_must_use)]
 pub trait LlmProvider: Send + Sync {
     /// Send a chat completion request with optional tools.
     async fn chat(
