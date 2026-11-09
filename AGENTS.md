@@ -282,7 +282,8 @@ Critical rules for reviews:
 ## Issue References in Code
 
 **Do NOT put issue identifiers (`LUC-142`, `gh#228`, `#187`) in source comments or test
-assertion messages.** The tracker does not belong in the code.
+assertion messages.** The tracker does not belong in the code. **The same holds for version
+and dependency-bump references** — see the version rule below.
 
 A comment that says *"scope filtering mirrors `content_item_in_scope` so project-scoped
 rows stay visible"* explains the invariant and survives refactoring. One that says
@@ -295,7 +296,7 @@ This is not a documentation ban — it is a placement rule:
 
 | Where | Issue identifiers? |
 |-------|--------------------|
-| `src/**` comments, `tests/**` assertion messages | **No** |
+| `src/**` comments, `tests/**` assertion messages | **No** — neither issue identifiers nor version/bump narration |
 | `AGENTS.md`, skills, `doc/src/development/**` | Yes — these *are* the history |
 | `doc/src/CHANGELOG.md` | Yes — release notes cite what shipped |
 | Test names, doc-comment `# Arguments` sections | No — name the behaviour, not the ticket |
@@ -320,6 +321,26 @@ For a deferral, state the *reason* in the code and leave the tracking to the tra
 /// `d_eff` is deliberately not consulted: the recommendation follows regime
 /// classification across candidate thresholds instead. See `embedding-diagnostics.md`.
 ```
+
+### Version references are history narration
+
+A comment like *"rusqlite 0.41: `usize` is no longer `ToSql`"* tells the reader what changed
+and when — which is exactly what `git blame` on that line, the PR description and the
+CHANGELOG entry already record. The migration that forced a cast IS the origin, and origins
+live in history, not in the source. What survives refactoring — what the reader cannot get
+from blame — is the invariant that makes the code correct:
+
+```rust
+// BEFORE — narrates the bump; blame, the PR and the CHANGELOG already say this
+todo.task_id as i64, // rusqlite 0.41: usize is no longer ToSql; task_id is a positive row id
+
+// AFTER — the invariant the reader needs; the migration story lives in history
+todo.task_id as i64, // positive 1-based row id — fits i64 losslessly
+```
+
+Unlike issue identifiers, version narration has no cheap regex enforcement — this is a
+review-time rule. The sweep when adopting it keeps the invariant and drops only the version
+clause, exactly as the identifier sweep keeps the explanation and drops only the pointer.
 
 Enforcement:
 
