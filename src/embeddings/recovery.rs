@@ -397,6 +397,7 @@ async fn process_long_content_item(
             conversation_id: conv_id,
             project_id: proj_id,
             timestamp,
+            reindex_owned: false,
         };
 
         match embed_chunk_with_fallback(
@@ -544,6 +545,7 @@ async fn process_new_chunks(
             conversation_id: conv_id.as_deref(),
             project_id: proj_id.as_deref(),
             timestamp,
+            reindex_owned: false,
         };
 
         match embed_chunk_with_fallback(

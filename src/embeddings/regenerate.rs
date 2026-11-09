@@ -296,7 +296,8 @@ pub async fn regenerate_all_embeddings(
                     }
                 };
 
-                // Embed chunk with fallback (handles oversized content)
+                // Embed chunk with fallback (handles oversized content).
+                // Reindex-owned: this write is the rebuild itself.
                 let ctx = EmbedContext {
                     content: &chunk.content,
                     item_id: *item_id,
@@ -305,6 +306,7 @@ pub async fn regenerate_all_embeddings(
                     conversation_id: conv_id.as_deref(),
                     project_id: proj_id.as_deref(),
                     timestamp,
+                    reindex_owned: true,
                 };
 
                 match embed_chunk_with_fallback(
@@ -346,7 +348,8 @@ pub async fn regenerate_all_embeddings(
                 conv_id.as_deref(),
                 proj_id.as_deref(),
             )
-            .with_title(title.as_deref());
+            .with_title(title.as_deref())
+            .owned_by_reindex();
 
             match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
                 Ok(result) => {
@@ -480,6 +483,7 @@ pub async fn regenerate_all_embeddings(
             conversation_id: conv_id.as_deref(),
             project_id: proj_id.as_deref(),
             timestamp,
+            reindex_owned: true,
         };
 
         match embed_chunk_with_fallback(
