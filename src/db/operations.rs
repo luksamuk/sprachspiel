@@ -454,7 +454,7 @@ impl Database {
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![
                         conversation_id,
-                        todo.task_id,
+                        todo.task_id as i64, // positive 1-based row id — fits i64 losslessly
                         todo.description,
                         todo.status,
                         todo.priority,
@@ -497,7 +497,7 @@ impl Database {
                     let created_at =
                         chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
                     Ok(TodoRow {
-                        task_id: row.get(0)?,
+                        task_id: row.get::<_, i64>(0)? as usize, // positive 1-based row id — fits i64 losslessly
                         description: row.get(1)?,
                         status: row.get(2)?,
                         priority: row.get(3)?,
@@ -521,7 +521,7 @@ impl Database {
                     let created_at =
                         chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
                     Ok(TodoRow {
-                        task_id: row.get(0)?,
+                        task_id: row.get::<_, i64>(0)? as usize, // positive 1-based row id — fits i64 losslessly
                         description: row.get(1)?,
                         status: row.get(2)?,
                         priority: "medium".to_string(),
