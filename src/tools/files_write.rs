@@ -27,6 +27,20 @@ use std::path::{Path, PathBuf};
 /// Maximum file size for write operations (5MB)
 const MAX_WRITE_SIZE: usize = 5_242_880;
 
+/// The literal parts of `edit_file`'s content-unchanged outcome. The producer
+/// (`edit_file`'s early return below) and the fact-tracker classifier
+/// (`no_changes_result`) both compose with these, so the message and the
+/// classification cannot drift apart.
+const NO_CHANGES_PREFIX: &str = "No changes made to '";
+const NO_CHANGES_SUFFIX: &str = "' (content unchanged).";
+
+/// True when `result_text` is `edit_file`'s content-unchanged outcome — a
+/// success (`is_error == false`) that wrote nothing. `crate::chat::fact_tracker`
+/// uses this to keep such runs out of modified-files and to preserve reads.
+pub(crate) fn no_changes_result(result_text: &str) -> bool {
+    result_text.starts_with(NO_CHANGES_PREFIX) && result_text.ends_with(NO_CHANGES_SUFFIX)
+}
+
 // =============================================================================
 // write_file
 // =============================================================================
@@ -323,7 +337,7 @@ pub async fn edit_file(
 
     // Check if content changed
     if new_content == original_content {
-        let result = format!("No changes made to '{}' (content unchanged).", path);
+        let result = format!("{NO_CHANGES_PREFIX}{path}{NO_CHANGES_SUFFIX}");
         log_tool_result("edit_file", &result);
         return Ok(result);
     }
@@ -892,6 +906,30 @@ mod tests {
         let result = edit_replace(content, Some("World"), Some("Universe"));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Hello, Universe!\nGoodbye!");
+    }
+
+    #[test]
+    fn no_changes_result_matches_the_producer_message() {
+        // The classifier and the producer share the fixed parts; the composed
+        // whole must remain exactly the string edit_file returns.
+        let produced = format!("{NO_CHANGES_PREFIX}src/a.rs{NO_CHANGES_SUFFIX}");
+        assert_eq!(
+            produced,
+            "No changes made to 'src/a.rs' (content unchanged)."
+        );
+
+        assert!(no_changes_result(&produced));
+        // Any edit-shaped success is not a no-changes outcome.
+        assert!(!no_changes_result(
+            "Successfully edited 'src/a.rs': +1/-0 lines (3→4). Operation: replace"
+        ));
+        // The shape, not the specific path, is what classifies.
+        assert!(no_changes_result(
+            "No changes made to 'x.txt' (content unchanged)."
+        ));
+        // Truncated or partial copies of the shape must not classify.
+        assert!(!no_changes_result("No changes made to 'x.txt'"));
+        assert!(!no_changes_result("edit_file: no changes"));
     }
 
     #[test]

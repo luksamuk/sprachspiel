@@ -125,9 +125,9 @@ pub const COMPACT_MSG_OVERHEAD: usize = 10;
 /// - Response allowance (~2000 tokens)
 /// - Safety buffer for tokenization variance (~700 tokens)
 ///
-/// The structured fact blocks stapled by the harness also ride the summary
-/// into every future context; their size is bounded by the 50-per-bucket cap
-/// (`MAX_PATHS_PER_BUCKET`), which is the largest component a summary can gain.
+/// The structured fact staple is post-compaction output, not part of this
+/// input-prompt overhead. Its size is bounded independently by bucket counts
+/// and rendered-byte limits in `chat::fact_tracker`.
 ///
 /// 50 + 40 + 480 + 30 + 2000 + 700 = 3300 — the constant is the sum of the
 /// items above, not an independent measurement; re-measure when any item moves.

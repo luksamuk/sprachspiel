@@ -1,11 +1,68 @@
 # Context Overflow & Multi-Tool Execution
 
-> **Status:** documentação técnica viva, extraída de `IMPLEMENTATION.md` durante a
-> consolidação do backlog (LUC-140 / `refactor/backlog-consolidation`). O conteúdo é
-> **verbatim** da fonte; apenas os cabeçalhos foram normalizados (eram marcados como
-> "PRIORITY N … COMPLETED", resíduo de tracker).
+> **Status:** documentação técnica viva. A seção "Current compaction fact contract"
+> descreve o comportamento atual. As seções v0.37.0 mais abaixo são o registro histórico
+> extraído de `IMPLEMENTATION.md`; valores e templates antigos ali não são normativos.
 
 Como o subsistema de overflow de contexto decide quando avisar, compactar e truncar.
+
+## Current compaction fact contract
+
+The final summary has two producers with disjoint ownership:
+
+| Producer | Owns |
+|---|---|
+| Model | Goal, Instructions, Progress, Discoveries and `<unresolved-error>` |
+| Harness | `<modified-files>`, `<read-files>`, `<last-run>` and `<latest-user-request>` inside one `<compaction_facts>` wrapper |
+
+`COMPACTION_PROMPT` and `CONSOLIDATION_PROMPT` carry the same model-owned schema.
+Intermediate chunks use the plain `CHUNK_SUMMARY_PROMPT`; even a one-chunk Layer-2
+result goes through terminal consolidation. `finalize_summary` then appends the staple
+unconditionally, including explicit `None` values for empty buckets. The model is never
+asked to reconstruct tool records or the latest request from text it may not have seen.
+
+### Rendering and size
+
+| Value | Rendered-byte cap |
+|---|---:|
+| Each modified/read path | 200 |
+| Last command | 300 |
+| Latest-user-request snapshot | 800 |
+| Header | One line, at most 512 bytes |
+| Saturated staple | Test-enforced below 24 KiB |
+
+Rendering normalizes line breaks, escapes `&`, `<` and `>`, and truncates at whole UTF-8
+characters/entities with an explicit notice. Stored values remain raw, so persisted v16
+trackers written before these guards also render safely. Each path bucket retains 50
+entries; merges preserve original touch order so eviction follows global recency.
+
+`COMPACTION_PROMPT_OVERHEAD = 3300` budgets the compaction **input** prompt. The staple is
+post-compaction output and is bounded separately by the table above. Compactions replace
+`compacted_summary` rather than appending it, so staples do not accumulate across cycles.
+
+### Collection and cancellation
+
+The single Coordinator tool-result hook records facts before overflow handling. Both send
+paths flush them into the session before result dispatch. Successful no-op edits and failed
+reads/writes record nothing; path spellings share the tools' tilde expansion plus lexical
+normalization. `run_command` marks ambiguous successful producer output explicitly, so an
+error-looking first stdout line does not turn exit 0 into FAIL.
+
+On Ctrl+C the terminal `Cancelled` event carries the task session. Only its fact tracker is
+merged into the live session; messages, model and configuration stay untouched. Token and
+receiver remain until delivery, and an Error racing ahead of Cancelled cannot clear them.
+The event loop drops its own sender on interrupt, so a dying producer closes the channel and
+the recovery path is reachable. Waiting for a stalled provider stream — and for the initial
+connect/TTFB response — is cancellation-aware. Cancellation is sticky at the core boundary:
+a cancelled provider result resolves as `CANCELLED_BY_USER` before `StreamDone` or
+auto-compaction, while the post-loop fact flush still runs.
+
+Facts are also mirrored per turn as each tool completes. A fatal Error, a closed event
+channel (task panic) and Ctrl+D or `/quit` during cancellation fold that mirror into the
+live session before saving. Exiting during cancellation waits bounded for the terminal
+event, then falls back to the mirror; a second exit request forces that fallback. A tool
+still executing at cancellation time is not interrupted (LUC-155) — the guarantee covers
+every tool that already finished.
 
 ## Context Overflow During Multi-Tool Execution
 

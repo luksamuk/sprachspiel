@@ -1175,7 +1175,7 @@ impl ChatSession {
     /// compaction is still modified at compaction time, and the tracker answers
     /// "what changed in this session", not "what changed just now".
     pub fn merge_fact_tracker(&mut self, incoming: &crate::chat::fact_tracker::SessionFactTracker) {
-        for path in incoming.modified_files() {
+        for path in incoming.modified_paths_by_recency() {
             self.fact_tracker.record_tool(
                 "write_file",
                 &format!(
@@ -1186,7 +1186,7 @@ impl ChatSession {
                 false,
             );
         }
-        for path in incoming.read_files() {
+        for path in incoming.read_paths_by_recency() {
             self.fact_tracker.record_tool(
                 "read_file",
                 &format!(
@@ -1239,6 +1239,86 @@ mod tests {
             session.fact_tracker.modified_files(),
             vec![crate::chat::fact_tracker::normalize_path("src/a.rs")]
         );
+    }
+
+    /// Merging the same completed-turn tracker twice is a redundant replay,
+    /// not an accumulating merge: re-touching a key bumps its sequence but
+    /// preserves the relative order, so a mirror fallback followed by the
+    /// authoritative terminal merge cannot corrupt recency or eviction.
+    #[test]
+    fn merging_the_same_tracker_twice_is_idempotent() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        let mut incoming = crate::chat::fact_tracker::SessionFactTracker::default();
+        incoming.record_tool("write_file", r#"{"path":"src/first.rs"}"#, "ok", false);
+        incoming.record_tool("read_file", r#"{"path":"src/second.rs"}"#, "1|x", false);
+        incoming.record_tool(
+            "run_command",
+            r#"{"command_line":"make test"}"#,
+            "ok",
+            false,
+        );
+
+        session.merge_fact_tracker(&incoming);
+        let once = (
+            session.fact_tracker.modified_files(),
+            session.fact_tracker.read_files(),
+            session
+                .fact_tracker
+                .last_run()
+                .map(|run| run.command.clone()),
+        );
+
+        session.merge_fact_tracker(&incoming);
+        let twice = (
+            session.fact_tracker.modified_files(),
+            session.fact_tracker.read_files(),
+            session
+                .fact_tracker
+                .last_run()
+                .map(|run| run.command.clone()),
+        );
+
+        assert_eq!(
+            once, twice,
+            "a redundant full-tracker merge must not change visible facts or recency"
+        );
+    }
+
+    #[test]
+    fn merge_eviction_uses_global_recency_across_turns() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        for turn in 1..=2 {
+            let mut incoming = crate::chat::fact_tracker::SessionFactTracker::default();
+            for i in 0..40 {
+                incoming.record_tool(
+                    "write_file",
+                    &format!(r#"{{"path":"src/turn{turn}-{i}.rs"}}"#),
+                    "ok",
+                    false,
+                );
+            }
+            session.merge_fact_tracker(&incoming);
+        }
+
+        let files = session.fact_tracker.modified_files();
+        assert_eq!(files.len(), 50, "the session cap remains in force");
+        for i in 0..30 {
+            let old = crate::chat::fact_tracker::normalize_path(&format!("src/turn1-{i}.rs"));
+            assert!(
+                !files.contains(&old),
+                "globally oldest path survived: {old}"
+            );
+        }
+        for i in 30..40 {
+            let retained = crate::chat::fact_tracker::normalize_path(&format!("src/turn1-{i}.rs"));
+            assert!(
+                files.contains(&retained),
+                "newer path was evicted: {retained}"
+            );
+        }
+        assert!(files.contains(&crate::chat::fact_tracker::normalize_path(
+            "src/turn2-39.rs"
+        )));
     }
 
     #[test]
@@ -1329,7 +1409,7 @@ mod tests {
         // Verify setup
         assert_eq!(session.messages.len(), 1);
         assert!(session.compacted_summary.is_some());
-        assert!(!session.fact_tracker.is_empty());
+        assert!(!session.fact_tracker.modified_files().is_empty());
 
         // Forget
         session.forget_session();
@@ -1339,11 +1419,12 @@ mod tests {
         assert!(session.compacted_summary.is_none()); // Summary CLEARED!
         assert!(session.compacted_range.is_none()); // Range CLEARED!
         assert_eq!(session.messages_sent_to_llm, 0);
-        // Task 6b: the fact tracker is fully reset (default), not merged
-        // into — facts must not leak across sessions.
+        // Facts from this conversation must not leak into a fresh session.
         assert!(
-            session.fact_tracker.is_empty(),
-            "forget_session must reset the fact tracker, not preserve it"
+            session.fact_tracker.modified_files().is_empty()
+                && session.fact_tracker.read_files().is_empty()
+                && session.fact_tracker.last_run().is_none(),
+            "forget_session must reset modified paths, reads and last-run"
         );
     }
 

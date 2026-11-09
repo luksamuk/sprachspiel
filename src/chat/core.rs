@@ -37,7 +37,7 @@ use crate::context_overflow::{
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_chunk_summary_prompt, build_compaction_prompt,
-    build_continuation_prompt, build_system_prompt,
+    build_consolidation_prompt, build_continuation_prompt, build_system_prompt,
 };
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
@@ -150,6 +150,7 @@ pub fn setup_coordinator(
     view_event_sender: super::view::ViewEventSender,
     llm_tx: Option<tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
+    fact_mirror: Option<crate::chat::fact_tracker::SharedFactTracker>,
 ) -> Coordinator {
     let coordinator = crate::query::ChatContext {
         provider,
@@ -235,6 +236,11 @@ pub fn setup_coordinator(
     // Set cancellation token for interrupting tool execution mid-loop
     if let Some(ct) = cancel_token {
         coordinator = coordinator.cancel_token(ct);
+    }
+
+    // Attach the per-turn mirror so completed-tool facts survive task death.
+    if let Some(mirror) = fact_mirror {
+        coordinator = coordinator.fact_mirror(mirror);
     }
 
     // Set real token count for accurate overflow detection
@@ -392,6 +398,23 @@ pub fn process_chat_response(
 /// precisely when the session worked hardest. The `Coordinator` is still
 /// alive here — it is dropped only at function return.
 ///
+/// Resolve a provider success at the cancellation boundary.
+///
+/// Cancellation is sticky: once the token is cancelled, even a response that
+/// raced to completion resolves as `Err(CANCELLED_BY_USER)` so the turn never
+/// reaches `process_send_result`, `StreamDone` or auto-compaction. The
+/// post-loop fact flush still runs, preserving completed-tool facts.
+fn resolve_provider_success(
+    response: LlmResponse,
+    cancel_token: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<LlmResponse, String> {
+    if cancel_token.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
+        Err(crate::chat::coordinator::CANCELLED_BY_USER.to_string())
+    } else {
+        Ok(response)
+    }
+}
+
 /// Borrow, not drain: the coordinator is per-turn (its tracker starts empty
 /// each call), and merge is cumulative on the session side, so nothing
 /// double-counts. The borrow checker accepts the two disjoint locals.
@@ -547,6 +570,7 @@ pub async fn send_message(
         system_prompt.clone(),
         Some(real_history_tokens),
         view_event_sender,
+        None,
         None,
         None,
     );
@@ -710,6 +734,7 @@ pub async fn send_message_stream(
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
+    fact_mirror: Option<crate::chat::fact_tracker::SharedFactTracker>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
     // Bridge to legacy ProviderOptions for Coordinator.
@@ -786,6 +811,7 @@ pub async fn send_message_stream(
         view_event_sender,
         Some(llm_tx.clone()),
         coordinator_cancel,
+        fact_mirror,
     );
 
     // Prepare messages with retrieval and continuation
@@ -882,7 +908,7 @@ pub async fn send_message_stream(
         };
 
         match current_result {
-            Ok(response) => break Ok(response),
+            Ok(response) => break resolve_provider_success(response, cancel_token.as_ref()),
             Err(e) => {
                 let provider_err = e.clone();
                 let category = classify_for_retry(&provider_err);
@@ -1278,12 +1304,14 @@ pub async fn compact_conversation(
 /// The model summarizes; the harness states facts. Appending rather than
 /// merging keeps the two provenances distinguishable — a fact the code wrote
 /// must not be reworded by a later summarization pass.
+///
+/// The staple is always appended, even when the tracker is empty: explicit
+/// None values are a true harness statement ("no tool activity"), while a
+/// missing block would be indistinguishable from a harness that forgot the
+/// block. The harness keeps `<unresolved-error>` out of the staple — that
+/// assessment stays with the model.
 fn finalize_summary(summary: String, session: &ChatSession) -> String {
     use crate::chat::fact_tracker::render_staple_block;
-
-    if session.fact_tracker.is_empty() {
-        return summary;
-    }
 
     // Read from the session, not from the compacted slice: the tracker is the
     // one source that saw the whole session, including turns before an earlier
@@ -1299,7 +1327,11 @@ fn finalize_summary(summary: String, session: &ChatSession) -> String {
 
 /// Recursively summarize message chunks.
 ///
-/// Summarizes each chunk independently, then combines the summaries.
+/// Summarizes each chunk independently, then combines the summaries. The
+/// final combination always runs through the terminal consolidation pass
+/// (`CONSOLIDATION_PROMPT`) — including a single chunk's summary, one extra
+/// rare LLM call — so a chunked final summary has the same model-owned
+/// schema as a single-pass one instead of remaining a bare chunk summary.
 /// If the combined summaries still exceed the context window, recurses
 /// (up to `MAX_RECURSION_DEPTH`). If recursion fails, returns an error
 /// and the caller falls back to truncation.
@@ -1371,23 +1403,21 @@ fn compact_recursive<'a>(
             }
         }
 
-        // If we only had one chunk, return its summary directly.
-        // The summary was obtained silently (stream=false); the caller
-        // (compact_conversation) will send it via CompactStreamDone
-        // which renders the final text via stream_done().
-        if summaries.len() == 1 {
-            return Ok(summaries.swap_remove(0));
-        }
-
-        // Combine summaries and check if they fit in context
+        // Combine the summaries for the terminal consolidation pass. A single
+        // chunk's summary joins with itself (no separator) and still goes
+        // through consolidation — one extra, rare LLM call — so every Layer-2
+        // final summary carries the same model-owned schema as a single-pass
+        // summary, instead of leaving a bare, schema-less chunk summary as
+        // the compaction result.
         let combined = summaries.join("\n\n---\n\n");
         let combined_tokens = crate::tokens::estimate_tokens(&combined);
         let context_window = model_config.num_ctx as usize;
 
         if combined_tokens + COMPACTION_PROMPT_OVERHEAD <= context_window {
-            // Combined summaries fit — do a final summarization pass.
-            // Stream the final consolidation so the user sees progress.
-            let final_prompt = build_chunk_summary_prompt(&combined);
+            // Combined summaries fit — run the terminal consolidation pass.
+            // It is the only streamed pass (the chunk summaries above were
+            // silent), so the user sees the final summary being written.
+            let final_prompt = build_consolidation_prompt(&combined);
             compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
         } else {
             // Combined summaries still too large — recurse
@@ -1554,7 +1584,13 @@ mod finalize_summary_tests {
     }
 
     #[test]
-    fn an_empty_tracker_leaves_the_summary_unchanged() {
+    fn an_empty_tracker_still_appends_its_explicit_nones() {
+        // Changed expectation (was: an empty tracker leaves the summary
+        // unchanged). The staple is now always appended: explicit None values
+        // are a true harness statement — "no tool activity" — while their
+        // absence would be indistinguishable from a harness that forgot the
+        // block. The latest user request still rides in whenever the session
+        // has user text.
         let mut session = ChatSession::new("test-model".into(), None, false);
         session.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -1563,11 +1599,138 @@ mod finalize_summary_tests {
         });
 
         let summary = "## Goal\nshipped the parser".to_string();
-        let out = finalize_summary(summary.clone(), &session);
+        let out = finalize_summary(summary, &session);
 
         assert_eq!(
-            out, summary,
-            "no tools ran — no block, not an empty scaffold"
+            out.matches("<compaction_facts>").count(),
+            1,
+            "exactly one staple even with nothing recorded"
         );
+        assert!(
+            out.starts_with("## Goal\nshipped the parser"),
+            "the model's prose still leads, untouched"
+        );
+        assert!(out.ends_with("</compaction_facts>"));
+        assert!(
+            out.contains("<modified-files>\nNone\n</modified-files>")
+                && out.contains("<read-files>\nNone\n</read-files>")
+                && out.contains("<last-run>\nNone\n</last-run>"),
+            "the empty tracker is stated as explicit Nones, not a blank or an omission: {out}"
+        );
+        assert!(
+            out.contains("<latest-user-request>\nfix the parser next\n</latest-user-request>"),
+            "the latest user request is present when the session has user text: {out}"
+        );
+        assert!(
+            !out.contains("<unresolved-error>"),
+            "the open-error assessment stays with the model, never the harness staple: {out}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod provider_success_cancellation_tests {
+    use super::*;
+
+    fn sample_response() -> LlmResponse {
+        LlmResponse {
+            model: "test-model".to_string(),
+            content: "a complete response".to_string(),
+            tool_calls: None,
+            thinking: None,
+            done_reason: Some("stop".to_string()),
+            eval_count: Some(12),
+            prompt_eval_count: Some(34),
+        }
+    }
+
+    /// Cancellation is sticky at the core boundary: once the token is
+    /// cancelled, even a fully completed provider response resolves as the
+    /// user cancellation instead of entering the success path (which would
+    /// send StreamDone and start non-cancellable auto-compaction).
+    #[test]
+    fn a_cancelled_provider_success_resolves_as_user_cancellation() {
+        let cancelled = tokio_util::sync::CancellationToken::new();
+        cancelled.cancel();
+
+        let result = resolve_provider_success(sample_response(), Some(&cancelled));
+        assert_eq!(
+            result.unwrap_err(),
+            crate::chat::coordinator::CANCELLED_BY_USER,
+            "a cancelled turn must never enter the success path, even if the response raced to completion"
+        );
+
+        let fresh = tokio_util::sync::CancellationToken::new();
+        assert!(
+            resolve_provider_success(sample_response(), Some(&fresh)).is_ok(),
+            "an uncancelled response keeps the normal success path"
+        );
+        assert!(
+            resolve_provider_success(sample_response(), None).is_ok(),
+            "the non-TUI call sites without a token keep the normal success path"
+        );
+    }
+}
+
+#[cfg(test)]
+mod terminal_consolidation_routing_tests {
+    /// `compact_recursive` is private and its end-to-end behavior needs a live
+    /// model, so the routing contract is pinned against the module's own
+    /// source: a Layer-2 result always leaves through the terminal
+    /// consolidation pass — a bare chunk summary must never be the answer.
+    ///
+    /// Needles are assembled at runtime: with `include_str!` the test module
+    /// is part of the scanned source, and a written-out needle would match
+    /// its own assertion instead of the implementation.
+    const SOURCE: &str = include_str!("core.rs");
+
+    fn needle(literal: &str, suffix: &str) -> String {
+        [literal, suffix].concat()
+    }
+
+    #[test]
+    fn the_one_chunk_result_is_consolidated_not_returned_directly() {
+        assert!(
+            !SOURCE.contains(&needle("swap_remove", "(0)")),
+            "Layer 2 must not return a chunk summary directly — even a single chunk \
+             routes through terminal consolidation so every final summary carries \
+             the same model-owned schema"
+        );
+    }
+
+    #[test]
+    fn the_final_consolidation_uses_the_terminal_prompt() {
+        assert!(
+            SOURCE.contains(&needle("build_consolidation_prompt", "(&combined)")),
+            "the terminal pass must apply the consolidation prompt to the combined summaries"
+        );
+        assert!(
+            !SOURCE.contains(&needle("build_chunk_summary_prompt", "(&combined)")),
+            "the terminal pass must not run on the plain chunk prompt"
+        );
+        assert!(
+            SOURCE.contains(&needle(
+                "build_chunk_summary_prompt",
+                "(&conversation_text)"
+            )),
+            "intermediate chunk summaries must keep the plain chunk prompt"
+        );
+    }
+
+    #[test]
+    fn both_send_paths_flush_facts_before_result_dispatch() {
+        let flush_marker = needle("flush_turn_facts", "(session, &coordinator);");
+        let flushes: Vec<_> = SOURCE.match_indices(&flush_marker).collect();
+        assert_eq!(flushes.len(), 2, "streaming and non-streaming both flush");
+
+        let dispatch_marker = needle("let processed_result = ", "match result {");
+        let dispatches: Vec<_> = SOURCE.match_indices(&dispatch_marker).collect();
+        assert_eq!(dispatches.len(), 2, "one result dispatch per send path");
+        for ((flush, _), (dispatch, _)) in flushes.iter().zip(dispatches.iter()) {
+            assert!(
+                flush < dispatch,
+                "the flush must happen before success/error dispatch drops the coordinator"
+            );
+        }
     }
 }

@@ -2,6 +2,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
+use crate::tools::tool_trait::has_tool_error_prefix;
 use sprachspiel_tool_derive::tool;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -199,8 +200,7 @@ pub async fn run_command(
     let result = match output_result {
         Ok(output) => {
             if output.success {
-                // Success - apply head/tail and return
-                apply_head_tail(output.stdout, head_val, tail_val)
+                format_success_output(output.stdout, head_val, tail_val)
             } else {
                 // Command failed - return stderr with helpful context
                 let exit_code_str = output
@@ -285,6 +285,22 @@ fn validate_command(command_line: &str) -> Result<Vec<String>, String> {
     }
 
     Ok(parts)
+}
+
+const COMMAND_SUCCESS_PREFIX: &str = "Command completed successfully (exit code 0).\n";
+
+/// Apply output limits, then disambiguate successful stdout that resembles an error.
+pub(crate) fn format_success_output(
+    stdout: String,
+    head: Option<usize>,
+    tail: Option<usize>,
+) -> String {
+    let output = apply_head_tail(stdout, head, tail);
+    if has_tool_error_prefix(&output) {
+        format!("{COMMAND_SUCCESS_PREFIX}{output}")
+    } else {
+        output
+    }
 }
 
 /// Apply head/tail truncation to output.
@@ -420,7 +436,7 @@ fn apply_sandbox_if_enabled(
     // Create ruleset
     let ruleset_result = Ruleset::default()
         .handle_access(AccessFs::from_all(abi))
-        .map_err(|e| format!("Failed to create Landlock ruleset: {}", e))?
+        .map_err(|e| format!("Error: Failed to create Landlock ruleset: {}", e))?
         .create();
 
     let ruleset_created = match ruleset_result {
@@ -442,14 +458,14 @@ fn apply_sandbox_if_enabled(
     debug_log!("Adding CWD rule (from_all)...");
     let mut ruleset_created = ruleset_created
         .add_rules(path_beneath_rules([&cwd], AccessFs::from_all(abi)))
-        .map_err(|e| format!("Failed to add CWD rule: {}", e))?;
+        .map_err(|e| format!("Error: Failed to add CWD rule: {}", e))?;
 
     // Add sprachspiel data directory with full access (for database/conversations)
     if let Some(ref data) = data_dir {
         debug_log!("Adding data dir rule (from_all): {:?}", data);
         ruleset_created = ruleset_created
             .add_rules(path_beneath_rules([data], AccessFs::from_all(abi)))
-            .map_err(|e| format!("Failed to add data dir rule: {}", e))?;
+            .map_err(|e| format!("Error: Failed to add data dir rule: {}", e))?;
     }
 
     // Add system read-only paths (from_read includes Execute!)
@@ -457,7 +473,7 @@ fn apply_sandbox_if_enabled(
         debug_log!("Adding system read-only paths (from_read)...");
         ruleset_created = ruleset_created
             .add_rules(path_beneath_rules(ro_paths, AccessFs::from_read(abi)))
-            .map_err(|e| format!("Failed to add read-only rules: {}", e))?;
+            .map_err(|e| format!("Error: Failed to add read-only rules: {}", e))?;
     }
 
     // Add sprachspiel config directory (read-only, for tools.toml, config.toml)
@@ -465,7 +481,7 @@ fn apply_sandbox_if_enabled(
         debug_log!("Adding config dir rule (from_read): {:?}", config_path);
         ruleset_created = ruleset_created
             .add_rules(path_beneath_rules([config_path], AccessFs::from_read(abi)))
-            .map_err(|e| format!("Failed to add config dir rule: {}", e))?;
+            .map_err(|e| format!("Error: Failed to add config dir rule: {}", e))?;
     }
 
     // Add /tmp with full access
@@ -473,7 +489,7 @@ fn apply_sandbox_if_enabled(
         debug_log!("Adding /tmp rule (from_all)...");
         ruleset_created = ruleset_created
             .add_rules(path_beneath_rules(["/tmp"], AccessFs::from_all(abi)))
-            .map_err(|e| format!("Failed to add /tmp rule: {}", e))?;
+            .map_err(|e| format!("Error: Failed to add /tmp rule: {}", e))?;
     }
 
     // Add /dev/null for output redirection (read/write)
@@ -481,7 +497,7 @@ fn apply_sandbox_if_enabled(
         debug_log!("Adding /dev/null rule (from_all)...");
         ruleset_created = ruleset_created
             .add_rules(path_beneath_rules(["/dev/null"], AccessFs::from_all(abi)))
-            .map_err(|e| format!("Failed to add /dev/null rule: {}", e))?;
+            .map_err(|e| format!("Error: Failed to add /dev/null rule: {}", e))?;
     }
 
     // Apply restrictions
@@ -501,7 +517,7 @@ fn apply_sandbox_if_enabled(
                 LANDLOCK_APPLIED.set(true);
                 return Ok(());
             }
-            return Err(format!("Failed to apply Landlock sandbox: {}", e));
+            return Err(format!("Error: Failed to apply Landlock sandbox: {}", e));
         }
     };
 
@@ -831,6 +847,67 @@ mod tests {
         let output = "line1\nline2\nline3".to_string();
         let result = apply_head_tail(output.clone(), None, None);
         assert_eq!(result, output);
+    }
+
+    #[test]
+    fn successful_output_with_an_error_prefix_is_marked_after_truncation() {
+        let result = format_success_output("ok\nError: later\nlast".to_string(), None, Some(2));
+
+        assert!(result.starts_with(COMMAND_SUCCESS_PREFIX));
+        assert!(result.ends_with("Error: later\nlast"));
+        assert!(!has_tool_error_prefix(&result));
+    }
+
+    #[test]
+    fn successful_output_without_an_error_prefix_is_unchanged() {
+        let result = format_success_output("ordinary output".to_string(), None, None);
+
+        assert_eq!(result, "ordinary output");
+    }
+
+    #[test]
+    fn every_recognized_prefix_is_disambiguated_for_successful_output() {
+        for prefix in [
+            "Error:",
+            "Access denied:",
+            "FILE NOT FOUND:",
+            "NOT A FILE:",
+            "NOT A DIRECTORY:",
+            "BLOCKED:",
+            "Error executing tool",
+        ] {
+            let result = format_success_output(format!("  {prefix} payload"), None, None);
+
+            assert!(result.starts_with(COMMAND_SUCCESS_PREFIX), "{prefix}");
+            assert!(!has_tool_error_prefix(&result), "{prefix}");
+            assert!(result.ends_with(&format!("  {prefix} payload")), "{prefix}");
+        }
+    }
+
+    #[test]
+    fn truncation_that_removes_the_error_prefix_needs_no_success_marker() {
+        let result = format_success_output("Error: first\nok\nlast".to_string(), None, Some(1));
+
+        assert_eq!(result, "last");
+    }
+
+    #[test]
+    fn head_preserves_the_success_marker_before_an_error_like_first_line() {
+        let result = format_success_output("Error: first\nok\nlast".to_string(), Some(1), None);
+
+        assert!(result.starts_with(COMMAND_SUCCESS_PREFIX));
+        assert!(result.ends_with("Error: first"));
+    }
+
+    #[test]
+    fn sandbox_failures_always_use_a_recognized_error_prefix() {
+        let src = include_str!("run_cmd.rs");
+        let unprefixed_failure = ["format!(\"", "Failed to"].concat();
+
+        assert!(
+            !src.contains(&unprefixed_failure),
+            "run_command producer failures must start with the shared Error: prefix"
+        );
     }
 
     #[test]

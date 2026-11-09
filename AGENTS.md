@@ -54,6 +54,22 @@ For details on adding new tools with feature flags, load the `project-convention
 - Derive `Debug`, `Clone` as needed, public fields for data structures
 - Use `Coordinator` pattern for chat sessions, add tools conditionally based on model capabilities
 
+### Comment Discipline
+
+Comments state what the code cannot say for itself.
+
+- **Keep:** what is not deducible from the code (why this design over the obvious
+  alternative, an invariant a refactor could silently break, a non-obvious constraint)
+  and load-bearing docs (public API contracts, migration behavior).
+- **Cut:** design-process narration, references to internal planning artifacts (task
+  numbers, review rounds), and rationale repeated where the item it describes already
+  carries it.
+- **Size:** a module or function header longer than ~8 lines is a smell — move the
+  content to the item it describes or delete it.
+
+No chain-of-thought in comment form. Prose size is not mechanically enforceable; the
+existing sensors cover the durable part (no tracker/process references in code comments).
+
 ## Code Deduplication
 
 ### Shared Utilities (`src/utils.rs`)

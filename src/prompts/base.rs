@@ -131,7 +131,10 @@ continue naturally from the checkpoint without repeating completed work.
 /// System prompt for conversation compaction
 ///
 /// Used when summarizing old messages during context overflow.
-/// Produces structured markdown summaries including XML-style fact blocks.
+/// Produces structured markdown summaries: the model owns the prose sections
+/// and `<unresolved-error>`; the harness staples the tool-record fact blocks
+/// (`<modified-files>`, `<read-files>`, `<last-run>`, `<latest-user-request>`)
+/// onto the final summary itself, so the prompt must not request them.
 /// Compaction prompt for summarizing conversation history.
 ///
 /// **No token or character limits are imposed on the summary.** The LLM
@@ -164,31 +167,14 @@ paraphrasing.]
 ## Discoveries
 [Key insights, decisions, and important context learned during the conversation]
 
-## Relevant Files
-List each file once, under the block that matches what actually happened to it.
-A file that was changed belongs in <modified-files>; a file merely inspected belongs in
-<read-files>. Do not list the same path in both.
-
-<modified-files>
-[Files created, written to, edited, or appended to. Paths as they were passed to the tool.]
-</modified-files>
-
-<read-files>
-[Files opened or inspected only.]
-</read-files>
-
-<last-run>
-[The last significant command run, quoted exactly as issued, then -> PASS or -> FAIL.
-If no command ran, write: None]
-</last-run>
-
 <unresolved-error>
 [An error or blocker still outstanding at the end of this segment. If there is none,
 write exactly: None]
 </unresolved-error>
 
-State each fact once. Do not repeat the content of these blocks inside the prose sections
-above — repetition dilutes attention for everything else in the summary.
+The file lists, the last command run, and the latest user request are collected by the
+harness from the session's own tool records — do not emit blocks for them here, and do
+not restate them in the prose sections. State each fact once.
 
 Quote commands and paths exactly. If you do not know a value, write None rather than
 inventing a plausible one.
@@ -214,6 +200,62 @@ Preserve enough detail so another assistant could seamlessly continue this work.
 pub const CHUNK_SUMMARY_PROMPT: &str = r#"Summarize this segment of a longer conversation concisely.
 Preserve decisions, file paths, commands and their outcomes, and anything the user asked for.
 Do not include full transcripts or conversational filler."#;
+
+/// Terminal consolidation prompt for recursive compaction.
+///
+/// Applied once at the end of Layer 2, to the combined chunk summaries.
+/// Even a single chunk's summary goes through this pass — one extra, rare
+/// LLM call — so every chunked final summary carries the same model-owned
+/// schema as a single-pass summary instead of remaining a bare, schema-less
+/// chunk summary. Intermediate chunk summaries keep using
+/// `CHUNK_SUMMARY_PROMPT`.
+///
+/// The model-owned contract mirrors `COMPACTION_PROMPT`: the prose sections
+/// plus `<unresolved-error>`. The mechanical blocks the harness staples
+/// (`<modified-files>`, `<read-files>`, `<last-run>`,
+/// `<latest-user-request>`) are deliberately not requested here — the
+/// terminal pass must not re-derive them from prose, and the prompt below
+/// says so explicitly.
+pub const CONSOLIDATION_PROMPT: &str = r#"The segments below are summaries of successive parts of one longer conversation.
+Combine them into a single final summary in MARKDOWN format.
+Preserve ALL relevant context needed to continue the conversation effectively.
+Drop the segment boundaries: write one continuous summary, not a list of segments.
+
+Use this structure:
+
+## Goal
+[What is the user trying to accomplish?]
+
+## Instructions
+[Important user constraints and preferences. Quote user preferences verbatim rather than
+paraphrasing.]
+
+## Progress
+**Completed:** [Work done so far]
+**Pending:** [Work remaining]
+
+## Discoveries
+[Key insights, decisions, and important context learned during the conversation]
+
+<unresolved-error>
+[An error or blocker still outstanding at the end of the conversation. If there is none,
+write exactly: None]
+</unresolved-error>
+
+The file lists, the last command run, and the latest user request are collected by the
+harness from the session's own tool records — do not emit blocks for them here, and do
+not restate them in the prose sections. State each fact once.
+
+Quote commands and paths exactly. If you do not know a value, write None rather than
+inventing a plausible one.
+
+DO NOT include:
+- Full message transcripts
+- Repeated information
+- Conversational filler
+- Staleness labels like "(stale)", "(N days ago)", "(unused)" — these become inaccurate over time; interpret the fact's content instead
+
+Preserve enough detail so another assistant could seamlessly continue this work."#;
 
 /// Template for continuation prompts
 ///
@@ -323,7 +365,6 @@ mod tests {
         assert!(COMPACTION_PROMPT.contains("## Instructions"));
         assert!(COMPACTION_PROMPT.contains("## Progress"));
         assert!(COMPACTION_PROMPT.contains("## Discoveries"));
-        assert!(COMPACTION_PROMPT.contains("## Relevant Files"));
     }
 
     #[test]
@@ -335,18 +376,33 @@ mod tests {
     }
 
     #[test]
-    fn test_compaction_prompt_declares_fact_blocks() {
-        for block in [
+    fn test_compaction_prompt_keeps_only_the_model_owned_block() {
+        // Ownership split: the model owns the prose sections and
+        // <unresolved-error> alone. <modified-files>, <read-files>, <last-run>
+        // and <latest-user-request> are stapled by the harness from its own
+        // tool records, so asking the model to emit them would duplicate the
+        // authoritative staple and let the two disagree. (The
+        // modified/read separation invariant moved with them — it lives in
+        // the harness staple's own tests, chat::fact_tracker.)
+        assert!(
+            COMPACTION_PROMPT.contains("<unresolved-error>"),
+            "the model still owns the open-error assessment"
+        );
+        for tag in [
             "<modified-files>",
             "<read-files>",
             "<last-run>",
-            "<unresolved-error>",
+            "<latest-user-request>",
         ] {
             assert!(
-                COMPACTION_PROMPT.contains(block),
-                "COMPACTION_PROMPT must declare {block} so the model's prose is structured"
+                !COMPACTION_PROMPT.contains(tag),
+                "harness-owned {tag} must come from the tool-record staple, not the model"
             );
         }
+        assert!(
+            !COMPACTION_PROMPT.contains("## Relevant Files"),
+            "the file list is the staple's job; a prose list would duplicate it"
+        );
     }
 
     #[test]
@@ -359,16 +415,6 @@ mod tests {
         assert!(
             !COMPACTION_PROMPT.contains("<latest-user-request>"),
             "the prompt must not request a fact the compaction input does not contain"
-        );
-    }
-
-    #[test]
-    fn test_compaction_prompt_separates_modified_from_read() {
-        assert!(
-            COMPACTION_PROMPT.contains("<modified-files>")
-                && COMPACTION_PROMPT.contains("<read-files>"),
-            "modified and read must be separate blocks — one bucket lets a model report a file it \
-             only inspected as though it had changed it, indistinguishably"
         );
     }
 
@@ -390,16 +436,79 @@ mod tests {
     }
 
     #[test]
+    fn test_consolidation_prompt_carries_the_model_owned_contract() {
+        // Terminal consolidation applies the same model-owned schema as
+        // COMPACTION_PROMPT to the combined chunk summaries, so every Layer-2
+        // final summary has the same shape as a single-pass summary.
+        for part in [
+            "MARKDOWN",
+            "## Goal",
+            "## Instructions",
+            "## Progress",
+            "## Discoveries",
+            "<unresolved-error>",
+            "write None rather than",
+        ] {
+            assert!(
+                CONSOLIDATION_PROMPT.contains(part),
+                "CONSOLIDATION_PROMPT must carry the shared model-owned contract: {part}"
+            );
+        }
+    }
+
+    #[test]
+    fn model_owned_prompt_contract_does_not_drift_between_layers() {
+        for shared in [
+            "do not emit blocks for them here",
+            "State each fact once.",
+            "Quote commands and paths exactly.",
+            "Staleness labels like",
+            "Preserve enough detail so another assistant could seamlessly continue this work.",
+        ] {
+            assert!(COMPACTION_PROMPT.contains(shared), "single pass: {shared}");
+            assert!(
+                CONSOLIDATION_PROMPT.contains(shared),
+                "consolidation: {shared}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_consolidation_prompt_leaves_mechanical_blocks_to_the_harness() {
+        // The consolidation pass must not re-derive the staple from prose:
+        // the harness staples the tool records after the summary is final.
+        for tag in [
+            "<modified-files>",
+            "<read-files>",
+            "<last-run>",
+            "<latest-user-request>",
+        ] {
+            assert!(
+                !CONSOLIDATION_PROMPT.contains(tag),
+                "CONSOLIDATION_PROMPT must not request harness-owned {tag}"
+            );
+        }
+        assert!(
+            CONSOLIDATION_PROMPT.contains("harness"),
+            "the terminal prompt must explicitly assign the mechanical blocks to the harness"
+        );
+    }
+
+    #[test]
     fn test_chunk_prompt_omits_fact_blocks() {
         // Intermediate chunk summaries feed a later consolidation pass. Fact
-        // blocks in a chunk would multiply (one set per chunk) and then be
-        // re-derived from prose by that pass — reintroducing exactly the
-        // unreliability the blocks exist to remove, on the large contexts
-        // where it matters most. The chunk prompt therefore asks for prose only.
-        for block in ["<modified-files>", "<last-run>", "<unresolved-error>"] {
+        // blocks here would be re-derived from prose by that pass — precisely
+        // the unreliability the harness-owned staple removes. Ask for prose only.
+        for tag in [
+            "<modified-files>",
+            "<read-files>",
+            "<last-run>",
+            "<latest-user-request>",
+            "<unresolved-error>",
+        ] {
             assert!(
-                !CHUNK_SUMMARY_PROMPT.contains(block),
-                "CHUNK_SUMMARY_PROMPT must not claim to emit {block}"
+                !CHUNK_SUMMARY_PROMPT.contains(tag),
+                "CHUNK_SUMMARY_PROMPT must not claim to emit {tag}"
             );
         }
         assert!(

@@ -3341,15 +3341,17 @@ mod tests {
             state.session.merge_fact_tracker(&turn);
         }
         assert!(
-            !state.session.fact_tracker.is_empty(),
+            !state.session.fact_tracker.modified_files().is_empty(),
             "setup must produce a non-empty tracker"
         );
 
         handle_new(&mut state);
 
         assert!(
-            state.session.fact_tracker.is_empty(),
-            "/new must reset the fact tracker — previous-session facts must not leak into the next compaction staple"
+            state.session.fact_tracker.modified_files().is_empty()
+                && state.session.fact_tracker.read_files().is_empty()
+                && state.session.fact_tracker.last_run().is_none(),
+            "/new must reset modified paths, reads and last-run from the previous session"
         );
         assert!(
             state.session.messages.is_empty(),

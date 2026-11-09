@@ -19,7 +19,9 @@
 //! drains these and applies them to the real `RatatuiView`.
 //!
 //! Ctrl+C during LLM processing cancels the background task via
-//! `CancellationToken`. The LLM result is discarded (not applied to state).
+//! `CancellationToken`. The task's completed-tool facts are preserved: the
+//! terminal `Cancelled` event folds them into the live session, and exit
+//! paths can fall back to a per-turn mirror if the task dies first.
 //!
 //! # Event Handler Decomposition
 //!
@@ -45,6 +47,12 @@ use super::llm_event::LlmEvent;
 use super::repl_state::ReplState;
 use super::view::ChatView;
 use super::view::RatatuiView;
+use crate::chat::fact_tracker::SharedFactTracker;
+
+/// Maximum wait for a cancelled task's terminal event after the user asks to
+/// exit. Normal unwinding is far shorter; the deadline only bounds the
+/// wedged-tool case, where the mirror already holds every completed fact.
+const QUIT_AFTER_DELIVERY_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Run the chat REPL using the TUI (ratatui + crossterm).
 ///
@@ -349,6 +357,10 @@ pub async fn run_chat_repl_tui(
     let mut llm_tx: Option<tokio::sync::mpsc::Sender<LlmEvent>> = None;
     // Receiver for LLM events (view actions + completion/error)
     let mut llm_rx: Option<tokio::sync::mpsc::Receiver<LlmEvent>> = None;
+    // Per-turn fallback mirror for completed-tool facts, shared with the task.
+    let mut fact_mirror: Option<SharedFactTracker> = None;
+    // Deadline for an exit requested while cancellation delivery is pending.
+    let mut quit_deadline: Option<tokio::time::Instant> = None;
 
     // ── Spinner tick interval ─────────────────────────────────────────
     // The spinner advances at a fixed cadence independent of streaming
@@ -411,28 +423,74 @@ pub async fn run_chat_repl_tui(
                                         &mut llm_tx,
                                         &mut llm_rx,
                                         &mut cancel_token,
+                                        &mut fact_mirror,
                                     )
                                     .await;
-                                    if action == LoopAction::Quit {
-                                        view.restore();
-                                        return Ok(());
+                                    match action {
+                                        LoopAction::Quit => {
+                                            view.restore();
+                                            return Ok(());
+                                        }
+                                        LoopAction::QuitAfterDelivery => {
+                                            if quit_deadline.is_some() {
+                                                let _ = event_loop::handle_eof(
+                                                    &mut *state,
+                                                    &mut view,
+                                                    &mut cancel_token,
+                                                    &mut llm_tx,
+                                                    &mut llm_rx,
+                                                    &mut fact_mirror,
+                                                    true,
+                                                )
+                                                .await;
+                                                view.restore();
+                                                return Ok(());
+                                            }
+                                            quit_deadline = Some(
+                                                tokio::time::Instant::now()
+                                                    + QUIT_AFTER_DELIVERY_GRACE,
+                                            );
+                                        }
+                                        LoopAction::Continue => {}
                                     }
                                 }
                                 Some(InputResult::Interrupted) => {
                                     // Ctrl+C — cancel running LLM task
                                     event_loop::handle_interrupt(
                                         state,
-                                        &mut view,
+                                        view.app_mut(),
                                         &mut cancel_token,
                                         &mut llm_tx,
                                         &mut llm_rx,
                                     );
                                 }
                                 Some(InputResult::Eof) => {
-                                    // Ctrl+D — quit: save session, history, and flush embeddings
-                                    event_loop::handle_eof(&mut *state, &mut view).await;
-                                    view.restore();
-                                    return Ok(());
+                                    // Ctrl+D — merge completed facts, save, and
+                                    // exit (bounded wait during cancellation).
+                                    let force = quit_deadline.is_some();
+                                    let action = event_loop::handle_eof(
+                                        &mut *state,
+                                        &mut view,
+                                        &mut cancel_token,
+                                        &mut llm_tx,
+                                        &mut llm_rx,
+                                        &mut fact_mirror,
+                                        force,
+                                    )
+                                    .await;
+                                    match action {
+                                        LoopAction::Quit => {
+                                            view.restore();
+                                            return Ok(());
+                                        }
+                                        LoopAction::QuitAfterDelivery => {
+                                            quit_deadline = Some(
+                                                tokio::time::Instant::now()
+                                                    + QUIT_AFTER_DELIVERY_GRACE,
+                                            );
+                                        }
+                                        LoopAction::Continue => {}
+                                    }
                                 }
                                 Some(InputResult::Error(_)) => {
                                     // Should not happen in TUI mode
@@ -465,7 +523,7 @@ pub async fn run_chat_repl_tui(
             }
 
             // ── LLM events (when LLM is running) ──────────────────
-            Some(llm_event) = async {
+            llm_event = async {
                 if let Some(rx) = &mut llm_rx {
                     rx.recv().await
                 } else {
@@ -473,14 +531,90 @@ pub async fn run_chat_repl_tui(
                     std::future::pending().await
                 }
             } => {
-                event_loop::handle_llm_event(
-                    llm_event,
-                    &mut *state,
-                    &mut view,
-                    &mut cancel_token,
-                    &mut llm_tx,
-                    &mut llm_rx,
-                );
+                match llm_event {
+                    Some(llm_event) => {
+                        event_loop::handle_llm_event(
+                            llm_event,
+                            &mut *state,
+                            &mut view,
+                            &mut fact_mirror,
+                            &mut cancel_token,
+                            &mut llm_tx,
+                            &mut llm_rx,
+                        );
+                        if quit_deadline.is_some()
+                            && !event_loop::cancellation_delivery_pending(&cancel_token, &llm_rx)
+                        {
+                            let _ = event_loop::handle_eof(
+                                &mut *state,
+                                &mut view,
+                                &mut cancel_token,
+                                &mut llm_tx,
+                                &mut llm_rx,
+                                &mut fact_mirror,
+                                true,
+                            )
+                            .await;
+                            view.restore();
+                            return Ok(());
+                        }
+                    }
+                    None => {
+                        event_loop::handle_llm_channel_closed(
+                            &mut *state,
+                            &mut view,
+                            &mut cancel_token,
+                            &mut llm_tx,
+                            &mut llm_rx,
+                            &mut fact_mirror,
+                        );
+                        if quit_deadline.is_some() {
+                            let _ = event_loop::handle_eof(
+                                &mut *state,
+                                &mut view,
+                                &mut cancel_token,
+                                &mut llm_tx,
+                                &mut llm_rx,
+                                &mut fact_mirror,
+                                true,
+                            )
+                            .await;
+                            view.restore();
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // ── Bounded exit while cancellation delivery is pending ─
+            _ = async {
+                if let Some(deadline) = quit_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await
+                }
+            } => {
+                // The deadline may outlive the pending window (e.g. `/new`
+                // cleared it): only an actually pending delivery exits.
+                if !event_loop::cancellation_delivery_pending(&cancel_token, &llm_rx) {
+                    quit_deadline = None;
+                } else {
+                    view.show_system(
+                        "Exiting without the cancelled turn's final event; facts from tools that already finished were saved.",
+                    );
+                    let _ = event_loop::handle_eof(
+                        &mut *state,
+                        &mut view,
+                        &mut cancel_token,
+                        &mut llm_tx,
+                        &mut llm_rx,
+                        &mut fact_mirror,
+                        true,
+                    )
+                    .await;
+                    view.restore();
+                    return Ok(());
+                }
             }
 
             // ── Spinner tick ─────────────────────────────────────

@@ -1,8 +1,9 @@
 //! Wiring check for compaction fact staples over the public API:
 //! record_tool -> merge_fact_tracker -> render_staple_block -> the staple
 //! riding `compacted_summary` into the context the LLM receives. The
-//! private single-exit contract (append-once, prose untouched,
-//! empty-unchanged) is pinned in `src/chat/core.rs: finalize_summary_tests`.
+//! private single-exit contract (append-once, prose untouched, always
+//! present — even an empty tracker renders its explicit Nones) is pinned in
+//! `src/chat/core.rs: finalize_summary_tests`.
 //!
 //! No live-LLM e2e: `compact_conversation` drives a real model, and the
 //! coordinator hook only runs inside a live tool-call turn.
@@ -42,7 +43,7 @@ fn a_session_that_recorded_facts_renders_a_staple_naming_them() {
     session.merge_fact_tracker(&sample_turn_facts());
 
     assert!(
-        !session.fact_tracker.is_empty(),
+        !session.fact_tracker.modified_files().is_empty(),
         "the merge must carry the turn's facts into the session"
     );
 
@@ -75,11 +76,18 @@ fn a_session_that_recorded_facts_renders_a_staple_naming_them() {
 }
 
 #[test]
-fn an_empty_session_produces_no_staple() {
+fn an_empty_session_still_renders_one_complete_staple() {
+    // Changed expectation (was: an empty session produces no staple). The
+    // staple is now always present: explicit None values are a true harness
+    // statement — "no tool activity" — while a missing block could equally
+    // mean the harness forgot to run. An untouched session and one with an
+    // empty merge must render identically: one complete block, all None.
     let untouched = ChatSession::new("test-model".into(), None, true);
     assert!(
-        untouched.fact_tracker.is_empty(),
-        "a session that touched no tool has nothing to staple"
+        untouched.fact_tracker.modified_files().is_empty()
+            && untouched.fact_tracker.read_files().is_empty()
+            && untouched.fact_tracker.last_run().is_none(),
+        "a session that touched no tool has no recorded facts"
     );
 
     // A turn-exit flush that recorded nothing (no tools ran) must not invent
@@ -87,9 +95,36 @@ fn an_empty_session_produces_no_staple() {
     let mut merged_nothing = ChatSession::new("test-model".into(), None, true);
     merged_nothing.merge_fact_tracker(&SessionFactTracker::default());
     assert!(
-        merged_nothing.fact_tracker.is_empty(),
-        "an empty merge must leave the session tracker empty"
+        merged_nothing.fact_tracker.modified_files().is_empty()
+            && merged_nothing.fact_tracker.read_files().is_empty()
+            && merged_nothing.fact_tracker.last_run().is_none(),
+        "an empty merge must leave modified paths, reads and last-run empty"
     );
+
+    // What finalize_summary (chat::core) now appends even for this session —
+    // asserted here at the harness-staple layer; the append itself is pinned
+    // in chat::core's finalize_summary_tests.
+    for session in [&untouched, &merged_nothing] {
+        let block = render_staple_block(&session.fact_tracker, None);
+
+        assert_eq!(
+            block.matches("<compaction_facts>").count(),
+            1,
+            "exactly one wrapper even with an empty tracker: {block}"
+        );
+        assert!(block.ends_with("</compaction_facts>"));
+        assert!(
+            block.contains("<modified-files>\nNone\n</modified-files>")
+                && block.contains("<read-files>\nNone\n</read-files>")
+                && block.contains("<last-run>\nNone\n</last-run>")
+                && block.contains("<latest-user-request>\nNone\n</latest-user-request>"),
+            "the empty tracker is stated as explicit Nones, not a blank or an omission: {block}"
+        );
+        assert!(
+            !block.contains("<unresolved-error>"),
+            "the harness staple must keep omitting the block it cannot know: {block}"
+        );
+    }
 }
 
 #[test]
@@ -179,7 +214,7 @@ fn the_staple_rides_compacted_summary_into_the_next_context() {
     // reset — facts are cumulative across compactions.
     session.set_compacted_summary_with_range(summary, None);
     assert!(
-        !session.fact_tracker.is_empty(),
+        !session.fact_tracker.modified_files().is_empty(),
         "compaction must not drop the accumulated facts"
     );
 

@@ -14,6 +14,25 @@ use serde::de::DeserializeOwned;
 /// error (propagated to the caller).
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
+/// Return whether tool text begins with one of the harness's error prefixes.
+///
+/// Raw command output is untrusted content; producers that know a command
+/// succeeded must disambiguate it before this predicate is applied.
+pub(crate) fn has_tool_error_prefix(result: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "Error:",
+        "Access denied:",
+        "FILE NOT FOUND:",
+        "NOT A FILE:",
+        "NOT A DIRECTORY:",
+        "BLOCKED:",
+        "Error executing tool",
+    ];
+
+    let trimmed = result.trim_start();
+    PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
+}
+
 /// Tool parameter trait: `DeserializeOwned + JsonSchema`.
 ///
 /// Any type that can be deserialized from JSON and has a JSON schema

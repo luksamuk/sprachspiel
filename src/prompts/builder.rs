@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 
 use super::base::{
-    CHUNK_SUMMARY_PROMPT, COMPACTION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION,
+    CHUNK_SUMMARY_PROMPT, COMPACTION_PROMPT, CONSOLIDATION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION,
     CONTINUATION_PROMPT_TEMPLATE, PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE,
     SYSTEM_PROMPT_SUMMARIZE,
 };
@@ -494,6 +494,19 @@ pub fn build_chunk_summary_prompt(conversation_text: &str) -> String {
     format!(
         "{}\n\nConversation:\n{}\n\n{}",
         SYSTEM_PROMPT_SUMMARIZE, conversation_text, CHUNK_SUMMARY_PROMPT
+    )
+}
+
+/// Build the terminal consolidation prompt for recursive compaction.
+///
+/// Runs once on the combined chunk summaries (including a single chunk's
+/// summary — one extra, rare LLM call) so the final summary carries the same
+/// model-owned schema as a single-pass compaction. The harness staples the
+/// mechanical fact blocks afterwards; see `CONSOLIDATION_PROMPT`.
+pub fn build_consolidation_prompt(segment_summaries: &str) -> String {
+    format!(
+        "{}\n\nSegment summaries:\n{}\n\n{}",
+        SYSTEM_PROMPT_SUMMARIZE, segment_summaries, CONSOLIDATION_PROMPT
     )
 }
 
