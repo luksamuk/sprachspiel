@@ -200,12 +200,15 @@ fn format_cosine_distance(diag: &EmbeddingDiagnostics) -> String {
 fn format_regime_classification(diag: &EmbeddingDiagnostics) -> String {
     let mut md = String::new();
     md.push_str("## Regime classification\n\n");
-    md.push_str("| Threshold (θ) | θ' | d̄ | Regime |\n");
-    md.push_str("|---------------|------|--------|--------|\n");
+    md.push_str("| Threshold (θ) | θ' | Pairs outside window | Regime |\n");
+    md.push_str("|---------------|------|----------------------|--------|\n");
     for r in &diag.regimes {
         md.push_str(&format!(
-            "| {:.2} | {:.2} | {:.6} | {} |\n",
-            r.theta, r.theta_prime, diag.mean_cosine_distance, r.regime
+            "| {:.2} | {:.2} | {:.1}% | {} |\n",
+            r.theta,
+            r.theta_prime,
+            (1.0 - r.window_mass) * 100.0,
+            r.regime
         ));
     }
     md.push('\n');
@@ -218,9 +221,11 @@ fn format_regime_classification(diag: &EmbeddingDiagnostics) -> String {
     let total_thresholds = diag.regimes.len();
 
     md.push_str(&blockquote(
-        "**TIGHT** means vector search discriminates well at that \
-         threshold — similar items cluster close together. **SPREAD** \
-         means results are not well differentiated.",
+        "**TIGHT** means a majority of pairs falls outside the similarity \
+         window at that threshold — a θ-cutoff separates most pairs, so \
+         search discriminates. **SPREAD** means most pairs fall inside \
+         the window — the threshold lets most pairs through, so results \
+         are not well differentiated.",
     ));
 
     if tight_count == total_thresholds {

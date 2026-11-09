@@ -917,7 +917,8 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
     use crate::db::Database;
     use crate::diagnostics::display::display_diagnostics;
     use crate::diagnostics::embeddings::{
-        EmbeddingSource, analyze_embeddings_with_progress, vectors_f32_to_f64,
+        EmbeddingSource, analyze_embeddings_with_progress, is_degenerate_vector,
+        vectors_f32_to_f64,
     };
     use crate::settings::DEFAULT_EMBEDDING_DIMENSIONS;
     use crate::spinner::{create_spinner, finish_spinner, is_spinner_enabled};
@@ -967,11 +968,24 @@ fn handle_diag(args: DiagArgs, cli: &Cli, settings: &Settings) -> AppResult<()> 
             if source_filter.is_none() || source_filter == Some($source) {
                 match db.$get_fn() {
                     Ok(vectors) => {
-                        let count = vectors.len();
-                        if count > 0 {
-                            all_vectors.extend(vectors.into_iter().map(|(_id, emb)| emb));
+                        // Zero-norm/degenerate rows (e.g. padding artifacts)
+                        // are dropped at collection: a zero vector paired
+                        // with anything reports cosine distance 1.0 and
+                        // would quietly tilt every pair statistic.
+                        let (usable, degenerate): (Vec<Vec<f32>>, Vec<Vec<f32>>) = vectors
+                            .into_iter()
+                            .map(|(_id, emb)| emb)
+                            .partition(|emb| !is_degenerate_vector(emb));
+                        let dropped = degenerate.len();
+                        if dropped > 0 {
+                            log::warn!(
+                                "Dropped {} zero-norm/degenerate embedding(s) from {}",
+                                dropped,
+                                $source
+                            );
                         }
-                        source_counts.push(($source, count));
+                        source_counts.push(($source, usable.len()));
+                        all_vectors.extend(usable);
                     }
                     Err(e) => {
                         eprintln!("Warning: Failed to read {} embeddings: {}", $source, e);
