@@ -50,10 +50,32 @@ document, not the sensor.
 | `tests/repo_references.rs` + `tests/docs_consistency.rs` | See AGENTS.md for the placement rule on tracker identifiers — out of `src/**`/`tests/**` assertion messages, allowed in `AGENTS.md`, skills, `doc/src/development/**`, `doc/src/CHANGELOG.md` |
 
 **A new sensor is not done until it has been shown to fail.** Green on first run
-proves only that the parser runs. Reinject the defect the sensor exists to catch,
-watch it fail with a useful message, then restore. Two sensors written during the
-September 2026 audits passed clean while covering nothing, because they excluded
-the very file they lived in, or matched `LUC-140` as an exemption key.
+proves only that the parser runs. Use this proof procedure:
+
+1. Run the sensor against the current defect, or inject exactly one defect into an
+   isolated worktree. For a placement invariant, test both removal and relocation —
+   presence alone does not prove ordering.
+2. For a source-scanning guard, restrict the scanned span to the production function
+   and assemble the searched needle at runtime; otherwise `include_str!` can match the
+   test itself and make the guard tautological. Prefer a needle that cannot occur as a
+   substring of another identifier — include the parameter list or the full path in the
+   runtime-built needle (`record_tool_with_mirror` contains `record_tool` as a substring) —
+   and anchor call sites by function name rather than exact indentation, because rustfmt
+   changes whitespace. Name an expression (call, assignment, or pattern), never a bare
+   identifier: production comments and doc text repeat identifiers and will satisfy a
+   bare-identifier guard while the code is wrong. When comparing offsets, find the second
+   marker in the slice after the first marker or inside the same function span — a global
+   `find` can hit an earlier definition or another call and reverse the ordering being
+   proven.
+3. A unit test of a helper does not prove production calls it. Add a construction guard
+   at the real call site, then remove that call during re-injection.
+4. Restore the isolated tree, regenerate `git diff --binary`, and `cmp` it with the
+   pre-injection patch before trusting the restoration. Re-run the sensor and watch it
+   pass. The byte comparison catches a botched manual restore that a green source guard
+   can miss.
+
+Two historical sensors passed clean while covering nothing because they excluded the
+very file they lived in or matched an identifier as an exemption key.
 
 ## Citation sensor: what it can and cannot see
 
@@ -96,6 +118,19 @@ the test would otherwise pass vacuously on an empty set.
 | Weekly | `cargo audit` | Known vulnerability advisories |
 | Weekly | `rg '#\[allow\(dead_code\)\]' --glob '*.rs' src/ \| grep -v '// ' \| wc -l` | Dead code accumulation |
 
+## Expected baseline failures
+
+- Run the same gate on a clean base worktree and the current tree, then compare error
+  **signatures** (message plus source location), not only totals. Report new, fixed and
+  unchanged signatures separately; an equal count can hide one fixed and one introduced.
+- Capture every command's exit status independently with `set +e` and per-command logs.
+  Never let `|| true`, a later successful command, or a pipeline without `pipefail`
+  convert an earlier failure into a green verification.
+- Parse `test result:` lines from the full log when reporting suite/test totals; do not
+  infer them from a filtered run or add counts mentally. After any later code or test
+  edit, re-run the full gate and re-parse: counts quoted from an earlier run go stale
+  as soon as a test or guard changes.
+
 ---
 
 # Bare `#[allow(dead_code)]` Check
@@ -110,7 +145,12 @@ Every `#[allow(dead_code)]` **MUST** have a justification comment on the same li
 
 ## Prefer `#[cfg(test)]` Over `#[allow(dead_code)]`
 
-**If a function is only called from tests, gate it with `#[cfg(test)]` instead of `#[allow(dead_code)]`.**
+**If a function is only called from unit tests, gate it with `#[cfg(test)]` instead of
+`#[allow(dead_code)]`.** Integration tests compile the library without its unit-test
+`cfg`, so a public convenience method used only there is still test-only API: remove
+the shortcut and assert through existing production getters/behavior instead of keeping
+or suppressing it. Check both lib and bin targets — a public method can appear used by
+library tests while the bin still reports it as dead.
 
 This makes the scope explicit and prevents accidental reliance in production code. The `#[allow(dead_code)]` approach hides the problem; `#[cfg(test)]` solves it.
 

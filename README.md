@@ -380,6 +380,7 @@ Developed with assistance from:
 - **Kimi K2.5** (Moonshot AI) — Architecture design
 - **Kimi K2.7 Code** (Moonshot AI) — Bugfixes
 - **Kimi K3** (Moonshot AI) — Skill and workflow management, planning and refinement
+- **Kimi K3.1 Pro** (Moonshot AI) — Architecture and programming
 - **MiniMax M2.7** (MiniMax) — Code review and testing
 - **MiniMax M3** (MiniMax) — Code review
 - **Nemotron 3 Super** (NVIDIA) — Bugfixes

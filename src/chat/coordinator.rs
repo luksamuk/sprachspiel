@@ -267,6 +267,15 @@ pub struct Coordinator {
     /// Stream ids emitted by the provider, kept in the same order as
     /// `tool_calls` so the ReAct execution loop can reuse them.
     stream_tool_call_ids: Vec<String>,
+    /// Facts extracted from tool executions, handed to the session after the turn
+    /// so they survive compaction. Fed in the tool loop; read by the compaction
+    /// stapler. Kept here rather than in the session because the tool name and
+    /// arguments are only in scope during execution.
+    fact_tracker: crate::chat::fact_tracker::SessionFactTracker,
+    /// Optional live mirror of `fact_tracker`, updated by the same capture
+    /// helper so exit paths can preserve completed-tool facts even when the
+    /// task dies before its terminal event.
+    fact_mirror: Option<crate::chat::fact_tracker::SharedFactTracker>,
 }
 
 /// Mutable state accumulated during a single streaming turn.
@@ -480,6 +489,8 @@ impl Coordinator {
             tool_call_counter: 0,
             react_retry_count: 0,
             stream_tool_call_ids: Vec::new(),
+            fact_tracker: crate::chat::fact_tracker::SessionFactTracker::default(),
+            fact_mirror: None,
         }
     }
 
@@ -940,6 +951,20 @@ impl Coordinator {
         self.ephemeral_messages.push(message);
     }
 
+    /// Facts captured from this turn's tool executions.
+    pub fn fact_tracker(&self) -> &crate::chat::fact_tracker::SessionFactTracker {
+        &self.fact_tracker
+    }
+
+    /// Attach the per-turn fallback mirror for completed-tool facts.
+    ///
+    /// The Coordinator remains the authority; the mirror only lets exit paths
+    /// preserve facts when the task never reaches its terminal event.
+    pub fn fact_mirror(mut self, mirror: crate::chat::fact_tracker::SharedFactTracker) -> Self {
+        self.fact_mirror = Some(mirror);
+        self
+    }
+
     /// Set the cancellation token for tool loop interruption.
     ///
     /// When the token is cancelled, the tool execution loop stops after
@@ -1064,17 +1089,34 @@ impl Coordinator {
         let messages = self.build_request_messages();
         let tools = self.tool_infos.clone();
         let options = self.options.clone();
-        let mut stream = self
-            .provider
-            .chat_stream(&self.model, messages, tools, options)
-            .await?;
+        // The connect/TTFB await is the one provider wait outside the
+        // cancellation-aware stream loop. Selecting against the token stops
+        // that await immediately; cancellation resolves as
+        // `CANCELLED_BY_USER` at this boundary, and the post-loop fact flush
+        // in core still preserves completed-tool facts.
+        let cancel_on_connect = self.cancel_token.clone();
+        let mut stream = if let Some(token) = cancel_on_connect.as_ref() {
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => {
+                    return Err(ProviderError::Other(CANCELLED_BY_USER.to_string()));
+                }
+                opened = self.provider.chat_stream(&self.model, messages, tools, options) => {
+                    opened?
+                }
+            }
+        } else {
+            self.provider
+                .chat_stream(&self.model, messages, tools, options)
+                .await?
+        };
 
         let mut state = StreamTurnState::new();
         self.stream_tool_call_ids.clear();
 
-        use futures::StreamExt;
-
-        while let Some(event_result) = stream.next().await {
+        while let Some(event_result) =
+            next_stream_event_or_cancel(&mut stream, self.cancel_token.as_ref()).await
+        {
             if let Some(ref ct) = self.cancel_token
                 && ct.is_cancelled()
             {
@@ -1266,6 +1308,20 @@ impl Coordinator {
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => {
                         let is_error = is_tool_error(&result);
+                        // Record the fact while tool name, arguments and outcome
+                        // are all in scope. The history keeps only the result
+                        // string with no tool name, so this is the last point
+                        // where the fact can be captured. The same helper feeds
+                        // the fallback mirror; a second capture site would let
+                        // the two views drift.
+                        crate::chat::fact_tracker::record_tool_with_mirror(
+                            &mut self.fact_tracker,
+                            self.fact_mirror.as_ref(),
+                            &tool_name,
+                            &serde_json::to_string(&args).unwrap_or_else(|_| args.to_string()),
+                            &result,
+                            is_error,
+                        );
                         self.emit_event(ChatEvent::ToolExecutionFinished {
                             tool_call_id: tool_call_id.clone(),
                             result: result.clone(),
@@ -1294,7 +1350,7 @@ impl Coordinator {
                     }
                 };
 
-                log::debug!("Tool response: {}", &result);
+                log::debug!("Tool response: {}", result);
 
                 let check_result = self.check_and_handle_context_overflow(result);
 
@@ -1504,6 +1560,27 @@ impl Coordinator {
     }
 }
 
+/// Wait for one provider event, releasing a stalled stream as soon as Ctrl+C
+/// cancels the token. None preserves the existing end-of-stream/partial-return path.
+async fn next_stream_event_or_cancel<S>(
+    stream: &mut S,
+    cancel_token: Option<&tokio_util::sync::CancellationToken>,
+) -> Option<Result<LlmStreamEvent, ProviderError>>
+where
+    S: futures::Stream<Item = Result<LlmStreamEvent, ProviderError>> + Unpin + ?Sized,
+{
+    use futures::StreamExt;
+
+    match cancel_token {
+        Some(token) => tokio::select! {
+            biased;
+            _ = token.cancelled() => None,
+            event = stream.next() => event,
+        },
+        None => stream.next().await,
+    }
+}
+
 /// Heuristic: detect whether a tool result string represents an error.
 ///
 /// Tools follow the convention "always return Ok(String)" (AGENTS.md: "Tools
@@ -1512,16 +1589,7 @@ impl Coordinator {
 /// This function checks the common error prefixes so the coordinator can flag
 /// `is_error=true` and the TUI can show a visual indicator (✗ prefix).
 fn is_tool_error(result: &str) -> bool {
-    // Trim leading whitespace — some tools may have leading spaces.
-    let trimmed = result.trim_start();
-    // Common error prefixes used across all tools.
-    trimmed.starts_with("Error:")
-        || trimmed.starts_with("Access denied:")
-        || trimmed.starts_with("FILE NOT FOUND:")
-        || trimmed.starts_with("NOT A FILE:")
-        || trimmed.starts_with("NOT A DIRECTORY:")
-        || trimmed.starts_with("BLOCKED:")
-        || trimmed.starts_with("Error executing tool")
+    crate::tools::tool_trait::has_tool_error_prefix(result)
 }
 
 #[cfg(test)]
@@ -1702,5 +1770,214 @@ Next step: Should ignore
             serde_json::json!({"path": "test.txt"}),
             "Valid args should be preserved"
         );
+    }
+
+    #[test]
+    fn fact_tracker_accumulates_across_tool_calls() {
+        let mut tracker = crate::chat::fact_tracker::SessionFactTracker::default();
+        tracker.record_tool("write_file", r#"{"path":"src/x.rs"}"#, "ok", false);
+        tracker.record_tool("read_file", r#"{"path":"src/y.rs"}"#, "1|x", false);
+
+        assert_eq!(tracker.modified_files().len(), 1);
+        assert_eq!(tracker.read_files().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_shell_command_reads_as_an_error() {
+        // `run_command` returns Ok with an "Error: … exited with code N"
+        // string on non-zero exit — `is_tool_error` must classify it so the
+        // tracker records FAIL, not PASS. Pins the pass/fail derivation.
+        assert!(is_tool_error(
+            "Error: Command 'cargo test' exited with code 1."
+        ));
+    }
+
+    #[test]
+    fn successful_shell_output_with_an_error_prefix_reads_as_pass() {
+        let result = crate::tools::run_cmd::format_success_output(
+            "Error: this line is ordinary command output".to_string(),
+            None,
+            None,
+        );
+        let is_error = is_tool_error(&result);
+        let mut tracker = crate::chat::fact_tracker::SessionFactTracker::default();
+        tracker.record_tool(
+            "run_command",
+            r#"{"command_line":"rg -n ^Error: src/"}"#,
+            &result,
+            is_error,
+        );
+
+        assert!(
+            !is_error,
+            "producer-confirmed exit 0 must not look like an error"
+        );
+        assert!(
+            tracker.last_run().expect("command ran").passed,
+            "the tracker must record PASS for successful error-looking stdout"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stalled_stream_returns_when_its_token_is_cancelled() {
+        let mut stream = futures::stream::pending::<Result<LlmStreamEvent, ProviderError>>();
+        let token = tokio_util::sync::CancellationToken::new();
+        let canceller = token.clone();
+        let cancel_task = tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            canceller.cancel();
+        });
+
+        let next = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            next_stream_event_or_cancel(&mut stream, Some(&token)),
+        )
+        .await
+        .expect("cancellation must release a stream with no incoming events");
+        assert!(next.is_none());
+        cancel_task.await.expect("cancellation task completes");
+    }
+
+    #[tokio::test]
+    async fn cancellation_preserves_events_received_before_a_stall() {
+        use futures::StreamExt;
+
+        let mut stream = futures::stream::iter([Ok(LlmStreamEvent::TextDelta {
+            delta: "partial".to_string(),
+        })])
+        .chain(futures::stream::pending());
+        let token = tokio_util::sync::CancellationToken::new();
+
+        let first = next_stream_event_or_cancel(&mut stream, Some(&token))
+            .await
+            .expect("the first event arrives")
+            .expect("the event is valid");
+        assert!(matches!(first, LlmStreamEvent::TextDelta { delta } if delta == "partial"));
+
+        token.cancel();
+        let stalled = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            next_stream_event_or_cancel(&mut stream, Some(&token)),
+        )
+        .await
+        .expect("an already-cancelled token must not wait for the pending tail");
+        assert!(stalled.is_none());
+    }
+
+    #[test]
+    fn the_coordinator_stream_uses_the_cancellation_aware_next() {
+        let source = include_str!("coordinator.rs");
+        let start = source
+            .find("async fn stream_turn(")
+            .expect("stream_turn exists");
+        let end = source[start..]
+            .find("fn build_request_messages")
+            .map(|offset| start + offset)
+            .expect("stream_turn body ends before request construction");
+        let body = &source[start..end];
+        let call = [
+            "next_stream_event_or_cancel",
+            "(&mut stream, self.cancel_token.as_ref())",
+        ]
+        .concat();
+        assert!(
+            body.contains(&call),
+            "the provider stream must wait through the cancellation-aware helper"
+        );
+    }
+
+    #[test]
+    fn the_provider_connect_wait_is_cancellation_aware() {
+        let source = include_str!("coordinator.rs");
+        let start = source
+            .find("async fn stream_turn(")
+            .expect("stream_turn exists");
+        let end = source[start..]
+            .find("fn build_request_messages")
+            .map(|offset| start + offset)
+            .expect("stream_turn body ends before request construction");
+        let body = &source[start..end];
+
+        let cancel = body
+            .find("token.cancelled()")
+            .expect("the provider connect wait must race the cancel token");
+        let open = body
+            .find("opened = self.provider.chat_stream")
+            .expect("the provider stream is opened inside stream_turn");
+        assert!(
+            cancel < open,
+            "the connect/TTFB await must be inside the cancellation-aware select"
+        );
+        assert!(
+            body.contains("tokio::select!"),
+            "cancellation during connect must race the token instead of waiting out the connect timeout"
+        );
+        let cancel_result_marker =
+            ["return Err(ProviderError::Other(", "CANCELLED_BY_USER"].concat();
+        let cancel_result = body.find(&cancel_result_marker).expect(
+            "a cancelled connect must resolve as the user cancellation, not an empty success",
+        );
+        assert!(
+            cancel_result < open,
+            "the connect cancel must resolve as an error before any provider stream is opened"
+        );
+    }
+
+    #[test]
+    fn fact_capture_hook_is_unique_and_precedes_overflow_handling() {
+        let source = include_str!("coordinator.rs");
+        let marker = ["crate::chat::fact_tracker::", "record_tool_with_mirror("].concat();
+        let calls: Vec<_> = source.match_indices(&marker).collect();
+        assert_eq!(
+            calls.len(),
+            1,
+            "the tool loop needs exactly one mirrored capture hook"
+        );
+
+        let direct = ["self.fact_tracker.", "record_tool("].concat();
+        assert!(
+            !source.contains(&direct),
+            "the capture site must go through the mirror-preserving helper"
+        );
+
+        let overflow = source
+            .find("self.check_and_handle_context_overflow(result)")
+            .expect("overflow handling remains in the tool loop");
+        assert!(
+            calls[0].0 < overflow,
+            "facts must be captured before an overflow can abandon the turn"
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "file-tools", feature = "document-tools"))]
+    fn tracked_tool_names_exist_in_the_registry() {
+        // A registry rename must break this test, not silently stop tracking.
+        // Adapted to the registry's real signature: it takes the app
+        // `Settings` so the runtime tool blacklist is honoured; defaults
+        // give an empty blacklist, i.e. every compiled-in tool.
+        //
+        // Gate: every tracked path tool lives in `files.rs`/`files_write.rs`
+        // (file-tools) and `import_document` in `documents.rs`
+        // (document-tools); `run_command` is always registered. No tracked
+        // tool belongs to system-tools.
+        let names =
+            crate::tools::registry::get_available_tool_names(&crate::settings::Settings::default());
+        for t in [
+            "write_file",
+            "edit_file",
+            "append_file",
+            "read_file",
+            "read_file_segment",
+            "count_lines",
+            "list_directory",
+            "import_document",
+            "run_command",
+        ] {
+            assert!(
+                names.contains(&t.to_string()),
+                "tool {t} no longer exists in the registry"
+            );
+        }
     }
 }

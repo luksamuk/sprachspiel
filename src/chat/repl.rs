@@ -210,6 +210,7 @@ pub async fn handle_user_message_stream(
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: tokio_util::sync::CancellationToken,
+    fact_mirror: crate::chat::fact_tracker::SharedFactTracker,
 ) {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
@@ -228,6 +229,13 @@ pub async fn handle_user_message_stream(
         llm_tx.clone(),
     )
     .await;
+    // Pre-turn compaction is deliberately not cancellation-aware. Check the
+    // token before its awaits end, otherwise a turn cancelled during that
+    // compaction would still launch a full provider request.
+    if cancel_token.is_cancelled() {
+        view.show_system("Cancelled before the turn started.");
+        return;
+    }
 
     let think_enabled = state.session.think;
     let mut compaction_cycles = 0;
@@ -251,6 +259,7 @@ pub async fn handle_user_message_stream(
             view,
             llm_tx.clone(),
             Some(cancel_token.clone()),
+            Some(std::sync::Arc::clone(&fact_mirror)),
         )
         .await
         {

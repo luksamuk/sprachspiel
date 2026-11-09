@@ -84,7 +84,16 @@ pub enum LlmEvent {
     Error(String),
 
     /// The LLM call was cancelled by the user (Ctrl+C).
-    Cancelled,
+    ///
+    /// Carries the task's session clone as it stood when the turn was
+    /// aborted. Core flushes the coordinator's fact tracker into that
+    /// clone before returning `CANCELLED_BY_USER`, so the session in this
+    /// event is the only remaining carrier of the cancelled turn's tool
+    /// facts; the event loop folds them into the live session on delivery.
+    Cancelled {
+        /// Session state at cancellation time (boxed to reduce enum size).
+        session: Box<ChatSession>,
+    },
 
     /// Tool calls were detected in the streaming response.
     ///
@@ -241,7 +250,7 @@ impl std::fmt::Debug for LlmEvent {
                 .field("percent", percent)
                 .finish_non_exhaustive(),
             Self::Error(msg) => f.debug_tuple("Error").field(msg).finish(),
-            Self::Cancelled => write!(f, "Cancelled"),
+            Self::Cancelled { session: _ } => f.debug_struct("Cancelled").finish_non_exhaustive(),
             Self::ToolCallStarted => write!(f, "ToolCallStarted"),
             Self::ToolCallPreview {
                 tool_call_id,
@@ -402,5 +411,21 @@ mod tests {
         let debug = format!("{:?}", event);
         assert!(debug.contains("CompactInfo"));
         assert!(debug.contains("Compacting in 3 chunks"));
+    }
+
+    /// `Cancelled` carries the task session whose fact tracker must be
+    /// folded into the live session; the debug format must stay brief so
+    /// an event dump never floods the log with the whole session.
+    #[test]
+    fn test_cancelled_event_carries_session_and_debug_stays_brief() {
+        let event = LlmEvent::Cancelled {
+            session: Box::new(ChatSession::default()),
+        };
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("Cancelled"), "{debug}");
+        assert!(
+            debug.len() < 100,
+            "Cancelled debug must not dump the session: {debug}"
+        );
     }
 }

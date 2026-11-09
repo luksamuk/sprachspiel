@@ -229,6 +229,8 @@ curl -s -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/j
 
 ## When to Resolve
 
+Before the fix work starts, record an explicit tracked todo for the reply-and-resolve step; implementation rounds can run long enough that the GitHub step is otherwise forgotten. Execute it only after the owner authorizes GitHub actions, then run the mandatory final check below.
+
 - **✅ Resolvido** → Resolve immediately after pushing fix
 - **✅ Verificado** → Resolve after confirming behavior is intentional
 - **📋 Deferred** → Resolve only if documented in code comments and IMPLEMENTATION.md. Add a reply noting where it's documented.

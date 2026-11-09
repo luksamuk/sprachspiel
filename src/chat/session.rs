@@ -135,6 +135,11 @@ pub struct ChatSession {
     /// Prevents concurrent reindex operations which would conflict on the database.
     #[serde(skip)]
     pub is_reindexing: Arc<std::sync::atomic::AtomicBool>,
+    /// Facts accumulated from tool executions, stapled onto compaction
+    /// summaries so they carry verified data instead of recalled prose.
+    /// Persisted as JSON in `conversations.fact_tracker`.
+    #[serde(default)]
+    pub fact_tracker: crate::chat::fact_tracker::SessionFactTracker,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -224,6 +229,7 @@ impl ChatSession {
             embedding_tx: None,
             async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            fact_tracker: crate::chat::fact_tracker::SessionFactTracker::default(),
         }
     }
 
@@ -288,6 +294,22 @@ impl ChatSession {
             embedding_tx: None,
             async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            fact_tracker: meta
+                .fact_tracker
+                .as_deref()
+                .map(|json| match serde_json::from_str(json) {
+                    Ok(tracker) => tracker,
+                    Err(e) => {
+                        // A corrupt column silently defaulting would present
+                        // the compaction an empty fact block for work that
+                        // really happened — keep the loss visible.
+                        log::warn!(
+                            "fact tracker column failed to deserialize ({e}); starting empty"
+                        );
+                        crate::chat::fact_tracker::SessionFactTracker::default()
+                    }
+                })
+                .unwrap_or_default(),
         })
     }
 
@@ -308,6 +330,10 @@ impl ChatSession {
         // references conversations(id)).
         self.ensure_conversation_exists();
 
+        // Bind the serialized tracker before the struct literal: the params
+        // struct borrows it.
+        let fact_tracker_json = serde_json::to_string(&self.fact_tracker).ok();
+
         // Update conversation metadata
         db.update_conversation_metadata(&crate::db::ConversationMetadataParams {
             id: &self.id,
@@ -319,6 +345,7 @@ impl ChatSession {
             think: self.think,
             tools: self.tools,
             tool_output_level: &self.tool_output_level.to_string(),
+            fact_tracker: fact_tracker_json.as_deref(),
             updated_at: self.updated_at,
         })?;
 
@@ -857,6 +884,10 @@ impl ChatSession {
         self.compacted_summary = None;
         self.compacted_range = None;
         self.messages_sent_to_llm = 0;
+        // Full reset, not a merge: the tracker's facts describe THIS
+        // conversation's tool activity, so they must not leak into the
+        // next session's compaction staple.
+        self.fact_tracker = crate::chat::fact_tracker::SessionFactTracker::default();
         self.updated_at = Utc::now();
     }
 
@@ -1138,6 +1169,47 @@ impl ChatSession {
         self.updated_at = Utc::now();
     }
 
+    /// Fold this turn's captured facts into the session's cumulative tracker.
+    ///
+    /// Merging rather than replacing: a file modified three turns before a
+    /// compaction is still modified at compaction time, and the tracker answers
+    /// "what changed in this session", not "what changed just now".
+    pub fn merge_fact_tracker(&mut self, incoming: &crate::chat::fact_tracker::SessionFactTracker) {
+        for path in incoming.modified_paths_by_recency() {
+            self.fact_tracker.record_tool(
+                "write_file",
+                &format!(
+                    r#"{{"path":{}}}"#,
+                    serde_json::to_string(&path).unwrap_or_default()
+                ),
+                "",
+                false,
+            );
+        }
+        for path in incoming.read_paths_by_recency() {
+            self.fact_tracker.record_tool(
+                "read_file",
+                &format!(
+                    r#"{{"path":{}}}"#,
+                    serde_json::to_string(&path).unwrap_or_default()
+                ),
+                "",
+                false,
+            );
+        }
+        if let Some(run) = incoming.last_run() {
+            self.fact_tracker.record_tool(
+                "run_command",
+                &format!(
+                    r#"{{"command_line":{}}}"#,
+                    serde_json::to_string(&run.command).unwrap_or_default()
+                ),
+                "",
+                !run.passed,
+            );
+        }
+    }
+
     /// Rename the session
     pub fn rename(&mut self, name: String) {
         self.name = Some(name);
@@ -1154,6 +1226,141 @@ impl Default for ChatSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fact_tracker_survives_a_merge() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        let mut incoming = crate::chat::fact_tracker::SessionFactTracker::default();
+        incoming.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+
+        session.merge_fact_tracker(&incoming);
+
+        assert_eq!(
+            session.fact_tracker.modified_files(),
+            vec![crate::chat::fact_tracker::normalize_path("src/a.rs")]
+        );
+    }
+
+    /// Merging the same completed-turn tracker twice is a redundant replay,
+    /// not an accumulating merge: re-touching a key bumps its sequence but
+    /// preserves the relative order, so a mirror fallback followed by the
+    /// authoritative terminal merge cannot corrupt recency or eviction.
+    #[test]
+    fn merging_the_same_tracker_twice_is_idempotent() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        let mut incoming = crate::chat::fact_tracker::SessionFactTracker::default();
+        incoming.record_tool("write_file", r#"{"path":"src/first.rs"}"#, "ok", false);
+        incoming.record_tool("read_file", r#"{"path":"src/second.rs"}"#, "1|x", false);
+        incoming.record_tool(
+            "run_command",
+            r#"{"command_line":"make test"}"#,
+            "ok",
+            false,
+        );
+
+        session.merge_fact_tracker(&incoming);
+        let once = (
+            session.fact_tracker.modified_files(),
+            session.fact_tracker.read_files(),
+            session
+                .fact_tracker
+                .last_run()
+                .map(|run| run.command.clone()),
+        );
+
+        session.merge_fact_tracker(&incoming);
+        let twice = (
+            session.fact_tracker.modified_files(),
+            session.fact_tracker.read_files(),
+            session
+                .fact_tracker
+                .last_run()
+                .map(|run| run.command.clone()),
+        );
+
+        assert_eq!(
+            once, twice,
+            "a redundant full-tracker merge must not change visible facts or recency"
+        );
+    }
+
+    #[test]
+    fn merge_eviction_uses_global_recency_across_turns() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        for turn in 1..=2 {
+            let mut incoming = crate::chat::fact_tracker::SessionFactTracker::default();
+            for i in 0..40 {
+                incoming.record_tool(
+                    "write_file",
+                    &format!(r#"{{"path":"src/turn{turn}-{i}.rs"}}"#),
+                    "ok",
+                    false,
+                );
+            }
+            session.merge_fact_tracker(&incoming);
+        }
+
+        let files = session.fact_tracker.modified_files();
+        assert_eq!(files.len(), 50, "the session cap remains in force");
+        for i in 0..30 {
+            let old = crate::chat::fact_tracker::normalize_path(&format!("src/turn1-{i}.rs"));
+            assert!(
+                !files.contains(&old),
+                "globally oldest path survived: {old}"
+            );
+        }
+        for i in 30..40 {
+            let retained = crate::chat::fact_tracker::normalize_path(&format!("src/turn1-{i}.rs"));
+            assert!(
+                files.contains(&retained),
+                "newer path was evicted: {retained}"
+            );
+        }
+        assert!(files.contains(&crate::chat::fact_tracker::normalize_path(
+            "src/turn2-39.rs"
+        )));
+    }
+
+    #[test]
+    fn fact_tracker_survives_a_sqlite_roundtrip() {
+        let db = crate::db::Database::in_memory().expect("in-memory db");
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        session.db = Some(std::sync::Arc::new(db));
+        session.merge_fact_tracker(&{
+            let mut t = crate::chat::fact_tracker::SessionFactTracker::default();
+            t.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+            t.record_tool(
+                "run_command",
+                r#"{"command_line":"make lint"}"#,
+                "ok",
+                false,
+            );
+            t
+        });
+        session.save_sqlite().expect("save");
+
+        let loaded =
+            ChatSession::load_sqlite(session.db.as_ref().unwrap(), &session.id).expect("load");
+
+        assert_eq!(
+            loaded.fact_tracker.modified_files(),
+            vec![crate::chat::fact_tracker::normalize_path("src/a.rs")],
+            "the tracker must survive the database"
+        );
+        assert_eq!(
+            loaded.fact_tracker.last_run().map(|r| r.command.as_str()),
+            Some("make lint")
+        );
+    }
+
+    #[test]
+    fn a_new_compaction_replaces_the_summary_rather_than_appending() {
+        let mut session = ChatSession::new("m".into(), None, true);
+        session.set_compacted_summary_with_range("OLD".into(), Some((0, 1)));
+        session.set_compacted_summary_with_range("NEW".into(), Some((0, 2)));
+        let summary = session.compacted_summary.as_deref().expect("set");
+        assert_eq!(summary, "NEW", "each compaction replaces the whole summary");
+    }
 
     #[test]
     fn test_clear_messages_preserves_summary() {
@@ -1193,10 +1400,16 @@ mod tests {
             ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
+        session.merge_fact_tracker(&{
+            let mut t = crate::chat::fact_tracker::SessionFactTracker::default();
+            t.record_tool("write_file", r#"{"path":"src/a.rs"}"#, "ok", false);
+            t
+        });
 
         // Verify setup
         assert_eq!(session.messages.len(), 1);
         assert!(session.compacted_summary.is_some());
+        assert!(!session.fact_tracker.modified_files().is_empty());
 
         // Forget
         session.forget_session();
@@ -1206,6 +1419,13 @@ mod tests {
         assert!(session.compacted_summary.is_none()); // Summary CLEARED!
         assert!(session.compacted_range.is_none()); // Range CLEARED!
         assert_eq!(session.messages_sent_to_llm, 0);
+        // Facts from this conversation must not leak into a fresh session.
+        assert!(
+            session.fact_tracker.modified_files().is_empty()
+                && session.fact_tracker.read_files().is_empty()
+                && session.fact_tracker.last_run().is_none(),
+            "forget_session must reset modified paths, reads and last-run"
+        );
     }
 
     #[test]
