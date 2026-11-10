@@ -50,8 +50,8 @@ pub struct IndexingInit {
     // Config flag — passed to run_indexing_probe(), not read via field access
     pub probe: bool,
     /// Per-side task-steering templates (from
-    /// `[indexing].query_prefix`/`doc_prefix` or the deprecated
-    /// single `prefix`), already resolved and validated at load.
+    /// `[indexing].query_prefix`/`doc_prefix`), already resolved and
+    /// validated at load.
     pub prefixes: crate::embeddings::PrefixTemplates,
     /// Context length for the embedding model (from `num_ctx` on
     /// the model alias in `models.toml`). `None` = use

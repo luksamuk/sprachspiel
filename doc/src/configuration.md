@@ -348,9 +348,7 @@ model = "nomic"
 # embeddinggemma-2). {content} required exactly once; {title} valid
 # only in the doc template (missing/empty/whitespace title renders
 # "none"). Unknown {..} placeholders fail the config. Empty templates
-# embed the text unchanged (default). The legacy single-sided `prefix`
-# key is deprecated: applying it to both sides warns at startup, and
-# combining it with these keys fails the config.
+# embed the text unchanged (default).
 # query_prefix = "task: search result | query: {content}"
 # doc_prefix = "title: {title} | text: {content}"
 ```

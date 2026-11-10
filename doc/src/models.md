@@ -190,10 +190,6 @@ are validated at config load: a non-empty template must carry `{content}`
 exactly once, unknown `{...}` placeholders fail the config, and putting
 `{title}` in the query template is an error.
 
-The single-sided legacy key `prefix` is deprecated: set alone, its value is
-applied to both sides (with a deprecation warning at startup); combined with
-either side key, the config fails to load.
-
 | Model | Side format | Config |
 |-------|-------------|--------|
 | nomic-embed-text-v2-moe | `search_document: ` / `search_query: ` | `doc_prefix = "search_document: {content}"` (legacy default) + `query_prefix = "search_query: {content}"` |
