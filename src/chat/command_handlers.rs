@@ -1168,6 +1168,7 @@ pub async fn handle_compact(
         &state.settings,
         state.agents_md.as_deref(),
         llm_tx,
+        None,
     )
     .await
     {
@@ -1290,6 +1291,7 @@ pub async fn handle_retry(
         state.cli_soulless,
         None,
         view,
+        None,
     )
     .await
     {
@@ -1308,8 +1310,9 @@ pub async fn handle_retry(
                 });
             }
 
-            // Auto-compact if needed (after response, before next input)
-            super::compaction::CompactionContext {
+            // Auto-compact if needed (after response, before next input).
+            // Non-TUI path: no turn token, the compaction commits here.
+            let _ = super::compaction::CompactionContext {
                 provider: &state.provider,
                 model_config: &state.model_config,
                 session: &mut state.session,
@@ -1318,6 +1321,7 @@ pub async fn handle_retry(
                 context_window: result.context_window,
                 view,
                 llm_tx: llm_tx.clone(),
+                cancel_token: None,
             }
             .compact_if_needed()
             .await;

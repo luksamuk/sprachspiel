@@ -229,7 +229,7 @@ pub async fn handle_key_line(
                             msg_count
                         ))]);
                         view.set_llm_state(LlmState::Compacting);
-                        spawn_compact_task(state, llm_tx, llm_rx);
+                        spawn_compact_task(state, llm_tx, llm_rx, cancel_token);
                     }
                     return LoopAction::Continue;
                 }
@@ -370,12 +370,10 @@ pub fn handle_interrupt(
         // loop's Sender clone is what makes `recv() == None` reachable if
         // every producer dies before sending that event.
         *llm_tx = None;
-    } else if app.llm_state() == LlmState::Compacting {
-        // Compaction is not cancellable — ignore Ctrl+C
-        app.add_message(ChatMessage::system(
-            "Compaction in progress, please wait...".to_string(),
-        ));
     }
+    // Compaction now cancels through the same channel as LLM tasks: while
+    // it runs, this slot holds the compaction task's token. With neither
+    // a token nor a running task, Ctrl+C has nothing to cancel.
 }
 
 /// Handle Ctrl+D (quit) — merge completed-tool facts, save, then exit.
@@ -1111,8 +1109,13 @@ fn spawn_llm_task(
             return;
         }
 
-        // Use the streaming handler which sends tokens through the LlmEvent channel
-        super::repl::handle_user_message_stream(
+        // The handler decides the terminal: `Complete` — including a
+        // response preserved across a trailing compaction cancel — commits
+        // this clone to the event loop; `Cancelled` (turn aborted before a
+        // final response existed) discards it. The outcome is read from the
+        // terminal, never re-derived from the token, because a cancellation
+        // after the response is a completed turn.
+        let turn_terminal = super::repl::handle_user_message_stream(
             &line_owned,
             &mut task_state,
             &mut channel_view as &mut dyn ChatView,
@@ -1124,7 +1127,7 @@ fn spawn_llm_task(
 
         // Error and Cancelled are sent sequentially by this task on one channel.
         // handle_error therefore defers cleanup when this token is cancelled.
-        if token.is_cancelled() {
+        if turn_terminal == super::repl::TurnTerminal::Cancelled {
             let _ = task_llm_tx
                 .send(LlmEvent::Cancelled {
                     // Core flushed the coordinator facts into the task's
@@ -1174,16 +1177,18 @@ fn spawn_llm_task(
 /// Spawn a compaction task in the background with streaming summary display.
 ///
 /// Analogous to `spawn_llm_task` but for `/compact`. Creates a dedicated
-/// `llm_tx`/`llm_rx` channel pair. The background task calls
-/// `compact_conversation()` which streams `CompactStreamToken` events.
-/// On completion, sends `CompactStreamDone` with the summary and range
-/// (or `Error` on failure). The event loop handles finalization.
-///
-/// Unlike LLM tasks, compaction is NOT cancellable — Ctrl+C is ignored.
+/// `llm_tx`/`llm_rx` channel pair and registers the same turn
+/// `cancel_token` the LLM tasks use, so Ctrl+C during compaction cancels
+/// it the same way. The background task calls `compact_conversation()`
+/// which streams `CompactStreamToken` events. On completion, sends
+/// `CompactStreamDone` with the summary and range (or `Error` on
+/// failure). A cancelled compaction sends the terminal `Cancelled` event
+/// with the untouched clone: the summary never reaches the session.
 fn spawn_compact_task(
     state: &mut ReplState,
     llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+    cancel_token: &mut Option<CancellationToken>,
 ) {
     // Precondition: must not be called while an LLM task is already running,
     // as this would clobber the active channel. Callers must guard against this.
@@ -1196,6 +1201,12 @@ fn spawn_compact_task(
     *llm_tx = Some(task_llm_tx.clone());
     *llm_rx = Some(new_llm_rx);
 
+    // Compaction shares the LLM tasks' cancellation channel: Ctrl+C while
+    // the summary is being written stops the model calls and discards the
+    // candidate summary.
+    let token = CancellationToken::new();
+    *cancel_token = Some(token.clone());
+
     // Clone the state for the compaction task
     let task_state = state.clone();
 
@@ -1207,6 +1218,7 @@ fn spawn_compact_task(
             &task_state.settings,
             task_state.agents_md.as_deref(),
             task_llm_tx.clone(),
+            Some(token.clone()),
         )
         .await
         {
@@ -1216,10 +1228,30 @@ fn spawn_compact_task(
                     .await;
             }
             Err(e) => {
-                let _ = task_llm_tx.send(LlmEvent::Error(e.to_string())).await;
+                // The cancelled path keeps the summary out of the session:
+                // the terminal Cancelled event discards this clone whole.
+                if e.is_cancelled_or_token(&token) {
+                    let _ = task_llm_tx
+                        .send(LlmEvent::Cancelled {
+                            session: Box::new(task_state.session),
+                        })
+                        .await;
+                } else {
+                    let _ = task_llm_tx.send(LlmEvent::Error(e.to_string())).await;
+                }
             }
         }
     });
+}
+
+impl super::compaction::CompactionFailure {
+    /// Whether this failure is cancellation — checked against the owning
+    /// token, never against error text. A Model failure still counts when
+    /// the token was cancelled mid-call: the provider error that raced the
+    /// interrupt must not replace the terminal Cancelled event.
+    fn is_cancelled_or_token(&self, token: &CancellationToken) -> bool {
+        self.is_cancelled() || token.is_cancelled()
+    }
 }
 
 // ── Mouse event handler ────────────────────────────────────────────────

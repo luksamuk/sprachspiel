@@ -191,6 +191,19 @@ async fn run_startup_tasks(
     }
 }
 
+/// How the in-task turn ended, deciding the terminal event the LLM task
+/// sends back to the event loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnTerminal {
+    /// The turn produced a committed state — the event loop applies the
+    /// task's session clone. A response preserved across a trailing
+    /// compaction cancellation is still `Complete`.
+    Complete,
+    /// Ctrl+C aborted the turn with no final response to preserve — the
+    /// event loop discards the task's session clone.
+    Cancelled,
+}
+
 /// Handle user input with streaming token display.
 ///
 /// This is the streaming equivalent of `handle_user_message()`. Instead of
@@ -203,7 +216,8 @@ async fn run_startup_tasks(
 /// - `LlmEvent::StreamDone` — final content and metrics after stream completes
 /// - `LlmEvent::ViewAction(action)` — view events from coordinator callbacks
 ///
-/// The `cancel_token` allows aborting the stream on Ctrl+C.
+/// The `cancel_token` allows aborting the stream on Ctrl+C and is threaded
+/// through every continuation, compaction and retry the turn performs.
 pub async fn handle_user_message_stream(
     line: &str,
     state: &mut super::repl_state::ReplState,
@@ -211,7 +225,7 @@ pub async fn handle_user_message_stream(
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: tokio_util::sync::CancellationToken,
     fact_mirror: crate::chat::fact_tracker::SharedFactTracker,
-) {
+) -> TurnTerminal {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
@@ -227,6 +241,7 @@ pub async fn handle_user_message_stream(
         context_window,
         view,
         llm_tx.clone(),
+        Some(&cancel_token),
     )
     .await;
     // Pre-turn compaction is deliberately not cancellation-aware. Check the
@@ -234,7 +249,7 @@ pub async fn handle_user_message_stream(
     // compaction would still launch a full provider request.
     if cancel_token.is_cancelled() {
         view.show_system("Cancelled before the turn started.");
-        return;
+        return TurnTerminal::Cancelled;
     }
 
     let think_enabled = state.session.think;
@@ -264,12 +279,27 @@ pub async fn handle_user_message_stream(
         .await
         {
             Ok(result) => {
-                match process_send_result(state, result, user_message_id, view, llm_tx.clone())
-                    .await
+                match process_send_result(
+                    state,
+                    result,
+                    user_message_id,
+                    view,
+                    llm_tx.clone(),
+                    Some(&cancel_token),
+                )
+                .await
                 {
                     ProcessResult::Success => {
-                        // Auto-extract facts from recent user messages (autoDream-lite)
-                        try_auto_extract_facts(state, view).await;
+                        // Auto-extract facts from recent user messages (autoDream-lite).
+                        // A turn that ended in cancellation — including one whose
+                        // trailing compaction was cancelled with the response
+                        // preserved — makes no further provider calls.
+                        if !cancel_token.is_cancelled() {
+                            try_auto_extract_facts(state, view).await;
+                        }
+                    }
+                    ProcessResult::Cancelled => {
+                        return TurnTerminal::Cancelled;
                     }
                     ProcessResult::ContinuationError(e) => {
                         view.show_error(&format!("Continuation failed: {}", e));
@@ -285,7 +315,7 @@ pub async fn handle_user_message_stream(
                 // The Ctrl+C handler in the event loop already showed "Cancelled."
                 if error_str == super::coordinator::CANCELLED_BY_USER {
                     log::debug!("LLM task cancelled during tool execution");
-                    break;
+                    return TurnTerminal::Cancelled;
                 }
 
                 // Send LlmEvent::Error DIRECTLY to the event loop's
@@ -315,13 +345,26 @@ pub async fn handle_user_message_stream(
                     .send(super::llm_event::LlmEvent::Error(formatted))
                     .await;
 
-                match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
+                match handle_overflow_error(
+                    state,
+                    &error_str,
+                    view,
+                    llm_tx.clone(),
+                    Some(&cancel_token),
+                )
+                .await
+                {
                     OverflowHandleResult::NotOverflow => {
                         break;
                     }
                     OverflowHandleResult::HandledContinue => {
                         view.show_warning("Please retry your message.");
                         break;
+                    }
+                    OverflowHandleResult::Cancelled => {
+                        // Cancellation outranks recovery: no continuation,
+                        // no further LLM call, terminal Cancelled.
+                        return TurnTerminal::Cancelled;
                     }
                     OverflowHandleResult::InterToolCompaction { tools_executed } => {
                         compaction_cycles += 1;
@@ -357,6 +400,8 @@ pub async fn handle_user_message_stream(
             }
         }
     }
+
+    TurnTerminal::Complete
 }
 
 /// Attempt auto-extraction of facts from recent user messages (autoDream-lite).

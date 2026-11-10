@@ -13,7 +13,7 @@
 //! Layer 3 (State): repl_state.rs
 //! ```
 
-use super::compaction::CompactionContext;
+use super::compaction::{CompactionContext, CompactionOutcome};
 use super::core::{SendMessageResult, TokenMetrics, send_message};
 use super::llm_event::LlmEvent;
 use super::repl_state::ReplState;
@@ -24,8 +24,25 @@ use crate::context_overflow::{
 use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use std::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// How a processed send result ended, deciding what the LLM task sends
+/// back to the event loop as the turn's terminal event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessResult {
+    /// The turn completed — the session clone carries the committed state
+    /// (including a preserved final response even when the trailing
+    /// auto-compaction was cancelled).
+    Success,
+    /// Ctrl+C aborted the turn before a final response existed: no
+    /// continuation was sent, no auto-extract runs, and the event loop
+    /// discards the task's session clone.
+    Cancelled,
+    /// A continuation step failed with a model error (not cancellation).
+    ContinuationError(String),
+}
 
 /// Parse inter-tool compaction error from a ProviderError string.
 ///
@@ -63,6 +80,7 @@ pub async fn process_send_result(
     user_message_id: Option<i64>,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: Option<&CancellationToken>,
 ) -> ProcessResult {
     // Save pre-tool content before final response
     if let Some(pre_content) = &result.pre_tool_content {
@@ -77,15 +95,35 @@ pub async fn process_send_result(
     // Handle continuation if LLM paused for compaction
     let (final_response, final_thinking, final_metrics, context_window, _system_prompt) =
         if result.continuation_needed.is_some() {
-            match handle_continuation(state, result, user_message_id, view, llm_tx.clone()).await {
-                Ok(cont_result) => (
+            match handle_continuation(
+                state,
+                result,
+                user_message_id,
+                view,
+                llm_tx.clone(),
+                cancel_token,
+            )
+            .await
+            {
+                Ok(ContinuationFlow::Completed(cont_result)) => (
                     cont_result.response,
                     cont_result.thinking,
                     cont_result.metrics,
                     cont_result.context_window,
                     cont_result.system_prompt,
                 ),
+                Ok(ContinuationFlow::Cancelled) => {
+                    // Nothing accumulated reaches the session: the event
+                    // loop discards this task's clone and the terminal
+                    // Cancelled event frees the channel for the next turn.
+                    return ProcessResult::Cancelled;
+                }
                 Err(e) => {
+                    // A cancelled LLM call inside the chain must not read as
+                    // a model failure.
+                    if cancel_token.is_some_and(CancellationToken::is_cancelled) {
+                        return ProcessResult::Cancelled;
+                    }
                     return ProcessResult::ContinuationError(e.to_string());
                 }
             }
@@ -118,8 +156,12 @@ pub async fn process_send_result(
         });
     }
 
-    // Auto-compact if needed (after response, before next input)
-    CompactionContext {
+    // Auto-compact if needed (after response, before next input). A trailing
+    // cancellation is the post-response case: the response above is already
+    // in the session, the summary candidate never reaches it, and there are
+    // no further LLM calls — the turn commits below with the preserved
+    // response and no pending compaction.
+    let compact_outcome = CompactionContext {
         provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
@@ -128,26 +170,31 @@ pub async fn process_send_result(
         context_window,
         view,
         llm_tx,
+        cancel_token,
     }
     .compact_if_needed()
     .await;
+    if compact_outcome.is_cancelled() {
+        view.show_system("Auto-compaction cancelled; response preserved.");
+        log::info!("Auto-compaction cancelled with final response preserved");
+    }
 
     // Sync global TODO state back to session before saving
     state.session.todos = crate::tools::todo::save_to_session();
 
-    if !state.session.anonymous
-        && let Err(e) = state.session.save_sqlite()
-    {
+    // Cancelled post-response turns commit here with the preserved response;
+    // the prompt-token reset only accompanies a compaction that ran.
+    if !state.session.anonymous && let Err(e) = state.session.save_sqlite() {
         log::debug!("Warning: Could not save session: {}", e);
+    }
+    if matches!(compact_outcome, CompactionOutcome::Completed)
+        && !state.session.anonymous
+        && let Some(db) = state.session.db.as_ref()
+    {
+        let _ = db.clear_conversation_prompt_tokens(&state.session.id);
     }
 
     ProcessResult::Success
-}
-
-/// Result of processing a send_message result
-pub enum ProcessResult {
-    Success,
-    ContinuationError(String),
 }
 
 /// Check if pre-tool compaction is needed and perform it if necessary
@@ -159,6 +206,7 @@ pub async fn check_and_compact_before_tool(
     context_window: usize,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: Option<&CancellationToken>,
 ) {
     // First check if we need actual compaction (88% threshold)
     if needs_buffered_compaction(&state.session, context_window) {
@@ -176,7 +224,7 @@ pub async fn check_and_compact_before_tool(
             ),
         );
 
-        CompactionContext {
+        let outcome = CompactionContext {
             provider: &state.provider,
             model_config: &state.model_config,
             session: &mut state.session,
@@ -185,9 +233,16 @@ pub async fn check_and_compact_before_tool(
             context_window,
             view,
             llm_tx,
+            cancel_token,
         }
         .compact_if_needed()
         .await;
+        // A pre-turn cancellation lands before the provider request: the
+        // caller re-checks the token after this returns and stops the turn
+        // with nothing persisted, so the outcome here needs no routing.
+        if outcome.is_cancelled() {
+            log::info!("Pre-tool compaction cancelled");
+        }
     } else if needs_pre_tool_compaction(&state.session, context_window) {
         // At 75%: just show warning, don't compact yet
         let ctx_status = check_context_overflow(&state.session, system_prompt, context_window);
@@ -230,6 +285,21 @@ pub struct ContinuationResult {
     pub system_prompt: String,
 }
 
+/// How a continuation chain ended.
+///
+/// `Cancelled` is separate from the error path on purpose: a Ctrl+C in the
+/// chain aborts the whole turn with nothing committed, while a model error
+/// may still leave the accumulated partial response to be shown.
+#[derive(Debug)]
+pub enum ContinuationFlow {
+    /// The chain finished (possibly with a partial response after a
+    /// non-cancellation error); carries the accumulated result.
+    Completed(ContinuationResult),
+    /// Ctrl+C — no continuation request was sent past the cancellation
+    /// and no accumulated content is returned.
+    Cancelled,
+}
+
 /// Handle continuation after LLM pauses for context compaction
 ///
 /// Processes nested continuations (max 3) when the LLM emits `<continuation_needed>`.
@@ -244,15 +314,19 @@ pub struct ContinuationResult {
 ///
 /// # Returns
 ///
-/// * `Ok(ContinuationResult)` - Contains accumulated response, thinking, and metrics
-/// * `Err(...)` - If any continuation fails
+/// * `Ok(ContinuationFlow::Completed)` - The chain finished; the accumulated
+///   response, thinking, and metrics are carried in the result
+/// * `Ok(ContinuationFlow::Cancelled)` - Ctrl+C reached the chain's
+///   compaction or a continuation request; nothing farther runs
+/// * `Err(...)` - If a continuation step fails with a model error
 pub async fn handle_continuation(
     state: &mut ReplState,
     initial_result: SendMessageResult,
     user_message_id: Option<i64>,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
-) -> AppResult<ContinuationResult> {
+    cancel_token: Option<&CancellationToken>,
+) -> AppResult<ContinuationFlow> {
     let mut final_response = initial_result.response.clone();
     let mut final_thinking = initial_result.thinking.clone();
     let mut final_metrics = initial_result.metrics.clone();
@@ -272,7 +346,7 @@ pub async fn handle_continuation(
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
-    CompactionContext {
+    let outcome = CompactionContext {
         provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
@@ -281,9 +355,15 @@ pub async fn handle_continuation(
         context_window: continuation_context_window,
         view,
         llm_tx: llm_tx.clone(),
+        cancel_token,
     }
     .compact_if_needed()
     .await;
+    // No continuation request is sent past a cancelled compaction: the
+    // summary never reached the session and the chain stops here.
+    if outcome.is_cancelled() {
+        return Ok(ContinuationFlow::Cancelled);
+    }
 
     // Send first continuation request
     let think_enabled = state.session.think;
@@ -302,6 +382,7 @@ pub async fn handle_continuation(
         state.cli_soulless,
         Some(continuation_tag),
         view,
+        cancel_token,
     )
     .await;
 
@@ -351,7 +432,7 @@ pub async fn handle_continuation(
                 ));
 
                 // Compact again before next continuation
-                CompactionContext {
+                let outcome = CompactionContext {
                     provider: &state.provider,
                     model_config: &state.model_config,
                     session: &mut state.session,
@@ -360,9 +441,15 @@ pub async fn handle_continuation(
                     context_window: cont_result.context_window,
                     view,
                     llm_tx: llm_tx.clone(),
+                    cancel_token,
                 }
                 .compact_if_needed()
                 .await;
+                // Nested chains obey the same rule: a cancelled compaction
+                // ends the chain before the next request is built.
+                if outcome.is_cancelled() {
+                    return Ok(ContinuationFlow::Cancelled);
+                }
 
                 let next_result = send_message(
                     &state.provider,
@@ -379,6 +466,7 @@ pub async fn handle_continuation(
                     state.cli_soulless,
                     Some(next_tag),
                     view,
+                    cancel_token,
                 )
                 .await;
 
@@ -416,19 +504,24 @@ pub async fn handle_continuation(
                         cont_result = n_result;
                     }
                     Err(e) => {
+                        // A cancelled continuation request is not a model
+                        // failure: the token says the user wanted out.
+                        if cancel_token.is_some_and(CancellationToken::is_cancelled) {
+                            return Ok(ContinuationFlow::Cancelled);
+                        }
                         view.show_error(&format!("Continuation failed: {}", e));
                         break;
                     }
                 }
             }
 
-            Ok(ContinuationResult {
+            Ok(ContinuationFlow::Completed(ContinuationResult {
                 response: final_response,
                 thinking: final_thinking,
                 metrics: final_metrics,
                 context_window: initial_result.context_window,
                 system_prompt: initial_result.system_prompt,
-            })
+            }))
         }
         Err(e) => {
             view.show_error(&format!("Continuation failed: {}", e));
@@ -451,6 +544,9 @@ pub enum OverflowHandleResult {
     HandledContinue,
     /// Inter-tool compaction happened, caller should send continuation prompt
     InterToolCompaction { tools_executed: Vec<String> },
+    /// Ctrl+C reached the recovery compaction — the turn ends cancelled;
+    /// no continuation is sent and nothing was applied to the session.
+    Cancelled,
 }
 
 /// Handle context overflow error during tool execution
@@ -474,13 +570,20 @@ pub async fn handle_overflow_error(
     error_str: &str,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: Option<&CancellationToken>,
 ) -> OverflowHandleResult {
     if is_inter_tool_compaction_error(error_str) {
-        return handle_inter_tool_compaction_error(state, error_str, view, llm_tx).await;
+        return handle_inter_tool_compaction_error(state, error_str, view, llm_tx, cancel_token)
+            .await;
     }
 
     if !error_str.contains("Context overflow during tool execution") {
         return OverflowHandleResult::NotOverflow;
+    }
+
+    // A pre-existing cancellation outranks the recovery: no more LLM calls.
+    if cancel_token.is_some_and(CancellationToken::is_cancelled) {
+        return OverflowHandleResult::Cancelled;
     }
 
     view.show_error("Context overflow during tool execution. Attempting recovery...");
@@ -489,7 +592,7 @@ pub async fn handle_overflow_error(
     log::debug!("Removed {} messages after overflow error", removed);
 
     view.show_progress("Auto-compacting after overflow error...");
-    CompactionContext {
+    let outcome = CompactionContext {
         provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
@@ -498,9 +601,16 @@ pub async fn handle_overflow_error(
         context_window: state.model_config.num_ctx as usize,
         view,
         llm_tx,
+        cancel_token,
     }
     .compact_if_needed()
     .await;
+    // A recovered session with no summary is committed to the database only
+    // by a surviving turn; once cancellation wins the race, the clone the
+    // caller holds is discarded instead.
+    if outcome.is_cancelled() {
+        return OverflowHandleResult::Cancelled;
+    }
 
     if !state.session.anonymous
         && let Err(save_err) = state.session.save_sqlite()
@@ -524,12 +634,17 @@ async fn handle_inter_tool_compaction_error(
     error_str: &str,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: Option<&CancellationToken>,
 ) -> OverflowHandleResult {
     let Some((tokens_used, context_window, tools_executed)) =
         parse_inter_tool_compaction_error(error_str)
     else {
         return OverflowHandleResult::NotOverflow;
     };
+
+    if cancel_token.is_some_and(CancellationToken::is_cancelled) {
+        return OverflowHandleResult::Cancelled;
+    }
 
     let start_time = Instant::now();
     let tokens_before = state.session.history_real_tokens();
@@ -552,7 +667,7 @@ async fn handle_inter_tool_compaction_error(
         tools_executed.join(", ")
     );
 
-    CompactionContext {
+    let outcome = CompactionContext {
         provider: &state.provider,
         model_config: &state.model_config,
         session: &mut state.session,
@@ -561,9 +676,15 @@ async fn handle_inter_tool_compaction_error(
         context_window,
         view,
         llm_tx,
+        cancel_token,
     }
     .compact_if_needed()
     .await;
+    if outcome.is_cancelled() {
+        // The cancelled inter-tool compaction never applies a summary, and
+        // no continuation prompt leaves the loop — the turn ends cancelled.
+        return OverflowHandleResult::Cancelled;
+    }
 
     let tokens_after = state.session.history_real_tokens();
     let messages_after = state.session.messages.len();
