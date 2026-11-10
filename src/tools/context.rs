@@ -33,7 +33,7 @@ tokio::task_local! {
 
 /// The turn's cancellation token for tools, when one is in scope.
 pub fn get_cancel_token() -> Option<Arc<CancellationToken>> {
-    TOOL_CANCEL.try_with(|ct| Arc::clone(ct)).ok()
+    TOOL_CANCEL.try_with(Arc::clone).ok()
 }
 
 /// Whether the user asked for a safe stop inside the current tool scope.
