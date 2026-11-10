@@ -449,6 +449,7 @@ pub async fn send_message(
     cli_soulless: bool,
     continuation_tag: Option<&ContinuationTag>,
     view: &mut dyn ChatView,
+    cancel_token: Option<&tokio_util::sync::CancellationToken>,
 ) -> AppResult<SendMessageResult> {
     let provider_options = model_config.build_provider_options();
     // Bridge to legacy ProviderOptions for Coordinator.
@@ -571,7 +572,7 @@ pub async fn send_message(
         Some(real_history_tokens),
         view_event_sender,
         None,
-        None,
+        cancel_token.cloned(),
         None,
     );
 
@@ -659,8 +660,12 @@ pub async fn send_message(
                         }
                     }
 
-                    // Cancel-aware sleep (non-streaming: no cancel token)
-                    let _completed = sleep_or_cancel(retry_delay(&category, attempts), None).await;
+                    // Cancel-aware sleep: a retry slept through Ctrl+C must
+                    // end the turn instead of firing the provider again.
+                    let elapsed = sleep_or_cancel(retry_delay(&category, attempts), cancel_token).await;
+                    if !elapsed {
+                        break Err(crate::chat::coordinator::CANCELLED_BY_USER.to_string());
+                    }
 
                     continue;
                 } else {
@@ -1089,11 +1094,14 @@ pub async fn compact_conversation(
     _settings: &Settings,
     _agents_md: Option<&str>,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
-) -> AppResult<(String, Option<(usize, usize)>)> {
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
+) -> Result<(String, Option<(usize, usize)>), super::compaction::CompactionFailure> {
     use crate::context_overflow::get_compaction_range_default;
 
     if session.messages.is_empty() {
-        return Err("No messages to compact.".into());
+        return Err(super::compaction::CompactionFailure::Model(
+            "No messages to compact.".into(),
+        ));
     }
 
     // Determine which messages to summarize (middle compaction)
@@ -1150,9 +1158,25 @@ pub async fn compact_conversation(
     if fits_in_context(&pruned_messages, context_window, COMPACTION_PROMPT_OVERHEAD) {
         let conversation_text = build_conversation_text(&pruned_messages);
         let compact_prompt = build_compaction_prompt(&conversation_text);
-        match compact_with_llm(provider, model_config, compact_prompt, llm_tx.clone(), true).await {
+        match compact_with_llm(
+            provider,
+            model_config,
+            compact_prompt,
+            llm_tx.clone(),
+            true,
+            cancel_token.clone(),
+        )
+        .await
+        {
             Ok(summary) => layer_summary = Some(summary),
-            Err(e) if is_prompt_too_long_error(&e.to_string()) => {
+            // Cancellation is not a layer failure to retry past: the user
+            // asked for everything to stop, so layers 2 and 3 never run.
+            Err(super::compaction::CompactionFailure::Cancelled) => {
+                return Err(super::compaction::CompactionFailure::Cancelled);
+            }
+            Err(super::compaction::CompactionFailure::Model(e))
+                if is_prompt_too_long_error(&e) =>
+            {
                 log::warn!(
                     "Layer 1 single-pass compaction failed (prompt too long: {}). \
                      Estimated {} tokens with overhead {} but model rejected. \
@@ -1194,7 +1218,9 @@ pub async fn compact_conversation(
             message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
         });
 
-        match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0).await {
+        match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0, cancel_token.clone())
+            .await
+        {
             Ok(summary) => {
                 log::info!(
                     "Layer 2 (chunked summarization): succeeded with {} chunks",
@@ -1202,7 +1228,13 @@ pub async fn compact_conversation(
                 );
                 layer_summary = Some(summary);
             }
-            Err(e) => {
+            Err(super::compaction::CompactionFailure::Cancelled) => {
+                // An interrupted chunk run never reaches truncation: the
+                // fallback would erase history on a cancellation, and the
+                // truncation's final LLM call would fire after Ctrl+C.
+                return Err(super::compaction::CompactionFailure::Cancelled);
+            }
+            Err(super::compaction::CompactionFailure::Model(e)) => {
                 log::warn!(
                     "Layer 2 (chunked summarization) failed: {}. Falling back to truncation.",
                     e
@@ -1245,9 +1277,16 @@ pub async fn compact_conversation(
 
         // Layer 3 is the last resort. If even truncation fails to fit the prompt,
         // compaction is truly impossible — return a clear error with diagnostics.
-        match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true).await {
+        match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true, cancel_token)
+            .await
+        {
             Ok(summary) => layer_summary = Some(summary),
-            Err(e) if is_prompt_too_long_error(&e.to_string()) => {
+            Err(super::compaction::CompactionFailure::Cancelled) => {
+                return Err(super::compaction::CompactionFailure::Cancelled);
+            }
+            Err(super::compaction::CompactionFailure::Model(e))
+                if is_prompt_too_long_error(&e) =>
+            {
                 log::error!(
                     "Layer 3 fallback truncation STILL exceeded context window. \
                      Estimated {} tokens (truncated from {}), context window {}, overhead {}. \
@@ -1262,7 +1301,7 @@ pub async fn compact_conversation(
                 // diagnostics, which cannot be stapled to a summary that
                 // will never exist. Layer 1/2's too-long errors fall
                 // through to the next layer instead of exiting here.
-                return Err(format!(
+                return Err(super::compaction::CompactionFailure::Model(format!(
                     "Compaction failed: even after truncation to {:.0}% of context, \
                      the prompt still exceeds the model's window. \
                      Original estimate: {} tokens, truncated estimate: {} tokens, \
@@ -1272,8 +1311,7 @@ pub async fn compact_conversation(
                     estimate_compaction_tokens(&truncation.remaining_messages),
                     context_window,
                     e
-                )
-                .into());
+                )));
             }
             Err(e) => return Err(e),
         }
@@ -1291,9 +1329,9 @@ pub async fn compact_conversation(
     let summary = match layer_summary {
         Some(summary) => summary,
         None => {
-            return Err(
+            return Err(super::compaction::CompactionFailure::Model(
                 "Internal error: compaction finished without a summary from any layer.".into(),
-            );
+            ));
         }
     };
     Ok((finalize_summary(summary, session), range))
@@ -1345,14 +1383,20 @@ fn compact_recursive<'a>(
     chunks: &'a [crate::context_overflow::MessageChunk],
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     depth: usize,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<String>> + Send + 'a>> {
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
+) -> std::pin::Pin<
+    Box<
+        dyn std::future::Future<Output = Result<String, super::compaction::CompactionFailure>>
+            + Send
+            + 'a,
+    >,
+> {
     Box::pin(async move {
         if depth >= MAX_RECURSION_DEPTH {
-            return Err(format!(
+            return Err(super::compaction::CompactionFailure::Model(format!(
                 "Max recursion depth ({}) reached in chunked summarization",
                 MAX_RECURSION_DEPTH
-            )
-            .into());
+            )));
         }
 
         let mut summaries = Vec::with_capacity(chunks.len());
@@ -1387,13 +1431,25 @@ fn compact_recursive<'a>(
 
             // Intermediate chunk summaries are processed silently (stream=false).
             // Only the final consolidation pass streams to the TUI.
-            match compact_with_llm(provider, model_config, chunk_prompt, llm_tx.clone(), false)
-                .await
+            match compact_with_llm(
+                provider,
+                model_config,
+                chunk_prompt,
+                llm_tx.clone(),
+                false,
+                cancel_token.clone(),
+            )
+            .await
             {
                 Ok(summary) => summaries.push(summary),
+                Err(super::compaction::CompactionFailure::Cancelled) => {
+                    // Stop the chunk run where it stands: no further chunk,
+                    // no terminal consolidation — the user asked to stop.
+                    return Err(super::compaction::CompactionFailure::Cancelled);
+                }
                 Err(e) => {
                     log::warn!(
-                        "Failed to summarize chunk {}/{}: {}",
+                        "Failed to summarize chunk {}/{}: {:?}",
                         i + 1,
                         chunks.len(),
                         e
@@ -1418,7 +1474,8 @@ fn compact_recursive<'a>(
             // It is the only streamed pass (the chunk summaries above were
             // silent), so the user sees the final summary being written.
             let final_prompt = build_consolidation_prompt(&combined);
-            compact_with_llm(provider, model_config, final_prompt, llm_tx, true).await
+            compact_with_llm(provider, model_config, final_prompt, llm_tx, true, cancel_token)
+                .await
         } else {
             // Combined summaries still too large — recurse
             log::debug!(
@@ -1441,7 +1498,15 @@ fn compact_recursive<'a>(
             let chunk_budget = max_chunk_tokens(context_window);
             let sub_chunks = split_into_chunks(&summary_messages, chunk_budget);
 
-            compact_recursive(provider, model_config, &sub_chunks, llm_tx, depth + 1).await
+            compact_recursive(
+                provider,
+                model_config,
+                &sub_chunks,
+                llm_tx,
+                depth + 1,
+                cancel_token,
+            )
+            .await
         }
     })
 }
@@ -1488,7 +1553,8 @@ async fn compact_with_llm(
     compact_prompt: String,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     stream: bool,
-) -> AppResult<String> {
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
+) -> Result<String, super::compaction::CompactionFailure> {
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
@@ -1527,16 +1593,29 @@ async fn compact_with_llm(
             |_event| {
                 // Compaction does not surface provider events.
             },
-            None,
+            cancel_token.clone(),
         )
         .await;
+
+    // A cancelled stream must never masquerade as a model failure: every
+    // caller retried past model errors, which would fire more LLM calls
+    // after Ctrl+C. The token decides, not the error text.
+    if cancel_token
+        .as_ref()
+        .is_some_and(tokio_util::sync::CancellationToken::is_cancelled)
+    {
+        return Err(super::compaction::CompactionFailure::Cancelled);
+    }
 
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.content);
             Ok(summary)
         }
-        Err(e) => Err(format!("Failed to compact: {}", e).into()),
+        Err(e) => Err(super::compaction::CompactionFailure::Model(format!(
+            "Failed to compact: {}",
+            e
+        ))),
     }
 }
 
