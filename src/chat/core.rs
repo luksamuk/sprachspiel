@@ -616,6 +616,10 @@ pub async fn send_message(
                 embedding.clone(),
                 provider.clone(),
                 Arc::new(settings.clone()),
+                cancel_token
+                    .cloned()
+                    .map(Arc::new)
+                    .unwrap_or_else(crate::tools::context::fresh_cancel_token),
                 coordinator.chat(messages.clone()),
             )
             .await
@@ -623,6 +627,10 @@ pub async fn send_message(
             with_tool_context(
                 provider.clone(),
                 Arc::new(settings.clone()),
+                cancel_token
+                    .cloned()
+                    .map(Arc::new)
+                    .unwrap_or_else(crate::tools::context::fresh_cancel_token),
                 coordinator.chat(messages.clone()),
             )
             .await
@@ -713,6 +721,17 @@ pub async fn send_message(
 /// `LlmEvent` sender. When the stream completes:
 /// - Sends `LlmEvent::StreamDone` with the full content and metrics
 /// - Tool calls are handled by the non-streaming coordinator path after streaming
+///
+/// # Cancellation contract
+///
+/// Cancellation is a request for a safe stop — NOT an undo, and NOT a
+/// promise that no external effect happened. Tools observe the turn's
+/// token cooperatively through the task-local context
+/// ([`crate::tools::context`]); a tool that reports cancellation stopped
+/// itself at its own safe point, whatever it already committed stays
+/// committed, and whatever it never produced never reaches a request.
+/// Tools that never consult the token are deliberately non-interruptible,
+/// and no detach-and-abort mechanism exists to break that.
 ///
 /// The `llm_tx` sender is used for:
 /// - `LlmEvent::StreamToken(token)` — each content token chunk
@@ -884,6 +903,10 @@ pub async fn send_message_stream(
                 embedding.clone(),
                 provider.clone(),
                 Arc::new(settings.clone()),
+                cancel_token
+                    .clone()
+                    .map(Arc::new)
+                    .unwrap_or_else(crate::tools::context::fresh_cancel_token),
                 coordinator.chat_stream(
                     messages.clone(),
                     on_token.clone(),
@@ -899,6 +922,10 @@ pub async fn send_message_stream(
             with_tool_context(
                 provider.clone(),
                 Arc::new(settings.clone()),
+                cancel_token
+                    .clone()
+                    .map(Arc::new)
+                    .unwrap_or_else(crate::tools::context::fresh_cancel_token),
                 coordinator.chat_stream(
                     messages.clone(),
                     on_token.clone(),

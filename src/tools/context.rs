@@ -6,6 +6,8 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 use crate::settings::Settings;
@@ -19,6 +21,32 @@ tokio::task_local! {
     pub static TOOL_LLM: crate::provider::OpenAICompatibleProvider;
     /// Settings for tools that need configuration (e.g., agent spawning tools)
     pub static TOOL_SETTINGS: Arc<Settings>;
+    /// The turn's cancellation token, reaching tool implementations.
+    ///
+    /// Cooperative by design: a tool that consults it stops at its own safe
+    /// points and reports [`crate::tools::tool_trait::ToolCancelled`]; tools
+    /// that never consult it remain deliberately non-interruptible, and no
+    /// detach-and-abort mechanism exists to break that — aborting a future
+    /// cannot stop a blocking syscall or undo effectful work.
+    pub static TOOL_CANCEL: Arc<CancellationToken>;
+}
+
+/// The turn's cancellation token for tools, when one is in scope.
+pub fn get_cancel_token() -> Option<Arc<CancellationToken>> {
+    TOOL_CANCEL.try_with(|ct| Arc::clone(ct)).ok()
+}
+
+/// Whether the user asked for a safe stop inside the current tool scope.
+/// Out of scope (never-scoped or spawned threads without the context) this
+/// is `false`: no request exists.
+pub fn cancellation_requested() -> bool {
+    get_cancel_token().is_some_and(|ct| ct.is_cancelled())
+}
+
+/// A fresh token for callers outside any turn (query paths, tests): tools
+/// run under it read a cancellation that never fires.
+pub fn fresh_cancel_token() -> Arc<CancellationToken> {
+    Arc::new(CancellationToken::new())
 }
 
 /// Helper to get database from task-local context
@@ -45,6 +73,7 @@ pub fn get_settings() -> Option<Arc<Settings>> {
 pub async fn with_tool_context<F, T>(
     provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
+    cancel_token: Arc<CancellationToken>,
     f: F,
 ) -> T
 where
@@ -52,7 +81,10 @@ where
 {
     TOOL_LLM
         .scope(provider, async move {
-            TOOL_SETTINGS.scope(settings, async move { f.await }).await
+            TOOL_SETTINGS.scope(settings, async move {
+                TOOL_CANCEL.scope(cancel_token, async move { f.await }).await
+            })
+            .await
         })
         .await
 }
@@ -63,6 +95,7 @@ pub async fn with_full_context<F, T>(
     embedding: Arc<EmbeddingClient>,
     provider: crate::provider::OpenAICompatibleProvider,
     settings: Arc<Settings>,
+    cancel_token: Arc<CancellationToken>,
     f: F,
 ) -> T
 where
@@ -72,7 +105,10 @@ where
         .scope(db, async move {
             REMEMBER_EMBEDDING
                 .scope(embedding, async move {
-                    with_tool_context(provider, settings, async move { f.await }).await
+                    with_tool_context(provider, settings, cancel_token, async move {
+                        f.await
+                    })
+                    .await
                 })
                 .await
         })
@@ -92,7 +128,7 @@ mod tests {
         );
         let dummy_settings = Arc::new(Settings::default());
 
-        let result = with_tool_context(dummy_provider, dummy_settings, async {
+        let result = with_tool_context(dummy_provider, dummy_settings, fresh_cancel_token(), async {
             let provider = get_provider();
             let settings = get_settings();
 
@@ -141,6 +177,7 @@ mod tests {
             dummy_embedding,
             dummy_provider_for_test,
             dummy_settings,
+            fresh_cancel_token(),
             async {
                 let db = get_db();
                 let embedding = get_embedding();
