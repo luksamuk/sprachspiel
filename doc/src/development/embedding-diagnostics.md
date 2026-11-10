@@ -64,10 +64,10 @@ Mean cosine distance (d̄): 0.353
 Min/max cosine distance: 0.073 / 0.592
 
 Regime Analysis:
-  θ=0.70 → SPREAD (d̄ >= θ' = 0.30)
-  θ=0.75 → SPREAD (d̄ >= θ' = 0.25)
-  θ=0.80 → SPREAD (d̄ >= θ' = 0.20)
-  θ=0.85 → SPREAD (d̄ >= θ' = 0.15)
+  θ=0.70 → SPREAD (mass under window: 100.0%)
+  θ=0.75 → SPREAD (mass under window: 100.0%)
+  θ=0.80 → SPREAD (mass under window: 100.0%)
+  θ=0.85 → SPREAD (mass under window: 100.0%)
 
 Variance Explained:
   50% → PC #3
@@ -102,7 +102,14 @@ sprach diag                                   # Shortcut (alias)
 
 1. **d_eff (Participation Ratio):** `d_eff = (Σλᵢ)² / Σλᵢ²` — covariance matrix trace + power iteration for eigenvalues
 2. **d̄ (Mean Cosine Distance):** Gram matrix `G = X·X^T`, `d̄ = 1 - mean(Gᵢⱼ)` for i≠j
-3. **Regime Classification:** SPREAD if `d̄ ≥ (1 - θ)`, TIGHT otherwise
+3. **Regime Classification:** TIGHT at θ when the fraction of all pairs
+   falling inside the (1−θ) similarity window is below half — a majority of
+   pairs distinguishes at that θ; SPREAD otherwise. The (1−θ) window is this
+   project's own operationalization of threshold retrieval, not a rule from
+   Barman et al. 2026 (the paper fixes θ = 0.82 in one experiment and defines
+   no regime rule); it is credited for the interference-vulnerable intuition
+   only. Zero-norm/degenerate vectors are dropped at collection, before the
+   pair sweep
 4. **Variance Explained:** Cumulative eigenvalue sum / total
 
 **Warnings:**
@@ -112,6 +119,7 @@ sprach diag                                   # Shortcut (alias)
 | N < 100 | `⚠ Corpus is small (N=X). d_eff estimates are unreliable (max d_eff from PCA is N-1).` |
 | d_eff/25 < 2 | `⚠ d_eff/25 ≈ N — vector search has minimal discriminative power.` |
 | N = 0 | `No embeddings found in database. Run a chat session first.` |
+| Zero-norm/degenerate vectors present | Rows are dropped at collection; a `Dropped X zero-norm/degenerate embedding(s) from <source>` warning is logged |
 
 **New DB methods (BLOB → Vec\<f32\> deserialization):**
 

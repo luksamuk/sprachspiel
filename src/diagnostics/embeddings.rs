@@ -14,8 +14,13 @@
 //! - **d̄ (Mean Cosine Distance):** `1 - mean(Gᵢⱼ)` for i≠j, where G = X·Xᵀ
 //!   is the Gram matrix of normalized vectors.
 //!
-//! - **Regime Classification:** SPREAD if `d̄ ≥ (1 - θ)`, TIGHT otherwise.
-//!   Based on "The Geometry of Forgetting" (Barman et al., 2026).
+//! - **Regime Classification:** at each threshold θ, the O(n²) sweep counts
+//!   the fraction of pairs whose cosine distance falls inside the (1−θ)
+//!   similarity window; TIGHT when that fraction is below half (a majority
+//!   of pairs distinguishes at θ), SPREAD otherwise. The (1−θ) window is
+//!   this project's own operationalization of threshold retrieval, not a
+//!   rule from the literature: "The Geometry of Forgetting" (Barman et al.,
+//!   2026) motivates the interference intuition only.
 //!
 //! - **Variance Explained:** Cumulative eigenvalue sum / total eigenvalue sum,
 //!   reporting which principal component reaches 50%, 90%, 95%, 99%.
@@ -49,12 +54,21 @@ impl fmt::Display for EmbeddingSource {
     }
 }
 
+/// Thresholds at which regime classification is computed.
+///
+/// Each threshold θ defines a similarity window `1 − θ`: pairs whose cosine
+/// distance is at most `1 − θ` fall inside it. Classification counts, per
+/// threshold, the fraction of all pairs inside that window.
+const REGIME_THRESHOLDS: [f64; 4] = [0.70, 0.75, 0.80, 0.85];
+
 /// Regime classification at a specific threshold
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Regime {
-    /// Vector search has minimal discriminative power at this threshold
+    /// Most pairs fall inside the (1−θ) window: the threshold cannot
+    /// separate a majority of pairs, so it does not discriminate
     Spread,
-    /// Vector search provides meaningful discrimination at this threshold
+    /// A majority of pairs falls outside the (1−θ) window: a threshold-θ
+    /// cutoff separates most pairs, so search discriminates
     Tight,
 }
 
@@ -74,6 +88,9 @@ pub struct RegimeAtThreshold {
     pub theta: f64,
     /// Complement of θ: θ' = 1 - θ
     pub theta_prime: f64,
+    /// Fraction of all pairs whose cosine distance falls inside the (1−θ)
+    /// similarity window (cosine similarity ≥ θ), in `[0.0, 1.0]`
+    pub window_mass: f64,
     /// Whether the regime is SPREAD or TIGHT
     pub regime: Regime,
 }
@@ -256,14 +273,13 @@ pub fn analyze_embeddings_with_progress(
 
     // Phase 3: Pairwise cosine distance (44% of total work)
     progress("Computing pairwise distances", 0.57);
-    let (mean_cd, min_cd, max_cd) =
-        compute_cosine_distance_stats_with_progress(vectors, n, d, progress, 0.57, 1.0);
+    let sweep = compute_cosine_distance_stats_with_progress(vectors, n, d, progress, 0.57, 1.0);
 
     // Phase 4: Regime classification and variance (trivial)
     progress("Finalizing analysis", 0.99);
-    let regimes = compute_regimes(mean_cd);
+    let regimes = compute_regimes(&sweep);
     let variance_explained = compute_variance_explained(&eigenvalues, d);
-    let threshold_recommendation = recommend_threshold(mean_cd, &regimes);
+    let threshold_recommendation = recommend_threshold(&regimes);
 
     EmbeddingDiagnostics {
         vector_count: n,
@@ -275,9 +291,9 @@ pub fn analyze_embeddings_with_progress(
         } else {
             0.0
         },
-        mean_cosine_distance: mean_cd,
-        min_cosine_distance: min_cd,
-        max_cosine_distance: max_cd,
+        mean_cosine_distance: sweep.mean_cosine_distance,
+        min_cosine_distance: sweep.min_cosine_distance,
+        max_cosine_distance: sweep.max_cosine_distance,
         regimes,
         variance_explained,
         model_name: model_name.to_string(),
@@ -599,18 +615,40 @@ fn compute_rayleigh_quotient(matrix: &[Vec<f64>], v: &[f64]) -> f64 {
     }
 }
 
-/// Compute cosine distance statistics between all pairs of vectors
+/// Statistics collected during one O(n²) sweep over all embedding pairs.
+///
+/// Besides the distance summary (mean, min, max), the sweep counts, for each
+/// entry of [`REGIME_THRESHOLDS`], how many pairs fall inside that
+/// threshold's (1−θ) similarity window. Regime classification reads those
+/// counts; `d̄` is retained as a scale metric, never as a classifier input.
+#[derive(Debug, Clone, Default)]
+pub struct PairSweepStats {
+    /// Mean cosine distance over all pairs (d̄)
+    pub mean_cosine_distance: f64,
+    /// Minimum cosine distance between any pair
+    pub min_cosine_distance: f64,
+    /// Maximum cosine distance between any pair
+    pub max_cosine_distance: f64,
+    /// Number of distinct pairs visited
+    pub pair_count: usize,
+    /// Per threshold (in [`REGIME_THRESHOLDS`] order), the number of pairs
+    /// whose cosine distance is at most `1 − θ`
+    pub window_inside: [usize; 4],
+}
+
+/// Compute pair statistics over all pairs of vectors: distance summary plus
+/// the per-threshold count of pairs inside each (1−θ) similarity window.
 ///
 /// For L2-normalized vectors, cosine similarity = dot product.
 /// Cosine distance = 1 - cosine_similarity.
 ///
 /// Convenience wrapper without progress reporting. Used in tests.
 #[cfg(test)]
-fn compute_cosine_distance_stats(vectors: &[Vec<f64>], n: usize, _d: usize) -> (f64, f64, f64) {
+fn compute_cosine_distance_stats(vectors: &[Vec<f64>], n: usize, _d: usize) -> PairSweepStats {
     compute_cosine_distance_stats_with_progress(vectors, n, _d, &|_, _| {}, 0.0, 1.0)
 }
 
-/// Compute cosine distance statistics with progress reporting.
+/// Compute pair statistics with progress reporting.
 ///
 /// The `progress` callback is called at intervals during the O(n²) computation.
 /// `start_frac` and `end_frac` define the fraction of total work this phase represents.
@@ -621,27 +659,37 @@ fn compute_cosine_distance_stats_with_progress(
     progress: &ProgressFn,
     start_frac: f64,
     end_frac: f64,
-) -> (f64, f64, f64) {
+) -> PairSweepStats {
     if n < 2 {
-        return (0.0, 0.0, 0.0);
+        return PairSweepStats {
+            pair_count: 0,
+            window_inside: [0; 4],
+            ..PairSweepStats::default()
+        };
     }
 
+    let theta_primes: [f64; 4] = REGIME_THRESHOLDS.map(|theta| 1.0 - theta);
     let mut sum = 0.0;
     let mut count = 0usize;
     let mut min_cd = f64::MAX;
     let mut max_cd = f64::NEG_INFINITY;
+    let mut window_inside: [usize; 4] = [0; 4];
 
     // Report progress every ~1% of the outer loop
     let report_interval = (n / 100).max(1);
 
     for i in 0..n {
         for j in (i + 1)..n {
-            let cos_sim = dot_product(&vectors[i], &vectors[j]);
-            let cos_dist = 1.0 - cos_sim;
+            let cos_dist = 1.0 - dot_product(&vectors[i], &vectors[j]);
             sum += cos_dist;
             count += 1;
             min_cd = min_cd.min(cos_dist);
             max_cd = max_cd.max(cos_dist);
+            for (ti, theta_prime) in theta_primes.iter().enumerate() {
+                if cos_dist <= *theta_prime {
+                    window_inside[ti] += 1;
+                }
+            }
         }
 
         // Report progress periodically
@@ -654,8 +702,17 @@ fn compute_cosine_distance_stats_with_progress(
     // Final progress report for this phase
     progress("Computing pairwise distances", end_frac);
 
-    let mean_cd = if count > 0 { sum / count as f64 } else { 0.0 };
-    (mean_cd, min_cd, max_cd)
+    PairSweepStats {
+        mean_cosine_distance: if count > 0 {
+            sum / count as f64
+        } else {
+            0.0
+        },
+        min_cosine_distance: if count > 0 { min_cd } else { 0.0 },
+        max_cosine_distance: if count > 0 { max_cd } else { 0.0 },
+        pair_count: count,
+        window_inside,
+    }
 }
 
 /// Compute dot product of two vectors
@@ -663,64 +720,76 @@ fn dot_product(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
-/// Compute regime classification at standard thresholds
+/// Classify the regime at each standard threshold from the pair sweep.
 ///
-/// At each threshold θ:
-/// - θ' = 1 - θ (complement)
-/// - If d̄ ≥ θ' → SPREAD (vectors too spread for threshold to discriminate)
-/// - If d̄ < θ' → TIGHT (threshold provides meaningful discrimination)
-fn compute_regimes(mean_cosine_distance: f64) -> Vec<RegimeAtThreshold> {
-    let thresholds = [0.70_f64, 0.75, 0.80, 0.85];
-
-    thresholds
+/// At threshold θ, TIGHT requires that fewer than half of all pairs fall
+/// inside the (1−θ) similarity window — a majority of pairs distinguishes
+/// at that θ. SPREAD is the complement: most pairs fall inside the window,
+/// so the threshold lets them through. The classification reads the
+/// pair-mass profile collected by the O(n²) sweep; the global mean distance
+/// (d̄) is not consulted, because a compressed scale lowers d̄ precisely by
+/// making unrelated pairs look similar — which reads compression as
+/// discrimination.
+///
+/// With no pairs at all (`pair_count == 0`), the window mass is 0.0 and the
+/// classification is TIGHT, matching the previous handling of degenerately
+/// small corpora (d̄ = 0 previously implied TIGHT).
+fn compute_regimes(sweep: &PairSweepStats) -> Vec<RegimeAtThreshold> {
+    REGIME_THRESHOLDS
         .iter()
-        .map(|&theta| {
+        .enumerate()
+        .map(|(i, &theta)| {
             let theta_prime = 1.0 - theta;
-            let regime = if mean_cosine_distance >= theta_prime {
-                Regime::Spread
+            let window_mass = if sweep.pair_count > 0 {
+                sweep.window_inside[i] as f64 / sweep.pair_count as f64
             } else {
+                0.0
+            };
+            let regime = if window_mass < 0.5 {
                 Regime::Tight
+            } else {
+                Regime::Spread
             };
             RegimeAtThreshold {
                 theta,
                 theta_prime,
+                window_mass,
                 regime,
             }
         })
         .collect()
 }
 
-/// Recommend a semantic threshold and weight configuration based on observed geometry.
+/// Recommend a semantic threshold and weight configuration based on the
+/// regime classification.
 ///
-/// The recommendation is derived from the **regime classification across a
-/// range of candidate thresholds** plus the mean cosine distance — not from
-/// `d_eff`. (A `d_eff` parameter used to be accepted here and silently
-/// ignored; it was removed rather than left as a misleading part of the
-/// signature. `d_eff` is deliberately not consulted: regime classification
-/// over candidate thresholds already captures the geometry signal, and the
-/// embedding-diagnostics doc describes how the two relate.)
+/// The recommendation reads the per-threshold pair-mass profile carried by
+/// the regime classification: each TIGHT/SPREAD verdict says whether a
+/// majority of pairs falls outside the corresponding (1−θ) window. Neither
+/// `d_eff` (regime classification already captures the geometry signal) nor
+/// the mean pair distance is consulted — a compressed global scale lowers
+/// d̄ while concentrating most pairs inside the window, which is exactly
+/// the undiscriminating shape the classifier exists to catch.
 ///
 /// The recommendation follows these rules:
 ///
-/// - **TIGHT at θ=0.70:** Default threshold 0.70 is appropriate. Vectors
-///   discriminate well at this level. No weight adjustment needed.
+/// - **TIGHT at θ=0.70:** A majority of pairs falls outside the θ=0.70
+///   window — the threshold separates unrelated pairs. Default threshold
+///   is appropriate. No weight adjustment needed.
 ///
-/// - **SPREAD at θ=0.70 but TIGHT at θ=0.80:** Recommend raising threshold
-///   to 0.80. Vectors don't discriminate well enough at 0.70 (many false
-///   positives in dedup), but work well at 0.80. Consider increasing
-///   keyword_weight since semantic search is less reliable at lower thresholds.
+/// - **SPREAD at 0.70 but TIGHT at 0.80:** Most pairs fall inside the
+///   θ=0.70 window (too many candidate matches), while a majority
+///   discriminates at θ=0.80. Recommend raising the threshold to 0.80 and
+///   re-balancing keyword/semantic weights to 0.5.
 ///
-/// - **SPREAD at all thresholds (0.70–0.85):** The embedding space has
-///   minimal discriminative power. Recommend 0.85 threshold and shifting
-///   strongly toward keyword-matching (keyword_weight=0.7, semantic_weight=0.3).
+/// - **TIGHT only at θ=0.85:** Only the highest tested window separates a
+///   majority of pairs. Use θ=0.85 and give keywords the larger weight.
 ///
-/// - **Edge case — very low d̄ (< 0.15):** Vectors are nearly identical.
-///   This usually means the corpus is too small or too homogeneous. Threshold
-///   doesn't matter much; suggest 0.70 with a warning.
-pub fn recommend_threshold(
-    mean_cosine_distance: f64,
-    regimes: &[RegimeAtThreshold],
-) -> ThresholdRecommendation {
+/// - **SPREAD at all thresholds (0.70–0.85):** No tested window separates a
+///   majority of pairs — semantic search has limited discriminative power.
+///   Recommend 0.85 threshold and shifting strongly toward keyword
+///   matching (keyword_weight=0.7, semantic_weight=0.3).
+pub fn recommend_threshold(regimes: &[RegimeAtThreshold]) -> ThresholdRecommendation {
     let tight_at_070 = regimes
         .iter()
         .find(|r| (r.theta - 0.70).abs() < 0.01)
@@ -739,27 +808,14 @@ pub fn recommend_threshold(
         .map(|r| r.regime == Regime::Tight)
         .unwrap_or(true);
 
-    // Edge case: very low mean cosine distance (< 0.15) means vectors are
-    // nearly identical — threshold doesn't matter much
-    if mean_cosine_distance < 0.15 {
-        return ThresholdRecommendation {
-            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
-            rationale: "Vectors are nearly identical (d̄ < 0.15). Default threshold \
-                works but corpus may be too small or homogeneous for meaningful analysis."
-                .to_string(),
-            adjust_weights: false,
-            suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
-            suggested_semantic_weight: DEFAULT_SEMANTIC_WEIGHT as f64,
-            weight_rationale: String::new(),
-        };
-    }
-
-    // Case 1: TIGHT at 0.70 — geometry works well at default threshold
+    // Case 1: TIGHT at 0.70 — a majority of pairs discriminates at the
+    // default threshold
     if tight_at_070 {
         ThresholdRecommendation {
             semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD as f64,
-            rationale: "Embedding geometry is TIGHT at θ=0.70 — semantic search \
-                discriminates well. Default threshold is appropriate."
+            rationale: "A majority of pairs falls outside the θ=0.70 \
+                similarity window — the threshold separates unrelated \
+                pairs. Default threshold is appropriate."
                 .to_string(),
             adjust_weights: false,
             suggested_keyword_weight: DEFAULT_KEYWORD_WEIGHT as f64,
@@ -771,42 +827,28 @@ pub fn recommend_threshold(
     else if tight_at_080 {
         ThresholdRecommendation {
             semantic_threshold: 0.80,
-            rationale: "Embedding geometry is SPREAD at θ=0.70 but TIGHT at θ=0.80. \
-                Raising the threshold to 0.80 avoids false positive matches while \
-                maintaining good recall."
+            rationale: "Most pairs fall inside the θ=0.70 window, but a \
+                majority falls outside the θ=0.80 window. Raising the \
+                threshold to 0.80 keeps the separation while filtering \
+                out the excess of candidate matches."
                 .to_string(),
             adjust_weights: true,
             suggested_keyword_weight: 0.5,
             suggested_semantic_weight: 0.5,
-            weight_rationale: "With θ=0.80, semantic search is effective but less \
-                permissive — balancing keyword and semantic equally provides \
-                the best RRF fusion."
+            weight_rationale: "With θ=0.80, a majority of pairs is outside \
+                the window but the margin is narrow — balancing keyword \
+                and semantic equally provides the best RRF fusion."
                 .to_string(),
         }
     }
-    // Case 3: SPREAD at all thresholds — maximize threshold, shift to keyword
-    else if !tight_at_085 {
+    // Case 3: SPREAD at 0.70–0.80 but TIGHT at 0.85 — use the highest threshold
+    else if tight_at_085 {
         ThresholdRecommendation {
             semantic_threshold: 0.85,
-            rationale: "Embedding geometry is SPREAD at all tested thresholds. \
-                Setting θ=0.85 minimizes false positives but semantic search \
-                still has limited discriminative power."
-                .to_string(),
-            adjust_weights: true,
-            suggested_keyword_weight: 0.7,
-            suggested_semantic_weight: 0.3,
-            weight_rationale: "With SPREAD geometry, keyword search is more \
-                reliable than semantic search. Shifting weight toward keywords \
-                improves retrieval quality."
-                .to_string(),
-        }
-    }
-    // Case 4: TIGHT at 0.85 but not at 0.80 — use 0.85
-    else {
-        ThresholdRecommendation {
-            semantic_threshold: 0.85,
-            rationale: "Embedding geometry is TIGHT only at θ=0.85. Using the \
-                highest threshold ensures reliable discrimination."
+            rationale: "Only the θ=0.85 window excludes a majority of \
+                pairs; lower windows let most pairs through. Using the \
+                highest tested threshold preserves the only reliable \
+                separation."
                 .to_string(),
             adjust_weights: true,
             suggested_keyword_weight: 0.6,
@@ -816,6 +858,36 @@ pub fn recommend_threshold(
                 .to_string(),
         }
     }
+    // Case 4: SPREAD at all thresholds — maximize threshold, shift to keyword
+    else {
+        ThresholdRecommendation {
+            semantic_threshold: 0.85,
+            rationale: "At every tested threshold, most pairs fall inside \
+                the (1−θ) window — the threshold cannot separate a \
+                majority of pairs even at θ=0.85. Setting θ=0.85 \
+                minimizes candidate matches, but semantic search still \
+                has limited discriminative power."
+                .to_string(),
+            adjust_weights: true,
+            suggested_keyword_weight: 0.7,
+            suggested_semantic_weight: 0.3,
+            weight_rationale: "With the window letting most pairs through, \
+                keyword search is more reliable than semantic search. \
+                Shifting weight toward keywords improves retrieval quality."
+                .to_string(),
+        }
+    }
+}
+
+/// A stored embedding is degenerate for geometry analysis when its L2 norm
+/// is non-finite or near zero. Stored vectors are L2-normalized at insert
+/// (see `truncate_and_normalize_with_correction`), so such rows are
+/// zero-padding artifacts rather than content: paired with anything, a zero
+/// vector reports cosine distance 1.0 and quietly inflates the fraction of
+/// "discriminating" pairs. Callers drop them at collection.
+pub fn is_degenerate_vector(vector: &[f32]) -> bool {
+    let norm_sq: f32 = vector.iter().map(|x| x * x).sum();
+    !norm_sq.is_finite() || norm_sq < f32::EPSILON
 }
 
 /// Compute variance explained at key percentiles
@@ -965,23 +1037,26 @@ mod tests {
             vec![1.0, 0.0, 0.0],
         ];
 
-        let (mean_cd, min_cd, max_cd) = compute_cosine_distance_stats(&vectors, 3, 3);
+        let stats = compute_cosine_distance_stats(&vectors, 3, 3);
 
         assert!(
-            mean_cd.abs() < 0.01,
+            stats.mean_cosine_distance.abs() < 0.01,
             "Mean cosine distance for identical vectors should be ≈ 0, got {}",
-            mean_cd
+            stats.mean_cosine_distance
         );
         assert!(
-            min_cd.abs() < 0.01,
+            stats.min_cosine_distance.abs() < 0.01,
             "Min cosine distance for identical vectors should be ≈ 0, got {}",
-            min_cd
+            stats.min_cosine_distance
         );
         assert!(
-            max_cd.abs() < 0.01,
+            stats.max_cosine_distance.abs() < 0.01,
             "Max cosine distance for identical vectors should be ≈ 0, got {}",
-            max_cd
+            stats.max_cosine_distance
         );
+        assert_eq!(stats.pair_count, 3);
+        // Every pair sits inside every tested window.
+        assert_eq!(stats.window_inside, [3, 3, 3, 3]);
     }
 
     /// Test: Orthogonal vectors should have d̄ ≈ 1
@@ -993,33 +1068,249 @@ mod tests {
             vec![0.0, 0.0, 1.0],
         ];
 
-        let (mean_cd, _, _) = compute_cosine_distance_stats(&vectors, 3, 3);
+        let stats = compute_cosine_distance_stats(&vectors, 3, 3);
 
         assert!(
-            (mean_cd - 1.0).abs() < 0.01,
+            (stats.mean_cosine_distance - 1.0).abs() < 0.01,
             "Mean cosine distance for orthogonal vectors should be ≈ 1.0, got {}",
-            mean_cd
+            stats.mean_cosine_distance
+        );
+        assert_eq!(stats.pair_count, 3);
+        // Orthogonal pairs (distance 1.0) sit outside every tested window.
+        assert_eq!(stats.window_inside, [0, 0, 0, 0]);
+    }
+
+    /// Test: the sweep counts pairs inside each window exactly, on a corpus
+    /// with known pairwise distances. e1–v4 sits at cosine distance 0.25
+    /// (inside the θ'=0.30 and θ'=0.25 windows only); e2–v4 at ≈ 0.339; the
+    /// three orthogonal pairs at 1.0.
+    #[test]
+    fn test_sweep_counts_pairs_inside_each_window() {
+        // Unit vector at cosine distance 0.25 from e1: cos = 0.75.
+        let s = (1.0 - 0.75_f64 * 0.75).sqrt();
+        let vectors: Vec<Vec<f64>> = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+            vec![0.75, s, 0.0],
+        ];
+
+        let stats = compute_cosine_distance_stats(&vectors, 4, 3);
+
+        assert_eq!(stats.pair_count, 6);
+        // Distances: four orthogonal pairs at 1.0, the e1–v4 pair at 0.25,
+        // and the e2–v4 pair at 1 − s.
+        let expected_mean = (4.0 + 0.25 + (1.0 - s)) / 6.0;
+        assert!(
+            (stats.mean_cosine_distance - expected_mean).abs() < 1e-12,
+            "d̄ should be {:.6}, got {}",
+            expected_mean,
+            stats.mean_cosine_distance
+        );
+        assert!((stats.min_cosine_distance - 0.25).abs() < 1e-12);
+        assert!((stats.max_cosine_distance - 1.0).abs() < 1e-12);
+        assert_eq!(
+            stats.window_inside, [1, 1, 0, 0],
+            "only the 0.25 pair falls inside the two looser windows"
         );
     }
 
-    /// Test: SPREAD regime when d̄ ≥ θ'
+    /// Test: degenerate stored vectors — zero, near-zero, NaN, infinite —
+    /// are flagged for the collection filter; normalized vectors pass.
     #[test]
-    fn test_regime_classification_spread() {
-        // d̄ = 0.5 — at θ=0.70, θ'=0.30, and 0.5 ≥ 0.30 → SPREAD
-        let regimes = compute_regimes(0.5);
-        assert_eq!(regimes[0].regime, Regime::Spread); // θ=0.70
-        assert_eq!(regimes[1].regime, Regime::Spread); // θ=0.75
-        assert_eq!(regimes[2].regime, Regime::Spread); // θ=0.80
-        assert_eq!(regimes[3].regime, Regime::Spread); // θ=0.85
+    fn test_is_degenerate_vector() {
+        assert!(is_degenerate_vector(&[0.0_f32; 8]));
+        assert!(is_degenerate_vector(&[1e-30_f32; 8]));
+        assert!(is_degenerate_vector(&[f32::NAN, 0.0]));
+        assert!(is_degenerate_vector(&[f32::INFINITY, 0.0]));
+        assert!(!is_degenerate_vector(&[1.0_f32, 0.0, 0.0]));
+        // 0.6² + 0.8² = 1.0 — a real normalized vector must not be dropped.
+        assert!(!is_degenerate_vector(&[0.6_f32, 0.8]));
     }
 
-    /// Test: TIGHT regime when d̄ < θ'
+    // ============================================================
+    // Synthetic corpora: pair-mass regime sensors
+    // ============================================================
+
+    /// Deterministic LCG so randomized synthetic corpora are reproducible.
+    struct Lcg {
+        state: u64,
+    }
+
+    impl Lcg {
+        fn new(seed: u64) -> Self {
+            Self { state: seed }
+        }
+
+        /// Uniform sample in [-1.0, 1.0) built from the state's top bits.
+        fn next_f64(&mut self) -> f64 {
+            self.state = self
+                .state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (self.state >> 12) as f64 / (1u64 << 52) as f64 * 2.0 - 1.0
+        }
+    }
+
+    /// Normalize a vector to unit L2 norm.
+    fn unit(mut vector: Vec<f64>) -> Vec<f64> {
+        let norm = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+        for x in vector.iter_mut() {
+            *x /= norm;
+        }
+        vector
+    }
+
+    /// Two clusters around unit vectors at the given inter-centroid cosine
+    /// distance, jittered deterministically in 2D. Intra-cluster pairs sit
+    /// near distance 0.
+    fn two_cluster_corpus(inter_centroid_distance: f64) -> Vec<Vec<f64>> {
+        let jitters: [f64; 8] = [-0.02, -0.014, -0.007, 0.0, 0.007, 0.014, 0.02, 0.01];
+        let centroid_angle = (1.0 - inter_centroid_distance).acos();
+        let mut corpus = Vec::with_capacity(16);
+        for &jitter in &jitters {
+            corpus.push(unit(vec![jitter.cos(), jitter.sin()]));
+        }
+        for &jitter in &jitters {
+            corpus.push(unit(vec![
+                (centroid_angle + jitter).cos(),
+                (centroid_angle + jitter).sin(),
+            ]));
+        }
+        corpus
+    }
+
+    /// Sensor: a 2-cluster corpus with a compressed scale (low d̄, all pairs
+    /// inside the θ=0.70 window) must classify SPREAD at the thresholds its
+    /// pairs flood, even though the global-mean distance would call the same
+    /// corpus TIGHT. If the d̄-vs-θ' comparison ever returns, this test
+    /// fails.
     #[test]
-    fn test_regime_classification_tight() {
-        // d̄ = 0.1 — at θ=0.70, θ'=0.30, and 0.1 < 0.30 → TIGHT
-        let regimes = compute_regimes(0.1);
-        assert_eq!(regimes[0].regime, Regime::Tight); // θ=0.70
-        assert_eq!(regimes[1].regime, Regime::Tight); // θ=0.75
+    fn test_sensor_compressed_two_cluster_corpus_classifies_spread() {
+        let corpus = two_cluster_corpus(0.25);
+        let diag = analyze_embeddings(&corpus, 2, "synthetic-two-cluster", vec![]);
+
+        // Old-rule input: the mean distance sits below the θ=0.70 and
+        // θ=0.75 windows — the old comparison would have said TIGHT here.
+        assert!(
+            diag.mean_cosine_distance < 0.25,
+            "compressed scale must put d̄ below the θ=0.75 window to exercise \
+             the inversion, got d̄ = {}",
+            diag.mean_cosine_distance
+        );
+
+        // At θ=0.70 every pair is inside the window: the threshold lets all
+        // pairs through, so the regime is SPREAD even with the low mean.
+        assert_eq!(diag.regimes[0].theta, 0.70);
+        assert!(
+            (diag.regimes[0].window_mass - 1.0).abs() < 1e-9,
+            "θ=0.70 window must contain every pair, got mass {:.4}",
+            diag.regimes[0].window_mass
+        );
+        assert_eq!(
+            diag.regimes[0].regime,
+            Regime::Spread,
+            "θ=0.70: full window mass means no discrimination, got {:?}",
+            diag.regimes[0].regime
+        );
+        // At θ=0.75 the window floods too: most pairs (intra + inter) inside.
+        assert!(
+            diag.regimes[1].window_mass > 0.7,
+            "θ=0.75 window must hold most pairs, got mass {:.4}",
+            diag.regimes[1].window_mass
+        );
+        assert_eq!(
+            diag.regimes[1].regime, Regime::Spread,
+            "θ=0.75: majority inside the window, got {:?}",
+            diag.regimes[1].regime
+        );
+        // The tighter windows exclude every inter-cluster pair; only the
+        // minority of intra-cluster pairs stays inside → TIGHT.
+        assert_eq!(
+            diag.regimes[2].regime, Regime::Tight,
+            "θ=0.80: inter-cluster pairs fall outside the window, got {:?}",
+            diag.regimes[2].regime
+        );
+        assert_eq!(
+            diag.regimes[3].regime, Regime::Tight,
+            "θ=0.85: inter-cluster pairs fall outside the window, got {:?}",
+            diag.regimes[3].regime
+        );
+    }
+
+    /// Sensor: random unit vectors concentrate near orthogonality — almost
+    /// every pair sits outside every tested window — so the corpus must
+    /// classify TIGHT everywhere while the global-mean rule would call the
+    /// same corpus SPREAD at every threshold (d̄ ≈ 1.0 ≥ θ').
+    #[test]
+    fn test_sensor_random_unit_corpus_classifies_tight() {
+        let corpus = random_unit_corpus(24, 32, 0x5EED_5EED_5EED_5EED);
+        let diag = analyze_embeddings(&corpus, 32, "synthetic-random-unit", vec![]);
+
+        // Old-rule input: d̄ ≈ 1.0 is above every θ' — the old comparison
+        // would have said SPREAD here.
+        assert!(
+            diag.mean_cosine_distance > 0.5,
+            "random unit vectors must concentrate far from one another, \
+             got d̄ = {}",
+            diag.mean_cosine_distance
+        );
+
+        for r in &diag.regimes {
+            assert!(
+                r.window_mass < 0.05,
+                "θ={}: random unit vectors leave almost no pair inside the \
+                 window, got mass {:.4}",
+                r.theta,
+                r.window_mass
+            );
+            assert_eq!(
+                r.regime, Regime::Tight,
+                "θ={}: majority of pairs outside the window is TIGHT, got {:?}",
+                r.theta, r.regime
+            );
+        }
+    }
+
+    /// Random unit vectors in `dims` dimensions, reproducible via the LCG.
+    fn random_unit_corpus(n: usize, dims: usize, seed: u64) -> Vec<Vec<f64>> {
+        let mut rng = Lcg::new(seed);
+        (0..n)
+            .map(|_| unit((0..dims).map(|_| rng.next_f64()).collect()))
+            .collect()
+    }
+
+    /// Test: the classification majority boundary — a mass of exactly half
+    /// is not a discriminating majority (SPREAD), just below half is TIGHT,
+    /// and an empty sweep keeps the historical TIGHT for degenerate corpora.
+    #[test]
+    fn test_regime_majority_boundary() {
+        let mut stats = PairSweepStats::default();
+        stats.pair_count = 10;
+        stats.window_inside = [5, 4, 0, 0];
+
+        let regimes = compute_regimes(&stats);
+        assert!(
+            (regimes[0].window_mass - 0.5).abs() < 1e-12,
+            "expected window mass 0.5, got {}",
+            regimes[0].window_mass
+        );
+        assert_eq!(
+            regimes[0].regime, Regime::Spread,
+            "exactly half the pairs inside the window leaves no \
+             discriminating majority"
+        );
+        assert_eq!(
+            regimes[1].regime, Regime::Tight,
+            "40% inside the window is a discriminating majority"
+        );
+
+        let regimes = compute_regimes(&PairSweepStats::default());
+        assert_eq!(regimes[0].window_mass, 0.0);
+        assert_eq!(
+            regimes[0].regime, Regime::Tight,
+            "no pairs collected keeps the degenerate-corpus TIGHT"
+        );
     }
 
     /// Test: Variance explained with known eigenvalues
@@ -1133,15 +1424,25 @@ mod tests {
     }
 
     // ============================================================
-    // Threshold recommendation tests
+    // Threshold recommendation sensors (synthetic corpora, full path)
     // ============================================================
 
-    /// Test: TIGHT at θ=0.70 → recommend default threshold 0.70
+    /// Sensor: a corpus where a majority of pairs discriminates at θ=0.70
+    /// (TIGHT) keeps the default threshold without weight adjustment.
     #[test]
-    fn test_recommend_threshold_tight_at_070() {
-        // d̄ = 0.2, so at θ=0.70, θ'=0.30, and 0.2 < 0.30 → TIGHT
-        let regimes = compute_regimes(0.2);
-        let rec = recommend_threshold(0.2, &regimes);
+    fn test_recommend_threshold_keeps_default_when_majority_discriminates() {
+        // Well-separated clusters: only the intra-cluster minority stays
+        // inside the θ=0.70 window (46.7%), so the majority discriminates.
+        let corpus = two_cluster_corpus(0.5);
+        let diag = analyze_embeddings(&corpus, 2, "synthetic", vec![]);
+
+        assert_eq!((diag.regimes[0].window_mass * 100.0).round() as i64, 47);
+        assert_eq!(
+            diag.regimes[0].regime, Regime::Tight,
+            "θ=0.70: only intra-cluster pairs inside the window",
+        );
+
+        let rec = recommend_threshold(&diag.regimes);
         assert!(
             (rec.semantic_threshold - 0.70).abs() < 0.01,
             "TIGHT at 0.70 should recommend θ=0.70, got {}",
@@ -1153,171 +1454,111 @@ mod tests {
         );
     }
 
-    /// Test: TIGHT at θ=0.70 but SPREAD at θ≥0.75 → still recommend θ=0.70
-    ///
-    /// With d̄=0.28: TIGHT at 0.70 (θ'=0.30), SPREAD at 0.75+ (θ'≤0.25).
-    /// Because d̄ < 0.30 at θ=0.70, `tight_at_070=true` → default 0.70 is appropriate.
+    /// Sensor: SPREAD at 0.70/0.75 (windows flooded) but TIGHT at 0.80
+    /// raises the recommended threshold to 0.80 with balanced weights.
     #[test]
-    fn test_recommend_threshold_tight_at_070_spread_above() {
-        let regimes = compute_regimes(0.28);
-        assert_eq!(
-            regimes[0].regime,
-            Regime::Tight,
-            "d̄=0.28 < θ'=0.30 at θ=0.70"
-        );
-        assert_eq!(
-            regimes[1].regime,
-            Regime::Spread,
-            "d̄=0.28 ≥ θ'=0.25 at θ=0.75"
-        );
-        assert_eq!(
-            regimes[2].regime,
-            Regime::Spread,
-            "d̄=0.28 ≥ θ'=0.20 at θ=0.80"
-        );
-        assert_eq!(
-            regimes[3].regime,
-            Regime::Spread,
-            "d̄=0.28 ≥ θ'=0.15 at θ=0.85"
-        );
+    fn test_recommend_threshold_raises_threshold_when_low_windows_flood() {
+        // Compressed-scale clusters: every pair inside the θ=0.70 window,
+        // most inside θ=0.75, only intra-cluster pairs inside θ=0.80+.
+        let corpus = two_cluster_corpus(0.25);
+        let diag = analyze_embeddings(&corpus, 2, "synthetic", vec![]);
 
-        let rec = recommend_threshold(0.28, &regimes);
+        assert_eq!(diag.regimes[0].regime, Regime::Spread);
+        assert_eq!(diag.regimes[1].regime, Regime::Spread);
+        assert_eq!(diag.regimes[2].regime, Regime::Tight);
+
+        let rec = recommend_threshold(&diag.regimes);
         assert!(
-            (rec.semantic_threshold - 0.70).abs() < 0.01,
-            "TIGHT at 0.70 should recommend θ=0.70, got {}",
+            (rec.semantic_threshold - 0.80).abs() < 0.01,
+            "SPREAD at 0.70/0.75 with TIGHT at 0.80 should recommend θ=0.80, got {}",
             rec.semantic_threshold
         );
+        assert!(rec.adjust_weights);
         assert!(
-            !rec.adjust_weights,
-            "Should not adjust weights when TIGHT at 0.70"
+            (rec.suggested_keyword_weight - 0.5).abs() < 0.01,
+            "Case 2 should balance keyword weight at 0.5, got {}",
+            rec.suggested_keyword_weight
+        );
+        assert!(
+            (rec.suggested_semantic_weight - 0.5).abs() < 0.01,
+            "Case 2 should balance semantic weight at 0.5, got {}",
+            rec.suggested_semantic_weight
         );
     }
 
-    /// Test: SPREAD at all thresholds → recommend θ=0.85 with keyword-heavy weights
+    /// Sensor: only the θ=0.85 window excludes a majority of pairs →
+    /// recommend the highest tested threshold with keyword-lean weights.
     #[test]
-    fn test_recommend_threshold_spread_everywhere() {
-        // d̄ = 0.65 → SPREAD at all thresholds
-        // θ=0.70→θ'=0.30, 0.65≥0.30→SPREAD
-        // θ=0.75→θ'=0.25, 0.65≥0.25→SPREAD
-        // θ=0.80→θ'=0.20, 0.65≥0.20→SPREAD
-        // θ=0.85→θ'=0.15, 0.65≥0.15→SPREAD
-        let regimes = compute_regimes(0.65);
-        for r in &regimes {
+    fn test_recommend_threshold_only_highest_window_discriminates() {
+        // Two clusters whose inter-cluster pairs sit inside the θ'=0.30/0.20
+        // windows but outside θ'=0.15: SPREAD at 0.70–0.80, TIGHT at 0.85.
+        let corpus = two_cluster_corpus(0.18);
+        let diag = analyze_embeddings(&corpus, 2, "synthetic", vec![]);
+
+        assert_eq!(diag.regimes[0].regime, Regime::Spread);
+        assert_eq!(diag.regimes[2].regime, Regime::Spread);
+        assert_eq!(
+            diag.regimes[3].regime, Regime::Tight,
+            "θ=0.85: inter-cluster pairs leave the window"
+        );
+
+        let rec = recommend_threshold(&diag.regimes);
+        assert!(
+            (rec.semantic_threshold - 0.85).abs() < 0.01,
+            "TIGHT only at 0.85 should recommend θ=0.85, got {}",
+            rec.semantic_threshold
+        );
+        assert!(
+            (rec.suggested_keyword_weight - 0.6).abs() < 0.01,
+            "Case 3 should suggest keyword_weight=0.6, got {}",
+            rec.suggested_keyword_weight
+        );
+    }
+
+    /// Sensor: near-identical vectors flood every tested window → SPREAD
+    /// everywhere → highest threshold and keyword-heavy weights. This
+    /// replaces the removed d̄-based "nearly identical" special case.
+    #[test]
+    fn test_recommend_threshold_near_identical_corpus_is_spread_everywhere() {
+        // 12 vectors within 0.054 cosine distance of each other: every pair
+        // is inside every tested window.
+        let corpus: Vec<Vec<f64>> = (0..12)
+            .map(|j| {
+                let angle = j as f64 * 0.03;
+                unit(vec![angle.cos(), angle.sin()])
+            })
+            .collect();
+        let diag = analyze_embeddings(&corpus, 2, "synthetic-near-identical", vec![]);
+
+        for r in &diag.regimes {
             assert_eq!(
-                r.regime,
-                Regime::Spread,
-                "Should be SPREAD at θ={}",
-                r.theta
+                r.regime, Regime::Spread,
+                "θ={}: every pair inside the window (mass {:.3}) must be SPREAD",
+                r.theta, r.window_mass
+            );
+            assert!(
+                (r.window_mass - 1.0).abs() < 1e-9,
+                "θ={}: expected full window mass, got {:.4}",
+                r.theta,
+                r.window_mass
             );
         }
 
-        let rec = recommend_threshold(0.65, &regimes);
+        let rec = recommend_threshold(&diag.regimes);
         assert!(
             (rec.semantic_threshold - 0.85).abs() < 0.01,
             "SPREAD everywhere should recommend θ=0.85, got {}",
             rec.semantic_threshold
         );
         assert!(
-            rec.adjust_weights,
-            "Should adjust weights for SPREAD geometry"
-        );
-        assert!(
             (rec.suggested_keyword_weight - 0.7).abs() < 0.01,
-            "Should suggest keyword_weight=0.7, got {}",
+            "Case 4 should suggest keyword_weight=0.7, got {}",
             rec.suggested_keyword_weight
         );
         assert!(
             (rec.suggested_semantic_weight - 0.3).abs() < 0.01,
-            "Should suggest semantic_weight=0.3, got {}",
+            "Case 4 should suggest semantic_weight=0.3, got {}",
             rec.suggested_semantic_weight
-        );
-    }
-
-    /// Test: Very low d̄ (< 0.15) → default threshold with warning
-    #[test]
-    fn test_recommend_threshold_very_low_distance() {
-        // d̄ = 0.05 → all TIGHT, but edge case because vectors are nearly identical
-        let regimes = compute_regimes(0.05);
-        let rec = recommend_threshold(0.05, &regimes);
-        assert!(
-            (rec.semantic_threshold - 0.70).abs() < 0.01,
-            "Very low d̄ should recommend default θ=0.70, got {}",
-            rec.semantic_threshold
-        );
-        assert!(
-            !rec.adjust_weights,
-            "Should not adjust weights for very low d̄"
-        );
-        assert!(
-            rec.rationale.contains("nearly identical"),
-            "Rationale should mention low distance, got: {}",
-            rec.rationale
-        );
-    }
-
-    /// Test: SPREAD at 0.70-0.75, TIGHT at 0.80-0.85 → recommend θ=0.80
-    #[test]
-    fn test_recommend_threshold_spread_low_tight_high() {
-        // d̄ = 0.22
-        // θ=0.70→θ'=0.30, 0.22<0.30→TIGHT
-        // θ=0.75→θ'=0.25, 0.22<0.25→TIGHT
-        // θ=0.80→θ'=0.20, 0.22≥0.20→SPREAD
-        // θ=0.85→θ'=0.15, 0.22≥0.15→SPREAD
-        let regimes = compute_regimes(0.22);
-        assert_eq!(regimes[0].regime, Regime::Tight); // 0.70
-        assert_eq!(regimes[1].regime, Regime::Tight); // 0.75
-        assert_eq!(regimes[2].regime, Regime::Spread); // 0.80
-        assert_eq!(regimes[3].regime, Regime::Spread); // 0.85
-
-        // TIGHT at 0.70 → default threshold 0.70, no adjustment
-        let rec = recommend_threshold(0.22, &regimes);
-        assert!(
-            (rec.semantic_threshold - 0.70).abs() < 0.01,
-            "TIGHT at 0.70 should recommend θ=0.70, got {}",
-            rec.semantic_threshold
-        );
-        assert!(!rec.adjust_weights);
-    }
-
-    /// Test: TIGHT at θ≤0.80 but SPREAD at θ=0.85 → default θ=0.70 still appropriate
-    ///
-    /// With d̄=0.18: TIGHT at 0.70/0.75/0.80, SPREAD only at 0.85.
-    /// Since `tight_at_070=true`, the default threshold 0.70 is still the
-    /// best choice — vectors discriminate well at this threshold.
-    #[test]
-    fn test_recommend_threshold_tight_low_spread_at_085() {
-        let regimes = compute_regimes(0.18);
-        assert_eq!(
-            regimes[0].regime,
-            Regime::Tight,
-            "d̄=0.18 < θ'=0.30 at θ=0.70"
-        );
-        assert_eq!(
-            regimes[1].regime,
-            Regime::Tight,
-            "d̄=0.18 < θ'=0.25 at θ=0.75"
-        );
-        assert_eq!(
-            regimes[2].regime,
-            Regime::Tight,
-            "d̄=0.18 < θ'=0.20 at θ=0.80"
-        );
-        assert_eq!(
-            regimes[3].regime,
-            Regime::Spread,
-            "d̄=0.18 ≥ θ'=0.15 at θ=0.85"
-        );
-
-        // tight_at_070=true → recommend θ=0.70 (default)
-        let rec = recommend_threshold(0.18, &regimes);
-        assert!(
-            (rec.semantic_threshold - 0.70).abs() < 0.01,
-            "TIGHT at 0.70 should recommend θ=0.70, got {}",
-            rec.semantic_threshold
-        );
-        assert!(
-            !rec.adjust_weights,
-            "Should not adjust weights when TIGHT at 0.70"
         );
     }
 
