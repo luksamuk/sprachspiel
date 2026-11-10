@@ -2,9 +2,10 @@
 //!
 //! Real end-to-end checks against a local SSE mock: the provider layer is
 //! the concrete `OpenAICompatibleProvider` driving a real TCP server, so an
-//! LLM-call counter measures "no further calls" exactly. The mock's
-//! `on_request` hook runs with the request index before the response is
-//! sent, which is what reproduces a Ctrl+C racing the model mid-call.
+//! LLM-call counter measures "no further calls" exactly (fixtures in
+//! `tests/common`). The mock's `on_request` hook runs with the request
+//! index before the response is sent, which is what reproduces a Ctrl+C
+//! racing the model mid-call.
 //!
 //! Covers the accepted test matrix: cancel per layer → zero later calls;
 //! cancel between a complete summary and its commit → discard, never
@@ -13,11 +14,13 @@
 //! untouched on discard; DB ≡ live session on terminal; token-less path
 //! unchanged.
 
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::sync::atomic::{AtomicUsize, Ordering};
+mod common;
+
+use common::{
+    block_on, channel_view, fill_past_buffer, llm_channel, long_session, persisted_summary,
+    provider_mock, session_with_db, short_session, test_model, MockServer,
+};
 use std::sync::Arc;
-use std::thread::JoinHandle;
 
 use tokio_util::sync::CancellationToken;
 
@@ -27,155 +30,7 @@ use sprachspiel::chat::continuation::{ProcessResult, process_send_result};
 use sprachspiel::chat::llm_event::LlmEvent;
 use sprachspiel::chat::repl::{TurnTerminal, handle_user_message_stream};
 use sprachspiel::chat::repl_state::ReplStateBuilder;
-use sprachspiel::chat::session::ChatSession;
-use sprachspiel::config::ModelConfig;
-use sprachspiel::db::Database;
-use sprachspiel::provider::OpenAICompatibleProvider;
 use sprachspiel::settings::Settings;
-
-// ── Local SSE mock ────────────────────────────────────────────────────
-
-struct MockServer {
-    base_url: String,
-    requests: Arc<AtomicUsize>,
-    _handle: JoinHandle<()>,
-}
-
-impl MockServer {
-    /// One-thread OpenAI-compatible SSE server. `on_request` receives the
-    /// 0-based request index before the response is written, so cancelling
-    /// a token inside it reproduces Ctrl+C racing an in-flight call.
-    fn spawn(on_request: impl Fn(usize) + Send + Sync + 'static) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
-        let port = listener.local_addr().expect("local addr").port();
-        let requests = Arc::new(AtomicUsize::new(0));
-        let reqs = Arc::clone(&requests);
-        let handler = Arc::new(on_request);
-        let handle = std::thread::spawn(move || {
-            for conn in listener.incoming() {
-                let mut stream = match conn {
-                    Ok(s) => s,
-                    Err(_) => break,
-                };
-                let mut raw = Vec::new();
-                let mut buf = [0u8; 16384];
-                loop {
-                    let n = stream.read(&mut buf).unwrap_or(0);
-                    if n == 0 {
-                        break;
-                    }
-                    raw.extend_from_slice(&buf[..n]);
-                    if raw.windows(4).any(|w| w == b"\r\n\r\n") {
-                        break;
-                    }
-                }
-                let idx = reqs.fetch_add(1, Ordering::SeqCst);
-                handler(idx);
-                let body = concat!(
-                    "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"S\"}}]}\n\n",
-                    "data: [DONE]\n\n"
-                );
-                let head = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
-                     Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-                );
-                let chunk = format!("{:x}\r\n{}\r\n", body.len(), body);
-                let _ = stream.write_all(head.as_bytes());
-                let _ = stream.write_all(chunk.as_bytes());
-                let _ = stream.write_all(b"0\r\n\r\n");
-                let _ = stream.flush();
-            }
-        });
-        Self {
-            base_url: format!("http://127.0.0.1:{port}"),
-            requests,
-            _handle: handle,
-        }
-    }
-
-    fn count(&self) -> usize {
-        self.requests.load(Ordering::SeqCst)
-    }
-}
-
-// ── Fixtures ──────────────────────────────────────────────────────────
-
-fn test_model(context_window: u32) -> ModelConfig {
-    ModelConfig {
-        model_id: "test-model".to_string(),
-        num_ctx: context_window,
-        temperature: 0.3,
-        top_p: Some(0.9),
-        thinking: false,
-    }
-}
-
-fn provider_mock(server: &MockServer) -> OpenAICompatibleProvider {
-    OpenAICompatibleProvider::new_local(server.base_url.clone(), 0)
-}
-
-/// A live view on a kept channel: no rendering assertions here, the
-/// receiver just outlives the view so sends never close.
-fn channel_view() -> sprachspiel::chat::channel_view::ChannelView {
-    sprachspiel::chat::channel_view::ChannelView::new(tokio::sync::mpsc::channel(64).0)
-}
-
-/// Six 1200-char exchanges: ~600 tokens each — far past the window with
-/// overhead (Layer 2 territory), inside a ~2.4K-token chunk budget, so the
-/// middle-compaction path splits them into two chunks.
-fn long_session() -> ChatSession {
-    let mut session = ChatSession::new("test-model".to_string(), None, true);
-    for i in 0..6 {
-        // ~800 estimated tokens per message (tokens = words / 0.75).
-        session.add_user_message(format!("topic {i}: {}", "field ".repeat(600)));
-        session.add_assistant_message(format!("answer {i}: {}", "note ".repeat(300)), None, None);
-    }
-    session
-}
-
-/// Four short exchanges — everything fits in the single-pass layer.
-fn short_session() -> ChatSession {
-    let mut session = ChatSession::new("test-model".to_string(), None, true);
-    for i in 0..4 {
-        session.add_user_message(format!("question {i}"));
-        session.add_assistant_message(format!("short answer {i}"), None, None);
-    }
-    session
-}
-
-/// A non-anonymous session with an in-memory database attached, so save
-/// paths are observable through the conversation metadata.
-fn session_with_db() -> (ChatSession, Arc<Database>) {
-    let db = Arc::new(Database::in_memory().expect("in-memory db"));
-    let mut session = ChatSession::new("test-model".to_string(), None, false);
-    session.db = Some(Arc::clone(&db));
-    (session, db)
-}
-
-fn llm_channel() -> tokio::sync::mpsc::Sender<LlmEvent> {
-    tokio::sync::mpsc::channel(64).0
-}
-
-fn persisted_summary(db: &Database, session_id: &str) -> Option<Option<String>> {
-    db.get_conversation_metadata(session_id)
-        .map(|meta| meta.compacted_summary)
-        .ok()
-}
-
-fn block_on<F: std::future::Future>(fut: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("runtime")
-        .block_on(fut)
-}
-
-/// Fill a 4096-token session far past the compaction buffer
-/// (needs_buffered_compaction triggers at ~3.1K estimated tokens).
-fn fill_past_buffer(session: &mut ChatSession) {
-    session.add_user_message("word ".repeat(6_000));
-    session.add_assistant_message("note ".repeat(3_000), None, None);
-}
 
 // ── Matrix: cancel per layer → zero later calls ──────────────────────
 
@@ -322,7 +177,7 @@ async fn completed_summary_with_turn_token_defers_the_commit() {
     .compact_if_needed()
     .await;
 
-    assert_eq!(outcome, CompactionOutcome::Completed);
+    assert!(matches!(outcome, CompactionOutcome::Completed(_)));
     assert!(session.compacted_summary.is_some());
     assert!(
         persisted_summary(&db, &session.id).map(|s| s.is_none()).unwrap_or(true),
@@ -422,7 +277,7 @@ async fn tokenless_path_commits_and_saves_like_before() {
     .compact_if_needed()
     .await;
 
-    assert_eq!(outcome, CompactionOutcome::Completed);
+    assert!(matches!(outcome, CompactionOutcome::Completed(_)));
     assert!(session.compacted_summary.is_some());
     assert_eq!(
         persisted_summary(&db, &session.id),

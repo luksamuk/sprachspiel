@@ -45,6 +45,11 @@ pub struct StatusBarState {
     ///
     /// Rendered in red on the right side of the status bar.
     pub overlay: Option<String>,
+    /// Whether the session governor has auto-compaction paused. Rendered as
+    /// a persistent ⏸ indicator next to the model indicators — it stays
+    /// until the pause is lifted (/compact success, /new, reload), which is
+    /// set/cleared via [`crate::chat::app::App::set_compaction_paused`].
+    pub compaction_paused: bool,
 }
 
 impl StatusBarState {
@@ -69,6 +74,7 @@ impl StatusBarState {
             status_label: None,
             embedding_progress: None,
             overlay: None,
+            compaction_paused: false,
         }
     }
 
@@ -172,6 +178,17 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
         spans.push(Span::raw("🎨"));
     } else {
         spans.push(Span::raw("📄"));
+    }
+
+    // Persistent auto-compaction pause indicator: stays for the whole
+    // session while paused, mirroring the governor — not a transient
+    // overlay, because the pause outlives any single turn or task.
+    if state.compaction_paused {
+        spans.push(Span::raw(" ⏸"));
+        spans.push(Span::styled(
+            " paused",
+            Style::default().fg(styles::YELLOW),
+        ));
     }
 
     // Embedding progress — shown after indicators with separator

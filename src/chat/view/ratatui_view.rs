@@ -232,6 +232,11 @@ impl ChatView for RatatuiView {
         self.render();
     }
 
+    fn set_compaction_paused(&mut self, paused: bool) {
+        self.app.set_compaction_paused(paused);
+        self.render();
+    }
+
     fn show_compact_complete(
         &mut self,
         count: usize,

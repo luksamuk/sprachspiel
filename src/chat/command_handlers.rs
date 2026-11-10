@@ -521,6 +521,9 @@ fn handle_new(state: &mut ReplState) -> Vec<CommandOutput> {
     // conversation's tool activity, so they must not leak into the next
     // session's compaction staple.
     state.session.fact_tracker = Default::default();
+    // Same hygiene for the compaction pause: the new conversation has no
+    // compaction history worth breaking.
+    state.session.governor = Default::default();
 
     // Generate new session ID
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1208,6 +1211,10 @@ pub async fn handle_compact(
                     let _ = db.clear_conversation_prompt_tokens(&state.session.id);
                 }
             }
+
+            // The manual compaction ran to completion — this is the recovery
+            // that lifts the pause; failure and cancellation skip this arm.
+            state.session.governor.resume();
         }
         Err(e) => {
             outputs.push(CommandOutput::error(format!("Compaction failed: {}", e)));

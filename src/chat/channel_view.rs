@@ -79,6 +79,10 @@ impl ChatView for ChannelView {
         self.send(ViewAction::ShowCompactProgress(message.to_string()));
     }
 
+    fn set_compaction_paused(&mut self, paused: bool) {
+        self.send(ViewAction::SetCompactionPaused(paused));
+    }
+
     fn show_compact_complete(
         &mut self,
         count: usize,

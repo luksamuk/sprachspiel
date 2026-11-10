@@ -294,6 +294,12 @@ pub trait ChatView: Send {
     ///
     /// Shows when auto-compaction is in progress.
     fn show_compact_progress(&mut self, message: &str);
+    /// Reflect the session governor's auto-compaction pause in the view.
+    ///
+    /// The session state is the source of truth; this is the persistent
+    /// status-bar indicator following it (or clearing it when a pause is
+    /// lifted).
+    fn set_compaction_paused(&mut self, paused: bool);
 
     /// Display a compact complete message
     ///
