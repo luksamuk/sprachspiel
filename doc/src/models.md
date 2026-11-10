@@ -167,25 +167,39 @@ The following ranking is weighted for Sprachspiel's use case: local inference on
 
 #### Prefix Configuration
 
-Each embedding model expects a specific text prefix. Configure it via `[indexing].prefix` in `config.toml`:
+Each embedding model expects a specific text format. Configure it via
+`[indexing].query_prefix` and `[indexing].doc_prefix` in `config.toml` — two
+independent templates carrying explicit `{content}` and `{title}`
+placeholders (`{title}` is valid only in the doc template; a missing, empty,
+or whitespace-only title renders as `none`):
 
 ```toml
 [indexing]
-model = "nomic"                    # alias from models.toml
-prefix = "search_document: "       # nomic prefix (default)
-# prefix = ""                       # for models that don't need a prefix (BGE, GTE)
-# prefix = "query: "                # for snowflake-arctic-embed queries
+model = "nomic"                                  # alias from models.toml
+# Symmetric-style models set both sides at their format:
+# query_prefix = "query: "                        # NOT valid as template: needs {content}
+# query_prefix = "query: {content}"
+# doc_prefix = "document: {content}"
+# Asymmetric model (embeddinggemma-2):
+# query_prefix = "task: search result | query: {content}"
+# doc_prefix = "title: {title} | text: {content}"
 ```
 
-| Model | Prefix | Notes |
-|-------|--------|-------|
-| nomic-embed-text-v2-moe | `search_document: ` | Default; also supports `search_query: ` for queries |
-| snowflake-arctic-embed-m-v2.0 | `query: ` for queries, none for passages | Asymmetric |
-| qwen3-embedding | instruction-aware | Follows `Instruct: ...\nQuery: ` format |
-| mxbai-embed-large | `Represent this sentence for searching relevant passages: ` | Long prefix |
-| LFM2.5-Embedding-350M | `query: ` / `document: ` | Asymmetric, similar to nomic |
+Both templates default to `""` — the text is embedded unchanged. Templates
+are validated at config load: a non-empty template must carry `{content}`
+exactly once, unknown `{...}` placeholders fail the config, and putting
+`{title}` in the query template is an error.
+
+| Model | Side format | Config |
+|-------|-------------|--------|
+| nomic-embed-text-v2-moe | `search_document: ` / `search_query: ` | `doc_prefix = "search_document: {content}"` (legacy default) + `query_prefix = "search_query: {content}"` |
+| snowflake-arctic-embed-m-v2.0 | `query: ` for queries, none for passages | Asymmetric: query template only |
+| qwen3-embedding | instruction-aware | Follows `Instruct: ...` + `Query: ` format via `query_prefix` |
+| mxbai-embed-large | `Represent this sentence for searching relevant passages: ` | Long doc template |
+| LFM2.5-Embedding-350M | `query: ` / `document: ` | Asymmetric, both sides templated |
 | Nemotron-3-Embed-1B | `query: ` / `document: ` | Asymmetric, same as LFM2.5; 34 languages including pt |
-| BGE / GTE / embeddinggemma | `""` (none) | No prefix needed |
+| **embeddinggemma-2** | `task: search result | query: {content}` for queries; `title: {title} | text: {content}` for docs | Per-side templates; title renders `none` when absent |
+| BGE / GTE | `""` (no prefix) | Leave both templates unset |
 
 #### Dimensions and Matryoshka Truncation
 

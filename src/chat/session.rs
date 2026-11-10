@@ -466,6 +466,7 @@ impl ChatSession {
                                         conversation_id: Some(&conv_id),
                                         project_id: project_id.as_deref(),
                                         timestamp,
+                                        reindex_owned: false,
                                     };
                                     let _ = embed_chunk_with_fallback(
                                         ctx,
@@ -637,6 +638,7 @@ impl ChatSession {
                                         conversation_id: Some(&conv_id),
                                         project_id: project_id.as_deref(),
                                         timestamp,
+                                        reindex_owned: false,
                                     };
                                     let _ = embed_chunk_with_fallback(
                                         ctx,
@@ -766,6 +768,7 @@ impl ChatSession {
                                         conversation_id: Some(&conv_id),
                                         project_id: project_id.as_deref(),
                                         timestamp,
+                                        reindex_owned: false,
                                     };
                                     let _ = embed_chunk_with_fallback(
                                         ctx,

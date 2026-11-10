@@ -24,15 +24,14 @@ use std::sync::Arc;
 use crate::chat::app::{EmbeddingPhase, EmbeddingProgress, EmbeddingProgressTx};
 use crate::db::Database;
 use crate::embeddings::{
-    ChunkConfig, DynamicChunkConfig, EmbeddingClient, MIN_EMBED_CONTENT_LEN,
-    chunk_text_with_config,
+    ChunkConfig, EmbeddingClient, MIN_EMBED_CONTENT_LEN, chunk_text_with_config,
     fallback::{
         EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
     },
 };
 
 /// Result of embedding regeneration
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RegenerationStats {
     /// Number of content items processed
     pub items_processed: usize,
@@ -42,17 +41,21 @@ pub struct RegenerationStats {
     pub items_failed: usize,
     /// Number of chunks that failed
     pub chunks_failed: usize,
+    /// Number of facts processed
+    pub facts_processed: usize,
+    /// Number of facts that failed
+    pub facts_failed: usize,
 }
 
 impl RegenerationStats {
-    /// Total items and chunks processed
+    /// Total items, chunks, and facts processed
     pub fn total_processed(&self) -> usize {
-        self.items_processed + self.chunks_processed
+        self.items_processed + self.chunks_processed + self.facts_processed
     }
 
     /// Total failures
     pub fn total_failed(&self) -> usize {
-        self.items_failed + self.chunks_failed
+        self.items_failed + self.chunks_failed + self.facts_failed
     }
 
     /// Returns true if there were any errors
@@ -111,7 +114,7 @@ pub async fn regenerate_all_embeddings(
         }
     };
 
-    let chunk_config = DynamicChunkConfig::new(context_length);
+    let chunk_config = embedding_client.dynamic_chunk_config(context_length);
     let max_chars = chunk_config.max_chars();
 
     // Get all items and chunks without embeddings
@@ -128,6 +131,8 @@ pub async fn regenerate_all_embeddings(
                 chunks_processed: 0,
                 items_failed: 0,
                 chunks_failed: 0,
+                facts_processed: 0,
+                facts_failed: 0,
             };
         }
     };
@@ -145,6 +150,8 @@ pub async fn regenerate_all_embeddings(
                 chunks_processed: 0,
                 items_failed: 0,
                 chunks_failed: 0,
+                facts_processed: 0,
+                facts_failed: 0,
             };
         }
     };
@@ -160,6 +167,8 @@ pub async fn regenerate_all_embeddings(
             chunks_processed: 0,
             items_failed: 0,
             chunks_failed: 0,
+            facts_processed: 0,
+            facts_failed: 0,
         };
     }
 
@@ -207,6 +216,8 @@ pub async fn regenerate_all_embeddings(
         chunks_processed: 0,
         items_failed: 0,
         chunks_failed: 0,
+        facts_processed: 0,
+        facts_failed: 0,
     };
 
     // Report embedding progress to the TUI status bar.
@@ -228,7 +239,7 @@ pub async fn regenerate_all_embeddings(
         };
 
     // Process content items
-    for (item_id, content_type, content) in &items {
+    for (item_id, content_type, title, content) in &items {
         // Skip if content is empty or too short for meaningful embedding.
         // The SQL query already filters by MIN_EMBED_CONTENT_LEN, but this
         // check is a defense-in-depth in case the query changes.
@@ -285,7 +296,8 @@ pub async fn regenerate_all_embeddings(
                     }
                 };
 
-                // Embed chunk with fallback (handles oversized content)
+                // Embed chunk with fallback (handles oversized content).
+                // Reindex-owned: this write is the rebuild itself.
                 let ctx = EmbedContext {
                     content: &chunk.content,
                     item_id: *item_id,
@@ -294,6 +306,7 @@ pub async fn regenerate_all_embeddings(
                     conversation_id: conv_id.as_deref(),
                     project_id: proj_id.as_deref(),
                     timestamp,
+                    reindex_owned: true,
                 };
 
                 match embed_chunk_with_fallback(
@@ -334,7 +347,9 @@ pub async fn regenerate_all_embeddings(
                 content_type.as_str(),
                 conv_id.as_deref(),
                 proj_id.as_deref(),
-            );
+            )
+            .with_title(title.as_deref())
+            .owned_by_reindex();
 
             match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
                 Ok(result) => {
@@ -468,6 +483,7 @@ pub async fn regenerate_all_embeddings(
             conversation_id: conv_id.as_deref(),
             project_id: proj_id.as_deref(),
             timestamp,
+            reindex_owned: true,
         };
 
         match embed_chunk_with_fallback(
@@ -522,6 +538,112 @@ pub async fn regenerate_all_embeddings(
 
         processed += 1;
         report_progress(processed, total, entities_current, &progress);
+    }
+
+    // Process facts — same doc-side path as content items, untitled.
+    // The reindex coverage includes the fact bank so one /reindex run
+    // leaves every entity re-embedded under the current models.
+    let facts = match db.get_facts_for_reindex() {
+        Ok(f) => f,
+        Err(e) => {
+            if quiet {
+                log::warn!("Error checking for facts without embeddings: {}", e);
+            } else {
+                eprintln!("Error checking for facts without embeddings: {}", e);
+            }
+            Vec::new()
+        }
+    };
+    if !facts.is_empty() {
+        total += facts.len();
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(EmbeddingProgress::new(
+                EmbeddingPhase::Facts,
+                0,
+                facts.len(),
+                processed,
+                total,
+            ));
+        }
+        if !quiet {
+            println!("Regenerating embeddings for {} fact(s)...", facts.len());
+        }
+
+        for (fact_id, content) in &facts {
+            // Skip empty content (defensive; matches the recovery pass).
+            if content.trim().is_empty() {
+                stats.facts_failed += 1;
+                processed += 1;
+                report_progress(processed, total, entities_current, &progress);
+                continue;
+            }
+
+            match crate::facts::embedding::generate_fact_embedding(content, embedding_client).await
+            {
+                Ok(result) => {
+                    // Fetch the full fact for the vec0 partition keys
+                    // (scope/category/project), same as the startup pass.
+                    let fact_ok = match db.get_fact(*fact_id) {
+                        Ok(Some(f)) => Some(f),
+                        Ok(None) => None,
+                        Err(e) => {
+                            log::warn!("Failed to fetch fact {} for embedding: {}", fact_id, e);
+                            None
+                        }
+                    };
+                    if let Some(fact) = fact_ok {
+                        match db.update_fact_embedding(
+                            *fact_id,
+                            &result.vector,
+                            &fact.scope.to_string(),
+                            &fact.category.to_string(),
+                            fact.project_id.as_deref(),
+                            result.norm_correction,
+                        ) {
+                            Ok(()) => stats.facts_processed += 1,
+                            Err(e) => {
+                                log::warn!("Failed to store fact embedding for {}: {}", fact_id, e);
+                                stats.facts_failed += 1;
+                            }
+                        }
+                    } else {
+                        stats.facts_failed += 1;
+                    }
+                }
+                Err(e) => {
+                    if quiet {
+                        log::warn!("Failed to generate fact embedding for {}: {}", fact_id, e);
+                    } else {
+                        eprintln!(
+                            "Warning: Failed to generate fact embedding for {}: {}",
+                            fact_id, e
+                        );
+                    }
+                    stats.facts_failed += 1;
+
+                    // Embedding service unreachable — stop gracefully;
+                    // recovery completes the rest on next startup.
+                    let err_str = e.to_string();
+                    if err_str.contains("connection refused")
+                        || err_str.contains("network")
+                        || err_str.contains("timeout")
+                    {
+                        if quiet {
+                            log::warn!(
+                                "Cannot connect to embedding service for fact embeddings."
+                            );
+                        } else {
+                            eprintln!("\nError: Cannot connect to embedding service.");
+                        }
+                        let remaining = facts.len() - stats.facts_processed - stats.facts_failed;
+                        stats.facts_failed += remaining;
+                        break;
+                    }
+                }
+            }
+            processed += 1;
+            report_progress(processed, total, entities_current, &progress);
+        }
     }
 
     progress.finish_and_clear();
@@ -592,10 +714,12 @@ mod tests {
             chunks_processed: 50,
             items_failed: 5,
             chunks_failed: 2,
+            facts_processed: 25,
+            facts_failed: 1,
         };
 
-        assert_eq!(stats.total_processed(), 150);
-        assert_eq!(stats.total_failed(), 7);
+        assert_eq!(stats.total_processed(), 175);
+        assert_eq!(stats.total_failed(), 8);
         assert!(stats.has_errors());
 
         let no_errors = RegenerationStats {
@@ -603,6 +727,8 @@ mod tests {
             chunks_processed: 5,
             items_failed: 0,
             chunks_failed: 0,
+            facts_processed: 3,
+            facts_failed: 0,
         };
 
         assert!(!no_errors.has_errors());

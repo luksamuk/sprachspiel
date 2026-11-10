@@ -30,7 +30,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use super::chunk_config::DynamicChunkConfig;
 use super::chunker::{ChunkConfig, chunk_text_with_config};
 use super::client::{EmbeddingClient, EmbeddingError};
 use crate::db::Database;
@@ -68,6 +67,12 @@ pub struct EmbedContext<'a> {
     pub project_id: Option<&'a str>,
     /// Timestamp for chunk creation
     pub timestamp: DateTime<Utc>,
+    /// Whether this write belongs to the reindex job itself. Only the
+    /// reindex sets `true`: the in-progress marker blocks every other
+    /// embedding writer, and the rebuild must be able to write through
+    /// its own gate. Every struct literal names this field explicitly —
+    /// writers must decide which side of the gate they are on.
+    pub reindex_owned: bool,
 }
 
 /// Context for embedding item content (for items without chunks yet).
@@ -75,6 +80,10 @@ pub struct EmbedContext<'a> {
 pub struct EmbedItemContext<'a> {
     /// Content to embed
     pub content: &'a str,
+    /// Item title (documents carry one; messages and chunks do not).
+    /// Rendered into the doc template's `{title}` slot; `None` or
+    /// whitespace renders as `none`.
+    pub title: Option<&'a str>,
     /// Item ID
     pub item_id: i64,
     /// Content type: "message", "note", "document"
@@ -85,6 +94,11 @@ pub struct EmbedItemContext<'a> {
     pub project_id: Option<&'a str>,
     /// Timestamp for chunk creation
     pub timestamp: DateTime<Utc>,
+    /// Whether this write belongs to the reindex job itself. Only the
+    /// reindex sets `true`: the in-progress marker blocks every other
+    /// embedding writer, and the rebuild must be able to write through
+    /// its own gate. Default `false` — `new()` authors are external.
+    pub reindex_owned: bool,
 }
 
 impl<'a> EmbedItemContext<'a> {
@@ -98,12 +112,27 @@ impl<'a> EmbedItemContext<'a> {
     ) -> Self {
         Self {
             content,
+            title: None,
             item_id,
             content_type,
             conversation_id,
             project_id,
             timestamp: Utc::now(),
+            reindex_owned: false,
         }
+    }
+
+    /// Attach the item's title for the doc-side steering template.
+    pub fn with_title(mut self, title: Option<&'a str>) -> Self {
+        self.title = title;
+        self
+    }
+
+    /// Mark this write as belonging to the reindex job, letting it
+    /// through the in-progress gate that blocks external writers.
+    pub fn owned_by_reindex(mut self) -> Self {
+        self.reindex_owned = true;
+        self
     }
 }
 
@@ -262,6 +291,16 @@ pub fn embed_chunk_with_fallback<'a>(
     division_count: usize,
 ) -> Pin<Box<dyn Future<Output = Result<EmbedResult, FallbackError>> + Send + 'a>> {
     Box::pin(async move {
+        // External embedding writes are refused while the persistent
+        // reindex reconstructs the vector bank; the item stays flagged
+        // for the post-reindex recovery pass. Reindex-owned writes pass
+        // through: the rebuild must be able to write its own results.
+        if !ctx.reindex_owned && db.is_reindex_in_progress() {
+            return Err(FallbackError::Database(
+                "embedding reindex in progress: embedding writes are paused".to_string(),
+            ));
+        }
+
         // Check limits before proceeding
         check_limits(
             division_count,
@@ -270,8 +309,8 @@ pub fn embed_chunk_with_fallback<'a>(
             MAX_CHUNKS_PER_ITEM,
         )?;
 
-        // Try direct embed first
-        match client.embed(ctx.content).await {
+        // Try direct embed first. Chunks are untitled documents.
+        match client.embed_document(None, ctx.content).await {
             Ok(result) => {
                 // Success - save embedding to existing chunk
                 db.update_content_chunk_embedding(
@@ -353,7 +392,7 @@ async fn handle_chunk_context_exceeded(
 
     // Calculate halved context length for chunking
     let halved_length = context_length / 2;
-    let halved_config = DynamicChunkConfig::new(halved_length);
+    let halved_config = client.dynamic_chunk_config(halved_length);
     let chunks = chunk_text_with_config(ctx.content, &ChunkConfig::from(&halved_config));
 
     if chunks.is_empty() {
@@ -385,6 +424,7 @@ async fn handle_chunk_context_exceeded(
             conversation_id: ctx.conversation_id,
             project_id: ctx.project_id,
             timestamp: ctx.timestamp,
+            reindex_owned: ctx.reindex_owned,
         };
 
         embed_chunk_with_fallback(
@@ -461,6 +501,16 @@ pub async fn embed_item_with_fallback(
     client: &Arc<EmbeddingClient>,
     context_length: usize,
 ) -> Result<EmbedResult, FallbackError> {
+    // External embedding writes are refused while the persistent reindex
+    // reconstructs the vector bank; the item stays flagged for the
+    // post-reindex recovery pass. Reindex-owned writes pass through: the
+    // rebuild must be able to write its own results.
+    if !ctx.reindex_owned && db.is_reindex_in_progress() {
+        return Err(FallbackError::Database(
+            "embedding reindex in progress: embedding writes are paused".to_string(),
+        ));
+    }
+
     // Check limits
     check_limits(
         0,
@@ -470,7 +520,7 @@ pub async fn embed_item_with_fallback(
     )?;
 
     // Try direct embed first
-    match client.embed(ctx.content).await {
+    match client.embed_document(ctx.title, ctx.content).await {
         Ok(result) => {
             // Success - save embedding to item
             db.update_content_item_embedding(
@@ -517,7 +567,7 @@ async fn handle_item_context_exceeded<'a>(
 
     // Calculate halved context length for chunking
     let halved_length = context_length / 2;
-    let halved_config = DynamicChunkConfig::new(halved_length);
+    let halved_config = client.dynamic_chunk_config(halved_length);
     let chunks = chunk_text_with_config(ctx.content, &ChunkConfig::from(&halved_config));
 
     if chunks.is_empty() {
@@ -552,6 +602,7 @@ async fn handle_item_context_exceeded<'a>(
             conversation_id: ctx.conversation_id,
             project_id: ctx.project_id,
             timestamp: ctx.timestamp,
+            reindex_owned: ctx.reindex_owned,
         };
 
         embed_chunk_with_fallback(
@@ -622,6 +673,8 @@ fn estimate_tokens(content_len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embeddings::spy::SpyProvider;
+    use crate::provider::LlmProvider as _;
 
     #[test]
     fn test_estimate_tokens() {
@@ -629,6 +682,353 @@ mod tests {
         assert_eq!(estimate_tokens(100), 50); // 100/2 = 50
         assert_eq!(estimate_tokens(300), 150); // 300/2 = 150
         assert_eq!(estimate_tokens(1000), 500); // 1000/2 = 500
+    }
+
+    /// eg2 doc template for the fallback-path spy tests.
+    fn eg2_templates() -> crate::embeddings::PrefixTemplates {
+        crate::embeddings::PrefixTemplates {
+            query: String::new(),
+            doc: "title: {title} | text: {content}".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fallback_item_path_renders_doc_path_exactly_once() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        // Match the spy's vector width to the vec0 tables.
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("Doc Título"),
+                "short body",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+
+        let ctx = EmbedItemContext::new("short body", item_id, "message", None, None)
+            .with_title(Some("Doc Título"));
+        let result = embed_item_with_fallback(ctx, &db, &client, 8192).await;
+        // The direct (non-chunked) path reports zero chunks created.
+        match &result {
+            Ok(_) => {}
+            Err(e) => {
+                panic!("item path should embed directly: {e:?}");
+            }
+        };
+        assert_eq!(
+            calls.texts(),
+            vec!["title: Doc Título | text: short body".to_string()],
+            "fallback item path must apply the doc template exactly once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fallback_chunk_path_embeds_untitled_once() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        // Match the spy's vector width to the vec0 tables.
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "parent content",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+        let ts = chrono::Utc::now();
+        let chunk_id = db
+            .insert_content_chunk(item_id, 0, "chunk body", 0, 10, ts)
+            .expect("insert chunk");
+
+        let ctx = EmbedContext {
+            content: "chunk body",
+            item_id,
+            chunk_id,
+            content_type: "message",
+            conversation_id: None,
+            project_id: None,
+            timestamp: ts,
+            reindex_owned: false,
+        };
+        let result = embed_chunk_with_fallback(ctx, Arc::clone(&db), Arc::clone(&client), 8192, 0)
+            .await;
+        let chunks = match &result {
+            Ok(r) => r.chunks_created,
+            Err(e) => {
+                panic!("chunk path should embed directly: {e:?}");
+            }
+        };
+        assert_eq!(chunks, 1);
+        assert_eq!(
+            calls.texts(),
+            vec!["title: none | text: chunk body".to_string()],
+            "fallback chunk path embeds untitled with the doc template exactly once"
+        );
+    }
+
+    // ============================================================
+    // Reindex gate: owned writes pass, external writes are refused
+    // (the marker simulates a crash mid-reindex — it persists)
+    // ============================================================
+
+    #[tokio::test]
+    async fn test_reindex_marker_blocks_external_item_write() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "short body",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+        db.set_reindex_in_progress(true).expect("set marker");
+
+        let ctx = EmbedItemContext::new("short body", item_id, "message", None, None)
+            .with_title(Some("Doc Título"));
+        let result = embed_item_with_fallback(ctx, &db, &client, 8192).await;
+        match &result {
+            Err(FallbackError::Database(msg)) => {
+                assert!(
+                    msg.contains("embedding writes are paused"),
+                    "unexpected refusal message: {msg}"
+                );
+            }
+            other => panic!("external write must be refused while the marker is set: {other:?}"),
+        }
+        // Refusal happens before any provider call.
+        assert!(calls.texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reindex_owned_item_write_passes_with_marker_set() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("Doc Título"),
+                "short body",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+        db.set_reindex_in_progress(true).expect("set marker");
+
+        let ctx = EmbedItemContext::new("short body", item_id, "message", None, None)
+            .with_title(Some("Doc Título"))
+            .owned_by_reindex();
+        embed_item_with_fallback(ctx, &db, &client, 8192)
+            .await
+            .unwrap_or_else(|e| panic!("reindex-owned write must pass the gate: {e:?}"));
+        assert_eq!(
+            calls.texts(),
+            vec!["title: Doc Título | text: short body".to_string()],
+            "reindex-owned write still applies the doc template exactly once"
+        );
+
+        // Cleanup: leaving the marker set would poison other tests using
+        // the same shared in-memory provider registry.
+        db.set_reindex_in_progress(false).expect("clear marker");
+    }
+
+    #[tokio::test]
+    async fn test_reindex_marker_blocks_external_chunk_write() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "parent content",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+        let ts = chrono::Utc::now();
+        let chunk_id = db
+            .insert_content_chunk(item_id, 0, "chunk body", 0, 10, ts)
+            .expect("insert chunk");
+        db.set_reindex_in_progress(true).expect("set marker");
+
+        let ctx = EmbedContext {
+            content: "chunk body",
+            item_id,
+            chunk_id,
+            content_type: "message",
+            conversation_id: None,
+            project_id: None,
+            timestamp: ts,
+            reindex_owned: false,
+        };
+        let result = embed_chunk_with_fallback(ctx, Arc::clone(&db), Arc::clone(&client), 8192, 0)
+            .await;
+        match &result {
+            Err(FallbackError::Database(msg)) => {
+                assert!(
+                    msg.contains("embedding writes are paused"),
+                    "unexpected refusal message: {msg}"
+                );
+            }
+            other => panic!("external chunk write must be refused with the marker set: {other:?}"),
+        }
+        assert!(calls.texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reindex_owned_chunk_write_passes_with_marker_set() {
+        let spy = SpyProvider::new(768);
+        let calls = spy.calls();
+        let client = Arc::new(EmbeddingClient::with_model(
+            spy,
+            "eg2".to_string(),
+            768,
+            eg2_templates(),
+            None,
+        ));
+        let db = Arc::new(Database::in_memory().expect("in-memory db"));
+        db.ensure_vec0_dimensions(768).expect("ensure dims");
+        let item_id = db
+            .insert_content_item(
+                "message",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "parent content",
+                None,
+                0.5,
+                None,
+                chrono::Utc::now(),
+            )
+            .expect("insert item");
+        let ts = chrono::Utc::now();
+        let chunk_id = db
+            .insert_content_chunk(item_id, 0, "chunk body", 0, 10, ts)
+            .expect("insert chunk");
+        db.set_reindex_in_progress(true).expect("set marker");
+
+        let ctx = EmbedContext {
+            content: "chunk body",
+            item_id,
+            chunk_id,
+            content_type: "message",
+            conversation_id: None,
+            project_id: None,
+            timestamp: ts,
+            reindex_owned: true,
+        };
+        embed_chunk_with_fallback(ctx, Arc::clone(&db), Arc::clone(&client), 8192, 0)
+            .await
+            .unwrap_or_else(|e| panic!("reindex-owned chunk write must pass the gate: {e:?}"));
+        assert_eq!(
+            calls.texts(),
+            vec!["title: none | text: chunk body".to_string()],
+            "reindex-owned chunk write still applies the doc template exactly once"
+        );
+
+        db.set_reindex_in_progress(false).expect("clear marker");
     }
 
     #[test]

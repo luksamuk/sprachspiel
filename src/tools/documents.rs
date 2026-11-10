@@ -280,7 +280,8 @@ pub async fn import_document(
             "document",
             None,
             project_id.as_deref(),
-        );
+        )
+        .with_title(Some(&document.title));
 
         // Use block_in_place for synchronous embedding in async context
         let embed_result = tokio::task::block_in_place(|| {

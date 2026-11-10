@@ -40,6 +40,16 @@ pub async fn recover_missing_fact_embeddings(
     client: &Arc<EmbeddingClient>,
     progress_tx: Option<EmbeddingProgressTx>,
 ) -> usize {
+    // The persistent reindex owns the vector bank; fact embedding
+    // recovery must not interleave writes with a running (or
+    // interrupted) reindex — this pass skips and defers to the
+    // reindex run.
+    if db.is_reindex_in_progress() {
+        log::warn!(
+            "Reindex in progress — deferring fact embedding recovery until it finishes"
+        );
+        return 0;
+    }
     let facts_for_reindex = match db.get_facts_for_reindex() {
         Ok(facts) if !facts.is_empty() => facts,
         Ok(_) => return 0,

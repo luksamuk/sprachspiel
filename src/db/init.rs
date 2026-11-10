@@ -49,9 +49,10 @@ pub struct IndexingInit {
     #[allow(dead_code)]
     // Config flag — passed to run_indexing_probe(), not read via field access
     pub probe: bool,
-    /// Prefix prepended to each text before embedding (from
-    /// `[indexing].prefix` in `config.toml`).
-    pub prefix: String,
+    /// Per-side task-steering templates (from
+    /// `[indexing].query_prefix`/`doc_prefix`), already resolved and
+    /// validated at load.
+    pub prefixes: crate::embeddings::PrefixTemplates,
     /// Context length for the embedding model (from `num_ctx` on
     /// the model alias in `models.toml`). `None` = use
     /// `DEFAULT_CONTEXT_LENGTH` (512).
@@ -127,7 +128,7 @@ pub fn init_database_core(
                 indexing_init.provider.clone(),
                 indexing_init.model_id.clone(),
                 indexing_init.dimensions,
-                indexing_init.prefix.clone(),
+                indexing_init.prefixes.clone(),
                 indexing_init.context_length,
             ));
             DatabaseInitResult {
@@ -257,7 +258,7 @@ mod tests {
             model_id: "nomic-embed-text-v2-moe".to_string(),
             dimensions: 768,
             probe: true,
-            prefix: "search_document: ".to_string(),
+            prefixes: crate::embeddings::PrefixTemplates::default(),
             context_length: None,
         };
         assert_eq!(init.model_id, "nomic-embed-text-v2-moe");
@@ -275,7 +276,7 @@ mod tests {
                 model_id: "test".to_string(),
                 dimensions: 768,
                 probe: false,
-                prefix: "search_document: ".to_string(),
+                prefixes: crate::embeddings::PrefixTemplates::default(),
                 context_length: None,
             },
             true, // skip_persistence
@@ -297,7 +298,7 @@ mod tests {
                 model_id: "".to_string(),
                 dimensions: 768,
                 probe: false,
-                prefix: "search_document: ".to_string(),
+                prefixes: crate::embeddings::PrefixTemplates::default(),
                 context_length: None,
             },
             false,
@@ -320,7 +321,7 @@ mod tests {
                 model_id: "   ".to_string(),
                 dimensions: 768,
                 probe: false,
-                prefix: "search_document: ".to_string(),
+                prefixes: crate::embeddings::PrefixTemplates::default(),
                 context_length: None,
             },
             false,

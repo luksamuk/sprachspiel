@@ -229,7 +229,7 @@ Three interrelated bugs discovered via production database investigation (12 ite
 | qwen3-embedding (0.6B) | 4096 | ✅ (32-4096) | 8192 | ~400MB | ~60 | Instruction-aware |
 | qwen3-embedding (8B) | 4096 | ✅ (32-4096) | 8192 | ~5GB Q4 | 70.58 | SOTA quality |
 | snowflake-arctic-embed2 | 1024 | ✅ (256) | 8192 | 1.2GB | 55.98 | Multilingual |
-| embeddinggemma | 768 | ✅ (128-768) | 8192 | ~300MB | good/size | Google, no special prefix |
+| embeddinggemma | 768 | ✅ (128-768) | 8192 | ~300MB | good/size | Google; requires per-side task-steering templates (`title: {title} | text: {content}` doc side) — see the prefix configuration section |
 
 ---
 

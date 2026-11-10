@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::embeddings::prefix::{PrefixTemplates, TemplateError};
+
 /// Default model name when not specified in config
 pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 
@@ -341,10 +343,6 @@ fn default_semantic_weight() -> f32 {
     DEFAULT_SEMANTIC_WEIGHT
 }
 
-fn default_embedding_prefix() -> String {
-    "search_document: ".to_string()
-}
-
 /// Thinking Trace Transform configuration.
 ///
 /// Controls whether reasoning traces from LLM responses are included in
@@ -437,13 +435,37 @@ pub struct IndexingSettings {
     #[serde(default = "default_semantic_weight")]
     pub semantic_weight: f32,
 
-    /// Prefix prepended to each text before embedding (e.g.
-    /// `"search_document: "` for nomic-embed-text models). Some
-    /// models (BGE, GTE, mxbai) do not require a prefix — set to
-    /// `""` for those. Default: `"search_document: "` (matches
-    /// nomic-embed-text-v2-moe, the current default model).
-    #[serde(default = "default_embedding_prefix")]
-    pub prefix: String,
+    /// Task-steering template for the query side of retrieval (e.g.
+    /// `"task: search result | query: {content}"` for
+    /// embeddinggemma-2). Valid placeholder: `{content}` exactly once.
+    /// Default: `""` — the text is embedded unchanged.
+    #[serde(default)]
+    pub query_prefix: String,
+
+    /// Task-steering template for the document side of retrieval (e.g.
+    /// `"title: {title} | text: {content}"` for embeddinggemma-2).
+    /// Valid placeholders: `{content}` exactly once, `{title}`
+    /// optional — a missing/empty/whitespace title renders as `none`.
+    /// Default: `""` — the text is embedded unchanged.
+    #[serde(default)]
+    pub doc_prefix: String,
+}
+
+impl IndexingSettings {
+    /// Validate the prefix configuration (called at config load;
+    /// failures must abort startup). Templates follow the
+    /// [`PrefixTemplates`] placeholder contract.
+    pub fn validate_prefixes(&self) -> Result<(), TemplateError> {
+        self.resolved_prefixes().validate()
+    }
+
+    /// Resolve the effective per-side steering templates.
+    pub fn resolved_prefixes(&self) -> PrefixTemplates {
+        PrefixTemplates {
+            query: self.query_prefix.clone(),
+            doc: self.doc_prefix.clone(),
+        }
+    }
 }
 
 impl Default for IndexingSettings {
@@ -458,7 +480,8 @@ impl Default for IndexingSettings {
             probe: true,
             keyword_weight: DEFAULT_KEYWORD_WEIGHT,
             semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
-            prefix: default_embedding_prefix(),
+            query_prefix: String::new(),
+            doc_prefix: String::new(),
         }
     }
 }
@@ -858,12 +881,15 @@ model = "nomic"
 # overlap). Moved from the old [retrieval] section.
 # semantic_weight = 0.6
 
-# Prefix prepended to each text before embedding.
-# nomic-embed-text models use "search_document: " (the default).
-# Models that do not require a prefix (BGE, GTE, mxbai) should
-# set this to "" (empty string).
-# Default: "search_document: "
-# prefix = "search_document: "
+# Task-steering prefixes (per retrieval side).
+# Embedding models trained for asymmetric retrieval (e.g. the
+# "eg2" alias, embeddinggemma-2) use different input formats on each
+# side. Templates carry explicit placeholders: {content} (required,
+# exactly once) and {title} (doc template only — a missing or empty
+# title renders as "none"). Empty templates embed the text unchanged,
+# so leaving both unset preserves behavior.
+# query_prefix = "task: search result | query: {content}"
+# doc_prefix = "title: {title} | text: {content}"
 "#;
 
 fn default_led_port() -> u16 {
@@ -943,7 +969,18 @@ impl Settings {
         {
             match Self::load_from_file(&config_path) {
                 Ok(settings) => return settings,
-                Err(e) => eprintln!("Warning: Failed to load config file: {}", e),
+                // Fail fast: a present but invalid config file must not
+                // be silently replaced by defaults — the user set
+                // configuration explicitly, and running with built-in
+                // defaults would mask the misconfiguration.
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    eprintln!(
+                        "sprach cannot start with the invalid config file: {}",
+                        config_path.display()
+                    );
+                    std::process::exit(1);
+                }
             }
         }
         Settings::default()
@@ -953,6 +990,9 @@ impl Settings {
     fn load_from_file(path: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let content = std::fs::read_to_string(path)?;
         let settings: Settings = toml::from_str(&content)?;
+        // Fail fast on malformed prefix configuration instead of
+        // shipping templates that render wrong embeddings.
+        settings.indexing.validate_prefixes()?;
         Ok(settings)
     }
 
@@ -1539,7 +1579,9 @@ semantic_threshold = 0.80
         let settings = Settings::default();
         assert!((settings.indexing.keyword_weight - 0.4).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.6).abs() < f32::EPSILON);
-        assert_eq!(settings.indexing.prefix, "search_document: ");
+        // Side templates are empty by default — embedded text verbatim.
+        assert_eq!(settings.indexing.query_prefix, "");
+        assert_eq!(settings.indexing.doc_prefix, "");
     }
 
     #[test]
@@ -1613,14 +1655,17 @@ model = "bge"
 probe = false
 keyword_weight = 0.3
 semantic_weight = 0.7
-prefix = ""
 "#;
         let settings: Settings = toml::from_str(sample).unwrap();
         assert_eq!(settings.indexing.model, "bge");
         assert!(!settings.indexing.probe);
         assert!((settings.indexing.keyword_weight - 0.3).abs() < f32::EPSILON);
         assert!((settings.indexing.semantic_weight - 0.7).abs() < f32::EPSILON);
-        assert_eq!(settings.indexing.prefix, "");
+        assert_eq!(
+            settings.indexing.resolved_prefixes().render_query("q"),
+            "q",
+            "empty templates embed the text unchanged"
+        );
     }
 
     #[test]
