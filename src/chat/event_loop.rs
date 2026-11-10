@@ -149,6 +149,17 @@ pub async fn handle_key_line(
                 return LoopAction::QuitAfterDelivery;
             }
             Some(Ok(ChatCommand::New)) => {
+                // A new session may not open while the old tool still holds
+                // the turn: it would keep producing effects into the new
+                // conversation. The wait is real; the terminal frees it.
+                if cancel_token.is_some() {
+                    view.app_mut().add_message(ChatMessage::system(
+                        "A tool is still executing; wait for it to reach a safe point \
+                         before starting a new session."
+                            .to_string(),
+                    ));
+                    return LoopAction::Continue;
+                }
                 merge_fact_mirror(&mut state.session, fact_mirror.as_ref());
                 persist_live_session(state, view);
                 *cancel_token = None;
@@ -368,9 +379,22 @@ pub fn handle_interrupt(
 ) {
     if let Some(token) = cancel_token.as_ref() {
         token.cancel();
-        app.add_message(ChatMessage::system("Cancelled.".to_string()));
-        app.reset_round();
-        app.set_llm_state(LlmState::Idle);
+        // A running tool owns its own safe point: the request stays pending
+        // and visible until the tool's terminal, instead of pretending an
+        // immediate stop that never happened.
+        if app.llm_state() == LlmState::ToolCall {
+            app.add_message(ChatMessage::system(
+                crate::chat::coordinator::CANCELLATION_REQUESTED_MESSAGE.to_string(),
+            ));
+            log::info!(
+                "Cancellation requested while a tool runs; waiting for the safe point"
+            );
+            app.set_llm_state(LlmState::Cancelling);
+        } else {
+            app.add_message(ChatMessage::system("Cancelled.".to_string()));
+            app.reset_round();
+            app.set_llm_state(LlmState::Idle);
+        }
         // The token and the receiver stay in place: the task's terminal
         // `Cancelled` event (with its session) is still in flight and
         // `handle_cancelled` performs the actual cleanup. Dropping the
