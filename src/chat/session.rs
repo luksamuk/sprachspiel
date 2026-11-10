@@ -140,6 +140,11 @@ pub struct ChatSession {
     /// Persisted as JSON in `conversations.fact_tracker`.
     #[serde(default)]
     pub fact_tracker: crate::chat::fact_tracker::SessionFactTracker,
+    /// Session-scoped auto-compaction pause state (low-yield circuit
+    /// breaker). In-memory only: a fresh process — and a reloaded session —
+    /// always starts with auto-compaction enabled.
+    #[serde(skip)]
+    pub governor: crate::chat::compaction::AutoCompactionGovernor,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -230,6 +235,7 @@ impl ChatSession {
             async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fact_tracker: crate::chat::fact_tracker::SessionFactTracker::default(),
+            governor: crate::chat::compaction::AutoCompactionGovernor::default(),
         }
     }
 
@@ -310,6 +316,7 @@ impl ChatSession {
                     }
                 })
                 .unwrap_or_default(),
+            governor: crate::chat::compaction::AutoCompactionGovernor::default(),
         })
     }
 
@@ -870,6 +877,8 @@ impl ChatSession {
         // This prevents range start > messages.len() panics
         self.compacted_range = None;
         self.messages_sent_to_llm = 0;
+        // The summary's compaction history went away with the messages.
+        self.governor = crate::chat::compaction::AutoCompactionGovernor::default();
         self.updated_at = Utc::now();
     }
 
@@ -891,6 +900,9 @@ impl ChatSession {
         // conversation's tool activity, so they must not leak into the
         // next session's compaction staple.
         self.fact_tracker = crate::chat::fact_tracker::SessionFactTracker::default();
+        // A real reset is one of the two ways a pause is lifted: the new
+        // conversation has no compaction history to be wary of.
+        self.governor = crate::chat::compaction::AutoCompactionGovernor::default();
         self.updated_at = Utc::now();
     }
 
@@ -1073,48 +1085,59 @@ impl ChatSession {
                 // This happens when loading from DB before first interaction
                 // or when prompt_tokens is 0 or None (e.g., streaming path
                 // where the provider didn't return usage — see Bug A).
-                //
-                // IMPORTANT: If there's a compacted summary, only count:
-                // - Summary tokens
-                // - Active messages (from messages_sent_to_llm onwards)
-                // NOT the compacted messages (they're already in the summary)
-
-                // If compacted, count only active messages + summary
-                // If not compacted, count ALL messages
-                let (active_start, has_summary) = if self.has_compacted_messages() {
-                    (self.messages_sent_to_llm, true)
-                } else {
-                    (0, false)
-                };
-
-                let messages_tokens: usize = self
-                    .messages
-                    .iter()
-                    .skip(active_start)
-                    .map(|m| {
-                        crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
-                    })
-                    .sum();
-
-                // Add estimated tokens from compacted summary if present
-                let summary_tokens = if has_summary {
-                    self.compacted_summary
-                        .as_ref()
-                        .map(|s| {
-                            let word_count = s.split_whitespace().count();
-                            (word_count as f32 * 1.3).ceil() as usize
-                                + crate::tokens::MESSAGE_OVERHEAD
-                        })
-                        .unwrap_or(0)
-                } else {
-                    0
-                };
-
-                // Bug B fix: add system+tools overhead so the fallback
-                // estimate is realistic (not just message content).
-                messages_tokens + summary_tokens + overhead
+                self.estimate_active_tokens(overhead)
             }
         }
+    }
+
+    /// Pure size estimate of what this session would send next: active
+    /// messages plus the compacted summary, weighted like the fallback
+    /// token accounting, with the system/tools overhead passed in by the
+    /// caller. It never reads provider-reported token counts — that purity
+    /// is what lets the yield ruler behave identically on both sides of a
+    /// compaction, since the apply invalidates stored counts anyway.
+    fn estimate_active_tokens(&self, overhead: usize) -> usize {
+        // If compacted, count only active messages + summary; if not
+        // compacted, count ALL messages
+        let (active_start, has_summary) = if self.has_compacted_messages() {
+            (self.messages_sent_to_llm, true)
+        } else {
+            (0, false)
+        };
+
+        let messages_tokens: usize = self
+            .messages
+            .iter()
+            .skip(active_start)
+            .map(|m| {
+                crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
+            })
+            .sum();
+
+        // Add estimated tokens from compacted summary if present
+        let summary_tokens = if has_summary {
+            self.compacted_summary
+                .as_ref()
+                .map(|s| {
+                    let word_count = s.split_whitespace().count();
+                    (word_count as f32 * 1.3).ceil() as usize
+                        + crate::tokens::MESSAGE_OVERHEAD
+                })
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        messages_tokens + summary_tokens + overhead
+    }
+
+    /// The pure ruler for compaction-yield measurements: the active
+    /// context without any system/tools overhead, identical before and
+    /// after a pass. Constant overhead cancels in the subtraction anyway,
+    /// so using zero keeps the reported absolutes honest about what was
+    /// actually measured.
+    pub fn estimated_context_tokens(&self) -> usize {
+        self.estimate_active_tokens(0)
     }
 
     /// Get messages to send to LLM (summary + recent messages)

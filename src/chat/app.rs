@@ -993,6 +993,13 @@ impl App {
         self.status_bar.overlay = overlay;
     }
 
+    /// Reflect the session governor's auto-compaction pause in the status
+    /// bar. The governor stays the source of truth; this flag only mirrors
+    /// it for rendering and is reset wherever the pause itself is lifted.
+    pub fn set_compaction_paused(&mut self, paused: bool) {
+        self.status_bar.compaction_paused = paused;
+    }
+
     /// Advance the spinner frame.
     ///
     /// The spinner animates independently of streaming token arrival —

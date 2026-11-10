@@ -342,6 +342,9 @@ pub enum ViewAction {
     ShowContextWarning { percent: u8, message: String },
     /// `ChatView::show_compact_progress(message)`
     ShowCompactProgress(String),
+    /// `ChatView::set_compaction_paused(paused)` — the persistent status-bar
+    /// pause indicator follows the session governor; the view reflects it.
+    SetCompactionPaused(bool),
     /// `ChatView::show_compact_complete(count, preserved_first, preserved_last)`
     ShowCompactComplete {
         count: usize,

@@ -13,7 +13,9 @@
 //! Layer 3 (State): repl_state.rs
 //! ```
 
-use super::compaction::{CompactionContext, CompactionOutcome};
+use super::compaction::{
+    AUTO_COMPACTION_PAUSED_MESSAGE, CompactionContext, CompactionOutcome,
+};
 use super::core::{SendMessageResult, TokenMetrics, send_message};
 use super::llm_event::LlmEvent;
 use super::repl_state::ReplState;
@@ -118,6 +120,12 @@ pub async fn process_send_result(
                     // Cancelled event frees the channel for the next turn.
                     return ProcessResult::Cancelled;
                 }
+                Ok(ContinuationFlow::Paused) => {
+                    // The governor already told the user how to lift the
+                    // pause; the turn stops by the same route as a
+                    // cancellation — facts survive, nothing commits.
+                    return ProcessResult::Cancelled;
+                }
                 Err(e) => {
                     // A cancelled LLM call inside the chain must not read as
                     // a model failure.
@@ -187,7 +195,7 @@ pub async fn process_send_result(
     if !state.session.anonymous && let Err(e) = state.session.save_sqlite() {
         log::debug!("Warning: Could not save session: {}", e);
     }
-    if matches!(compact_outcome, CompactionOutcome::Completed)
+    if matches!(compact_outcome, CompactionOutcome::Completed(_))
         && !state.session.anonymous
         && let Some(db) = state.session.db.as_ref()
     {
@@ -298,6 +306,9 @@ pub enum ContinuationFlow {
     /// Ctrl+C — no continuation request was sent past the cancellation
     /// and no accumulated content is returned.
     Cancelled,
+    /// The governor paused the session mid-chain: the turn stops before
+    /// the next continuation request, with nothing committed.
+    Paused,
 }
 
 /// Handle continuation after LLM pauses for context compaction
@@ -363,6 +374,12 @@ pub async fn handle_continuation(
     // summary never reached the session and the chain stops here.
     if outcome.is_cancelled() {
         return Ok(ContinuationFlow::Cancelled);
+    }
+    // A paused governor blocks the send the same way — the compaction the
+    // chain was waiting for will not run, so the next request must not go.
+    if matches!(outcome, CompactionOutcome::Paused) {
+        view.show_system(AUTO_COMPACTION_PAUSED_MESSAGE);
+        return Ok(ContinuationFlow::Paused);
     }
 
     // Send first continuation request
@@ -449,6 +466,10 @@ pub async fn handle_continuation(
                 // ends the chain before the next request is built.
                 if outcome.is_cancelled() {
                     return Ok(ContinuationFlow::Cancelled);
+                }
+                if matches!(outcome, CompactionOutcome::Paused) {
+                    view.show_system(AUTO_COMPACTION_PAUSED_MESSAGE);
+                    return Ok(ContinuationFlow::Paused);
                 }
 
                 let next_result = send_message(
@@ -547,6 +568,10 @@ pub enum OverflowHandleResult {
     /// Ctrl+C reached the recovery compaction — the turn ends cancelled;
     /// no continuation is sent and nothing was applied to the session.
     Cancelled,
+    /// The governor has auto-compaction paused for the session. Recovery
+    /// is a fail-closed path: no history is truncated and no summarizer
+    /// runs; the caller stops the turn with the actionable pause message.
+    Paused,
 }
 
 /// Handle context overflow error during tool execution
@@ -579,6 +604,12 @@ pub async fn handle_overflow_error(
 
     if !error_str.contains("Context overflow during tool execution") {
         return OverflowHandleResult::NotOverflow;
+    }
+
+    // A paused session fails closed: no truncation, no summarizer call —
+    // the recovery path must not discard history on its own.
+    if state.session.governor.is_paused() {
+        return OverflowHandleResult::Paused;
     }
 
     // A pre-existing cancellation outranks the recovery: no more LLM calls.
@@ -642,6 +673,10 @@ async fn handle_inter_tool_compaction_error(
         return OverflowHandleResult::NotOverflow;
     };
 
+    if state.session.governor.is_paused() {
+        return OverflowHandleResult::Paused;
+    }
+
     if cancel_token.is_some_and(CancellationToken::is_cancelled) {
         return OverflowHandleResult::Cancelled;
     }
@@ -684,6 +719,11 @@ async fn handle_inter_tool_compaction_error(
         // The cancelled inter-tool compaction never applies a summary, and
         // no continuation prompt leaves the loop — the turn ends cancelled.
         return OverflowHandleResult::Cancelled;
+    }
+    // The pause may have tripped on this very pass; the turn stops before
+    // any continuation prompt (the caller owes the actionable message).
+    if state.session.governor.is_paused() {
+        return OverflowHandleResult::Paused;
     }
 
     let tokens_after = state.session.history_real_tokens();

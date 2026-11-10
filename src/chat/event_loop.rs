@@ -158,6 +158,7 @@ pub async fn handle_key_line(
                 view.app_mut().add_message(ChatMessage::system(
                     "Saved completed tool facts before starting a new session.".to_string(),
                 ));
+                view.app_mut().set_compaction_paused(false);
             }
             _ => {
                 view.app_mut().add_message(ChatMessage::system(
@@ -318,6 +319,12 @@ pub async fn handle_key_line(
                         tools_enabled,
                     );
                 }
+
+                // The pause indicator mirrors the governor wherever a
+                // command could have lifted or reset it (/compact, /new,
+                // /session forget); the governor stays the source of truth.
+                view.app_mut()
+                    .set_compaction_paused(state.session.governor.is_paused());
 
                 if outputs.iter().any(|o| matches!(o, CommandOutput::Quit)) {
                     let _ = view.app_mut().save_history();
@@ -515,6 +522,10 @@ fn handle_complete(
     state.session = *session;
     view.update_status_tokens(used_tokens, max_tokens, percent);
     view.set_llm_state(LlmState::Idle);
+    // The task clone may have tripped the pause during trailing compaction;
+    // the governor now lives in the session above, so mirror it to the bar.
+    view.app_mut()
+        .set_compaction_paused(state.session.governor.is_paused());
     log::debug!(
         "Complete: messages_count={}, current_round={}",
         view.app().message_count(),
@@ -618,6 +629,13 @@ fn handle_cancelled(
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
 ) {
     merge_cancelled_facts(&cancelled_session, state);
+    // The clone is discarded, but a pause it tripped during the turn comes
+    // from genuinely completed low-yield passes — cancelling the turn does
+    // not un-observe them. Lift and re-engage run through their own paths.
+    if cancelled_session.governor.is_paused() && !state.session.governor.is_paused() {
+        state.session.governor = cancelled_session.governor.clone();
+        app.set_compaction_paused(true);
+    }
     app.reset_round();
     *cancel_token = None;
     *llm_tx = None;
@@ -918,6 +936,11 @@ pub fn handle_llm_event(
         }
         LlmEvent::CompactStreamDone { summary, range } => {
             handle_compact_event(CompactEvent::StreamDone { summary, range }, view, state);
+            // A manual compaction that ran to completion is exactly the
+            // recovery that lifts the pause; a failed or cancelled one
+            // never reaches this arm, so it cannot resume.
+            state.session.governor.resume();
+            view.set_compaction_paused(false);
             view.set_llm_state(LlmState::Idle);
             *cancel_token = None;
             *llm_tx = None;
@@ -996,6 +1019,9 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
         }
         ViewAction::ShowCompactProgress(msg) => {
             view.show_compact_progress(&msg);
+        }
+        ViewAction::SetCompactionPaused(paused) => {
+            view.set_compaction_paused(paused);
         }
         ViewAction::ShowCompactComplete {
             count,

@@ -257,6 +257,22 @@ pub async fn handle_user_message_stream(
     let mut current_input = line.to_string();
 
     loop {
+        // Fail-closed request gate: a paused session past the window limit
+        // sends nothing — no provider call, no automatic truncation. The
+        // message names the two ways out; below the limit the turn runs on
+        // without auto-compaction.
+        if super::compaction::paused_at_window_limit(&state.session, context_window)
+            && state.session.governor.is_paused()
+        {
+            view.show_system(super::compaction::AUTO_COMPACTION_PAUSED_MESSAGE);
+            log::warn!(
+                "Turn blocked: auto-compaction paused at {}K/{}K window",
+                state.session.history_real_tokens() / 1000,
+                context_window / 1000
+            );
+            return TurnTerminal::Complete;
+        }
+
         match send_message_stream(
             &state.provider,
             &state.model_config,
@@ -364,6 +380,13 @@ pub async fn handle_user_message_stream(
                     OverflowHandleResult::Cancelled => {
                         // Cancellation outranks recovery: no continuation,
                         // no further LLM call, terminal Cancelled.
+                        return TurnTerminal::Cancelled;
+                    }
+                    OverflowHandleResult::Paused => {
+                        // Recovery is fail-closed while paused: no history
+                        // truncated, no summarizer, no continuation. The
+                        // completed-tool facts stay in the mirror.
+                        view.show_system(super::compaction::AUTO_COMPACTION_PAUSED_MESSAGE);
                         return TurnTerminal::Cancelled;
                     }
                     OverflowHandleResult::InterToolCompaction { tools_executed } => {
