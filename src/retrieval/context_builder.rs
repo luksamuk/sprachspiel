@@ -431,7 +431,7 @@ pub async fn build_context(
     // prepare_messages() line 294. This is the "user message duplication"
     // bug: build_context() includes the just-added user message via
     // session.messages[start_idx..], and prepare_messages() adds it again.
-    let end_exclusive = if session
+    let mut end_exclusive = if session
         .messages
         .last()
         .is_some_and(|m| m.role == MessageRole::User)
@@ -440,6 +440,10 @@ pub async fn build_context(
     } else {
         session.messages.len()
     };
+    // A FULL compaction (range (0, len)) sends everything into the summary,
+    // leaving start_idx == len; with a trailing user message the naive
+    // exclusion yields end < start. The window is simply empty in that case.
+    end_exclusive = end_exclusive.max(start_idx);
 
     let recent_messages: Vec<_> = session.messages[start_idx..end_exclusive]
         .iter()
@@ -1169,5 +1173,50 @@ mod tests {
         assert_eq!(ctx.messages.len(), 2);
         assert!(matches!(ctx.messages[0].role, LlmRole::System));
         assert!(matches!(ctx.messages[1].role, LlmRole::User));
+    }
+
+    /// A FULL compaction (range `(0, len)`) puts every message into the
+    /// summary; the next turn's build_context must not slice an empty
+    /// recent window backwards (`start == len` with a trailing user
+    /// message yielded `len..(len-1)` and panicked).
+    #[tokio::test]
+    async fn test_build_context_full_compaction_with_trailing_user_sums_empty() {
+        let mut session = create_test_session(0);
+        session.add_user_message("question one".into());
+        session.add_assistant_message("answer one".into(), None, None);
+        session.add_user_message("question two".into());
+        session.add_assistant_message("answer two".into(), None, None);
+        // Full compaction: the whole history went into the summary.
+        session.set_compacted_summary_with_range(
+            "full summary".into(),
+            Some((0, session.messages.len())),
+        );
+        session.add_user_message("the live query".into());
+
+        let config = RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        };
+
+        let result = build_context(
+            &session,
+            None,
+            None,
+            "the live query",
+            "System prompt.",
+            &config,
+        )
+        .await;
+
+        // No panic; the compaction summary lives in the system message and
+        // the empty recent window contributes nothing.
+        let recent_duplicated = result
+            .messages
+            .iter()
+            .any(|m| m.content.contains("question one"));
+        assert!(
+            !recent_duplicated,
+            "a full compaction keeps history out of the prompt body (summary only)"
+        );
     }
 }

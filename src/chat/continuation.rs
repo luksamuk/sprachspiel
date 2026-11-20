@@ -84,12 +84,12 @@ pub async fn process_send_result(
 ) -> ProcessResult {
     // Save pre-tool content before final response
     if let Some(pre_content) = &result.pre_tool_content {
-        state.session.add_pre_tool_message(
+        state.defer_pre_tool_content(
             pre_content.clone(),
             result.pre_tool_thinking.clone(),
             user_message_id,
         );
-        log::debug!("Saved pre-tool content ({} chars)", pre_content.len());
+        log::debug!("Captured pre-tool content ({} chars)", pre_content.len());
     }
 
     // Handle continuation if LLM paused for compaction
@@ -184,7 +184,9 @@ pub async fn process_send_result(
 
     // Cancelled post-response turns commit here with the preserved response;
     // the prompt-token reset only accompanies a compaction that ran.
-    if !state.session.anonymous && let Err(e) = state.session.save_sqlite() {
+    if !state.session.anonymous
+        && let Err(e) = state.session.save_sqlite()
+    {
         log::debug!("Warning: Could not save session: {}", e);
     }
     if matches!(compact_outcome, CompactionOutcome::Completed)
@@ -207,7 +209,7 @@ pub async fn check_and_compact_before_tool(
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: Option<&CancellationToken>,
-) {
+) -> CompactionOutcome {
     // First check if we need actual compaction (88% threshold)
     if needs_buffered_compaction(&state.session, context_window) {
         let ctx_status = check_context_overflow(&state.session, system_prompt, context_window);
@@ -239,11 +241,15 @@ pub async fn check_and_compact_before_tool(
         .await;
         // A pre-turn cancellation lands before the provider request: the
         // caller re-checks the token after this returns and stops the turn
-        // with nothing persisted, so the outcome here needs no routing.
+        // with nothing persisted. The COMPLETED outcome must reach the
+        // caller, though: the turn's terminal commit invalidates the
+        // prompt tokens of this compaction.
         if outcome.is_cancelled() {
             log::info!("Pre-tool compaction cancelled");
         }
-    } else if needs_pre_tool_compaction(&state.session, context_window) {
+        return outcome;
+    }
+    if needs_pre_tool_compaction(&state.session, context_window) {
         // At 75%: just show warning, don't compact yet
         let ctx_status = check_context_overflow(&state.session, system_prompt, context_window);
 
@@ -259,6 +265,7 @@ pub async fn check_and_compact_before_tool(
             ),
         );
     }
+    CompactionOutcome::NotNeeded
 }
 
 /// Build system prompt for pre-tool check
@@ -405,13 +412,13 @@ pub async fn handle_continuation(
             // Save pre-tool messages from continuation turns
             // All continuation pre-tool messages reference the ORIGINAL user message
             if let Some(pre_content) = &cont_result.pre_tool_content {
-                state.session.add_pre_tool_message(
+                state.defer_pre_tool_content(
                     pre_content.clone(),
                     cont_result.pre_tool_thinking.clone(),
                     user_message_id,
                 );
                 log::debug!(
-                    "Saved continuation pre-tool content ({} chars)",
+                    "Captured continuation pre-tool content ({} chars)",
                     pre_content.len()
                 );
             }
@@ -487,13 +494,13 @@ pub async fn handle_continuation(
 
                         // Save pre-tool messages from nested continuation
                         if let Some(pre_content) = &n_result.pre_tool_content {
-                            state.session.add_pre_tool_message(
+                            state.defer_pre_tool_content(
                                 pre_content.clone(),
                                 n_result.pre_tool_thinking.clone(),
                                 user_message_id,
                             );
                             log::debug!(
-                                "Saved nested continuation pre-tool content ({} chars)",
+                                "Captured nested continuation pre-tool content ({} chars)",
                                 pre_content.len()
                             );
                         }
@@ -524,6 +531,12 @@ pub async fn handle_continuation(
             }))
         }
         Err(e) => {
+            // A stop racing the failed continuation outranks it: the branch
+            // reads as Cancelled before any error reaches the view, so a
+            // turn that is being stopped never paints a spurious failure.
+            if cancel_token.is_some_and(CancellationToken::is_cancelled) {
+                return Ok(ContinuationFlow::Cancelled);
+            }
             view.show_error(&format!("Continuation failed: {}", e));
             Err(e)
         }

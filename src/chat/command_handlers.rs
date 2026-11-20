@@ -994,7 +994,7 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
     if db.is_reindex_in_progress() {
         return vec![CommandOutput::error(
             "A previous reindex is still marked in progress (possibly from a \
-             crash). Restore a consistent state before reindexing again."
+             crash). Restore a consistent state before reindexing again.",
         )];
     }
 
@@ -2571,8 +2571,9 @@ pub fn handle_note_add(
                 let note_content = note.content.clone();
 
                 tokio::spawn(async move {
-                    let ctx = EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref())
-                        .with_title(title.as_deref());
+                    let ctx =
+                        EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref())
+                            .with_title(title.as_deref());
                     if let Err(e) =
                         embed_item_with_fallback(ctx, &db_clone, &client, client.context_length())
                             .await
@@ -3359,6 +3360,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            pending_pre_tool: Vec::new(),
             last_status_token_bucket: 0,
         }
     }
@@ -3523,6 +3525,7 @@ mod tests {
             embedding_client: None,
             settings,
             last_assistant_message_id: None,
+            pending_pre_tool: Vec::new(),
             last_status_token_bucket: 0,
         }
     }

@@ -68,6 +68,14 @@ pub struct ReplState {
     // UI state
     pub last_assistant_message_id: Option<i64>,
 
+    /// Pre-tool content captured during this turn but not yet persisted.
+    ///
+    /// `add_pre_tool_message` inserts straight into SQLite, so deferring the
+    /// insert here is what makes the records transactional with the turn: a
+    /// clone that a cancellation abandons dies carrying its captures with
+    /// zero residual rows, and the turn's terminal commit inserts them.
+    pub pending_pre_tool: Vec<PendingPreToolMessage>,
+
     /// Throttle bucket for status bar updates during streaming.
     ///
     /// The real `prompt_eval_count` only arrives in the final streaming
@@ -194,6 +202,7 @@ impl ReplStateBuilder {
             embedding_client: self.embedding_client,
             settings,
             last_assistant_message_id: self.last_assistant_message_id,
+            pending_pre_tool: Vec::new(),
             last_status_token_bucket: 0,
         })
     }
@@ -205,7 +214,54 @@ impl Default for ReplStateBuilder {
     }
 }
 
+/// Pre-tool content captured during a turn, awaiting the terminal commit.
+///
+/// `ChatSession::add_pre_tool_message` inserts straight into SQLite, which
+/// sits outside the turn's discard boundary — a clone a cancellation
+/// abandons would leave the row behind. Capture sites push here instead;
+/// [`ReplState::flush_pending_pre_tool`] performs the inserts only at the
+/// turn's terminal commit, so an abandoned clone leaves zero residual rows.
+#[derive(Debug, Clone)]
+pub struct PendingPreToolMessage {
+    pub content: String,
+    pub thinking: Option<String>,
+    pub user_message_id: Option<i64>,
+}
+
 impl ReplState {
+    /// Capture pre-tool content for this turn without touching SQLite.
+    pub fn defer_pre_tool_content(
+        &mut self,
+        content: String,
+        thinking: Option<String>,
+        user_message_id: Option<i64>,
+    ) {
+        self.pending_pre_tool.push(PendingPreToolMessage {
+            content,
+            thinking,
+            user_message_id,
+        });
+    }
+
+    /// Turn's terminal commit for pre-tool captures: insert what the turn
+    /// captured in memory, in capture order. An empty queue — a cancelled
+    /// clone dies before reaching this — inserts nothing.
+    pub fn flush_pending_pre_tool(&mut self) -> usize {
+        let captures = std::mem::take(&mut self.pending_pre_tool);
+        let count = captures.len();
+        for capture in captures {
+            self.session.add_pre_tool_message(
+                capture.content,
+                capture.thinking,
+                capture.user_message_id,
+            );
+        }
+        if count > 0 {
+            log::debug!("Terminal commit: flushed {count} deferred pre-tool messages");
+        }
+        count
+    }
+
     /// Return session entries for the tab completer.
     ///
     /// Each entry is `(display_label, id)` where `display_label` shows

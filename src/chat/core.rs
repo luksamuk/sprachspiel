@@ -662,7 +662,8 @@ pub async fn send_message(
 
                     // Cancel-aware sleep: a retry slept through Ctrl+C must
                     // end the turn instead of firing the provider again.
-                    let elapsed = sleep_or_cancel(retry_delay(&category, attempts), cancel_token).await;
+                    let elapsed =
+                        sleep_or_cancel(retry_delay(&category, attempts), cancel_token).await;
                     if !elapsed {
                         break Err(crate::chat::coordinator::CANCELLED_BY_USER.to_string());
                     }
@@ -1174,9 +1175,7 @@ pub async fn compact_conversation(
             Err(super::compaction::CompactionFailure::Cancelled) => {
                 return Err(super::compaction::CompactionFailure::Cancelled);
             }
-            Err(super::compaction::CompactionFailure::Model(e))
-                if is_prompt_too_long_error(&e) =>
-            {
+            Err(super::compaction::CompactionFailure::Model(e)) if is_prompt_too_long_error(&e) => {
                 log::warn!(
                     "Layer 1 single-pass compaction failed (prompt too long: {}). \
                      Estimated {} tokens with overhead {} but model rejected. \
@@ -1218,8 +1217,15 @@ pub async fn compact_conversation(
             message: format!("⚙ Compacting in {} chunk(s)...", chunks.len()),
         });
 
-        match compact_recursive(provider, model_config, &chunks, llm_tx.clone(), 0, cancel_token.clone())
-            .await
+        match compact_recursive(
+            provider,
+            model_config,
+            &chunks,
+            llm_tx.clone(),
+            0,
+            cancel_token.clone(),
+        )
+        .await
         {
             Ok(summary) => {
                 log::info!(
@@ -1277,16 +1283,21 @@ pub async fn compact_conversation(
 
         // Layer 3 is the last resort. If even truncation fails to fit the prompt,
         // compaction is truly impossible — return a clear error with diagnostics.
-        match compact_with_llm(provider, model_config, compact_prompt, llm_tx, true, cancel_token)
-            .await
+        match compact_with_llm(
+            provider,
+            model_config,
+            compact_prompt,
+            llm_tx,
+            true,
+            cancel_token,
+        )
+        .await
         {
             Ok(summary) => layer_summary = Some(summary),
             Err(super::compaction::CompactionFailure::Cancelled) => {
                 return Err(super::compaction::CompactionFailure::Cancelled);
             }
-            Err(super::compaction::CompactionFailure::Model(e))
-                if is_prompt_too_long_error(&e) =>
-            {
+            Err(super::compaction::CompactionFailure::Model(e)) if is_prompt_too_long_error(&e) => {
                 log::error!(
                     "Layer 3 fallback truncation STILL exceeded context window. \
                      Estimated {} tokens (truncated from {}), context window {}, overhead {}. \
@@ -1474,8 +1485,15 @@ fn compact_recursive<'a>(
             // It is the only streamed pass (the chunk summaries above were
             // silent), so the user sees the final summary being written.
             let final_prompt = build_consolidation_prompt(&combined);
-            compact_with_llm(provider, model_config, final_prompt, llm_tx, true, cancel_token)
-                .await
+            compact_with_llm(
+                provider,
+                model_config,
+                final_prompt,
+                llm_tx,
+                true,
+                cancel_token,
+            )
+            .await
         } else {
             // Combined summaries still too large — recurse
             log::debug!(

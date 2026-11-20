@@ -141,7 +141,10 @@ impl CompactionContext<'_> {
         }
 
         // Cancelled before anything started: no progress display, no LLM call.
-        if self.cancel_token.is_some_and(CancellationToken::is_cancelled) {
+        if self
+            .cancel_token
+            .is_some_and(CancellationToken::is_cancelled)
+        {
             return CompactionOutcome::Cancelled;
         }
 
