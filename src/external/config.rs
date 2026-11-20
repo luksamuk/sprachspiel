@@ -25,7 +25,29 @@ struct ExternalSection {
     #[serde(default = "default_timeout")]
     default_timeout: u64,
     #[serde(default)]
-    tools: HashMap<String, ToolToml>,
+    tools: ToolsTable,
+}
+
+/// `[external.tools]`: the run_command tool table. The shell-operator flag
+/// lives beside the per-tool entries — it governs command execution as a
+/// whole, and every tool entry below is itself a command.
+#[derive(Debug, Clone, Deserialize)]
+struct ToolsTable {
+    /// Shell operators (pipes, redirects, chaining) in run_command:
+    /// true by default — the Landlock sandbox is the security boundary.
+    /// Setting false restores literal metacharacter rejection; command
+    /// substitution stays rejected either way (its body executes binaries
+    /// the per-component whitelist cannot see).
+    #[serde(default = "default_true")]
+    allow_shell_operators: bool,
+    #[serde(flatten)]
+    entries: HashMap<String, ToolToml>,
+}
+
+/// Deserializer default for `allow_shell_operators`: permissive, because a
+/// command-text filter is not a security boundary when the sandbox exists.
+fn default_true() -> bool {
+    true
 }
 
 /// Per-tool configuration from TOML.
@@ -82,15 +104,20 @@ fn default_max_file_size() -> usize {
 /// Returns `true` for serde defaults.
 /// Required because serde's #[serde(default = "...")] needs a function,
 /// and #[serde(default)] uses Default trait which returns false.
-fn default_true() -> bool {
-    true
-}
-
 impl Default for ExternalSection {
     fn default() -> Self {
         ExternalSection {
             default_timeout: 30,
-            tools: HashMap::new(),
+            tools: ToolsTable::default(),
+        }
+    }
+}
+
+impl Default for ToolsTable {
+    fn default() -> Self {
+        ToolsTable {
+            allow_shell_operators: true,
+            entries: HashMap::new(),
         }
     }
 }
@@ -200,14 +227,20 @@ fn parse_config(toml_config: ToolsToml) -> ExternalToolsConfig {
         .as_ref()
         .map(|e| Duration::from_secs(e.default_timeout))
         .unwrap_or(Duration::from_secs(30));
+    let allow_shell_operators = toml_config
+        .external
+        .as_ref()
+        .map(|e| e.tools.allow_shell_operators)
+        .unwrap_or(true);
 
     // Start with default tools
     let mut config = ExternalToolsConfig::with_defaults();
     config.default_timeout = default_timeout;
+    config.allow_shell_operators = allow_shell_operators;
 
     // Merge per-tool configuration from TOML
     if let Some(external) = &toml_config.external {
-        for (tool_name, tool_config) in &external.tools {
+        for (tool_name, tool_config) in &external.tools.entries {
             // Get the default tool or create a new one
             if let Some(existing) = config.tools.get_mut(tool_name) {
                 // Override settings for existing tool
@@ -349,8 +382,18 @@ fn generate_default_toml() -> String {
 # SECURITY MODEL
 # =============================================================================
 #
-# Commands are executed WITHOUT shell interpretation (no pipes, redirects).
-# This prevents command injection attacks.
+# Commands run through the Landlock sandbox, which is the real security
+# boundary: it restricts filesystem access (current directory and app data
+# in read/write; /usr, /etc, /proc read-only) regardless of what single
+# tool or command chain the model composes.
+#
+# Shell operators (pipes |, redirects > <, chaining && || ;) are allowed
+# so the model can compose real pipelines — the Landlock ruleset above is
+# what bounds them. Command substitution ($() and backticks) stays
+# rejected: its body would run binaries the per-tool whitelist cannot see.
+# To reject command lines that contain shell metacharacters instead, set:
+#
+# allow_shell_operators = false
 #
 # Output is returned in FULL. Use head/tail parameters to control size:
 #   run_command("pdftotext doc.pdf -", 100, null, null)  # First 100 lines
@@ -544,6 +587,39 @@ mod tests {
         // Should still have all default tools
         assert!(config.tools.contains_key("pdftotext"));
         assert_eq!(config.default_timeout, Duration::from_secs(30));
+        // A config without the key is permissive: the sandbox bounds, the
+        // filter is only restored by an explicit opt-out.
+        assert!(config.allow_shell_operators);
+    }
+
+    #[test]
+    fn test_parse_explicit_shell_operator_opt_out() {
+        let content = r#"
+[external.tools]
+allow_shell_operators = false
+"#;
+        let toml: ToolsToml = toml::from_str(content).unwrap();
+        let config = parse_config(toml);
+        assert!(!config.allow_shell_operators);
+    }
+
+    #[test]
+    fn test_parse_external_tools_flag_and_entries_coexist() {
+        let content = r#"
+[external]
+default_timeout = 60
+
+[external.tools]
+allow_shell_operators = true
+
+[external.tools.pdftotext]
+enabled = true
+"#;
+        let toml: ToolsToml = toml::from_str(content).unwrap();
+        let config = parse_config(toml);
+        assert!(config.allow_shell_operators);
+        assert_eq!(config.default_timeout, Duration::from_secs(60));
+        assert!(config.tools.contains_key("pdftotext"));
     }
 
     #[test]

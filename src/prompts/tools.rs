@@ -478,7 +478,7 @@ Available: check_tool_availability, run_command
 
 **Before using:** Check tool availability with check_tool_availability("tool-name").
 
-**Security:** No shell features (pipes, redirects). Use tool-specific flags instead."#
+**Security:** Shell operators (pipes |, redirects, && || ;) pass by default — the Landlock sandbox, when active, is the security boundary bounding filesystem access for everything the command line composes. The first word of every segment must still be whitelisted in tools.toml, and command substitution ($(), backticks) is rejected: its body could run non-whitelisted binaries. With no sandbox active, a compound command carries the usual shell risk. head/tail parameters keep output size under control without relying on pipes."#
             .to_string(),
     )
 }
