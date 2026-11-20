@@ -56,15 +56,14 @@ sprach -p tool_user "What's the weather in Tokyo?"
 **Characteristics:**
 - Proactive tool usage guidance
 - Clear tool selection rules:
-  - Pokémon tools → ONLY for Pokémon content
   - Weather tools → ONLY for weather queries
-  - Web Search → for general knowledge
+  - File tools → for content lookup
 - Structured thinking about tool selection
 
 **When to use:**
 - When using tool-capable models
 - For complex queries that might need tools
-- To encourage proactive web search
+- To encourage proactive tool usage
 
 ### code
 

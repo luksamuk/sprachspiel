@@ -192,27 +192,6 @@ pub fn strip_ansi_codes(s: &str) -> String {
 
 /// Capitalize the first letter of a string.
 ///
-/// Converts the first character to uppercase and the rest to lowercase.
-/// Useful for formatting names (e.g., "PIKACHU" -> "Pikachu").
-///
-/// # Example
-/// ```
-/// use sprachspiel::utils::capitalize;
-/// assert_eq!(capitalize("hello"), "Hello");
-/// assert_eq!(capitalize("HELLO"), "Hello");
-/// assert_eq!(capitalize("pikachu"), "Pikachu");
-/// ```
-#[cfg(feature = "pokemon-tools")]
-pub fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => {
-            first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str()
-        }
-    }
-}
-
 /// Normalize input string for comparison
 ///
 /// Trims whitespace and converts to lowercase. This is Unicode-safe.
@@ -407,11 +386,7 @@ pub fn truncate_to_budget(text: &str, budget: usize) -> String {
 /// # Returns
 /// * `Ok(T)` - Parsed JSON response
 /// * `Err(String)` - Error message suitable for LLM consumption
-#[cfg(any(
-    feature = "weather-tools",
-    feature = "pokemon-tools",
-    feature = "search-tools"
-))]
+#[cfg(feature = "weather-tools")]
 pub async fn fetch_json<T: serde::de::DeserializeOwned>(
     url: &str,
     tool_name: &str,

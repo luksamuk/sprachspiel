@@ -9,12 +9,12 @@ A Rust CLI harness for research, interaction, and cognitive evolution with local
 
 ## Overview
 
-Sprachspiel is a cognitive interaction harness — not a code-specific tool — built for local and cloud LLMs via OpenAI-compatible backends. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
+Sprachspiel is a cognitive interaction harness — not a code-specific tool — built for local and cloud LLMs via OpenAI-compatible backends. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 39 built-in tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
 
 Key capabilities:
 - **Persistent memory** — facts, notes, documents with semantic search and Ebbinghaus decay
 - **Adaptive personality** — SOUL.md defines agent identity and behavior style
-- **50+ tools** — file operations, web search, calculations, task management, and more
+- **39 tools** — file operations, calculations, weather, task management, and more
 - **Context intelligence** — hybrid RAG (BM25 + vector + RRF), auto-compaction, context overflow protection
 - **Translation, OCR, summarization** — specialized modes for different cognitive tasks
 
@@ -269,10 +269,10 @@ Content is sanitized for security (injection patterns, executable code blocks re
 Tools are organized into compile-time features:
 
 ```bash
-# Default build (includes: Pokémon, Weather, File, Calculator, Serper, System, Todo, LED, Remember)
+# Default build (includes: Weather, File, Calculator, System, Todo, Skills, Remember)
 make build
 
-# With all tools (adds DuckDuckGo search, Finance)
+# With all tools (adds the Landlock sandbox on Linux)
 make build-all-tools
 
 # Install locally with all tools
@@ -281,18 +281,14 @@ make install-local-all-tools
 
 | Feature | Tools | Default | Notes |
 |---------|-------|---------|-------|
-| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | Fetch Pokémon stats, types, abilities |
 | `weather-tools` | 3 Weather tools | ✅ Yes | Current weather, forecast, air quality |
 | `file-tools` | 5 File tools | ✅ Yes | Read files, search, list directories |
 | `calc-tools` | 1 Calculator | ✅ Yes | Mathematical expressions |
 | `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
 | `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
-| `led-tools` | 4 LED control tools | ❌ No | Control GPIO LEDs (embedded) |
 | `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
 | `document-tools` | 3 Document tools | ✅ Yes | Import, list, show documents |
 | `subagent-tools` | 1 Subagent tool | ✅ Yes | LLM-initiated subagent delegation |
-| `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
-| `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
 
 ## Configuration
 

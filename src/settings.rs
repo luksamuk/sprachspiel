@@ -68,9 +68,6 @@ pub struct Settings {
     /// Display configuration
     #[serde(default)]
     pub display: DisplaySettings,
-    /// LED control configuration
-    #[serde(default)]
-    pub led: LedSettings,
     /// Feedback system configuration
     #[serde(default)]
     pub feedback: FeedbackSettings,
@@ -189,18 +186,6 @@ pub struct DisplaySettings {
     /// Quiet mode (-q) overrides this to false regardless.
     #[serde(default = "default_true")]
     pub show_tool_calls: bool,
-}
-
-/// LED control settings
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LedSettings {
-    /// IP address of the LED device (Raspberry Pi Pico W)
-    /// If not set, LED tools will be disabled
-    #[serde(default)]
-    pub ip: Option<String>,
-    /// HTTP port for LED device (default: 80)
-    #[serde(default = "default_led_port")]
-    pub port: u16,
 }
 
 /// Feedback system settings for managing how user feedback affects memory scoring.
@@ -637,11 +622,7 @@ default = "qwen3.5:4b"
 #   - get_current_datetime, get_project_context (System information)
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory (File operations)
-#   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - web_search, web_search_news, web_scrape (DuckDuckGo - may fail due to CAPTCHA)
 #
-# Note: DuckDuckGo tools may be blocked by CAPTCHA. MCP-based search is
-# planned post-W2 (issue TBD); until then, this is the only web search option.
 # Default: [] (all tools enabled)
 blacklist = []
 
@@ -690,23 +671,6 @@ skin = "dark"
 # Quiet mode (-q) overrides this to false regardless.
 # Default: true
 # show_tool_calls = true
-
-# =============================================================================
-# LED CONTROL CONFIGURATION (Optional)
-# =============================================================================
-# Control NeoPixel LED strips via Raspberry Pi Pico W HTTP server.
-# LED tools are disabled by default and require configuration to activate.
-#
-# Build with LED tools: cargo build --release --features led-tools
-
-[led]
-# IP address of your Raspberry Pi Pico W LED server.
-# Required to enable LED tools. If not set, LED tools are disabled.
-# ip = "192.168.1.100"
-
-# HTTP port for the LED server.
-# Default: 80
-# port = 80
 
 # =============================================================================
 # FEEDBACK CONFIGURATION (Optional)
@@ -891,10 +855,6 @@ model = "nomic"
 # query_prefix = "task: search result | query: {content}"
 # doc_prefix = "title: {title} | text: {content}"
 "#;
-
-fn default_led_port() -> u16 {
-    80
-}
 
 fn default_true() -> bool {
     true
@@ -1161,25 +1121,6 @@ impl Settings {
     /// Check if a tool is blacklisted
     pub fn is_tool_blacklisted(&self, tool_name: &str) -> bool {
         self.tools.blacklist.iter().any(|b| b == tool_name)
-    }
-
-    /// Check if LED is configured (IP address set)
-    ///
-    /// Note: Used only when `led-tools` feature is enabled.
-    #[cfg(feature = "led-tools")]
-    pub fn is_led_configured(&self) -> bool {
-        self.led.ip.is_some()
-    }
-
-    /// Get LED endpoint URL (returns None if not configured)
-    ///
-    /// Note: Used only when `led-tools` feature is enabled.
-    #[cfg(feature = "led-tools")]
-    pub fn led_endpoint(&self) -> Option<String> {
-        self.led
-            .ip
-            .as_ref()
-            .map(|ip| format!("http://{}:{}", ip, self.led.port))
     }
 
     /// Get model configuration for a specific subcommand

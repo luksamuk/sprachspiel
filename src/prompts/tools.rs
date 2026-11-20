@@ -10,8 +10,6 @@
 //! # Feature Flags
 //! Tools are included based on compile-time feature flags:
 //! - `weather-tools`: Weather tools
-//! - `pokemon-tools`: Pokémon API tools
-//! - `search-tools`: DuckDuckGo web search
 //! - `file-tools`: File operation tools
 //! - `calc-tools`: Calculator
 //! - `system-tools`: System information tools
@@ -39,48 +37,6 @@ fn weather_section(blacklist: &HashSet<&str>) -> Option<String> {
         r#"### WEATHER TOOLS
 Use for weather and climate queries.
 Available: get_weather, get_current_weather, get_weather_forecast"#
-            .to_string(),
-    )
-}
-
-/// Pokémon tools section
-#[cfg(feature = "pokemon-tools")]
-fn pokemon_section(blacklist: &HashSet<&str>) -> Option<String> {
-    let tools = [
-        "fetch_pokemon",
-        "fetch_pokemon_basic",
-        "fetch_pokemon_stats",
-        "fetch_pokemon_moves",
-        "fetch_pokemon_evolution",
-        "fetch_ability_details",
-        "fetch_type_effectiveness",
-        "fetch_pokemon_by_type",
-        "fetch_move_details",
-    ];
-    let available = filter_available(&tools, blacklist);
-    if available.is_empty() {
-        return None;
-    }
-    Some(
-        r#"### POKÉMON TOOLS
-Use ONLY for Pokémon-related queries (names, abilities, moves, types, evolution).
-Available: fetch_pokemon, fetch_pokemon_stats, fetch_pokemon_moves, etc."#
-            .to_string(),
-    )
-}
-
-/// DuckDuckGo web search section
-#[cfg(feature = "search-tools")]
-fn ddg_search_section(blacklist: &HashSet<&str>) -> Option<String> {
-    let tools = ["web_search", "web_search_news", "web_scrape"];
-    let available = filter_available(&tools, blacklist);
-    if available.is_empty() {
-        return None;
-    }
-    Some(
-        r#"### WEB SEARCH TOOLS
-Use for general knowledge, current events, or anything NOT about Pokémon or weather.
-Available: web_search, web_search_news, web_scrape"#
             .to_string(),
     )
 }
@@ -173,36 +129,6 @@ fn system_section(blacklist: &HashSet<&str>) -> Option<String> {
         r#"### SYSTEM TOOLS
 Use for current date/time or project context.
 Available: get_current_datetime, get_project_context"#
-            .to_string(),
-    )
-}
-
-/// LED tools section
-#[cfg(feature = "led-tools")]
-fn led_section(blacklist: &HashSet<&str>) -> Option<String> {
-    let tools = [
-        "led_get_status",
-        "led_set_power",
-        "led_set_program",
-        "led_set_brightness",
-        "led_set_color",
-    ];
-    let available = filter_available(&tools, blacklist);
-    if available.is_empty() {
-        return None;
-    }
-    Some(
-        r#"### LED TOOLS
-Use for controlling NeoPixel LED strips via Raspberry Pi Pico W.
-Available: led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color
-
-For color adjustments:
-1. Get current color with led_get_status
-2. Note the RGB values provided in the response
-3. Adjust R/G/B values as needed (0-255 each)
-4. Set new color with led_set_color using r/g/b parameters
-
-Color tips: To make "more red", increase R or decrease G/B. For "warmer", increase R slightly. For "cooler", increase B slightly."#
             .to_string(),
     )
 }
@@ -496,16 +422,6 @@ pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
         sections.push(s);
     }
 
-    #[cfg(feature = "pokemon-tools")]
-    if let Some(s) = pokemon_section(blacklist) {
-        sections.push(s);
-    }
-
-    #[cfg(feature = "search-tools")]
-    if let Some(s) = ddg_search_section(blacklist) {
-        sections.push(s);
-    }
-
     #[cfg(feature = "calc-tools")]
     if let Some(s) = calc_section(blacklist) {
         sections.push(s);
@@ -523,11 +439,6 @@ pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
 
     #[cfg(feature = "system-tools")]
     if let Some(s) = system_section(blacklist) {
-        sections.push(s);
-    }
-
-    #[cfg(feature = "led-tools")]
-    if let Some(s) = led_section(blacklist) {
         sections.push(s);
     }
 
@@ -567,39 +478,27 @@ mod tests {
         let blacklist = HashSet::new();
 
         // The `context` variable is only used inside the weather-tools
-        // and pokemon-tools cfg blocks below, so the variable itself
-        // is also gated to avoid a `unused variable` warning when
-        // those features are off.
-        #[cfg(any(feature = "weather-tools", feature = "pokemon-tools"))]
+        // cfg block below, so the variable itself is also gated to avoid
+        // a `unused variable` warning when that feature is off.
+        #[cfg(feature = "weather-tools")]
         let context = build_tool_context(&blacklist);
 
         // Should have content when features are enabled
         #[cfg(feature = "weather-tools")]
         assert!(context.contains("WEATHER TOOLS"));
-
-        #[cfg(feature = "pokemon-tools")]
-        assert!(context.contains("POKÉMON TOOLS"));
     }
 
     #[test]
     fn test_blacklist_filters_tools() {
+        // Blacklisting every tool of a section removes the section.
         let mut blacklist = HashSet::new();
-        blacklist.insert("web_search");
+        blacklist.insert("write_file");
+        blacklist.insert("edit_file");
+        blacklist.insert("append_file");
 
-        // Web search should be filtered if blacklisted.
-        // The `context` variable is only used inside the search-tools
-        // cfg block below, so the variable itself is also gated to
-        // avoid a `unused variable` warning when the feature is off.
-        #[cfg(feature = "search-tools")]
-        let context = build_tool_context(&blacklist);
-
-        #[cfg(feature = "search-tools")]
+        #[cfg(feature = "file-tools")]
         {
-            // With web_search blacklisted, the section may or may not appear
-            // depending on whether web_search_news is also blacklisted
-            if blacklist.contains("web_search_news") {
-                assert!(!context.contains("WEB SEARCH"));
-            }
+            assert!(file_write_section(&blacklist).is_none());
         }
     }
 
