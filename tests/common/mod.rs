@@ -77,6 +77,101 @@ impl MockServer {
         }
     }
 
+    /// A server that serves each request with the corresponding SSE body —
+    /// index 0 with `responses[0]`, and so on; past the end it repeats the
+    /// last body. Bodies are raw SSE payloads (`data:` lines + `[DONE]`).
+    pub fn spawn_sequence(responses: Vec<String>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let port = listener.local_addr().expect("local addr").port();
+        let requests = Arc::new(AtomicUsize::new(0));
+        let reqs = Arc::clone(&requests);
+        let responses = Arc::new(responses);
+        let handle = std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let mut stream = match conn {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let mut buf = [0u8; 16384];
+                let mut raw = Vec::new();
+                loop {
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&buf[..n]);
+                    if raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let idx = reqs.fetch_add(1, Ordering::SeqCst);
+                let body = responses
+                    .get(idx)
+                    .or_else(|| responses.last())
+                    .cloned()
+                    .unwrap_or_default();
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                     Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                );
+                let chunk = format!("{:x}\r\n{}\r\n", body.len(), body);
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(chunk.as_bytes());
+                let _ = stream.write_all(b"0\r\n\r\n");
+                let _ = stream.flush();
+            }
+        });
+        Self {
+            base_url: format!("http://127.0.0.1:{port}"),
+            requests,
+            _handle: handle,
+        }
+    }
+
+    /// A complete chunked-SSE body that asks for one tool call and ends the
+    /// turn with `finish_reason: tool_calls` — the shape that drives the
+    /// coordinator into its tool loop.
+    pub fn tool_call_body(name: &str, arguments_json: &str) -> String {
+        let escaped = arguments_json.replace('\\', "\\\\").replace('"', "\\\"");
+        format!(
+            concat!(
+                "data: {{\"id\":\"chatcmpl-t1\",\"object\":\"chat.completion.chunk\",",
+                "\"created\":1,\"model\":\"test-model\",\"choices\":[{{\"index\":0,",
+                "\"delta\":{{\"tool_calls\":[{{\"index\":0,\"id\":\"call_1\",",
+                "\"type\":\"function\",\"function\":{{\"name\":\"{name}\",",
+                "\"arguments\":\"{escaped}\"}}}}]}},\"finish_reason\":null}}]}}\n\n",
+                "data: {{\"id\":\"chatcmpl-t1\",\"object\":\"chat.completion.chunk\",",
+                "\"created\":1,\"model\":\"test-model\",\"choices\":[{{\"index\":0,",
+                "\"delta\":{{}},\"finish_reason\":\"tool_calls\"}}]}}\n\n",
+                "data: [DONE]\n\n"
+            ),
+            name = name,
+            escaped = escaped,
+        )
+    }
+
+    /// A complete chunked-SSE body with a plain final answer.
+    pub fn plain_body(content: &str) -> String {
+        let escaped = content.replace('\\', "\\\\").replace('"', "\\\"");
+        format!(
+            concat!(
+                "data: {{\"id\":\"chatcmpl-f1\",\"object\":\"chat.completion.chunk\",",
+                "\"created\":1,\"model\":\"test-model\",\"choices\":[{{\"index\":0,",
+                "\"delta\":{{\"content\":\"{escaped}\"}},\"finish_reason\":\"stop\"}}]}}\n\n",
+                "data: [DONE]\n\n"
+            ),
+            escaped = escaped,
+        )
+    }
+
+    fn new(port: u16, requests: Arc<AtomicUsize>, handle: JoinHandle<()>) -> Self {
+        Self {
+            base_url: format!("http://127.0.0.1:{port}"),
+            requests,
+            _handle: handle,
+        }
+    }
+
     /// Successful-request counter — what "zero later calls" asserts on.
     pub fn count(&self) -> usize {
         self.requests.load(Ordering::SeqCst)

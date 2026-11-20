@@ -515,7 +515,9 @@ impl RatatuiView {
     /// Delegates to `App::append_stream_token` and transitions state.
     pub fn stream_token(&mut self, token: &str) {
         // If we're in Thinking or ToolCall state, transition to Streaming
-        if self.app.llm_state() == LlmState::Thinking || self.app.llm_state() == LlmState::ToolCall
+        if self.app.llm_state() == LlmState::Thinking
+            || self.app.llm_state() == LlmState::ToolCall
+            || self.app.llm_state() == LlmState::Cancelling
         {
             self.app.set_llm_state(LlmState::Streaming);
         }
@@ -528,7 +530,7 @@ impl RatatuiView {
     /// Delegates to `App::append_stream_thinking` and transitions state.
     pub fn stream_thinking(&mut self, token: &str) {
         // If we're in Idle or ToolCall state, transition to Thinking
-        if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall {
+        if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall || self.app.llm_state() == LlmState::Cancelling {
             self.app.set_llm_state(LlmState::Thinking);
         }
         self.app.append_stream_thinking(token);
