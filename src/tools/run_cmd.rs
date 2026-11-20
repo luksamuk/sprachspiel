@@ -213,7 +213,7 @@ pub async fn run_command(
         return Ok(e);
     }
 
-// Visual indicator: show which command is about to execute
+    // Visual indicator: show which command is about to execute
     let display_cmd = crate::utils::truncate_chars(&command_line, 60);
     tui_aware_print(&format!("⚡ {display_cmd}"));
 
@@ -235,11 +235,11 @@ pub async fn run_command(
         // lets the Coordinator end it — no next tool, no next request, and
         // the command's (already unrecorded) output never reaches one.
         Err(CommandError::Cancelled) => {
-                    log_tool_result("run_command", "cancelled by user (child killed and reaped)");
+            log_tool_result("run_command", "cancelled by user (child killed and reaped)");
             return Err(Box::new(crate::tools::tool_trait::ToolCancelled));
         }
         Ok(output) => {
-                    if output.success {
+            if output.success {
                 format_success_output(output.stdout, head_val, tail_val)
             } else {
                 // Command failed - return stderr with helpful context
@@ -321,10 +321,12 @@ fn validate_command(
     if !allow_shell_operators {
         if let Some((name, line_hint)) = find_rejected_metachar(command_line) {
             return Err(format!(
-                "Error: Shell feature '{name}' detected in '{line_hint}'. Use tool-specific flags instead, or set [external] allow_shell_operators = true to allow shell operators."
+                "Error: Shell feature '{name}' detected in '{line_hint}'. Use tool-specific flags instead, or set [external.tools] allow_shell_operators = true to allow shell operators."
             ));
         }
-    } else if split_top_level_segments(command_line).is_some() {
+    } else if split_top_level_segments(command_line).is_some()
+        || has_top_level_redirect(command_line)
+    {
         for binary in compound_binaries(command_line) {
             if !is_whitelisted(&binary) {
                 return Err(format!(
@@ -381,15 +383,74 @@ const FORBIDDEN_METACHARS: [(&str, &str); 10] = [
 const COMPOSITION_OPERATORS: [&str; 4] = ["|", "&&", "||", ";"];
 
 /// First unquoted shell metacharacter in the line, for the strict mode's
-/// rejection message. Quoted characters are data, not features.
+/// rejection message. Quoted and backslash-escaped characters are data,
+/// not features: `echo "a | b"` passes the strict wall.
 fn find_rejected_metachar(command_line: &str) -> Option<(&'static str, String)> {
-    for (pattern, name) in FORBIDDEN_METACHARS {
-        if command_line.contains(pattern) {
+    let chars: Vec<char> = command_line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // Quoted runs are literal data.
+        if c == '"' || c == '\'' {
+            let closing = c;
+            i += 1;
+            while i < chars.len() && chars[i] != closing {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            i += 1; // past the closing quote
+            continue;
+        }
+        // Backslash escapes the next character wherever it appears.
+        if c == '\\' {
+            i += 2;
+            continue;
+        }
+        if let Some((_, name)) = FORBIDDEN_METACHARS.iter().find(|(p, _)| {
+            chars[i..].len() >= p.chars().count()
+                && chars[i..i + p.chars().count()].iter().collect::<String>() == **p
+        }) {
             let hint = crate::utils::truncate_chars(command_line, 80);
             return Some((name, hint));
         }
+        i += 1;
     }
     None
+}
+
+/// Whether a redirect symbol (`>`, `>>`, `<`, `<<`) appears outside quotes
+/// or escapes. A redirect alone does not compose — but it still needs the
+/// shell to take effect, and the redirect target is never a whitelisted
+/// binary, so it must not become a split segment.
+fn has_top_level_redirect(command_line: &str) -> bool {
+    let chars: Vec<char> = command_line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' || c == '\'' {
+            let closing = c;
+            i += 1;
+            while i < chars.len() && chars[i] != closing {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            i += 1; // past the closing quote
+            continue;
+        }
+        if c == '\\' {
+            i += 2;
+            continue;
+        }
+        if c == '>' || c == '<' {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Split the line at top-level composition operators (|, &&, ||, ;),
@@ -445,20 +506,18 @@ fn split_top_level_segments(command_line: &str) -> Option<Vec<String>> {
 
 /// The binary each composition segment starts with, skipping leading
 /// redirect symbols and their targets. Redirect targets write files, they
-/// do not execute binaries.
+/// do not execute binaries. A line without composition operators is its
+/// own single segment — a lone redirect still runs one binary.
 fn compound_binaries(command_line: &str) -> Vec<String> {
-    let Some(segments) = split_top_level_segments(command_line) else {
-        return Vec::new();
-    };
+    let segments =
+        split_top_level_segments(command_line).unwrap_or_else(|| vec![command_line.to_string()]);
     let mut binaries = Vec::new();
     for segment in segments {
         let Ok(tokens) = shell_words::split(&segment) else {
             continue;
         };
         let mut index = 0;
-        while index < tokens.len()
-            && matches!(tokens[index].as_str(), ">" | ">>" | "<" | "<<")
-        {
+        while index < tokens.len() && matches!(tokens[index].as_str(), ">" | ">>" | "<" | "<<") {
             index += 2; // symbol and its target
         }
         if let Some(binary) = tokens.get(index) {
@@ -905,7 +964,10 @@ async fn execute_command(
             // a syscall in flight nor guarantees the process is reaped.
             let _ = child.start_kill();
             let _ = child.wait().await;
-            debug_log!("Command '{}' killed and reaped after cancellation", binary_owned);
+            debug_log!(
+                "Command '{}' killed and reaped after cancellation",
+                binary_owned
+            );
             log::info!(
                 "run_command child killed and reaped after cancellation: {}",
                 command_line
@@ -980,11 +1042,7 @@ mod tests {
     fn test_validate_command_blocks_semicolon() {
         let result = validate_command("pdftotext file.pdf - ; rm -rf /", false, |_| true);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("'command separator' detected")
-        );
+        assert!(result.unwrap_err().contains("'command separator' detected"));
     }
 
     #[test]
@@ -1019,24 +1077,21 @@ mod tests {
     fn test_validate_command_blocks_redirect() {
         let result = validate_command("pdftotext file.pdf - > output.txt", false, |_| true);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("'output redirect' detected")
-        );
+        assert!(result.unwrap_err().contains("'output redirect' detected"));
     }
 
     #[test]
     fn test_validate_command_accepts_valid() {
-        let result = validate_command(
-            "pdftotext -f 1 -l 5 file.pdf -",
-            false,
-            |b| b == "pdftotext",
-        );
+        let result = validate_command("pdftotext -f 1 -l 5 file.pdf -", false, |b| {
+            b == "pdftotext"
+        });
         let validated = result.expect("plain command passes in strict mode too");
         match validated {
             ValidatedCommand::Simple { parts } => {
-                assert_eq!(parts, vec!["pdftotext", "-f", "1", "-l", "5", "file.pdf", "-"]);
+                assert_eq!(
+                    parts,
+                    vec!["pdftotext", "-f", "1", "-l", "5", "file.pdf", "-"]
+                );
             }
             ValidatedCommand::Compound => panic!("no operators present"),
         }
@@ -1075,10 +1130,75 @@ mod tests {
 
     #[test]
     fn test_permissive_mode_plans_a_compound_run() {
-        let validated =
-            validate_command("echo a | tr a b", true, |b| b == "echo" || b == "tr")
-                .expect("permissive mode plans the compound");
+        let validated = validate_command("echo a | tr a b", true, |b| b == "echo" || b == "tr")
+            .expect("permissive mode plans the compound");
         assert!(matches!(validated, ValidatedCommand::Compound));
+    }
+
+    #[test]
+    fn test_permissive_mode_redirect_only_line_is_compound() {
+        let validated =
+            validate_command("pdftotext doc.pdf - > out.txt", true, |b| b == "pdftotext")
+                .expect("an output redirect alone still needs the shell");
+        assert!(matches!(validated, ValidatedCommand::Compound));
+    }
+
+    #[test]
+    fn test_permissive_mode_append_and_input_redirect_build_compounds() {
+        for line in ["pdftotext doc.pdf - >> log.txt", "tr a b < notes.txt"] {
+            let validated = validate_command(line, true, |b| b == "pdftotext" || b == "tr")
+                .expect("redirects need the shell, whichever way they point");
+            assert!(matches!(validated, ValidatedCommand::Compound));
+        }
+    }
+
+    #[test]
+    fn test_permissive_mode_inverted_redirect_is_compound() {
+        let validated = validate_command("> out.txt echo hi", true, |b| b == "echo")
+            .expect("the redirect target is not a binary; echo still is");
+        assert!(matches!(validated, ValidatedCommand::Compound));
+    }
+
+    #[test]
+    fn test_permissive_mode_quoted_redirect_is_simple() {
+        let validated = validate_command("echo \"a > b\"", true, |b| b == "echo")
+            .expect("a quoted redirect is argument data");
+        match validated {
+            ValidatedCommand::Simple { parts } => {
+                assert_eq!(parts, vec!["echo", "a > b"]);
+            }
+            ValidatedCommand::Compound => panic!("quoted redirect is not composition"),
+        }
+    }
+
+    #[test]
+    fn test_permissive_mode_redirect_and_pipe_compose() {
+        let validated = validate_command("echo hi | tr a b >> combined.log", true, |b| {
+            b == "echo" || b == "tr"
+        })
+        .expect("redirect and pipe compose in one line");
+        assert!(matches!(validated, ValidatedCommand::Compound));
+    }
+
+    #[test]
+    fn test_permissive_mode_redirect_whitelist_covers_the_target_binary() {
+        let err = validate_command("echo hi > /tmp/x", true, |b| b == "echo")
+            .expect("the redirect target is not a whitelisted binary");
+        // `echo` is whitelisted and the redirect target is data: compound.
+        assert!(matches!(err, ValidatedCommand::Compound));
+        let err = validate_command("curse --now > /tmp/x", true, |_| false)
+            .expect_err("only binaries are whitelisted, not redirection");
+        assert!(
+            err.contains("'curse' is not in the whitelist"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_strict_mode_passes_quoted_metachar() {
+        let validated = validate_command("echo \"a | b\"", false, |b| b == "echo")
+            .expect("quoted text is data, not a feature, in strict mode too");
+        assert!(matches!(validated, ValidatedCommand::Simple { .. }));
     }
 
     #[test]
@@ -1109,7 +1229,10 @@ mod tests {
             compound_binaries("echo a | tr a b ; wc -l > out.txt"),
             vec!["echo", "tr", "wc"]
         );
-        assert!(compound_binaries("echo only").is_empty());
+        // Without composition operators the whole line is its own segment —
+        // a lone redirect's binary is still the one that runs.
+        assert_eq!(compound_binaries("echo only"), vec!["echo"]);
+        assert_eq!(compound_binaries("> out.txt echo hi"), vec!["echo"]);
     }
 
     #[test]
@@ -1555,7 +1678,10 @@ mod cancellation_tests {
             .filter(|line| line.contains(argv_match) && !line.contains("ps -eo"))
             .filter(|line| !line.trim_end().ends_with("sh -c sleep"))
             .count();
-        assert_eq!(alive, 0, "the killed child must be reaped, found: {listing}");
+        assert_eq!(
+            alive, 0,
+            "the killed child must be reaped, found: {listing}"
+        );
     }
 
     #[tokio::test]

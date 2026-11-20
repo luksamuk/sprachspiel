@@ -10,7 +10,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{channel_view, fresh_mirror, provider_mock, session_with_db, test_model, MockServer};
+use common::{MockServer, channel_view, fresh_mirror, provider_mock, session_with_db, test_model};
 use tokio_util::sync::CancellationToken;
 
 use sprachspiel::chat::llm_event::LlmEvent;
@@ -30,7 +30,10 @@ fn assert_no_such_process(argv_match: &str) {
         .lines()
         .filter(|line| line.contains(argv_match) && !line.contains("ps -eo"))
         .count();
-    assert_eq!(alive, 0, "the killed child must be reaped, found: {listing}");
+    assert_eq!(
+        alive, 0,
+        "the killed child must be reaped, found: {listing}"
+    );
 }
 
 /// Test config directory with `sleep`, `echo` and `tr` whitelisted —
@@ -164,6 +167,60 @@ async fn cancelling_a_compound_command_kills_and_reaps_the_shell() {
     // shell's pipe teardown, and no process-group kill is claimed.
     assert_no_such_process(&format!("sleep 1.2 | tr a {uid}"));
     handle_park().await;
+}
+
+#[tokio::test]
+async fn redirect_writes_and_appends_a_real_file() {
+    install_test_config();
+    let out = std::env::temp_dir().join(format!("sprach-redirect-{}.txt", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+
+    let write_body = MockServer::tool_call_body(
+        "run_command",
+        &format!(
+            r#"{{"command_line":"echo first-write > {}","head":null,"tail":null,"timeout_seconds":null}}"#,
+            out.display()
+        ),
+    );
+    let append_body = MockServer::tool_call_body(
+        "run_command",
+        &format!(
+            r#"{{"command_line":"echo second-write >> {}","head":null,"tail":null,"timeout_seconds":null}}"#,
+            out.display()
+        ),
+    );
+    let server = MockServer::spawn_sequence(vec![
+        write_body,
+        append_body,
+        MockServer::plain_body("done"),
+    ]);
+
+    let mut state = build_state(&server).await;
+    let mirror = fresh_mirror();
+    let (llm_tx, _llm_rx) = tokio::sync::mpsc::channel::<LlmEvent>(64);
+    let mut view = channel_view();
+
+    let terminal = handle_user_message_stream(
+        "redirect the output",
+        &mut state,
+        &mut view,
+        llm_tx,
+        CancellationToken::new(),
+        mirror,
+    )
+    .await;
+
+    assert_eq!(
+        terminal,
+        TurnTerminal::Complete,
+        "redirect-only commands run under the shell"
+    );
+    let contents = std::fs::read_to_string(&out).expect("the redirect produced the file");
+    assert_eq!(
+        contents, "first-write\nsecond-write\n",
+        "the shell wrote, then appended, the redirect target"
+    );
+    let _ = std::fs::remove_file(&out);
 }
 
 fn handle_park() -> impl std::future::Future<Output = ()> {
