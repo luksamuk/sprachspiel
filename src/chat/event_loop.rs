@@ -229,7 +229,7 @@ pub async fn handle_key_line(
                             msg_count
                         ))]);
                         view.set_llm_state(LlmState::Compacting);
-                        spawn_compact_task(state, llm_tx, llm_rx);
+                        spawn_compact_task(state, llm_tx, llm_rx, cancel_token);
                     }
                     return LoopAction::Continue;
                 }
@@ -350,8 +350,10 @@ pub async fn handle_key_line(
 /// markers until the terminal `Cancelled` event is handled. The loop's own
 /// Sender is dropped immediately: the task and its forwarding task still
 /// own senders, so terminal delivery is unaffected, while a dying producer
-/// can now close the channel and reach the `None` recovery branch. If
-/// compaction is running, shows a warning (compaction is not cancellable).
+/// can now close the channel and reach the `None` recovery branch. A
+/// compaction shares the same slot and token as the LLM tasks: Ctrl+C while
+/// it runs cancels it the same way, and its terminal `Cancelled` event
+/// carries the untouched clone.
 pub fn handle_interrupt(
     _state: &ReplState,
     app: &mut App,
@@ -370,12 +372,10 @@ pub fn handle_interrupt(
         // loop's Sender clone is what makes `recv() == None` reachable if
         // every producer dies before sending that event.
         *llm_tx = None;
-    } else if app.llm_state() == LlmState::Compacting {
-        // Compaction is not cancellable — ignore Ctrl+C
-        app.add_message(ChatMessage::system(
-            "Compaction in progress, please wait...".to_string(),
-        ));
     }
+    // Compaction now cancels through the same channel as LLM tasks: while
+    // it runs, this slot holds the compaction task's token. With neither
+    // a token nor a running task, Ctrl+C has nothing to cancel.
 }
 
 /// Handle Ctrl+D (quit) — merge completed-tool facts, save, then exit.
@@ -803,6 +803,24 @@ enum CompactEvent {
     },
 }
 
+/// A manual `/compact`'s terminal commit.
+///
+/// `handle_compact_event` just applied summary and range to the live
+/// session; this makes the database agree — the summary persists and the
+/// prompt tokens the compaction invalidated are cleared, exactly as the
+/// non-TUI compaction commit does. Anonymous sessions have nothing to
+/// persist.
+pub(crate) fn persist_manual_compaction(state: &mut ReplState) {
+    if !state.session.anonymous && state.session.save_sqlite().is_err() {
+        log::warn!("Failed to persist the session after /compact");
+    }
+    if !state.session.anonymous
+        && let Some(db) = state.session.db.as_ref()
+    {
+        let _ = db.clear_conversation_prompt_tokens(&state.session.id);
+    }
+}
+
 pub fn handle_llm_event(
     llm_event: LlmEvent,
     state: &mut ReplState,
@@ -920,6 +938,9 @@ pub fn handle_llm_event(
         }
         LlmEvent::CompactStreamDone { summary, range } => {
             handle_compact_event(CompactEvent::StreamDone { summary, range }, view, state);
+            // The manual compaction's terminal below: live session and
+            // database must agree, exactly as the non-TUI path does.
+            persist_manual_compaction(state);
             view.set_llm_state(LlmState::Idle);
             *cancel_token = None;
             *llm_tx = None;
@@ -1111,8 +1132,13 @@ fn spawn_llm_task(
             return;
         }
 
-        // Use the streaming handler which sends tokens through the LlmEvent channel
-        super::repl::handle_user_message_stream(
+        // The handler decides the terminal: `Complete` — including a
+        // response preserved across a trailing compaction cancel — commits
+        // this clone to the event loop; `Cancelled` (turn aborted before a
+        // final response existed) discards it. The outcome is read from the
+        // terminal, never re-derived from the token, because a cancellation
+        // after the response is a completed turn.
+        let turn_terminal = super::repl::handle_user_message_stream(
             &line_owned,
             &mut task_state,
             &mut channel_view as &mut dyn ChatView,
@@ -1124,7 +1150,7 @@ fn spawn_llm_task(
 
         // Error and Cancelled are sent sequentially by this task on one channel.
         // handle_error therefore defers cleanup when this token is cancelled.
-        if token.is_cancelled() {
+        if turn_terminal == super::repl::TurnTerminal::Cancelled {
             let _ = task_llm_tx
                 .send(LlmEvent::Cancelled {
                     // Core flushed the coordinator facts into the task's
@@ -1174,16 +1200,18 @@ fn spawn_llm_task(
 /// Spawn a compaction task in the background with streaming summary display.
 ///
 /// Analogous to `spawn_llm_task` but for `/compact`. Creates a dedicated
-/// `llm_tx`/`llm_rx` channel pair. The background task calls
-/// `compact_conversation()` which streams `CompactStreamToken` events.
-/// On completion, sends `CompactStreamDone` with the summary and range
-/// (or `Error` on failure). The event loop handles finalization.
-///
-/// Unlike LLM tasks, compaction is NOT cancellable — Ctrl+C is ignored.
+/// `llm_tx`/`llm_rx` channel pair and registers the same turn
+/// `cancel_token` the LLM tasks use, so Ctrl+C during compaction cancels
+/// it the same way. The background task calls `compact_conversation()`
+/// which streams `CompactStreamToken` events. On completion, sends
+/// `CompactStreamDone` with the summary and range (or `Error` on
+/// failure). A cancelled compaction sends the terminal `Cancelled` event
+/// with the untouched clone: the summary never reaches the session.
 fn spawn_compact_task(
     state: &mut ReplState,
     llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+    cancel_token: &mut Option<CancellationToken>,
 ) {
     // Precondition: must not be called while an LLM task is already running,
     // as this would clobber the active channel. Callers must guard against this.
@@ -1196,6 +1224,12 @@ fn spawn_compact_task(
     *llm_tx = Some(task_llm_tx.clone());
     *llm_rx = Some(new_llm_rx);
 
+    // Compaction shares the LLM tasks' cancellation channel: Ctrl+C while
+    // the summary is being written stops the model calls and discards the
+    // candidate summary.
+    let token = CancellationToken::new();
+    *cancel_token = Some(token.clone());
+
     // Clone the state for the compaction task
     let task_state = state.clone();
 
@@ -1207,6 +1241,7 @@ fn spawn_compact_task(
             &task_state.settings,
             task_state.agents_md.as_deref(),
             task_llm_tx.clone(),
+            Some(token.clone()),
         )
         .await
         {
@@ -1216,10 +1251,30 @@ fn spawn_compact_task(
                     .await;
             }
             Err(e) => {
-                let _ = task_llm_tx.send(LlmEvent::Error(e.to_string())).await;
+                // The cancelled path keeps the summary out of the session:
+                // the terminal Cancelled event discards this clone whole.
+                if e.is_cancelled_or_token(&token) {
+                    let _ = task_llm_tx
+                        .send(LlmEvent::Cancelled {
+                            session: Box::new(task_state.session),
+                        })
+                        .await;
+                } else {
+                    let _ = task_llm_tx.send(LlmEvent::Error(e.to_string())).await;
+                }
             }
         }
     });
+}
+
+impl super::compaction::CompactionFailure {
+    /// Whether this failure is cancellation — checked against the owning
+    /// token, never against error text. A Model failure still counts when
+    /// the token was cancelled mid-call: the provider error that raced the
+    /// interrupt must not replace the terminal Cancelled event.
+    fn is_cancelled_or_token(&self, token: &CancellationToken) -> bool {
+        self.is_cancelled() || token.is_cancelled()
+    }
 }
 
 // ── Mouse event handler ────────────────────────────────────────────────
@@ -1846,7 +1901,7 @@ mod tests {
     fn pre_turn_compaction_does_not_launch_a_new_request_after_cancellation() {
         let source = include_str!("repl.rs");
         let compaction = source
-            .find("    check_and_compact_before_tool(")
+            .find("let pre_turn_outcome = check_and_compact_before_tool(")
             .expect("the pre-turn compaction call exists");
         let send = source
             .find("match send_message_stream(")
@@ -2008,5 +2063,163 @@ pub fn handle_mouse_event(mouse: MouseEvent, view: &mut RatatuiView) {
             app.scroll_state_mut().scroll_down(MOUSE_SCROLL_LINES);
         }
         _ => {}
+    }
+}
+
+// ── Manual compaction terminal (TUI) ────────────────────────────────────
+
+#[cfg(test)]
+mod manual_compaction_tests {
+    use super::*;
+
+    /// `/compact` (TUI) whose stop request lands first: the task answers
+    /// with the terminal `Cancelled` event carrying the untouched clone,
+    /// so the earlier compaction's state — summary, range, prompt tokens —
+    /// survives the discard, and nothing new reaches the database.
+    #[tokio::test]
+    async fn cancelled_manual_compaction_discards_the_whole_clone() {
+        let db = std::sync::Arc::new(crate::db::Database::in_memory().expect("in-memory db"));
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+        session.db = Some(std::sync::Arc::clone(&db));
+        session.set_compacted_summary_with_range("earlier summary".to_string(), Some((0, 1)));
+        session.add_user_message("question".to_string());
+        session.add_assistant_message("answer".to_string(), None, Some(700));
+        let mut state = ReplState {
+            session,
+            current_model_name: "test-model".to_string(),
+            model_config: crate::config::ModelConfig::get_default(),
+            capabilities: crate::capabilities::ModelCapabilities::default(),
+            tools_active: false,
+            agents_md: None,
+            cli_code: false,
+            cli_soulless: false,
+            provider: crate::provider::OpenAICompatibleProvider::new_local(
+                "http://127.0.0.1:1".to_string(),
+                1,
+            ),
+            db: None,
+            embedding_client: None,
+            settings: crate::settings::Settings::default(),
+            last_assistant_message_id: None,
+            pending_pre_tool: Vec::new(),
+            last_status_token_bucket: 0,
+        };
+
+        let mut llm_tx: Option<tokio::sync::mpsc::Sender<LlmEvent>> = None;
+        let mut llm_rx: Option<tokio::sync::mpsc::Receiver<LlmEvent>> = None;
+        let mut cancel_token: Option<CancellationToken> = None;
+        spawn_compact_task(&mut state, &mut llm_tx, &mut llm_rx, &mut cancel_token);
+        // The stop request lands on the just-spawned task's own token.
+        assert!(
+            cancel_token.is_some(),
+            "spawn_compact_task installs the token"
+        );
+        cancel_token.as_ref().expect("token").cancel();
+
+        let drained = tokio::time::timeout(tokio::time::Duration::from_secs(2), async {
+            let rx = llm_rx.as_mut().expect("receiver");
+            let mut events = Vec::new();
+            // The spawned task runs on this runtime; a blocking recv with
+            // a per-event timeout outlives its scheduling delay.
+            while let Ok(Some(event)) =
+                tokio::time::timeout(tokio::time::Duration::from_millis(200), rx.recv()).await
+            {
+                events.push(event);
+            }
+            events
+        })
+        .await
+        .expect("the terminal event arrives promptly");
+
+        let cancelled_events = drained
+            .iter()
+            .filter(|e| matches!(e, LlmEvent::Cancelled { .. }))
+            .count();
+        assert_eq!(cancelled_events, 1, "the cancelled path sends the terminal");
+        assert!(
+            !drained
+                .iter()
+                .any(|e| matches!(e, LlmEvent::CompactStreamDone { .. })),
+            "no summary event: the discarded clone answered with the terminal"
+        );
+        let session = drained
+            .iter()
+            .find_map(|e| match e {
+                LlmEvent::Cancelled { session } => Some(session),
+                _ => None,
+            })
+            .expect("the terminal carries the clone");
+        assert_eq!(
+            session.compacted_summary.as_deref(),
+            Some("earlier summary"),
+            "the earlier compaction's state survives the discard"
+        );
+        assert_eq!(session.compacted_range, Some((0, 1)));
+        assert!(
+            session
+                .messages
+                .iter()
+                .any(|m| m.prompt_tokens == Some(700)),
+            "earlier prompt tokens survive"
+        );
+        assert!(state.pending_pre_tool.is_empty());
+    }
+
+    /// The terminal commit of a SUCCESSFUL manual compaction: the summary
+    /// the handler applied to the live session reaches the database, and
+    /// the prompt tokens are cleared — the database and the live session
+    /// agree with the terminal.
+    #[tokio::test]
+    async fn successful_manual_compaction_commits_summary_and_clears_tokens() {
+        let db = std::sync::Arc::new(crate::db::Database::in_memory().expect("in-memory db"));
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+        session.db = Some(std::sync::Arc::clone(&db));
+        session.add_user_message("question".to_string());
+        session.add_assistant_message("answer".to_string(), None, Some(700));
+        let mut state = ReplState {
+            session,
+            current_model_name: "test-model".to_string(),
+            model_config: crate::config::ModelConfig::get_default(),
+            capabilities: crate::capabilities::ModelCapabilities::default(),
+            tools_active: false,
+            agents_md: None,
+            cli_code: false,
+            cli_soulless: false,
+            provider: crate::provider::OpenAICompatibleProvider::new_local(
+                "http://127.0.0.1:1".to_string(),
+                1,
+            ),
+            db: None,
+            embedding_client: None,
+            settings: crate::settings::Settings::default(),
+            last_assistant_message_id: None,
+            pending_pre_tool: Vec::new(),
+            last_status_token_bucket: 0,
+        };
+        assert!(
+            db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db")
+        );
+        // What the CompactStreamDone handler just did: summary and range on
+        // the live session, nothing on the database yet.
+        state
+            .session
+            .set_compacted_summary_with_range("fresh summary".to_string(), Some((0, 1)));
+
+        persist_manual_compaction(&mut state);
+
+        assert_eq!(
+            db.get_conversation_metadata(&state.session.id)
+                .expect("db")
+                .compacted_summary
+                .as_deref(),
+            Some("fresh summary"),
+            "the applied summary persists with the terminal"
+        );
+        assert!(
+            !db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db"),
+            "a completed manual compaction invalidates prompt tokens"
+        );
     }
 }

@@ -140,6 +140,14 @@ pub struct ChatSession {
     /// Persisted as JSON in `conversations.fact_tracker`.
     #[serde(default)]
     pub fact_tracker: crate::chat::fact_tracker::SessionFactTracker,
+    /// Monotonic count of compactions completed in this process — the event
+    /// signal the turn's terminal commit reads. Content comparison cannot
+    /// stand in for it: a later compaction may legitimately reproduce the
+    /// same summary and range as an earlier one, and the terminal must
+    /// still observe that one ran and invalidate the prompt tokens the
+    /// apply cleared in memory.
+    #[serde(skip)]
+    pub compaction_epoch: u64,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -230,6 +238,7 @@ impl ChatSession {
             async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fact_tracker: crate::chat::fact_tracker::SessionFactTracker::default(),
+            compaction_epoch: 0,
         }
     }
 
@@ -310,6 +319,7 @@ impl ChatSession {
                     }
                 })
                 .unwrap_or_default(),
+            compaction_epoch: 0,
         })
     }
 

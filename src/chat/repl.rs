@@ -18,6 +18,7 @@ use crate::capabilities::check_server_health;
 use crate::config::ModelConfig;
 use crate::settings::Settings;
 
+use super::compaction::CompactionOutcome;
 use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
@@ -191,6 +192,19 @@ async fn run_startup_tasks(
     }
 }
 
+/// How the in-task turn ended, deciding the terminal event the LLM task
+/// sends back to the event loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnTerminal {
+    /// The turn produced a committed state — the event loop applies the
+    /// task's session clone. A response preserved across a trailing
+    /// compaction cancellation is still `Complete`.
+    Complete,
+    /// Ctrl+C aborted the turn with no final response to preserve — the
+    /// event loop discards the task's session clone.
+    Cancelled,
+}
+
 /// Handle user input with streaming token display.
 ///
 /// This is the streaming equivalent of `handle_user_message()`. Instead of
@@ -203,15 +217,16 @@ async fn run_startup_tasks(
 /// - `LlmEvent::StreamDone` — final content and metrics after stream completes
 /// - `LlmEvent::ViewAction(action)` — view events from coordinator callbacks
 ///
-/// The `cancel_token` allows aborting the stream on Ctrl+C.
+/// The `cancel_token` allows aborting the stream on Ctrl+C and is threaded
+/// through every continuation, compaction and retry the turn performs.
 pub async fn handle_user_message_stream(
     line: &str,
-    state: &mut super::repl_state::ReplState,
+    state: &mut crate::chat::repl_state::ReplState,
     view: &mut dyn ChatView,
     llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
     cancel_token: tokio_util::sync::CancellationToken,
     fact_mirror: crate::chat::fact_tracker::SharedFactTracker,
-) {
+) -> TurnTerminal {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
@@ -221,23 +236,39 @@ pub async fn handle_user_message_stream(
 
     let context_window = state.model_config.num_ctx as usize;
     let system_prompt_for_check = build_pre_tool_prompt(state);
-    check_and_compact_before_tool(
+    let pre_turn_outcome = check_and_compact_before_tool(
         state,
         &system_prompt_for_check,
         context_window,
         view,
         llm_tx.clone(),
+        Some(&cancel_token),
     )
     .await;
-    // Pre-turn compaction is deliberately not cancellation-aware. Check the
-    // token before its awaits end, otherwise a turn cancelled during that
-    // compaction would still launch a full provider request.
+    // Pre-turn compaction itself takes the turn token and stops at its own
+    // safe points, committing nothing when cancelled. The re-check here
+    // closes the gap between that compaction's last safe point and the
+    // provider request: a stop that lands in between launches no request.
     if cancel_token.is_cancelled() {
         view.show_system("Cancelled before the turn started.");
-        return;
+        return TurnTerminal::Cancelled;
     }
 
+    // Where the turn's compaction commit starts from: a completed compaction
+    // lives in the in-memory session only (token-owned) — the pre-turn one
+    // included, whose summary is already the baseline when this snapshot is
+    // taken; `pre_turn_outcome` is what tells the terminal about it. Any
+    // compaction that completes later in the turn moves the epoch; the
+    // terminal reads that event — content comparison alone would miss a
+    // pass that reproduces an earlier summary and range.
+    let pre_turn_completed = matches!(pre_turn_outcome, CompactionOutcome::Completed);
+    let pre_turn_epoch = state.session.compaction_epoch;
+
     let think_enabled = state.session.think;
+    // Paths whose recovery already persisted the session (the successful
+    // send loop and the overflow recovery save) mark this so the terminal
+    // commit does not duplicate the save.
+    let mut turn_commit_done = false;
     let mut compaction_cycles = 0;
     let mut current_input = line.to_string();
 
@@ -264,12 +295,30 @@ pub async fn handle_user_message_stream(
         .await
         {
             Ok(result) => {
-                match process_send_result(state, result, user_message_id, view, llm_tx.clone())
-                    .await
+                match process_send_result(
+                    state,
+                    result,
+                    user_message_id,
+                    view,
+                    llm_tx.clone(),
+                    Some(&cancel_token),
+                )
+                .await
                 {
                     ProcessResult::Success => {
-                        // Auto-extract facts from recent user messages (autoDream-lite)
-                        try_auto_extract_facts(state, view).await;
+                        // The response and any completed compaction are
+                        // already persisted by this path.
+                        turn_commit_done = true;
+                        // Auto-extract facts from recent user messages (autoDream-lite).
+                        // A turn that ended in cancellation — including one whose
+                        // trailing compaction was cancelled with the response
+                        // preserved — makes no further provider calls.
+                        if !cancel_token.is_cancelled() {
+                            try_auto_extract_facts(state, view).await;
+                        }
+                    }
+                    ProcessResult::Cancelled => {
+                        return TurnTerminal::Cancelled;
                     }
                     ProcessResult::ContinuationError(e) => {
                         view.show_error(&format!("Continuation failed: {}", e));
@@ -278,6 +327,17 @@ pub async fn handle_user_message_stream(
                 break;
             }
             Err(e) => {
+                // A stop request outranks every provider failure: a token
+                // cancelled during the request must end the turn cancelled —
+                // never a Complete whose adopted clone has no final response
+                // to preserve. The check precedes the sentinel and the
+                // recovery: a real failure that races the stop carries no
+                // cancellation marker, and the recovery must not run past it.
+                if cancel_token.is_cancelled() {
+                    log::debug!("provider error raced a cancellation request");
+                    return TurnTerminal::Cancelled;
+                }
+
                 let error_str = e.to_string();
 
                 // Cancellation from tool loop (Ctrl+C during multi-tool execution)
@@ -285,7 +345,7 @@ pub async fn handle_user_message_stream(
                 // The Ctrl+C handler in the event loop already showed "Cancelled."
                 if error_str == super::coordinator::CANCELLED_BY_USER {
                     log::debug!("LLM task cancelled during tool execution");
-                    break;
+                    return TurnTerminal::Cancelled;
                 }
 
                 // Send LlmEvent::Error DIRECTLY to the event loop's
@@ -315,13 +375,30 @@ pub async fn handle_user_message_stream(
                     .send(super::llm_event::LlmEvent::Error(formatted))
                     .await;
 
-                match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
+                match handle_overflow_error(
+                    state,
+                    &error_str,
+                    view,
+                    llm_tx.clone(),
+                    Some(&cancel_token),
+                )
+                .await
+                {
                     OverflowHandleResult::NotOverflow => {
                         break;
                     }
                     OverflowHandleResult::HandledContinue => {
+                        // The recovery saved its compacted session; the
+                        // prompt-token invalidation stays the terminal
+                        // commit's job.
+                        turn_commit_done = true;
                         view.show_warning("Please retry your message.");
                         break;
+                    }
+                    OverflowHandleResult::Cancelled => {
+                        // Cancellation outranks recovery: no continuation,
+                        // no further LLM call, terminal Cancelled.
+                        return TurnTerminal::Cancelled;
                     }
                     OverflowHandleResult::InterToolCompaction { tools_executed } => {
                         compaction_cycles += 1;
@@ -357,6 +434,60 @@ pub async fn handle_user_message_stream(
             }
         }
     }
+
+    // Terminal resolution of the turn: one commit site for everything the
+    // in-flight cancellation made defer — the completed compactions that
+    // lived in memory and the pre-tool captures that never touched SQLite.
+    commit_turn_terminal(state, pre_turn_epoch, pre_turn_completed, turn_commit_done);
+
+    TurnTerminal::Complete
+}
+
+/// The turn's terminal commit.
+///
+/// A compaction completed during the turn (pre-tool, inter-tool, inside a
+/// continuation chain, after the response) is token-owned: it applied its
+/// summary and range to the in-memory session and persisted nothing. This
+/// is where it commits — once, at the resolution of the turn, whether the
+/// send loop succeeded, the provider failed without overflow, or the
+/// recovery ran out of compaction cycles. The prompt-token invalidation
+/// follows the compaction (it is what invalidates the counts), even on
+/// paths whose save already ran; the save runs only where nothing
+/// persisted yet. Deferred pre-tool captures perform their inserts here,
+/// so an adopted clone and its database agree.
+fn commit_turn_terminal(
+    state: &mut super::repl_state::ReplState,
+    pre_turn_epoch: u64,
+    pre_turn_completed: bool,
+    turn_commit_done: bool,
+) {
+    // Skip the commit when this turn changed nothing: a session already
+    // compacted by an earlier turn must not re-trigger the invalidation,
+    // and there is nothing deferred to flush. A completed PRE-TURN
+    // compaction is already the epoch baseline, so it carries its own
+    // confirmation here instead of a delta. Later compactions are observed
+    // by the event (the epoch every completion bumps), never by content —
+    // a pass that reproduces an earlier summary and range still ran.
+    let compaction_ran = pre_turn_completed || state.session.compaction_epoch != pre_turn_epoch;
+    let captures = state.pending_pre_tool.len();
+
+    state.flush_pending_pre_tool();
+
+    if !state.session.anonymous
+        && (compaction_ran || captures > 0)
+        && !turn_commit_done
+        && let Err(e) = state.session.save_sqlite()
+    {
+        log::debug!("Warning: Could not save session at terminal commit: {}", e);
+    }
+
+    if !state.session.anonymous
+        && compaction_ran
+        && let Some(db) = state.session.db.as_ref()
+        && let Err(e) = db.clear_conversation_prompt_tokens(&state.session.id)
+    {
+        log::debug!("Warning: Could not clear prompt tokens: {}", e);
+    }
 }
 
 /// Attempt auto-extraction of facts from recent user messages (autoDream-lite).
@@ -368,7 +499,10 @@ pub async fn handle_user_message_stream(
 /// - Notification gated by `settings.facts.auto_extract_notify`
 ///
 /// See ADR-E1 (heuristic-only), ADR-E2 (always Global), ADR-E5 (synchronous).
-async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState, view: &mut dyn ChatView) {
+async fn try_auto_extract_facts(
+    state: &mut crate::chat::repl_state::ReplState,
+    view: &mut dyn ChatView,
+) {
     // Guard: auto_extract must be enabled
     if !state.settings.facts.auto_extract {
         return;
@@ -815,7 +949,7 @@ pub async fn run_chat_repl(
 
     // Build ReplState — all display (welcome, resume, DB messages, etc.)
     // is handled by run_chat_repl_tui() inside the TUI.
-    let mut state = super::repl_state::ReplStateBuilder::new()
+    let mut state = crate::chat::repl_state::ReplStateBuilder::new()
         .session(session.clone())
         .model_config(model_config.clone())
         .capabilities(capabilities.clone())
@@ -837,3 +971,143 @@ pub async fn run_chat_repl(
 }
 
 // Helper functions (REPL-specific, not moved to core.rs)
+
+// ── Terminal commit ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod terminal_commit_tests {
+    use super::*;
+    use crate::chat::compaction::CompactionOutcome;
+
+    fn state_with_db(session: ChatSession) -> crate::chat::repl_state::ReplState {
+        crate::chat::repl_state::ReplStateBuilder::new()
+            .session(session)
+            .model_config(crate::config::ModelConfig::get_default())
+            .provider(crate::provider::OpenAICompatibleProvider::new_local(
+                "http://localhost".to_string(),
+                11434,
+            ))
+            .settings(Settings::default())
+            .capabilities(ModelCapabilities::default())
+            .build()
+            .expect("valid ReplState")
+    }
+
+    /// A unit over the one terminal commit site the turn's three
+    /// non-persistent paths share — the provider error that is not an
+    /// overflow (`NotOverflow`), the failed continuation chain
+    /// (`ContinuationError`) and the exhausted compaction cycles:
+    /// whatever desvio ended the turn, THIS is the code that runs next.
+    #[tokio::test]
+    async fn a_completed_token_owned_compaction_commits_once_at_the_terminal() {
+        let db = std::sync::Arc::new(crate::db::Database::in_memory().expect("in-memory db"));
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+        session.db = Some(std::sync::Arc::clone(&db));
+        session.add_user_message("question".to_string());
+        session.add_assistant_message("answer".to_string(), None, Some(700));
+        session.add_user_message("another question".to_string());
+        let state = state_with_db(session);
+        let mut state = state;
+
+        // What a token-owned compaction plus a deferred capture leave at
+        // the desvio point: in-memory only — no persistence happened.
+        state
+            .session
+            .set_compacted_summary_with_range("turn summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
+        state.defer_pre_tool_content(
+            "captured mid-turn".to_string(),
+            None,
+            state.session.messages.first().map(|m| m.item_id).flatten(),
+        );
+        assert!(
+            db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db"),
+            "pre-condition: the rows of this session carry prompt tokens"
+        );
+
+        commit_turn_terminal(&mut state, 0, false, false);
+
+        assert!(state.pending_pre_tool.is_empty(), "the queue flushed once");
+        assert_eq!(
+            db.persisted_message_count(&state.session.id, "captured mid-turn")
+                .expect("db"),
+            1,
+            "the deferred capture exists in the database after the commit"
+        );
+        assert_eq!(
+            db.get_conversation_metadata(&state.session.id)
+                .expect("db")
+                .compacted_summary
+                .as_deref(),
+            Some("turn summary"),
+            "DB and adopted clone agree after the commit"
+        );
+        assert!(
+            !db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db"),
+            "the compaction this turn made invalidated the prompt tokens"
+        );
+
+        // Nothing left to commit: a second resolution (as the paths of a
+        // retrying turn would produce) re-persists nothing — the state is
+        // stable and the pre-existing summary is not re-invalidated.
+        let settled_epoch = state.session.compaction_epoch;
+        commit_turn_terminal(&mut state, settled_epoch, false, true);
+        assert_eq!(
+            db.persisted_message_count(&state.session.id, "captured mid-turn")
+                .expect("db"),
+            1,
+            "no duplicate captures on a repeated terminal"
+        );
+    }
+
+    /// A later compaction that reproduces the earlier summary and range is
+    /// invisible to content comparison — the epoch is what lets the
+    /// terminal observe the event and invalidate the prompt tokens the
+    /// apply cleared in memory. Remove the epoch signal and this fails.
+    #[tokio::test]
+    async fn a_same_summary_compaction_still_invalidates_prompt_tokens() {
+        let db = std::sync::Arc::new(crate::db::Database::in_memory().expect("in-memory db"));
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+        session.db = Some(std::sync::Arc::clone(&db));
+        session.add_user_message("question".to_string());
+        session.add_assistant_message("answer".to_string(), None, Some(700));
+        let mut state = state_with_db(session);
+        // Persist so the rows carry the tokens the commit must invalidate.
+        let _ = state.session.save_sqlite();
+        assert!(
+            db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db")
+        );
+
+        // An earlier turn's compaction is already in place...
+        state
+            .session
+            .set_compacted_summary_with_range("same summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
+        let pre_turn_epoch = state.session.compaction_epoch;
+        // ...and this turn's pass reproduces both summary and range — the
+        // event moved the epoch, the content did not move at all.
+        state
+            .session
+            .set_compacted_summary_with_range("same summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
+
+        commit_turn_terminal(&mut state, pre_turn_epoch, false, false);
+
+        assert!(
+            !db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db"),
+            "the epoch observed the compaction that identical content hides"
+        );
+        assert_eq!(
+            db.get_conversation_metadata(&state.session.id)
+                .expect("db")
+                .compacted_summary
+                .as_deref(),
+            Some("same summary"),
+            "the token-owned pass committed at the terminal"
+        );
+    }
+}

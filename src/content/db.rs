@@ -1761,6 +1761,46 @@ impl Database {
             Ok(())
         })
     }
+
+    /// Whether any content item of a conversation still carries prompt_tokens.
+    ///
+    /// Assertion seam for the compaction's terminal prompt-token
+    /// invalidation: a completed compaction must leave this false.
+    #[allow(dead_code)] // exercised by the cancellation-flow integration tests
+    pub fn conversation_has_prompt_tokens(&self, conversation_id: &str) -> Result<bool> {
+        self.with_connection(|conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_items \
+                 WHERE conversation_id = ?1 AND prompt_tokens IS NOT NULL",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        })
+    }
+
+    /// Count a conversation's persisted content items whose content
+    /// contains a substring.
+    ///
+    /// Assertion seam for the turn's discard boundary: an abandoned clone
+    /// must leave zero rows behind whatever the turn captured, and a
+    /// terminal commit must carry them (message_type is NULL for normal
+    /// messages, so no filter applies here).
+    #[allow(dead_code)] // exercised by the cancellation-flow integration tests
+    pub fn persisted_message_count(
+        &self,
+        conversation_id: &str,
+        content_substring: &str,
+    ) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM content_items \
+                 WHERE conversation_id = ?1 AND content LIKE '%' || ?2 || '%'",
+                params![conversation_id, content_substring],
+                |row| row.get(0),
+            )
+        })
+    }
 }
 
 /// Helper to map a row to a Note
