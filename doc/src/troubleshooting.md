@@ -97,10 +97,10 @@ sprach -v "Test query"
 
 ```bash
 # Use tool-capable model
-sprach -m qwen3.5-4b "Tell me about Pikachu"
+sprach -m qwen3.5-4b "Tell me about the weather"
 
 # Force enable tools
-sprach --tools "Tell me about Pikachu"
+sprach --tools "What's the weather in Tokyo?"
 
 # Check debug output
 sprach -v "Query"
@@ -113,24 +113,6 @@ sprach -v "Query"
 ```bash
 # Use alternative model
 sprach -m qwen3.5-4b "Query"
-```
-
-## Web Search Issues
-
-### "DuckDuckGo CAPTCHA Block"
-
-**Problem:** Web search blocked
-
-**Status:** DuckDuckGo may occasionally rate-limit automated traffic or show CAPTCHA challenges. This is a third-party service limitation.
-
-**Workaround:**
-
-```bash
-# Use query without web search
-sprach "Question using model knowledge only"
-
-# Try code_with_tools for web research
-sprach -p code_with_tools "Latest Rust patterns"
 ```
 
 ## Translation Issues
@@ -309,7 +291,6 @@ cat debug.log
 
 ## Known Limitations
 
-1. **Web search**: Currently blocked by DuckDuckGo CAPTCHA
 ## See Also
 
 - [Installation](./installation.md) - Setup guide

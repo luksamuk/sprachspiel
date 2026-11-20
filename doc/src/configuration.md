@@ -138,10 +138,6 @@ default = "qwen3.5:4b"
 #   - get_current_datetime, get_project_context (System information)
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory (File operations)
-#   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - web_search, web_search_news, web_scrape (DuckDuckGo — requires search-tools feature)
-#
-# Note: DuckDuckGo may occasionally rate-limit or show CAPTCHA. This is a third-party limitation.
 # Default: [] (all enabled tools are available)
 blacklist = []
 
@@ -509,8 +505,8 @@ Sprachspiel uses a two-layer filtering system for tools:
    - The model won't know these tools exist
 
 **Example workflow:**
-- Build with: `cargo build --release` (no Pokémon tools by default)
-- Blacklist in config: `blacklist = ["web_search"]` (hides web search from model)
+- Build with: `cargo build --release`
+- Blacklist in config: `blacklist = ["get_current_datetime"]` (hides the weather tools from the model)
 
 ### Disabling Tools at Runtime
 
@@ -519,28 +515,23 @@ Some tools may not work in your environment or you may want to disable them:
 ```toml
 [tools]
 # Disable specific tools
-blacklist = ["fetch_pokemon", "get_pokemon_ability"]
+blacklist = ["calculate", "list_directory"]
 ```
 
 **Important**: When a tool is blacklisted, it's completely hidden from the model. The system prompt won't mention the tool, and the model won't try to use it. This saves context window space.
 
-**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_scrape`) may occasionally be rate-limited or show CAPTCHA. This is a third-party service limitation, not a bug in Sprachspiel. These tools require the `search-tools` feature flag at compile time.
+### Enabling All Tools
 
-### Enabling Pokémon Tools
-
-Pokémon tools are **disabled by default** at compile time to avoid polluting the context window. To enable them:
+The default build includes weather, file, calculator, system, skills, document and subagent tools. The `all-tools` feature adds the Landlock sandbox on top:
 
 ```bash
-# Build with Pokémon tools
-cargo build --release --features pokemon-tools
-
-# Or enable all tools
+# Build with all tools (sandbox included on Linux)
 cargo build --release --features all-tools
 ```
 
 Then, to use them:
 ```bash
-sprach --tools "Tell me about Pikachu"
+sprach --tools "What's the weather in Tokyo?"
 ```
 
 ## Environment Variables

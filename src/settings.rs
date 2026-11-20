@@ -1265,12 +1265,12 @@ mod tests {
     #[test]
     fn test_blacklist_set() {
         let mut settings = Settings::default();
-        settings.tools.blacklist = vec!["web_search".to_string(), "weather".to_string()];
+        settings.tools.blacklist = vec!["web_search".to_string(), "calculate".to_string()];
 
         let blacklist = settings.blacklist_set();
         assert!(blacklist.contains("web_search"));
-        assert!(blacklist.contains("weather"));
-        assert!(!blacklist.contains("pokemon_lookup"));
+        assert!(blacklist.contains("calculate"));
+        assert!(!blacklist.contains("get_weather"));
     }
 
     #[test]

@@ -472,16 +472,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "pokemon-tools")]
-    fn test_capitalize() {
-        assert_eq!(capitalize("hello"), "Hello");
-        assert_eq!(capitalize("HELLO"), "Hello");
-        assert_eq!(capitalize("h"), "H");
-        assert_eq!(capitalize(""), "");
-        assert_eq!(capitalize("pikachu"), "Pikachu");
-    }
-
-    #[test]
     fn test_normalize_input() {
         // Basic whitespace trimming
         assert_eq!(normalize_input("  hello  "), "hello");

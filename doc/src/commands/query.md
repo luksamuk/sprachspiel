@@ -174,9 +174,6 @@ cat error.log | sprach "Explain this error"
 Tools are automatically enabled for capable models:
 
 ```bash
-# Pokémon tool (auto-enabled)
-sprach query "Tell me about Pikachu"
-
 # Weather tool (auto-enabled)
 sprach query "What's the weather in Tokyo?"
 
@@ -191,24 +188,10 @@ sprach --tools query "Tell me about Charizard"
 
 When tools are enabled, the model can access:
 
-### Pokémon Tools (9 total)
-- `fetch_pokemon` - Comprehensive Pokémon data
-- `fetch_pokemon_basic` - Basic info
-- `fetch_pokemon_stats` - Base stats
-- `fetch_pokemon_moves` - Learnable moves
-- `fetch_pokemon_evolution` - Evolution chain
-- `fetch_ability_details` - Ability descriptions
-- `fetch_type_effectiveness` - Type matchups
-- `fetch_move_details` - Move information
-
 ### Weather Tools (3 total)
 - `get_weather` - Current + 3-day forecast
 - `get_current_weather` - Current conditions
 - `get_weather_forecast` - 7-day forecast
-
-### Web Search Tools (2 total)
-- `web_search` - General web search
-- `web_search_news` - News search
 
 ## Output Formats
 
