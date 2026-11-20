@@ -189,13 +189,17 @@ impl MockServer {
     }
 
     /// A streaming answer that streams a content prefix (the turn's
-    /// pre-tool content) and then asks for one `run_command` call.
-    fn content_then_tool_call_body(prefix: &str, arguments_json: &str) -> ScriptedResponse {
+    /// pre-tool content) and then asks for one tool call.
+    fn content_then_tool_call_body(
+        prefix: &str,
+        tool_name: &str,
+        arguments_json: &str,
+    ) -> ScriptedResponse {
         let escaped = prefix
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', "\\n");
-        let mut body = MockServer::tool_call_body(arguments_json);
+        let mut body = MockServer::tool_call_body(tool_name, arguments_json);
         if let ScriptedResponse::Body(text) = &mut body {
             *text = format!(
                 "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\
@@ -205,21 +209,25 @@ impl MockServer {
         body
     }
 
-    /// A streaming answer that asks for one `run_command` call and ends the
-    /// turn with `finish_reason: tool_calls` — the shape that drives the
-    /// coordinator into its tool loop.
-    fn tool_call_body(arguments_json: &str) -> ScriptedResponse {
+    /// A streaming answer that asks for one tool call and ends the turn
+    /// with `finish_reason: tool_calls` — the shape that drives the
+    /// coordinator into its tool loop. The tests drive a deterministic
+    /// Rust-side tool (`read_file`): `run_command` applies the Landlock
+    /// sandbox to the test's own thread when the `sandbox` feature is on,
+    /// and the next config read on that thread aborts the runner.
+    fn tool_call_body(tool_name: &str, arguments_json: &str) -> ScriptedResponse {
         let escaped = arguments_json.replace('\\', "\\\\").replace('"', "\\\"");
         ScriptedResponse::Body(format!(
             concat!(
                 "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":[{{",
                 "\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{{",
-                "\"name\":\"run_command\",\"arguments\":\"{escaped}\"}}}}]}},",
+                "\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}}]}},",
                 "\"finish_reason\":null}}]}}\n\n",
                 "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{{\"index\":0,\"delta\":{{}},",
                 "\"finish_reason\":\"tool_calls\"}}]}}\n\n",
                 "data: [DONE]\n\n"
             ),
+            name = tool_name,
             escaped = escaped,
         ))
     }
@@ -710,20 +718,6 @@ async fn cancellation_flagged_result_never_sends_continuations() {
 
 // ── Matrix: provider error paths, terminal commit, layers, TUI /compact ─
 
-/// Configures a per-test tools.toml whitelist (the cached loader reads it
-/// on the first `get_config`) with `sleep` and `echo`.
-fn allow_run_commands(config_dir: &std::path::Path) {
-    std::fs::create_dir_all(config_dir.join("sprachspiel")).expect("config dir");
-    std::fs::write(
-        config_dir.join("sprachspiel/tools.toml"),
-        "[external.tools.sleep]\nbinary = \"sleep\"\nenabled = true\n\n\
-         [external.tools.echo]\nbinary = \"echo\"\nenabled = true\n",
-    )
-    .expect("write tools.toml");
-    // SAFETY: single test binary; the cached config loader reads this once.
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", config_dir) };
-}
-
 #[tokio::test]
 async fn provider_error_racing_cancellation_ends_cancelled() {
     // A real provider failure (no cancellation marker in the error text)
@@ -901,8 +895,6 @@ async fn terminal_commit_persists_after_a_continuation_failure() {
     // request fails. A failed chain is still a COMPLETE turn: the terminal
     // commit inserts the deferred capture, persists the in-memory summary
     // and invalidates the prompt tokens.
-    let config_dir = std::env::temp_dir().join(format!("sprach-tools-tcf-{}", std::process::id()));
-    allow_run_commands(&config_dir);
     let server = MockServer::spawn_scripted(
         vec![
             // pre-turn compaction: four chunk passes and the consolidation
@@ -913,7 +905,8 @@ async fn terminal_commit_persists_after_a_continuation_failure() {
             MockServer::plain_body("pre-turn consolidation"),
             MockServer::content_then_tool_call_body(
                 "I will check the file before answering.",
-                r#"{"command_line":"echo done","head":null,"tail":null,"timeout_seconds":null}"#,
+                "read_file",
+                r#"{"path":"/tmp/sprach-cancellation-no-such-file.txt"}"#,
             ),
             MockServer::plain_body(
                 "partial answer\n<continuation_needed>\nReasoning paused: mid\nNext step: go on\n</continuation_needed>",
@@ -987,7 +980,6 @@ async fn terminal_commit_persists_after_a_continuation_failure() {
             .expect("db"),
         "prompt tokens invalidation follows the chain's compaction"
     );
-    let _ = std::fs::remove_dir_all(&config_dir);
 }
 
 #[tokio::test]
@@ -1008,7 +1000,8 @@ async fn abandoned_continuation_chain_leaves_zero_residual_rows() {
             MockServer::plain_body("pre-turn consolidation"),
             MockServer::content_then_tool_call_body(
                 "I will check the file before answering.",
-                r#"{"command_line":"echo done","head":null,"tail":null,"timeout_seconds":null}"#,
+                "read_file",
+                r#"{"path":"/tmp/sprach-cancellation-no-such-file.txt"}"#,
             ),
             MockServer::plain_body(
                 "partial answer\n<continuation_needed>\nReasoning paused: mid\nNext step: go on\n</continuation_needed>",
@@ -1081,11 +1074,6 @@ async fn abandoned_continuation_chain_leaves_zero_residual_rows() {
         Some(None),
         "the in-chain summary never commits on a cancelled turn"
     );
-    let _ = std::fs::remove_dir_all(&config_dir_unused());
-}
-
-fn config_dir_unused() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("sprach-tools-tcf-{}", std::process::id()))
 }
 
 #[tokio::test]
