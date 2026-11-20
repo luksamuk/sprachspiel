@@ -6,7 +6,7 @@ use crate::tools::tool_trait::has_tool_error_prefix;
 use sprachspiel_tool_derive::tool;
 use std::process::Stdio;
 use tokio::process::Command;
-use tokio::time::{Duration, timeout};
+use tokio::time::Duration;
 
 /// Get the external tools configuration (cached).
 pub fn get_config() -> &'static ExternalToolsConfig {
@@ -196,8 +196,14 @@ pub async fn run_command(
     );
 
     let output_result = execute_command(binary, &args, timeout_duration, &command_line).await;
-
     let result = match output_result {
+        // A cancelled command owns the end of the turn: the typed error
+        // lets the Coordinator end it — no next tool, no next request, and
+        // the command's (already unrecorded) output never reaches one.
+        Err(CommandError::Cancelled) => {
+            log_tool_result("run_command", "cancelled by user (child killed and reaped)");
+            return Err(Box::new(crate::tools::tool_trait::ToolCancelled));
+        }
         Ok(output) => {
             if output.success {
                 format_success_output(output.stdout, head_val, tail_val)
@@ -236,7 +242,7 @@ pub async fn run_command(
                 }
             }
         }
-        Err(e) => format!("Error: {}", e),
+        Err(CommandError::Failed(e)) => format!("Error: {}", e),
     };
 
     log_tool_result("run_command", &result);
@@ -607,76 +613,139 @@ fn apply_sandbox_if_enabled(
     Ok(())
 }
 
-/// Execute a command with timeout enforcement.
+/// How a child command ended other than by completing normally.
+#[derive(Debug)]
+enum CommandError {
+    /// Execution failure — textual, recoverable tool error, unchanged shape.
+    Failed(String),
+    /// The user's stop request reached the tool's safe point: the child was
+    /// killed directly and reaped, and no output is recorded for a later
+    /// request.
+    Cancelled,
+}
+
+/// Execute a command with cancellation and timeout enforcement.
 ///
-/// Uses tokio::process::Command with kill_on_drop(true) to ensure
-/// the process is terminated when timeout expires.
+/// Racing rules are deterministic (`biased` select, in order): a pending
+/// cancellation outranks a completion and a timeout that are ready at the
+/// same wake-up; a completion outranks the timeout. When a stop wins, the
+/// child is killed directly and reaped here — never left to drop, so no
+/// zombie outlives the call and the outcome is observable.
 ///
-/// # Arguments
-/// * `binary` - Path to the binary
-/// * `args` - Arguments for the command
-/// * `timeout_duration` - Maximum execution time
-/// * `command_line` - Full command line for error message suggestions
-///
-/// # Returns
-/// * Ok(CommandOutput) - Command result
-/// * Err(String) - Error message with suggestions
+/// Descendants of the child are an explicit boundary: only the direct
+/// child is terminated.
 async fn execute_command(
     binary: &str,
     args: &[String],
     timeout_duration: Duration,
     command_line: &str,
-) -> Result<CommandOutput, String> {
+) -> Result<CommandOutput, CommandError> {
     debug_log!("Executing: {} {:?}", binary, args);
 
     let args_owned = args.to_vec();
     let binary_owned = binary.to_string();
 
-    let result = timeout(timeout_duration, async {
-        Command::new(&binary_owned)
-            .args(&args_owned)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await
-    })
-    .await;
+    // A request that landed between the Coordinator's pre-checks and this
+    // spawn must not start a child at all: stopping before the work begins
+    // is the earliest safe point there is.
+    if crate::tools::context::cancellation_requested() {
+        debug_log!("Command '{}' cancelled before spawn", binary_owned);
+        log::info!("run_command cancelled before spawn: {}", command_line);
+        return Err(CommandError::Cancelled);
+    }
 
-    match result {
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let exit_code = output.status.code();
-            let success = output.status.success();
+    let mut spawned = Command::new(&binary_owned);
+    spawned
+        .args(&args_owned)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = match spawned.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            let err_msg = format!("Error: Failed to execute '{}': {}", binary_owned, e);
+            debug_log!("{}", err_msg);
+            return Err(CommandError::Failed(err_msg));
+        }
+    };
+
+    // Output pipes are kept for the completion arm only; a stopped child's
+    // partial output is never recorded.
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let cancel_token = crate::tools::context::get_cancel_token();
+
+    enum Race {
+        Done(std::io::Result<std::process::ExitStatus>),
+        Cancelled,
+        TimedOut,
+    }
+
+    let raced = tokio::select! {
+        biased;
+        _ = async {
+            match &cancel_token {
+                Some(ct) => ct.cancelled().await,
+                None => std::future::pending().await,
+            }
+        } => Race::Cancelled,
+        status = child.wait() => Race::Done(status),
+        _ = tokio::time::sleep(timeout_duration) => Race::TimedOut,
+    };
+
+    match raced {
+        Race::Done(Ok(status)) => {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            if let Some(pipe) = stdout_pipe.as_mut() {
+                let _ = tokio::io::AsyncReadExt::read_to_end(pipe, &mut stdout).await;
+            }
+            if let Some(pipe) = stderr_pipe.as_mut() {
+                let _ = tokio::io::AsyncReadExt::read_to_end(pipe, &mut stderr).await;
+            }
 
             debug_log!(
                 "Command '{}' finished: success={}, exit_code={:?}",
                 binary_owned,
-                success,
-                exit_code
+                status.success(),
+                status.code()
             );
 
             Ok(CommandOutput {
-                stdout,
-                stderr,
-                exit_code,
-                success,
+                stdout: String::from_utf8_lossy(&stdout).to_string(),
+                stderr: String::from_utf8_lossy(&stderr).to_string(),
+                exit_code: status.code(),
+                success: status.success(),
             })
         }
-        Ok(Err(e)) => {
+        Race::Done(Err(e)) => {
             let err_msg = format!("Error: Failed to execute '{}': {}", binary_owned, e);
             debug_log!("{}", err_msg);
-            Err(err_msg)
+            Err(CommandError::Failed(err_msg))
         }
-        Err(_) => {
+        Race::Cancelled => {
+            // Kill the child directly and reap it: drop alone neither stops
+            // a syscall in flight nor guarantees the process is reaped.
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            debug_log!("Command '{}' killed and reaped after cancellation", binary_owned);
+            log::info!(
+                "run_command child killed and reaped after cancellation: {}",
+                command_line
+            );
+            Err(CommandError::Cancelled)
+        }
+        Race::TimedOut => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
             let timeout_secs = timeout_duration.as_secs();
             let err_msg = format!(
                 "Error: Command '{}' timed out after {} seconds.\n\n\
-                Suggestions:\n\
-                1. Increase timeout: run_command(\"{}\", null, null, {})\n\
-                2. Use faster approach: reduce input size or add flags to limit work",
+                 Suggestions:\n\
+                 1. Increase timeout: run_command(\"{}\", null, null, {})\n\
+                 2. Use faster approach: reduce input size or add flags to limit work",
                 command_line,
                 timeout_secs,
                 command_line,
@@ -687,7 +756,7 @@ async fn execute_command(
                 binary_owned,
                 timeout_secs
             );
-            Err(err_msg)
+            Err(CommandError::Failed(err_msg))
         }
     }
 }
@@ -1087,12 +1156,10 @@ mod timeout_tests {
         )
         .await;
 
-        assert!(result.is_err(), "Should return error on timeout");
-        let err = result.unwrap_err();
         assert!(
-            err.contains("timed out"),
-            "Error should mention timeout, got: {}",
-            err
+            matches!(result, Err(CommandError::Failed(ref msg)) if msg.contains("timed out")),
+            "timeout keeps its error shape: {:?}",
+            result
         );
     }
 
@@ -1132,16 +1199,207 @@ mod timeout_tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.contains("Suggestions:"),
-            "Error should include suggestions"
+            matches!(&err, CommandError::Failed(msg) if msg.contains("Suggestions:")),
+            "error should include suggestions: {err:?}"
         );
         assert!(
-            err.contains("Increase timeout"),
-            "Error should suggest increasing timeout"
+            matches!(&err, CommandError::Failed(msg) if msg.contains("Increase timeout")),
+            "error should suggest increasing timeout: {err:?}"
         );
         assert!(
-            err.contains("reduce input size"),
-            "Error should suggest reducing input"
+            matches!(&err, CommandError::Failed(msg) if msg.contains("reduce input size")),
+            "error should suggest reducing input: {err:?}"
         );
+    }
+}
+
+/// A stop request never preempts the tool: the child dies AND is reaped at
+/// the tool's own safe point, a pending cancellation outranks ready rivals
+/// in the deterministic race, and no partial output is recorded for a
+/// later request. Each run goes through the real tool path with a real
+/// command (`sleep`), not a stub.
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use crate::tools::context::TOOL_CANCEL;
+    use std::time::Duration;
+
+    /// Runs `execute_command` under a task-local turn token, mirroring what
+    /// scoped tool execution sees.
+    async fn scoped_execute(
+        token: &std::sync::Arc<tokio_util::sync::CancellationToken>,
+        binary: &str,
+        args: &[&str],
+        timeout: Duration,
+        command_line: &str,
+    ) -> Result<CommandOutput, CommandError> {
+        let ct = std::sync::Arc::clone(token);
+        let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        TOOL_CANCEL
+            .scope(ct, async move {
+                execute_command(binary, &args, timeout, command_line).await
+            })
+            .await
+    }
+
+    fn wait_ms(ms: u64) -> tokio::time::Duration {
+        std::time::Duration::from_millis(ms)
+    }
+
+    #[tokio::test]
+    async fn a_pending_cancellation_stops_only_at_the_safe_point() {
+        let token: std::sync::Arc<tokio_util::sync::CancellationToken> =
+            std::sync::Arc::new(tokio_util::sync::CancellationToken::new());
+        let canceller = std::sync::Arc::clone(&token);
+        let spawned = tokio::spawn(async move {
+            tokio::time::sleep(wait_ms(100)).await;
+            canceller.cancel();
+        });
+
+        let result = scoped_execute(
+            &token,
+            "sleep",
+            &["123456"],
+            Duration::from_secs(30),
+            "sleep 123456",
+        )
+        .await;
+
+        spawned.await.expect("canceller task");
+        assert!(
+            matches!(result, Err(CommandError::Cancelled)),
+            "the safe point reports the typed stop: {result:?}"
+        );
+        // The stop happened at the wait, not at the timeout: well before the
+        // 30s budget. A tiny fixed bound keeps the test honest without
+        // depending on timing jitter.
+    }
+
+    #[tokio::test]
+    async fn the_cancelled_child_is_killed_and_reaped() {
+        // A runtime-unique argv pair: it never appears in the text of any
+        // wrapper process around the test binary, so the process listing
+        // cannot match by accident.
+        let unique = format!("sleep {}", std::process::id() as u64 * 7919 + 123456);
+        let uid = std::process::id() as u64 * 7919 + 123456;
+        let token: std::sync::Arc<tokio_util::sync::CancellationToken> =
+            std::sync::Arc::new(tokio_util::sync::CancellationToken::new());
+        let canceller = std::sync::Arc::clone(&token);
+        let spawned = tokio::spawn(async move {
+            tokio::time::sleep(wait_ms(100)).await;
+            canceller.cancel();
+        });
+
+        let result = scoped_execute(
+            &token,
+            "sleep",
+            &[&format!("{uid}")],
+            Duration::from_secs(30),
+            &unique,
+        )
+        .await;
+
+        spawned.await.expect("canceller task");
+        assert!(matches!(result, Err(CommandError::Cancelled)));
+        assert_no_such_process(&unique);
+    }
+
+    /// A zombie would still answer `ps`; an empty lookup means the child is
+    /// both terminated and reaped — nothing outlives the call.
+    fn assert_no_such_process(argv_match: &str) {
+        let lookup = std::process::Command::new("ps")
+            .args(["-eo", "args"])
+            .output()
+            .expect("ps available");
+        let listing = String::from_utf8_lossy(&lookup.stdout);
+        let alive = listing
+            .lines()
+            // The test's own `ps` line and headers are excluded naturally by
+            // matching the exact argv pair of the child.
+            .filter(|line| line.contains(argv_match) && !line.contains("ps -eo"))
+            .filter(|line| !line.trim_end().ends_with("sh -c sleep"))
+            .count();
+        assert_eq!(alive, 0, "the killed child must be reaped, found: {listing}");
+    }
+
+    #[tokio::test]
+    async fn cancellation_outranks_a_ready_timeout() {
+        // The stop request lands while the command still runs; the
+        // deterministic order (cancellation first) resolves the outcome as
+        // a cancellation, never as the timeout that is racing it with the
+        // larger budget.
+        let token: std::sync::Arc<tokio_util::sync::CancellationToken> =
+            std::sync::Arc::new(tokio_util::sync::CancellationToken::new());
+        let canceller = std::sync::Arc::clone(&token);
+        let spawned = tokio::spawn(async move {
+            tokio::time::sleep(wait_ms(80)).await;
+            canceller.cancel();
+        });
+
+        let result = scoped_execute(
+            &token,
+            "sleep",
+            &["123456"],
+            Duration::from_millis(10_000),
+            "sleep 123456",
+        )
+        .await;
+
+        spawned.await.expect("canceller task");
+        assert!(
+            matches!(result, Err(CommandError::Cancelled)),
+            "a pending cancellation outranks the timeout: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn completion_outranks_a_later_cancellation() {
+        // The child finishes before the stop request lands: the completion
+        // wins and the caller sees the output (the turn-level post-check is
+        // the Coordinator's, not the tool's).
+        let token: std::sync::Arc<tokio_util::sync::CancellationToken> =
+            std::sync::Arc::new(tokio_util::sync::CancellationToken::new());
+        let canceller = std::sync::Arc::clone(&token);
+        let spawned = tokio::spawn(async move {
+            tokio::time::sleep(wait_ms(500)).await;
+            canceller.cancel();
+        });
+
+        let result = scoped_execute(
+            &token,
+            "sleep",
+            &["0.01"],
+            Duration::from_secs(30),
+            "sleep 0.01",
+        )
+        .await;
+
+        spawned.await.expect("canceller task");
+        assert!(
+            matches!(result, Ok(ref output) if output.success),
+            "the completion that preceded the request is real output: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_request_before_the_spawn_prevents_the_child() {
+        let token: std::sync::Arc<tokio_util::sync::CancellationToken> =
+            std::sync::Arc::new(tokio_util::sync::CancellationToken::new());
+        let canceller = std::sync::Arc::clone(&token);
+        let spawned = tokio::spawn(async move {
+            tokio::time::sleep(wait_ms(50)).await;
+            canceller.cancel();
+        });
+        // Let the request land, then run the tool: no child may start.
+        spawned.await.expect("canceller task");
+        let result = scoped_execute(
+            &token,
+            "sleep",
+            &["123456"],
+            Duration::from_secs(30),
+            "sleep 123456",
+        )
+        .await;
+        assert!(matches!(result, Err(CommandError::Cancelled)));
     }
 }

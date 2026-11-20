@@ -10,6 +10,11 @@
 /// Checked by the caller (`handle_user_message_stream`) to suppress error display.
 pub const CANCELLED_BY_USER: &str = "CANCELLED_BY_USER";
 
+/// The immediate message when a stop request lands on a tool the turn is
+/// waiting for: the wait is real, the tool reaches its own safe point.
+pub const CANCELLATION_REQUESTED_MESSAGE: &str =
+    "Cancellation requested; waiting for the tool to reach a safe point";
+
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 use serde::Deserialize;
@@ -1327,9 +1332,37 @@ impl Coordinator {
                             result: result.clone(),
                             is_error,
                         });
+                        // A completion that raced a cancellation still shows
+                        // its result and keeps its fact — but it owns the
+                        // end of the turn: no next tool, no next LLM call,
+                        // and this output never reaches a later request.
+                        if let Some(ref ct) = self.cancel_token
+                            && ct.is_cancelled()
+                        {
+                            log::info!(
+                                "Tool '{}' completed while cancellation was pending; \
+                                 the turn ends with the result displayed",
+                                tool_name
+                            );
+                            return Err(ProviderError::Other(CANCELLED_BY_USER.to_string()));
+                        }
                         result
                     }
                     Err(e) => {
+                        // A tool that reports the typed ToolCancelled stopped
+                        // itself at its own safe point: the turn ends here —
+                        // no next tool, no next LLM call. It is never a
+                        // recoverable failure feeding another request.
+                        if e.downcast_ref::<crate::tools::tool_trait::ToolCancelled>()
+                            .is_some()
+                        {
+                            log::info!(
+                                "Tool '{}' stopped itself at a safe point after a \
+                                 cancellation request",
+                                tool_name
+                            );
+                            return Err(ProviderError::Other(CANCELLED_BY_USER.to_string()));
+                        }
                         log::warn!("Tool '{}' execution failed: {e}", tool_name);
                         log::debug!(
                             "  Arguments: {}",
@@ -1979,5 +2012,222 @@ Next step: Should ignore
                 "tool {t} no longer exists in the registry"
             );
         }
+    }
+}
+
+/// The cancellation-aware tool loop, end to end against a local SSE mock:
+/// a real coordinator, a real provider, a real registered tool slot. The
+/// deliberately non-cooperative tool in these tests ignores the turn token
+/// and finishes on its own — exactly the shape where a stop request must
+/// stay pending and the turn still ends cancelled, with the result shown
+/// and its fact kept, and no further request.
+#[cfg(test)]
+mod cancellation_flow_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// One-thread SSE server serving request-indexed bodies; `on_request`
+    /// runs (test-side side effects like timed cancellations) before each
+    /// body is written.
+    struct MockSseServer {
+        base_url: String,
+        requests: Arc<AtomicUsize>,
+    }
+
+    impl MockSseServer {
+        fn spawn(responses: Vec<String>, on_request: impl Fn(usize) + Send + Sync + 'static) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock sse");
+            let port = listener.local_addr().expect("local addr").port();
+            let requests = Arc::new(AtomicUsize::new(0));
+            let reqs = Arc::clone(&requests);
+            let responses = Arc::new(responses);
+            std::thread::spawn(move || {
+                for conn in listener.incoming() {
+                    let mut stream = match conn {
+                        Ok(s) => s,
+                        Err(_) => break,
+                    };
+                    let mut buf = [0u8; 16384];
+                    let mut raw = Vec::new();
+                    loop {
+                        let n = stream.read(&mut buf).unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        raw.extend_from_slice(&buf[..n]);
+                        if raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let idx = reqs.fetch_add(1, Ordering::SeqCst);
+                    on_request(idx);
+                    let body = responses
+                        .get(idx)
+                        .or_else(|| responses.last())
+                        .cloned()
+                        .unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                         Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                }
+            });
+            Self { base_url: format!("http://127.0.0.1:{port}"), requests }
+        }
+
+        fn count(&self) -> usize {
+            self.requests.load(Ordering::SeqCst)
+        }
+    }
+
+    fn tool_call_body(name: &str, arguments_json: &str) -> String {
+        let escaped = arguments_json.replace('\\', "\\\\").replace('"', "\\\"");
+        format!(
+            concat!(
+                "data: {{\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+                "\"model\":\"test-model\",\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":[{{",
+                "\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{{\"name\":\"{name}\",",
+                "\"arguments\":\"{escaped}\"}}}}]}},\"finish_reason\":null}}]}}\n\n",
+                "data: {{\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+                "\"model\":\"test-model\",\"choices\":[{{\"index\":0,\"delta\":{{}},",
+                "\"finish_reason\":\"tool_calls\"}}]}}\n\n",
+                "data: [DONE]\n\n"
+            ),
+            name = name,
+            escaped = escaped,
+        )
+    }
+
+    /// A tool that ignores the turn token and completes on its own after a
+    /// fixed sleep — the deliberately non-interruptible shape.
+    #[derive(Default)]
+    struct SlowTool;
+
+    impl crate::tools::Tool for SlowTool {
+        type Params = SlowToolParams;
+
+        fn name() -> &'static str {
+            // A tracked-tool name: the completing tool's fact must land in
+            // the tracker exactly like a fast read would.
+            "read_file"
+        }
+
+        fn description() -> &'static str {
+            "slow non-cooperative test tool"
+        }
+
+        fn call(
+            &mut self,
+            _parameters: SlowToolParams,
+        ) -> impl Future<Output = crate::tools::tool_trait::ToolResult> + Send {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                Ok("Slow tool finished its work.".to_string())
+            })
+        }
+    }
+
+    #[derive(serde::Deserialize, schemars::JsonSchema)]
+    struct SlowToolParams {
+        #[serde(default)]
+        value: String,
+    }
+
+    fn mock_provider(base_url: String) -> crate::provider::OpenAICompatibleProvider {
+        crate::provider::OpenAICompatibleProvider::new_local(base_url, 0)
+    }
+
+    fn build_coordinator(
+        provider: crate::provider::OpenAICompatibleProvider,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Coordinator {
+        // Tool execution events land in the channel; nothing in these tests
+        // renders them — the receiver just needs to keep existing.
+        let (view_tx, view_rx) = crate::chat::view::create_view_event_channel();
+        std::mem::forget(view_rx);
+        let coord = super::super::core::setup_coordinator(
+            provider,
+            &crate::config::ModelConfig {
+                model_id: "test-model".to_string(),
+                num_ctx: 4096,
+                temperature: 0.2,
+                top_p: Some(0.9),
+                thinking: false,
+            },
+            crate::provider::ProviderOptions::default(),
+            false,
+            true,
+            &crate::settings::Settings::default(),
+            String::new(),
+            None,
+            view_tx,
+            None,
+            Some(token),
+            None,
+        );
+        coord
+    }
+
+    #[tokio::test]
+    async fn a_tool_completing_after_the_stop_request_ends_the_turn_with_no_new_request() {
+        let token: tokio_util::sync::CancellationToken = tokio_util::sync::CancellationToken::new();
+        let canceller = token.clone();
+        let handle = tokio::runtime::Handle::current();
+        let server = MockSseServer::spawn(
+            vec![tool_call_body("read_file", r#"{"path":"/tmp/slow-tool-target"}"#)],
+            move |_idx| {
+                // The stop request lands while the slow tool still runs:
+                // well before its completion, well after the pre-call guard.
+                let c = canceller.clone();
+                handle.spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    c.cancel();
+                });
+            },
+        );
+
+        let mut coordinator = build_coordinator(mock_provider(server.base_url.clone()), token.clone());
+        coordinator
+            .tools
+            .insert("read_file".to_string(), Box::new(SlowTool));
+
+        let result = coordinator
+            .chat_stream(
+                vec![LlmMessage::user("run the slow tool".to_string())],
+                |_: String| {},
+                |_: String| {},
+                || {},
+                |_: String, _: String, _: serde_json::Value| {},
+                |_: LlmEvent| {},
+                Some(token),
+            )
+            .await;
+
+        // The completion that raced the request still ends the turn as a
+        // cancellation — never a recoverable failure, never a new request.
+        match result {
+            Err(ProviderError::Other(message)) => {
+                assert_eq!(message, CANCELLED_BY_USER);
+            }
+            other => panic!("expected the typed turn end, got: {other:?}"),
+        }
+        assert_eq!(
+            server.count(),
+            1,
+            "the completed tool's turn must not start another request"
+        );
+        // The tool's outcome stays recorded: result displayed, fact kept.
+        assert_eq!(
+            coordinator.fact_tracker.read_files().len(),
+            1,
+            "the completing tool keeps its fact"
+        );
     }
 }

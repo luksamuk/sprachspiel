@@ -122,6 +122,10 @@ pub enum LlmState {
     Compacting,
     /// Running a tool call
     ToolCall,
+    /// A cancellation request is pending on a tool the turn is waiting for —
+    /// the tool reaches its own safe point; input stays held until the
+    /// terminal event, mirroring the wait rather than faking a stop.
+    Cancelling,
 }
 
 /// How often the spinner frame advances (milliseconds).
@@ -905,6 +909,16 @@ impl App {
                 let frame = self.spinner_frames.first().unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Running tool...".to_string());
+            }
+            LlmState::Cancelling => {
+                // The request is pending on the tool's own safe point: the
+                // input stays held — this state keeps the wait visible and
+                // the turn's terminal event honest.
+                self.input_disabled = true;
+                self.disabled_reason =
+                    Some("Waiting for the running tool to reach a safe point...".to_string());
+                self.status_bar.spinner = Some("⠋".to_string());
+                self.status_bar.status_label = Some("Cancelling...".to_string());
             }
         }
     }

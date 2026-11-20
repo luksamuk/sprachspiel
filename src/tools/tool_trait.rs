@@ -14,6 +14,25 @@ use serde::de::DeserializeOwned;
 /// error (propagated to the caller).
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
 
+/// A tool stopped itself because the user asked for a safe stop.
+///
+/// Typed, never a textual prefix: the Coordinator downcasts this error and
+/// reads it as the END OF THE TURN — no next tool, no next LLM call — never
+/// as a recoverable failure that would feed another request. The tool owns
+/// its safe point: cancellation cannot preempt it, so whatever side effects
+/// the tool already committed are real (cancellation is a stop request,
+/// not an undo), and whatever output never reaches the next request.
+#[derive(Debug)]
+pub struct ToolCancelled;
+
+impl std::fmt::Display for ToolCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tool cancelled: the user asked for a safe stop")
+    }
+}
+
+impl std::error::Error for ToolCancelled {}
+
 /// Return whether tool text begins with one of the harness's error prefixes.
 ///
 /// Raw command output is untrusted content; producers that know a command

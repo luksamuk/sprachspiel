@@ -71,9 +71,16 @@ async fn execute_with_context(
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<LlmResponse, String> {
-    with_full_context(db, embedding, provider, settings, async {
-        execute_retry_loop(coordinator, messages, tool_names, spinner).await
-    })
+    with_full_context(
+        db,
+        embedding,
+        provider,
+        settings,
+        crate::tools::context::fresh_cancel_token(),
+        async {
+            execute_retry_loop(coordinator, messages, tool_names, spinner).await
+        },
+    )
     .await
 }
 
@@ -86,9 +93,14 @@ async fn execute_without_context(
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<LlmResponse, String> {
-    with_tool_context(provider, settings, async {
-        execute_retry_loop(coordinator, messages, tool_names, spinner).await
-    })
+    with_tool_context(
+        provider,
+        settings,
+        crate::tools::context::fresh_cancel_token(),
+        async {
+            execute_retry_loop(coordinator, messages, tool_names, spinner).await
+        },
+    )
     .await
 }
 

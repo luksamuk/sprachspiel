@@ -71,7 +71,7 @@ fn cancel_during_first_chunk_never_starts_the_next() {
     let cancel_for_hook = token.clone();
     let server = MockServer::spawn(move |_| cancel_for_hook.cancel());
     let llm_tx = llm_channel();
-    let mut session = long_session();
+    let session = long_session();
     let cfg = test_model(4096);
 
     let outcome = block_on(compact_conversation(

@@ -1,6 +1,17 @@
 //! File write operations with security enforcement.
 //!
 //! This module provides tools for creating, editing, and appending to files.
+//!
+//! # Cancellation posture
+//!
+//! `write_file` and `edit_file` go through an atomic temp-plus-rename write,
+//! so a cancellation request waits for the in-flight operation to finish —
+//! the file is either the old content or the new content, never a partial
+//! one. `append_file` has no such atomicity, so it is DELIBERATELY never
+//! interrupted: it does not consult the turn's token, and a Ctrl+C during an
+//! append stays pending until the append completes. No tool in this module
+//! aborts mid-write; pretending otherwise would fake a stop that did not
+//! happen.
 //! All operations are sandboxed and blocklist-checked for security.
 //!
 //! # Security Model
