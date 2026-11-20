@@ -46,7 +46,7 @@ pub fn format_tool_error(error: &str) -> String {
         return format!(
             "{}\n\n\
             💡 **Tip:** The model tried to call a tool that doesn't exist.\n\
-            Available tools: weather, pokemon, file operations.",
+            Available tools: weather, file operations, todo.",
             error
         );
     }

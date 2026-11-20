@@ -7,11 +7,8 @@ Sprachspiel provides tools that enhance queries with real-time data from externa
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
 | Document Import | 1 | Local files | ✅ Working | ✅ Enabled |
-| Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | Built-in | ✅ Working | ✅ Enabled |
-| Web Search | 3 | DuckDuckGo | ✅ Working | ❌ Opt-in |
-| Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 8 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
@@ -20,9 +17,6 @@ Sprachspiel provides tools that enhance queries with real-time data from externa
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
 | Subagent | 4 | SubagentRunner | ✅ Working | ✅ Enabled |
-| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled* |
-
-\* **LED tools require configuration.** See [LED Control Tools](#led-control-tools-5) section.
 
 ## Compilation Features
 
@@ -47,46 +41,23 @@ The default build includes:
 
 | Feature | Description | Tools Included | Default |
 |---------|-------------|----------------|---------|
-| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ❌ No |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
 | `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
-| `search-tools` | DuckDuckGo web search + web scraper | web_search, web_search_news, web_scrape | ❌ No |
-| `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
 | `subagent-tools` | Specialized subagent delegation | spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent | ✅ Yes |
-| `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `mermaid` | Mermaid diagram rendering | — (rendering feature, not a tool) | ✅ Yes |
 | `latex` | LaTeX formula rendering | — (rendering feature, not a tool) | ✅ Yes |
 | `sandbox` | Landlock sandbox for Linux (kernel 5.13+) | — (security feature, not a tool) | ❌ No |
 | `all-tools` | Enable all tool categories + rendering + sandbox | All of the above | - |
-
-### Web Search Configuration
-
-Web search is provided by DuckDuckGo via the `search-tools` feature flag. No API key is required.
-
-```bash
-# Build with web search enabled (adds search-tools to the default features)
-cargo build --release --features search-tools
-
-# Or build with all tools (includes search-tools)
-cargo build --release --features all-tools
-```
-
-DuckDuckGo may occasionally rate-limit automated traffic or show CAPTCHA challenges. This is a third-party service limitation, not a bug in Sprachspiel.
 
 ### Building with Custom Features
 
 **Default build:**
 ```bash
 cargo build --release
-```
-
-**Enable finance tools:**
-```bash
-cargo build --release --features finance-tools
 ```
 
 **Enable all tools:**
@@ -97,11 +68,6 @@ cargo build --release --features all-tools
 **Minimal build (only file tools):**
 ```bash
 cargo build --release --no-default-features --features file-tools
-```
-
-**Enable Pokémon tools (opt-in):**
-```bash
-cargo build --release --features pokemon-tools
 ```
 
 **Enable all optional tools:**
@@ -116,106 +82,10 @@ Even when tools are compiled in, you can disable specific tools at runtime using
 ```toml
 # ~/.config/sprachspiel/config.toml
 [tools]
-blacklist = ["fetch_pokemon", "web_search"]
+blacklist = ["get_weather", "write_file"]
 ```
 
 When a tool is blacklisted, it won't be registered with the coordinator AND won't appear in the system prompt's tool descriptions. The model won't even know the tool exists.
-
-## Pokémon Tools (9)
-
-**Note:** Pokémon tools are **opt-in** and not included in the default build. Enable with `--features pokemon-tools`.
-
-Powered by [PokéAPI](https://pokeapi.co/).
-
-### fetch_pokemon
-
-Get comprehensive Pokémon data including stats, abilities, moves, and evolution chain.
-
-```
-Function: fetch_pokemon
-Args: name (string)
-Example: fetch_pokemon(name: "pikachu")
-```
-
-### fetch_pokemon_basic
-
-Get basic Pokémon information (types, height, weight, abilities).
-
-```
-Function: fetch_pokemon_basic
-Args: name (string)
-Example: fetch_pokemon_basic(name: "charizard")
-```
-
-### fetch_pokemon_stats
-
-Get base stats (HP, Attack, Defense, etc.).
-
-```
-Function: fetch_pokemon_stats
-Args: name (string)
-Example: fetch_pokemon_stats(name: "mewtwo")
-```
-
-### fetch_pokemon_moves
-
-Get learnable moves with optional limit.
-
-```
-Function: fetch_pokemon_moves
-Args: name (string), limit (optional string)
-Example: fetch_pokemon_moves(name: "pikachu", limit: "10")
-```
-
-### fetch_pokemon_evolution
-
-Get evolution chain information.
-
-```
-Function: fetch_pokemon_evolution
-Args: name (string)
-Example: fetch_pokemon_evolution(name: "eevee")
-```
-
-### fetch_ability_details
-
-Get ability descriptions and which Pokémon have it.
-
-```
-Function: fetch_ability_details
-Args: ability (string)
-Example: fetch_ability_details(ability: "lightning-rod")
-```
-
-### fetch_type_effectiveness
-
-Get type weaknesses, resistances, and immunities.
-
-```
-Function: fetch_type_effectiveness
-Args: type_name (string)
-Example: fetch_type_effectiveness(type_name: "electric")
-```
-
-### fetch_pokemon_by_type
-
-List all Pokémon of a specific type.
-
-```
-Function: fetch_pokemon_by_type
-Args: type_name (string), limit (optional string, default "20", max "100")
-Example: fetch_pokemon_by_type(type_name: "water", limit: "50")
-```
-
-### fetch_move_details
-
-Get move information (power, accuracy, type, effect).
-
-```
-Function: fetch_move_details
-Args: move (string)
-Example: fetch_move_details(move: "thunderbolt")
-```
 
 ## Weather Tools (3)
 
@@ -280,75 +150,6 @@ Example: calculate(expression: "(100 + 50) * 0.2")
 - "What is 15% of 850?"
 - "Calculate sqrt(144)"
 - "What's 2 to the power of 8?"
-
-## Web Search Tools (3)
-
-Powered by DuckDuckGo search. Works without CAPTCHA issues.
-
-### web_search
-
-Search the web and get results with titles, URLs, and snippets.
-
-```
-Function: web_search
-Args: query (string), num_results (optional string, default "5", max "10")
-Example: web_search(query: "Rust programming language", num_results: "5")
-```
-
-**Note:** `num_results` accepts strings like "3", "5", "10".
-
-### web_search_news
-
-Search specifically for news articles.
-
-```
-Function: web_search_news
-Args: query (string), num_results (optional string, default "3", max "10")
-Example: web_search_news(query: "technology", num_results: "5")
-```
-
-### web_scrape
-
-Extract content from a webpage URL as Markdown.
-
-```
-Function: web_scrape
-Args: url (string)
-Example: web_scrape(url: "https://www.rust-lang.org")
-```
-
-**Use cases:**
-- Get detailed content from a URL found via web_search
-- Extract article content
-- Read documentation pages
-
-**Example workflow:**
-1. Use `web_search` to find relevant URLs
-2. Use `web_scrape` to get full content from promising results
-
-## Finance Tool (1)
-
-Powered by Google Finance web scraping.
-
-### get_stock_quote
-
-Get stock quote information from Google Finance.
-
-```
-Function: get_stock_quote
-Args: exchange (string), ticker (string)
-Example: get_stock_quote(exchange: "NASDAQ", ticker: "AAPL")
-Example: get_stock_quote(exchange: "BVMF", ticker: "PETR4")
-```
-
-**Common exchange codes:**
-- `NASDAQ` - NASDAQ (US)
-- `NYSE` - New York Stock Exchange (US)
-- `BVMF` - B3 (Brazil)
-- `LON` - London Stock Exchange (UK)
-- `TPE` - Tokyo Stock Exchange (Japan)
-
-**Note:** Not enabled by default. Build with `--features finance-tools` to enable.
 
 ## System Tools (2)
 
@@ -1475,180 +1276,6 @@ enabled = true
 timeout = 30
 ```
 
-## LED Control Tools (5)
-
-Control NeoPixel LED strips via a Raspberry Pi Pico W HTTP server. These tools allow natural language control of lighting through REST API calls to the device.
-
-**Note:** This is an optional feature for personal IoT projects. Build with `--features led-tools` to enable.
-
-### Configuration
-
-LED tools require configuration before use:
-
-```toml
-# ~/.config/sprachspiel/config.toml
-[led]
-ip = "192.168.1.100"  # Required: IP address of your Raspberry Pi Pico W
-port = 80             # Optional: HTTP port (default: 80)
-```
-
-Tools are only available when `led.ip` is configured. If not set, LED tools won't be registered.
-
-### Prerequisites
-
-1. **Hardware:** Raspberry Pi Pico W with NeoPixel LED strip
-2. **Software:** Server running from [led-control project](https://github.com/luksamuk/led-control)
-3. **Network:** Device must be reachable from your machine
-
-### led_get_status
-
-Get current LED status (power state, program, brightness, color).
-
-```
-Function: led_get_status
-Args: (none)
-Example: led_get_status()
-```
-
-**Output includes:**
-- `power`: "on" or "off"
-- `program`: Current program (0=Christmas, 1=Trail, 2=Lamp)
-- `brightness`: Current brightness level (0.02 to 1.0)
-- `color_hex`: Current color in hex format (e.g., "ffa648")
-- `color_rgb`: Current color as R, G, B values (0-255 each)
-
-**Example queries:**
-- "What's the current LED status?"
-- "What color are the LEDs?"
-- "Is the LED strip on?"
-
-### led_set_power
-
-Turn LEDs on, off, or toggle the current state.
-
-```
-Function: led_set_power
-Args: action (string: "on", "off", or "toggle")
-Example: led_set_power(action: "on")
-Example: led_set_power(action: "toggle")
-```
-
-**Actions:**
-- `"on"` - Turn LEDs on
-- `"off"` - Turn LEDs off
-- `"toggle"` - Invert current state
-
-### led_set_program
-
-Set the LED program mode.
-
-```
-Function: led_set_program
-Args: program (string or number: "0", "1", "2", or "next")
-Example: led_set_program(program: "lamp")
-Example: led_set_program(program: "next")
-```
-
-**Programs:**
-- `0` or `"christmas"` - Christmas lights effect (cycling colors)
-- `1` or `"trail"` - Trail effect (back-and-forth motion)
-- `2` or `"lamp"` - Static lamp mode (solid color, uses brightness and color)
-- `"next"` or `"cycle"` - Advance to next program
-
-### led_set_brightness
-
-Set LED brightness level.
-
-```
-Function: led_set_brightness
-Args: brightness (string, 0.02 to 1.0)
-Example: led_set_brightness(brightness: "0.5")   # 50% brightness
-Example: led_set_brightness(brightness: "1.0")   # Full brightness
-Example: led_set_brightness(brightness: "0.1")   # Dim (10%)
-```
-
-**Note:** Brightness affects all programs. Low values (< 0.05) are very dim.
-
-### led_set_color
-
-Set LED color for Lamp mode. Accepts either hex or separate RGB values.
-
-```
-Function: led_set_color
-Args: 
-  - hex (string, optional): Color in hex format like "ff5500"
-  - r (string, optional): Red value (0-255)
-  - g (string, optional): Green value (0-255)
-  - b (string, optional): Blue value (0-255)
-Example: led_set_color(hex: "ff5500")                # Orange
-Example: led_set_color(r: "255", g: "85", b: "0")    # Orange via RGB
-Example: led_set_color(hex: "00ff00")                # Green
-```
-
-**Color Tips for LLMs:**
-- Use `led_get_status()` first to get current RGB values
-- RGB format (r/g/b separate) is easier for calculations
-- To make "more red": increase R, decrease G and B
-- To make "warmer": increase R, slightly decrease B
-- To make "cooler": increase B, slightly decrease R
-- Common colors:
-  - Red: `ff0000` or `r: 255, g: 0, b: 0`
-  - Green: `00ff00` or `r: 0, g: 255, b: 0`
-  - Blue: `0000ff` or `r: 0, g: 0, b: 255`
-  - White: `ffffff` or `r: 255, g: 255, b: 255`
-  - Warm white: `ffa040`
-  - Cool white: `f0f8ff`
-
-### Example Workflows
-
-**Natural language color adjustment:**
-```
-User: "Turn the LEDs slightly more orange"
-Action: led_get_status()
-Result: { "color_rgb": { "r": 255, "g": 100, "b": 50 }, ... }
-Analysis: To make it more orange, I should increase green slightly
-Action: led_set_color(r: 255, g: 130, b: 40)
-Response: "I've adjusted the LEDs to be more orange."
-```
-
-**Setting up lighting:**
-```
-User: "Set the LEDs to warm white at 50% brightness for reading"
-Action: led_set_program(program: "lamp")
-Action: led_set_color(hex: "ffa040")
-Action: led_set_brightness(brightness: "0.5")
-Response: "Done! LEDs are now in lamp mode with warm white at 50% brightness."
-```
-
-**Quick toggle:**
-```
-User: "Goodnight, turn off the lights"
-Action: led_set_power(action: "off")
-Response: "Goodnight! LEDs turned off."
-```
-
-### Error Handling
-
-LED tools handle connection errors gracefully:
-
-| Situation | Error Message |
-|-----------|---------------|
-| Device unreachable | `Error: Could not connect to LED device. Please check if the device is powered on and connected to the network.` |
-| Invalid program | `Error: Invalid program '4'. Use 0 (Christmas), 1 (Trail), 2 (Lamp), or 'next'.` |
-| Invalid brightness | `Error: Brightness 1.5 out of range. Must be between 0.02 and 1.0.` |
-| Invalid color | `Error: Invalid color value. Red must be between 0 and 255, got 300.` |
-| Not configured | LED tools won't be available if `led.ip` is not configured |
-
-### Building with LED Tools
-
-```bash
-# Build with LED tools enabled
-cargo build --release --features led-tools
-
-# Build with LED tools and other optional features
-cargo build --release --features "led-tools,finance-tools"
-```
-
 ## Using Tools
 
 ### Automatic Tool Detection
@@ -1657,7 +1284,7 @@ Tools are automatically enabled for capable models:
 
 ```bash
 # Tools auto-enabled for ornith-1.0-35b
-sprach -m ornith-1.0-35b "Tell me about Pikachu"
+sprach -m ornith-1.0-35b "What's the weather in Tokyo?"
 
 # Tools auto-enabled for qwen3.5-4b
 sprach -m qwen3.5-4b "What's the weather in Tokyo?"
@@ -1668,7 +1295,7 @@ sprach -m qwen3.5-4b "What's the weather in Tokyo?"
 Force tools on any model:
 
 ```bash
-sprach --tools "Tell me about Pikachu"
+sprach --tools "What's the weather in Tokyo?"
 ```
 
 ### Tool User Prompt
@@ -1686,7 +1313,7 @@ Blacklist tools via configuration:
 ```toml
 # ~/.config/sprachspiel/config.toml
 [tools]
-blacklist = ["web_search", "fetch_pokemon"]
+blacklist = ["get_weather", "write_file"]
 ```
 
 ## Tool Examples
@@ -1725,34 +1352,6 @@ sprach "What's the temperature in New York?"
 
 # With country
 sprach "Weather in Sydney, Australia"
-```
-
-### Web Search Queries
-
-```bash
-# General search
-sprach "Search for Rust async patterns"
-
-# News
-sprach "Latest technology news"
-
-# Quick facts
-sprach "What is quantum computing?"
-
-# Follow up with scraping
-sprach "Find information about the Rust programming language, then scrape the official website"
-```
-
-### Stock Quotes
-
-```bash
-# US stocks
-sprach "Get the stock quote for Apple"
-sprach "What's Google's stock price?"
-
-# Brazilian stocks
-sprach "Cotação da Petrobras"
-sprach "Preço das ações da Vale"
 ```
 
 ### File Operations
@@ -1798,13 +1397,8 @@ The model automatically selects appropriate tools based on your query:
 graph TD
     A[User Query] --> B{File operation?}
     B -->|Yes> C[Use File tools]
-    B -->|No> D{Contains Pokémon?}
-    D -->|Yes> E[Use Pokémon tools]
-    D -->|No> F{Contains Weather?}
+    B -->|No> F{Contains Weather?}
     F -->|Yes> G[Use Weather tools]
-    F -->|No> H{Contains Stock ticker?}
-    H -->|Yes> I[Use Finance tools]
-    H -->|No> J[Use Web Search]
 ```
 
 ## Known Issues
@@ -1824,7 +1418,7 @@ None currently.
 See tool calls in debug mode:
 
 ```bash
-sprach -v "Tell me about Pikachu"
+sprach -v "What's the weather in Tokyo?"
 
 # Output includes:
 # - Tool calls with arguments (detailed format)
@@ -1932,7 +1526,7 @@ This helps developers debug API issues and tool failures.
 ## Best Practices
 
 1. **Use capable models** - `ornith-1.0-35b` or `qwen3.5-4b` work well with tools
-2. **Be specific** - "Pikachu stats" vs "Tell me about Pikachu"
+2. **Be specific** - "current weather in Belo Horizonte" vs "weather"
 3. **Use tool_user prompt** - For complex queries
 4. **Check debug mode** - If tools aren't working
 5. **Weather doesn't need API key** - Always available
@@ -1960,11 +1554,11 @@ See [AGENTS.md - CRITICAL: Parameter Types for LLM Tools](../../AGENTS.md#critic
 
 ```rust
 // ✅ CORRECT: Accept strings, parse internally
-pub async fn web_search(
-    query: String,
-    num_results: Option<String>,  // NOT Option<u8>!
+pub async fn get_weather_forecast(
+    location: String,
+    days: Option<String>,
 ) -> Result<String, ...> {
-    let num = parse_num_results(num_results, 5, 10);
+    let days = parse_days(days, "3");
     // ...
 }
 
@@ -2033,8 +1627,7 @@ Disable potentially problematic tools:
 # ~/.config/sprachspiel/config.toml
 [tools]
 # Disable tools you don't want
-blacklist = ["web_search"]
-```
+blacklist = ["get_current_datetime"]
 
 ## See Also
 

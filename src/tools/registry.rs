@@ -6,13 +6,10 @@
 use crate::settings::Settings;
 
 #[cfg(any(
-    feature = "pokemon-tools",
     feature = "weather-tools",
     feature = "calc-tools",
-    feature = "search-tools",
     feature = "system-tools",
     feature = "file-tools",
-    feature = "finance-tools",
     feature = "subagent-tools"
 ))]
 use super::*;
@@ -181,76 +178,6 @@ fn register_agent_spawning_tools<C: ToolRegistrar>(
     (coord, count)
 }
 
-/// Register Pokemon tools
-#[cfg(feature = "pokemon-tools")]
-fn register_pokemon_tools<C: ToolRegistrar>(
-    coordinator: C,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
-    register_if_allowed!(coord, count, is_allowed, "fetch_pokemon", fetch_pokemon);
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_pokemon_basic",
-        fetch_pokemon_basic
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_pokemon_stats",
-        fetch_pokemon_stats
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_pokemon_moves",
-        fetch_pokemon_moves
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_pokemon_evolution",
-        fetch_pokemon_evolution
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_ability_details",
-        fetch_ability_details
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_type_effectiveness",
-        fetch_type_effectiveness
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_pokemon_by_type",
-        fetch_pokemon_by_type
-    );
-    register_if_allowed!(
-        coord,
-        count,
-        is_allowed,
-        "fetch_move_details",
-        fetch_move_details
-    );
-
-    (coord, count)
-}
-
 /// Register weather tools
 #[cfg(feature = "weather-tools")]
 fn register_weather_tools<C: ToolRegistrar>(
@@ -289,37 +216,6 @@ fn register_calc_tools<C: ToolRegistrar>(
     let mut coord = coordinator;
 
     register_if_allowed!(coord, count, is_allowed, "calculate", calculate);
-
-    (coord, count)
-}
-
-/// Register finance tools
-#[cfg(feature = "finance-tools")]
-fn register_finance_tools<C: ToolRegistrar>(
-    coordinator: C,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
-    register_if_allowed!(coord, count, is_allowed, "get_stock_quote", get_stock_quote);
-
-    (coord, count)
-}
-
-/// Register search tools (DuckDuckGo)
-#[cfg(feature = "search-tools")]
-fn register_search_tools<C: ToolRegistrar>(
-    coordinator: C,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
-    log::debug!("🔍 [Search] Using DuckDuckGo (no API key required)");
-    register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
-    register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
-    register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
 
     (coord, count)
 }
@@ -376,45 +272,6 @@ fn register_file_tools<C: ToolRegistrar>(
     register_if_allowed!(coord, count, is_allowed, "write_file", write_file);
     register_if_allowed!(coord, count, is_allowed, "edit_file", edit_file);
     register_if_allowed!(coord, count, is_allowed, "append_file", append_file);
-
-    (coord, count)
-}
-
-/// Register LED tools (requires configuration)
-#[cfg(feature = "led-tools")]
-fn register_led_tools<C: ToolRegistrar>(
-    coordinator: C,
-    settings: &Settings,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
-    if settings.is_led_configured() {
-        // Initialize the LED endpoint from settings
-        super::led::set_led_endpoint(settings.led_endpoint());
-
-        log::debug!(
-            "💡 [LED] Device configured at {}",
-            settings.led_endpoint().unwrap_or_default()
-        );
-
-        register_if_allowed!(coord, count, is_allowed, "led_get_status", led_get_status);
-        register_if_allowed!(coord, count, is_allowed, "led_set_power", led_set_power);
-        register_if_allowed!(coord, count, is_allowed, "led_set_program", led_set_program);
-        register_if_allowed!(
-            coord,
-            count,
-            is_allowed,
-            "led_set_brightness",
-            led_set_brightness
-        );
-        register_if_allowed!(coord, count, is_allowed, "led_set_color", led_set_color);
-    } else {
-        log::debug!(
-            "💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml"
-        );
-    }
 
     (coord, count)
 }
@@ -514,27 +371,6 @@ fn get_agent_spawning_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<Strin
     tools
 }
 
-/// Get Pokemon tool names
-#[cfg(feature = "pokemon-tools")]
-fn get_pokemon_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
-    let pokemon_tools = [
-        "fetch_pokemon",
-        "fetch_pokemon_basic",
-        "fetch_pokemon_stats",
-        "fetch_pokemon_moves",
-        "fetch_pokemon_evolution",
-        "fetch_ability_details",
-        "fetch_type_effectiveness",
-        "fetch_pokemon_by_type",
-        "fetch_move_details",
-    ];
-    for tool in pokemon_tools {
-        push_if_allowed!(tools, is_allowed, tool);
-    }
-    tools
-}
-
 /// Get weather tool names
 #[cfg(feature = "weather-tools")]
 fn get_weather_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
@@ -551,24 +387,6 @@ fn get_weather_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
 fn get_calc_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     let mut tools = Vec::new();
     push_if_allowed!(tools, is_allowed, "calculate");
-    tools
-}
-
-/// Get finance tool names
-#[cfg(feature = "finance-tools")]
-fn get_finance_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
-    push_if_allowed!(tools, is_allowed, "get_stock_quote");
-    tools
-}
-
-/// Get search tool names (DuckDuckGo)
-#[cfg(feature = "search-tools")]
-fn get_search_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
-    push_if_allowed!(tools, is_allowed, "web_search");
-    push_if_allowed!(tools, is_allowed, "web_search_news");
-    push_if_allowed!(tools, is_allowed, "web_scrape");
     tools
 }
 
@@ -599,27 +417,6 @@ fn get_file_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     for tool in file_tools {
         push_if_allowed!(tools, is_allowed, tool);
     }
-    tools
-}
-
-/// Get LED tool names
-#[cfg(feature = "led-tools")]
-fn get_led_tool_names(settings: &Settings, is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
-
-    if settings.is_led_configured() {
-        let led_tools = [
-            "led_get_status",
-            "led_set_power",
-            "led_set_program",
-            "led_set_brightness",
-            "led_set_color",
-        ];
-        for tool in led_tools {
-            push_if_allowed!(tools, is_allowed, tool);
-        }
-    }
-
     tools
 }
 
@@ -688,14 +485,6 @@ where
         tool_count += n;
     }
 
-    // Pokemon tools
-    #[cfg(feature = "pokemon-tools")]
-    {
-        let (c, n) = register_pokemon_tools(coordinator, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-
     // Weather tools
     #[cfg(feature = "weather-tools")]
     {
@@ -708,22 +497,6 @@ where
     #[cfg(feature = "calc-tools")]
     {
         let (c, n) = register_calc_tools(coordinator, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-
-    // Finance tools
-    #[cfg(feature = "finance-tools")]
-    {
-        let (c, n) = register_finance_tools(coordinator, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-
-    // Search tools (DuckDuckGo)
-    #[cfg(feature = "search-tools")]
-    {
-        let (c, n) = register_search_tools(coordinator, is_allowed);
         coordinator = c;
         tool_count += n;
     }
@@ -744,14 +517,7 @@ where
         tool_count += n;
     }
 
-    // LED tools (requires configuration)
-    #[cfg(feature = "led-tools")]
-    {
-        let (c, n) = register_led_tools(coordinator, settings, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-    // Feedback tools (gated by config)
+    // Feedback tools (gated by config)    // Feedback tools (gated by config)
     {
         let (c, n) = register_feedback_tools(coordinator, settings, is_allowed);
         coordinator = c;
@@ -794,12 +560,6 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
         tools.extend(get_agent_spawning_tool_names(is_allowed));
     }
 
-    // Pokemon tools
-    #[cfg(feature = "pokemon-tools")]
-    {
-        tools.extend(get_pokemon_tool_names(is_allowed));
-    }
-
     // Weather tools
     #[cfg(feature = "weather-tools")]
     {
@@ -812,18 +572,6 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
         tools.extend(get_calc_tool_names(is_allowed));
     }
 
-    // Finance tools
-    #[cfg(feature = "finance-tools")]
-    {
-        tools.extend(get_finance_tool_names(is_allowed));
-    }
-
-    // Search tools (DuckDuckGo)
-    #[cfg(feature = "search-tools")]
-    {
-        tools.extend(get_search_tool_names(is_allowed));
-    }
-
     // System tools
     #[cfg(feature = "system-tools")]
     {
@@ -834,12 +582,6 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     #[cfg(feature = "file-tools")]
     {
         tools.extend(get_file_tool_names(is_allowed));
-    }
-
-    // LED tools
-    #[cfg(feature = "led-tools")]
-    {
-        tools.extend(get_led_tool_names(settings, is_allowed));
     }
 
     // Todo tools (always available)

@@ -28,7 +28,7 @@ now has exactly one home.
 - Core CLI with 5 subcommands: `query`, `chat`, `translate`, `ocr`, `summarize` (+ `vision`, `diagnostics`, `config`, `models`, `completion`)
 - Interactive chat with persistent sessions (Ratatui + Crossterm; responsive at any width)
 - Provider-agnostic LLM layer (`LlmProvider` trait, `OpenAICompatibleProvider`); `ollama-rs` removed
-- Tool integration with error recovery — **57 tools** (the previous "50 tools in 14 categories" was stale)
+- Tool integration with error recovery — **39 tools**
 - SQLite storage with sqlite-vec — **schema v15**, cosine distance
 - Hybrid retrieval (BM25 + vector + RRF) with feedback-aware weighting
 - Factual memory with Ebbinghaus decay and a 6-layer dedup pipeline
