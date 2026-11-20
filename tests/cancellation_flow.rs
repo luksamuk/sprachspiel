@@ -47,6 +47,10 @@ struct MockServer {
 #[derive(Clone, PartialEq)]
 enum ScriptedResponse {
     Body(String),
+    /// A non-streaming JSON completion, served with plain framing — the
+    /// chunked-SSE framing the 2xx path uses is what the non-streaming
+    /// decoder rejects with "error decoding response body".
+    Json(String),
     Reject,
 }
 
@@ -113,14 +117,18 @@ impl MockServer {
                 // rejection is one request, never a retry chain.
                 const REJECT_BODY: &str =
                     "{\"error\":{\"message\":\"invalid request: rejected deliberately\"}}";
-                let (status, body) = match responses.get(idx).or_else(|| responses.last()) {
-                    Some(ScriptedResponse::Body(b)) => ("200 OK", b.clone()),
-                    Some(ScriptedResponse::Reject) => ("400 Bad Request", REJECT_BODY.to_string()),
-                    None => ("200 OK", FIXED_BODY.to_string()),
-                };
-                if status.starts_with('4') {
+                let (status, body, plain_framing) =
+                    match responses.get(idx).or_else(|| responses.last()) {
+                        Some(ScriptedResponse::Body(b)) => ("200 OK", b.clone(), false),
+                        Some(ScriptedResponse::Json(p)) => ("200 OK", p.clone(), true),
+                        Some(ScriptedResponse::Reject) => {
+                            ("400 Bad Request", REJECT_BODY.to_string(), true)
+                        }
+                        None => ("200 OK", FIXED_BODY.to_string(), false),
+                    };
+                if plain_framing {
                     let head = format!(
-                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                         body.len()
                     );
                     let _ = stream.write_all(head.as_bytes());
@@ -158,6 +166,25 @@ impl MockServer {
             "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\
              \"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"{escaped}\"}}}}]}}\n\n\
              data: [DONE]\n\n"
+        ))
+    }
+
+    /// A non-streaming JSON completion — the shape the coordinator's
+    /// non-streaming chat path parses, served with plain framing by the
+    /// mock's `Json` variant. Streaming requests never consume this, and
+    /// non-streaming requests cannot consume the SSE bodies above, so a
+    /// script drives both paths by index.
+    fn json_body(content: &str) -> ScriptedResponse {
+        let escaped = content
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        ScriptedResponse::Json(format!(
+            "{{\"id\":\"c\",\"object\":\"chat.completion\",\"created\":1,\
+             \"model\":\"test-model\",\"choices\":[{{\"index\":0,\
+             \"message\":{{\"role\":\"assistant\",\"content\":\"{escaped}\"}},\
+             \"finish_reason\":\"stop\"}}],\
+             \"usage\":{{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}}}"
         ))
     }
 
@@ -986,18 +1013,14 @@ async fn abandoned_continuation_chain_leaves_zero_residual_rows() {
             MockServer::plain_body(
                 "partial answer\n<continuation_needed>\nReasoning paused: mid\nNext step: go on\n</continuation_needed>",
             ),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            MockServer::plain_body("in-chain summary"),
-            ScriptedResponse::Reject,
+            // The continuation request itself; the stop request lands while
+            // it is in flight. The session was just compacted pre-turn, so
+            // the chain's own compaction check is NotNeeded — no extra
+            // requests between the tag and this one.
+            MockServer::plain_body("final answer"),
         ],
         move |idx| {
-            if idx == 3 {
+            if idx == 7 {
                 cancel_for_hook.cancel();
             }
         },
@@ -1040,11 +1063,17 @@ async fn abandoned_continuation_chain_leaves_zero_residual_rows() {
     .await;
 
     assert_eq!(terminal, TurnTerminal::Cancelled);
-    assert_eq!(server.count(), 4);
-    assert_eq!(
+    // Eight requests hit the wire: the pre-turn compaction (four chunks and
+    // the consolidation), the tool-call exchange (two), and the continuation
+    // request the stop landed on. Reaching index 7 proves the tool call was
+    // processed — the capture it produced is what a direct write would have
+    // persisted, so the zero-rows assertion below only holds because the
+    // deferral kept it in the abandoned clone.
+    assert_eq!(server.count(), 8);
+    assert!(
         db.persisted_message_count(&state.session.id, "I will check the file")
-            .expect("db"),
-        0,
+            .expect("db")
+            == 0,
         "zero residual rows: the abandoned capture queue dies with the clone"
     );
     assert_eq!(
@@ -1255,14 +1284,24 @@ async fn nested_continuation_cancels_at_its_second_request() {
     // stays behind.
     let token = CancellationToken::new();
     let cancel_for_hook = token.clone();
-    let tag = "<continuation_needed>\nReasoning paused: at branch\nNext step: one more\n</continuation_needed>";
+    let tag_a =
+        "<continuation_needed>\nReasoning paused: mid\nNext step: go on\n</continuation_needed>";
+    let tag_b = "<continuation_needed>\nReasoning paused: at branch\nNext step: one more\n</continuation_needed>";
     let server = MockServer::spawn_scripted(
         vec![
-            MockServer::plain_body(&format!("part one\n{tag}")),
+            // Stage one: the initial turn asks for a continuation.
+            MockServer::plain_body(&format!("part one\n{tag_a}")),
+            // Stage two: the FIRST continuation comes back asking for one
+            // more — this is what drives the chain into its nested branch.
+            // It travels on the non-streaming chat path, so it needs the
+            // JSON completion shape, not an SSE body.
+            MockServer::json_body(&format!("part two\n{tag_b}")),
+            // Stage three: the SECOND (nested) continuation request takes
+            // the stop request; it never produces a usable response.
             ScriptedResponse::Reject,
         ],
         move |idx| {
-            if idx == 1 {
+            if idx == 2 {
                 cancel_for_hook.cancel();
             }
         },
@@ -1294,16 +1333,20 @@ async fn nested_continuation_cancels_at_its_second_request() {
     .await;
     while let Ok(ev) = llm_rx.try_recv() {}
     assert_eq!(terminal, TurnTerminal::Cancelled);
-    assert_eq!(
-        db.persisted_message_count(&state.session.id, "captured")
-            .expect("db"),
-        0,
+    assert!(
+        db.persisted_message_count(&state.session.id, "part one")
+            .expect("db")
+            == 0
+            && db
+                .persisted_message_count(&state.session.id, "part two")
+                .expect("db")
+                == 0,
         "an aborted nested chain leaves no residual rows"
     );
     assert_eq!(
         server.count(),
-        2,
-        "turn, then the failed continuation request"
+        3,
+        "turn, the nested-driving continuation, then the cancelled request"
     );
 }
 

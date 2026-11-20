@@ -194,6 +194,10 @@ impl CompactionContext<'_> {
                     }
                 }
 
+                // The event, not the content, tells the terminal this
+                // compaction ran: a later pass can reproduce an earlier
+                // summary and range, and the terminal must still see it.
+                self.session.compaction_epoch += 1;
                 CompactionOutcome::Completed
             }
             Err(CompactionFailure::Cancelled) => {

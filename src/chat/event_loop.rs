@@ -350,8 +350,10 @@ pub async fn handle_key_line(
 /// markers until the terminal `Cancelled` event is handled. The loop's own
 /// Sender is dropped immediately: the task and its forwarding task still
 /// own senders, so terminal delivery is unaffected, while a dying producer
-/// can now close the channel and reach the `None` recovery branch. If
-/// compaction is running, shows a warning (compaction is not cancellable).
+/// can now close the channel and reach the `None` recovery branch. A
+/// compaction shares the same slot and token as the LLM tasks: Ctrl+C while
+/// it runs cancels it the same way, and its terminal `Cancelled` event
+/// carries the untouched clone.
 pub fn handle_interrupt(
     _state: &ReplState,
     app: &mut App,

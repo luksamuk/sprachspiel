@@ -258,12 +258,11 @@ pub async fn handle_user_message_stream(
     // lives in the in-memory session only (token-owned) — the pre-turn one
     // included, whose summary is already the baseline when this snapshot is
     // taken; `pre_turn_outcome` is what tells the terminal about it. Any
-    // later change to this pair is what the terminal commit persists along
-    // with the prompt-token invalidation — the resolution of the turn, not
-    // each call site.
+    // compaction that completes later in the turn moves the epoch; the
+    // terminal reads that event — content comparison alone would miss a
+    // pass that reproduces an earlier summary and range.
     let pre_turn_completed = matches!(pre_turn_outcome, CompactionOutcome::Completed);
-    let pre_turn_summary = state.session.compacted_summary.clone();
-    let pre_turn_range = state.session.compacted_range;
+    let pre_turn_epoch = state.session.compaction_epoch;
 
     let think_enabled = state.session.think;
     // Paths whose recovery already persisted the session (the successful
@@ -439,13 +438,7 @@ pub async fn handle_user_message_stream(
     // Terminal resolution of the turn: one commit site for everything the
     // in-flight cancellation made defer — the completed compactions that
     // lived in memory and the pre-tool captures that never touched SQLite.
-    commit_turn_terminal(
-        state,
-        &pre_turn_summary,
-        &pre_turn_range,
-        pre_turn_completed,
-        turn_commit_done,
-    );
+    commit_turn_terminal(state, pre_turn_epoch, pre_turn_completed, turn_commit_done);
 
     TurnTerminal::Complete
 }
@@ -464,19 +457,18 @@ pub async fn handle_user_message_stream(
 /// so an adopted clone and its database agree.
 fn commit_turn_terminal(
     state: &mut super::repl_state::ReplState,
-    pre_turn_summary: &Option<String>,
-    pre_turn_range: &Option<(usize, usize)>,
+    pre_turn_epoch: u64,
     pre_turn_completed: bool,
     turn_commit_done: bool,
 ) {
     // Skip the commit when this turn changed nothing: a session already
     // compacted by an earlier turn must not re-trigger the invalidation,
     // and there is nothing deferred to flush. A completed PRE-TURN
-    // compaction is already the snapshot's baseline, so it carries its own
-    // confirmation here instead of a delta.
-    let compaction_ran = pre_turn_completed
-        || state.session.compacted_summary.as_deref() != pre_turn_summary.as_deref()
-        || state.session.compacted_range != *pre_turn_range;
+    // compaction is already the epoch baseline, so it carries its own
+    // confirmation here instead of a delta. Later compactions are observed
+    // by the event (the epoch every completion bumps), never by content —
+    // a pass that reproduces an earlier summary and range still ran.
+    let compaction_ran = pre_turn_completed || state.session.compaction_epoch != pre_turn_epoch;
     let captures = state.pending_pre_tool.len();
 
     state.flush_pending_pre_tool();
@@ -1022,6 +1014,7 @@ mod terminal_commit_tests {
         state
             .session
             .set_compacted_summary_with_range("turn summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
         state.defer_pre_tool_content(
             "captured mid-turn".to_string(),
             None,
@@ -1033,7 +1026,7 @@ mod terminal_commit_tests {
             "pre-condition: the rows of this session carry prompt tokens"
         );
 
-        commit_turn_terminal(&mut state, &None, &None, false, false);
+        commit_turn_terminal(&mut state, 0, false, false);
 
         assert!(state.pending_pre_tool.is_empty(), "the queue flushed once");
         assert_eq!(
@@ -1059,14 +1052,62 @@ mod terminal_commit_tests {
         // Nothing left to commit: a second resolution (as the paths of a
         // retrying turn would produce) re-persists nothing — the state is
         // stable and the pre-existing summary is not re-invalidated.
-        let summary = state.session.compacted_summary.clone();
-        let range = state.session.compacted_range;
-        commit_turn_terminal(&mut state, &summary, &range, false, true);
+        let settled_epoch = state.session.compaction_epoch;
+        commit_turn_terminal(&mut state, settled_epoch, false, true);
         assert_eq!(
             db.persisted_message_count(&state.session.id, "captured mid-turn")
                 .expect("db"),
             1,
             "no duplicate captures on a repeated terminal"
+        );
+    }
+
+    /// A later compaction that reproduces the earlier summary and range is
+    /// invisible to content comparison — the epoch is what lets the
+    /// terminal observe the event and invalidate the prompt tokens the
+    /// apply cleared in memory. Remove the epoch signal and this fails.
+    #[tokio::test]
+    async fn a_same_summary_compaction_still_invalidates_prompt_tokens() {
+        let db = std::sync::Arc::new(crate::db::Database::in_memory().expect("in-memory db"));
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+        session.db = Some(std::sync::Arc::clone(&db));
+        session.add_user_message("question".to_string());
+        session.add_assistant_message("answer".to_string(), None, Some(700));
+        let mut state = state_with_db(session);
+        // Persist so the rows carry the tokens the commit must invalidate.
+        let _ = state.session.save_sqlite();
+        assert!(
+            db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db")
+        );
+
+        // An earlier turn's compaction is already in place...
+        state
+            .session
+            .set_compacted_summary_with_range("same summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
+        let pre_turn_epoch = state.session.compaction_epoch;
+        // ...and this turn's pass reproduces both summary and range — the
+        // event moved the epoch, the content did not move at all.
+        state
+            .session
+            .set_compacted_summary_with_range("same summary".to_string(), Some((0, 1)));
+        state.session.compaction_epoch += 1;
+
+        commit_turn_terminal(&mut state, pre_turn_epoch, false, false);
+
+        assert!(
+            !db.conversation_has_prompt_tokens(&state.session.id)
+                .expect("db"),
+            "the epoch observed the compaction that identical content hides"
+        );
+        assert_eq!(
+            db.get_conversation_metadata(&state.session.id)
+                .expect("db")
+                .compacted_summary
+                .as_deref(),
+            Some("same summary"),
+            "the token-owned pass committed at the terminal"
         );
     }
 }
