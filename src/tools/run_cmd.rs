@@ -29,9 +29,13 @@ macro_rules! debug_log {
 
 /// Execute an external command and return the output.
 ///
-/// SECURITY: Only whitelisted commands in tools.toml can be executed.
-/// No shell interpretation (pipes, redirects, command chaining blocked).
-/// Landlock sandbox enabled by default on Linux (kernel 5.13+).
+/// SECURITY: the Landlock sandbox, enabled by default on Linux
+/// (kernel 5.13+), is the security boundary — it bounds what the command
+/// and its children can read, write and execute. Every command word that
+/// executes (the first word of each segment, compound commands included)
+/// must still be whitelisted in tools.toml. Without the sandbox
+/// (unsupported kernel, non-Linux), a compound command carries the usual
+/// shell risk — the tool will not second-guess what the line composes.
 ///
 /// # Arguments
 /// * `command_line` - Command to execute (e.g., "pdftotext -f 1 -l 5 doc.pdf -")
@@ -40,18 +44,19 @@ macro_rules! debug_log {
 /// * `timeout_seconds` - Optional timeout in seconds (default: from config). Accepts string or number.
 ///
 /// # Controlling Output Size
-/// Use head/tail to limit output instead of pipes:
+/// Prefer head/tail over pipes to limit output size (both work):
 /// - head=100, tail=null: First 100 lines
 /// - head=null, tail=50: Last 50 lines
 /// - head=50, tail=50: First 50 + last 50 (with truncation notice)
 /// - head=null, tail=null: Full output (be careful with large files!)
 ///
-/// # Blocked Patterns
-/// These are rejected for security:
-/// - Pipes: |
-/// - Command chaining: ;, &&, ||
-/// - Command substitution: $(), backticks
-/// - Redirects: >, <, >>, <<
+/// # Shell operators
+/// Pipelines, redirects and chaining pass through as-is
+/// (e.g. "pdftotext doc.pdf - | head -n 20"). Command substitution ($()
+/// and backticks) is rejected in every mode: its body would run binaries
+/// the per-segment whitelist cannot see. If the operator wall is enabled
+/// in tools.toml ([external.tools] allow_shell_operators = false), all
+/// shell operators are rejected with an error naming the flag.
 ///
 /// # Examples
 /// ```ignore
@@ -66,6 +71,9 @@ macro_rules! debug_log {
 ///
 /// // OCR with language and 2 minute timeout
 /// run_command("tesseract image.png stdout -l jpn", null, null, "120").await
+///
+/// // Pipelines compose normally
+/// run_command("rg -n pattern src/ | head -n 10", null, null, null).await
 /// ```
 #[tool]
 pub async fn run_command(
@@ -98,80 +106,105 @@ pub async fn run_command(
         ],
     );
 
-    // Validate command (blocks dangerous patterns)
-    let parts = match validate_command(&command_line) {
-        Ok(parts) => parts,
-        Err(e) => {
-            log_tool_result("run_command", &e);
-            return Ok(e);
-        }
-    };
-
-    let command = &parts[0];
-    let args: Vec<String> = parts[1..].to_vec();
-
-    // Expand tilde (~) in arguments that look like file paths.
-    // This allows commands like `pdftotext ~/document.pdf -` to work.
-    // After expansion, check against the sensitive file blocklist.
-    let args = match expand_args_tilde(&args) {
-        Ok(args) => args,
-        Err(e) => {
-            log_tool_result("run_command", &e);
-            return Ok(e);
-        }
-    };
-
-    // Load configuration (cached)
+    // Validate the command line into an execution plan. The operator wall
+    // and the per-binary whitelist are separate layers — with operators
+    // allowed, the shell composes; without, metacharacters are rejected.
     let config = get_config();
+    let validated = match validate_command(&command_line, config.allow_shell_operators, |b| {
+        config.get(b).is_some()
+    }) {
+        Ok(validated) => validated,
+        Err(e) => {
+            log_tool_result("run_command", &e);
+            return Ok(e);
+        }
+    };
+
     let platform = get_platform();
 
-    // Get tool configuration
-    let tool_config = match config.get(command) {
-        Some(tool) => tool.clone(),
-        None => {
-            let result = format!(
-                "Error: '{}' is not in the whitelist. Only tools configured in tools.toml can be executed.",
-                command
-            );
-            log_tool_result("run_command", &result);
-            return Ok(result);
-        }
-    };
+    // Resolve what runs: the whitelisted binary, or a shell for a compound
+    // command whose segments are all whitelisted.
+    let (command, args, binary, binary_path, tool_timeout) = match validated {
+        ValidatedCommand::Simple { parts } => {
+            let command = parts[0].clone();
+            let args: Vec<String> = parts[1..].to_vec();
 
-    // Check if tool is enabled
-    if !tool_config.enabled {
-        // Generic message - don't reveal that it's just a config flag
-        let result = format!(
-            "Error: '{}' is not available. Only tools configured in tools.toml can be executed.",
-            command
-        );
-        log_tool_result("run_command", &result);
-        return Ok(result);
-    }
-
-    // Check if binary exists and get its path
-    let binary = &tool_config.binary;
-    let binary_path = match which::which(binary) {
-        Ok(path) => {
-            debug_log!("Found binary '{}' at: {:?}", binary, path);
-            Some(path)
-        }
-        Err(_) => {
-            let hint = tool_config.install_hints.get(platform);
-            let result = if let Some(hint) = hint {
-                format!(
-                    "Error: '{}' is not installed. Install with: {}",
-                    command, hint
-                )
-            } else {
-                format!(
-                    "Error: '{}' is not installed. Install with your package manager.",
-                    command
-                )
+            // Expand tilde (~) in arguments that look like file paths.
+            // This allows commands like `pdftotext ~/document.pdf -` to work.
+            // After expansion, check against the sensitive file blocklist.
+            let args = match expand_args_tilde(&args) {
+                Ok(args) => args,
+                Err(e) => {
+                    log_tool_result("run_command", &e);
+                    return Ok(e);
+                }
             };
-            log_tool_result("run_command", &result);
-            return Ok(result);
+
+            // Get tool configuration
+            let tool_config = match config.get(&command) {
+                Some(tool) => tool.clone(),
+                None => {
+                    let result = format!(
+                        "Error: '{}' is not in the whitelist. Only tools configured in tools.toml can be executed.",
+                        command
+                    );
+                    log_tool_result("run_command", &result);
+                    return Ok(result);
+                }
+            };
+
+            // Check if tool is enabled
+            if !tool_config.enabled {
+                // Generic message - don't reveal that it's just a config flag
+                let result = format!(
+                    "Error: '{}' is not available. Only tools configured in tools.toml can be executed.",
+                    command
+                );
+                log_tool_result("run_command", &result);
+                return Ok(result);
+            }
+
+            // Check if binary exists and get its path
+            let binary = tool_config.binary.clone();
+            let binary_path = match which::which(&binary) {
+                Ok(path) => {
+                    debug_log!("Found binary '{}' at: {:?}", binary, path);
+                    Some(path)
+                }
+                Err(_) => {
+                    let hint = tool_config.install_hints.get(platform);
+                    let result = if let Some(hint) = hint {
+                        format!(
+                            "Error: '{}' is not installed. Install with: {}",
+                            command, hint
+                        )
+                    } else {
+                        format!(
+                            "Error: '{}' is not installed. Install with your package manager.",
+                            command
+                        )
+                    };
+                    log_tool_result("run_command", &result);
+                    return Ok(result);
+                }
+            };
+            (command, args, binary, binary_path, tool_config.timeout)
         }
+        ValidatedCommand::Compound => match which::which("sh") {
+            Ok(sh_path) => (
+                "sh".to_string(),
+                vec!["-c".to_string(), command_line.clone()],
+                "sh".to_string(),
+                Some(sh_path),
+                config.default_timeout,
+            ),
+            Err(_) => {
+                let result =
+                    "Error: no 'sh' available on PATH to run the compound command.".to_string();
+                log_tool_result("run_command", &result);
+                return Ok(result);
+            }
+        },
     };
 
     // Apply sandbox (Linux only, if enabled)
@@ -180,14 +213,15 @@ pub async fn run_command(
         return Ok(e);
     }
 
-    // Visual indicator: show which command is about to execute
+// Visual indicator: show which command is about to execute
     let display_cmd = crate::utils::truncate_chars(&command_line, 60);
     tui_aware_print(&format!("⚡ {display_cmd}"));
 
-    // Determine timeout
+    // Determine timeout (per-tool for a simple command, the default for a
+    // compound one)
     let timeout_duration = timeout_val
         .map(|t| Duration::from_secs(t as u64))
-        .unwrap_or(tool_config.timeout);
+        .unwrap_or(tool_timeout);
 
     debug_log!(
         "Command '{}' with timeout {:?}s",
@@ -195,17 +229,17 @@ pub async fn run_command(
         timeout_duration.as_secs()
     );
 
-    let output_result = execute_command(binary, &args, timeout_duration, &command_line).await;
+    let output_result = execute_command(&binary, &args, timeout_duration, &command_line).await;
     let result = match output_result {
         // A cancelled command owns the end of the turn: the typed error
         // lets the Coordinator end it — no next tool, no next request, and
         // the command's (already unrecorded) output never reaches one.
         Err(CommandError::Cancelled) => {
-            log_tool_result("run_command", "cancelled by user (child killed and reaped)");
+                    log_tool_result("run_command", "cancelled by user (child killed and reaped)");
             return Err(Box::new(crate::tools::tool_trait::ToolCancelled));
         }
         Ok(output) => {
-            if output.success {
+                    if output.success {
                 format_success_output(output.stdout, head_val, tail_val)
             } else {
                 // Command failed - return stderr with helpful context
@@ -249,33 +283,60 @@ pub async fn run_command(
     Ok(result)
 }
 
-/// Validate command line and parse into parts.
-/// Blocks dangerous shell patterns.
-fn validate_command(command_line: &str) -> Result<Vec<String>, String> {
-    // Block dangerous patterns (check multi-char patterns first)
-    let forbidden_patterns = [
-        ("&&", "AND operator"),
-        ("||", "OR operator"),
-        ("$(", "command substitution"),
-        (";", "command separator"),
-        ("|", "pipe"),
-        ("`", "backtick substitution"),
-        (">>", "append redirect"),
-        ("<<", "here-document"),
-        (">", "output redirect"),
-        ("<", "input redirect"),
-    ];
-
-    for (pattern, name) in forbidden_patterns {
-        if command_line.contains(pattern) {
-            return Err(format!(
-                "Error: Shell feature '{}' is not allowed. Use tool-specific flags instead.",
-                name
-            ));
-        }
+/// Validate command line and parse into an execution plan.
+///
+/// Shell operators (pipes, redirects, chaining) and command substitution
+/// are allowed when `allow_shell_operators` is true — the Landlock sandbox
+/// is the security boundary bounding what a spawned command reaches, not a
+/// filter over command text. With false, any metacharacter is rejected and
+/// the error names the config flag, which restores the old wall.
+///
+/// The per-binary whitelist is the other layer and it stays: the first
+/// word of every top-level segment of a compound command must be
+/// whitelisted in tools.toml. Command substitution inside a segment can
+/// name binaries no parse sees; that residual gap is the deliberate cost
+/// of pass-through, and the sandbox bounds what those binaries reach.
+///
+/// Quoted metacharacters are data, not operators: `echo "a | b"` is a
+/// simple command.
+fn validate_command(
+    command_line: &str,
+    allow_shell_operators: bool,
+    is_whitelisted: impl Fn(&str) -> bool,
+) -> Result<ValidatedCommand, String> {
+    // Command substitution stays rejected even in the permissive default:
+    // its body executes binaries no per-segment parse sees, so the
+    // whitelist — the guardrail the user curates — would be bypassed.
+    if allow_shell_operators && (command_line.contains("$(") || command_line.contains('`')) {
+        let name = if command_line.contains("$(") {
+            "command substitution"
+        } else {
+            "backtick substitution"
+        };
+        return Err(format!(
+            "Error: {name} is not allowed: its body runs binaries the per-segment whitelist cannot see. Use tool-specific flags instead, or set [external.tools] allow_shell_operators = false in tools.toml to reject all shell operators."
+        ));
     }
 
-    // Parse command
+    if !allow_shell_operators {
+        if let Some((name, line_hint)) = find_rejected_metachar(command_line) {
+            return Err(format!(
+                "Error: Shell feature '{name}' detected in '{line_hint}'. Use tool-specific flags instead, or set [external] allow_shell_operators = true to allow shell operators."
+            ));
+        }
+    } else if split_top_level_segments(command_line).is_some() {
+        for binary in compound_binaries(command_line) {
+            if !is_whitelisted(&binary) {
+                return Err(format!(
+                    "Error: '{}' is not in the whitelist. Only tools configured in tools.toml can be executed.",
+                    binary
+                ));
+            }
+        }
+        return Ok(ValidatedCommand::Compound);
+    }
+
+    // Parse plain single command
     let parts = match shell_words::split(command_line) {
         Ok(parts) => parts,
         Err(e) => {
@@ -290,7 +351,121 @@ fn validate_command(command_line: &str) -> Result<Vec<String>, String> {
         return Err("Error: Empty command line. Provide a command to execute.".to_string());
     }
 
-    Ok(parts)
+    Ok(ValidatedCommand::Simple { parts })
+}
+
+/// Execution plan produced by `validate_command`.
+#[derive(Debug, PartialEq)]
+pub(crate) enum ValidatedCommand {
+    /// A single command: run the whitelisted binary directly, as always.
+    Simple { parts: Vec<String> },
+    /// A compound command (shell operators present and allowed): every
+    /// top-level segment's binary is whitelisted; the line runs under a
+    /// shell so operators actually compose.
+    Compound,
+}
+
+const FORBIDDEN_METACHARS: [(&str, &str); 10] = [
+    ("&&", "AND operator"),
+    ("||", "OR operator"),
+    ("$(", "command substitution"),
+    (";", "command separator"),
+    ("|", "pipe"),
+    ("`", "backtick substitution"),
+    (">>", "append redirect"),
+    ("<<", "here-document"),
+    (">", "output redirect"),
+    ("<", "input redirect"),
+];
+
+const COMPOSITION_OPERATORS: [&str; 4] = ["|", "&&", "||", ";"];
+
+/// First unquoted shell metacharacter in the line, for the strict mode's
+/// rejection message. Quoted characters are data, not features.
+fn find_rejected_metachar(command_line: &str) -> Option<(&'static str, String)> {
+    for (pattern, name) in FORBIDDEN_METACHARS {
+        if command_line.contains(pattern) {
+            let hint = crate::utils::truncate_chars(command_line, 80);
+            return Some((name, hint));
+        }
+    }
+    None
+}
+
+/// Split the line at top-level composition operators (|, &&, ||, ;),
+/// treating quoted and backslash-escaped characters as data. Returns None
+/// when the line has no composition operator — a single command.
+fn split_top_level_segments(command_line: &str) -> Option<Vec<String>> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let chars: Vec<char> = command_line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = quote {
+            current.push(c);
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' || c == '\'' {
+            quote = Some(c);
+            current.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '\\' && i + 1 < chars.len() {
+            current.push(c);
+            current.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        let rest: String = chars[i..].iter().collect();
+        if let Some(op) = COMPOSITION_OPERATORS
+            .iter()
+            .find(|op| rest.starts_with(**op))
+        {
+            segments.push(current.clone());
+            current.clear();
+            i += op.len();
+            continue;
+        }
+        current.push(c);
+        i += 1;
+    }
+    segments.push(current);
+    if segments.len() == 1 {
+        return None;
+    }
+    Some(segments)
+}
+
+/// The binary each composition segment starts with, skipping leading
+/// redirect symbols and their targets. Redirect targets write files, they
+/// do not execute binaries.
+fn compound_binaries(command_line: &str) -> Vec<String> {
+    let Some(segments) = split_top_level_segments(command_line) else {
+        return Vec::new();
+    };
+    let mut binaries = Vec::new();
+    for segment in segments {
+        let Ok(tokens) = shell_words::split(&segment) else {
+            continue;
+        };
+        let mut index = 0;
+        while index < tokens.len()
+            && matches!(tokens[index].as_str(), ">" | ">>" | "<" | "<<")
+        {
+            index += 2; // symbol and its target
+        }
+        if let Some(binary) = tokens.get(index) {
+            binaries.push(binary.clone());
+        }
+    }
+    binaries
 }
 
 const COMMAND_SUCCESS_PREFIX: &str = "Command completed successfully (exit code 0).\n";
@@ -803,77 +978,138 @@ mod tests {
 
     #[test]
     fn test_validate_command_blocks_semicolon() {
-        let result = validate_command("pdftotext file.pdf - ; rm -rf /");
+        let result = validate_command("pdftotext file.pdf - ; rm -rf /", false, |_| true);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
-                .contains("'command separator' is not allowed")
+                .contains("'command separator' detected")
         );
     }
 
     #[test]
-    fn test_validate_command_blocks_and() {
-        let result = validate_command("pdftotext file.pdf - && cat /etc/passwd");
-        assert!(result.is_err());
+    fn test_strict_mode_error_names_the_flag() {
+        let err = validate_command("echo a | tr a b", false, |_| true)
+            .expect_err("strict mode rejects the pipe");
         assert!(
-            result
-                .unwrap_err()
-                .contains("'AND operator' is not allowed")
+            err.contains("allow_shell_operators = true"),
+            "the rejection must point at the flag, got: {err}"
         );
     }
 
     #[test]
     fn test_validate_command_blocks_or() {
-        let result = validate_command("pdftotext file.pdf - || echo failed");
+        let result = validate_command("pdftotext file.pdf - || echo failed", false, |_| true);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("'OR operator'"));
     }
 
     #[test]
     fn test_validate_command_blocks_command_substitution() {
-        let result = validate_command("pdftotext $(cat file.txt).pdf -");
+        let result = validate_command("pdftotext $(cat file.txt).pdf -", false, |_| true);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
-                .contains("'command substitution' is not allowed")
+                .contains("'command substitution' detected")
         );
     }
 
     #[test]
     fn test_validate_command_blocks_redirect() {
-        let result = validate_command("pdftotext file.pdf - > output.txt");
+        let result = validate_command("pdftotext file.pdf - > output.txt", false, |_| true);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
-                .contains("'output redirect' is not allowed")
+                .contains("'output redirect' detected")
         );
     }
 
     #[test]
     fn test_validate_command_accepts_valid() {
-        let result = validate_command("pdftotext -f 1 -l 5 file.pdf -");
-        assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            vec!["pdftotext", "-f", "1", "-l", "5", "file.pdf", "-"]
+        let result = validate_command(
+            "pdftotext -f 1 -l 5 file.pdf -",
+            false,
+            |b| b == "pdftotext",
         );
+        let validated = result.expect("plain command passes in strict mode too");
+        match validated {
+            ValidatedCommand::Simple { parts } => {
+                assert_eq!(parts, vec!["pdftotext", "-f", "1", "-l", "5", "file.pdf", "-"]);
+            }
+            ValidatedCommand::Compound => panic!("no operators present"),
+        }
     }
 
     #[test]
     fn test_validate_command_accepts_quoted_filename() {
-        let result = validate_command("pdftotext \"file name.pdf\" -");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), vec!["pdftotext", "file name.pdf", "-"]);
+        let result = validate_command("pdftotext \"file name.pdf\" -", false, |b| b == "pdftotext");
+        match result.unwrap() {
+            ValidatedCommand::Simple { parts } => {
+                assert_eq!(parts, vec!["pdftotext", "file name.pdf", "-"]);
+            }
+            ValidatedCommand::Compound => panic!("quoted text is data, not operators"),
+        }
     }
 
     #[test]
     fn test_validate_command_rejects_empty() {
-        let result = validate_command("");
+        let result = validate_command("", false, |_| true);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Empty command line"));
+    }
+
+    #[test]
+    fn test_permissive_mode_rejects_command_substitution() {
+        for line in ["echo $(whoami)", "grep x `ls`"] {
+            let err = validate_command(line, true, |_| true)
+                .expect_err("substitution runs binaries the whitelist cannot see");
+            assert!(
+                err.contains("per-segment whitelist cannot see")
+                    && err.contains("allow_shell_operators = false"),
+                "the rejection explains the split and points at the flag, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_permissive_mode_plans_a_compound_run() {
+        let validated =
+            validate_command("echo a | tr a b", true, |b| b == "echo" || b == "tr")
+                .expect("permissive mode plans the compound");
+        assert!(matches!(validated, ValidatedCommand::Compound));
+    }
+
+    #[test]
+    fn test_permissive_mode_keeps_the_binary_whitelist() {
+        let err = validate_command("echo a | evilcmd b", true, |b| b == "echo")
+            .expect_err("the segment's binary is not whitelisted");
+        assert!(
+            err.contains("'evilcmd' is not in the whitelist"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_quoted_operator_is_data_not_composition() {
+        let validated = validate_command("echo \"a | b\"", true, |b| b == "echo")
+            .expect("a quoted pipe is argument data");
+        match validated {
+            ValidatedCommand::Simple { parts } => {
+                assert_eq!(parts, vec!["echo", "a | b"]);
+            }
+            ValidatedCommand::Compound => panic!("a quoted pipe is not a composition"),
+        }
+    }
+
+    #[test]
+    fn test_compound_binaries_reads_segments_and_skips_redirects() {
+        assert_eq!(
+            compound_binaries("echo a | tr a b ; wc -l > out.txt"),
+            vec!["echo", "tr", "wc"]
+        );
+        assert!(compound_binaries("echo only").is_empty());
     }
 
     #[test]

@@ -134,6 +134,11 @@ pub struct ExternalToolsConfig {
     pub default_timeout: Duration,
     /// Configured tools by name.
     pub tools: HashMap<String, ExternalTool>,
+    /// Whether shell operators (pipes, redirects, chaining) are allowed in
+    /// `run_command`. Default true: the Landlock sandbox is the security
+    /// boundary, not a command-text filter; setting this false restores
+    /// literal-metacharacter rejection.
+    pub allow_shell_operators: bool,
 }
 
 /// Configuration for file tools (read/write operations).
@@ -169,6 +174,7 @@ impl ExternalToolsConfig {
         ExternalToolsConfig {
             default_timeout: Duration::from_secs(30),
             tools: HashMap::new(),
+            allow_shell_operators: true,
         }
     }
 
